@@ -1,0 +1,7 @@
+- id: compose-lint
+  name: compose-lint
+  description: Security-focused linter for Docker Compose files
+  entry: compose-lint
+  language: python
+  types: [yaml]
+  files: (^|/)docker-compose[^/]*\.ya?ml$|compose[^/]*\.ya?ml$
