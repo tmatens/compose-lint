@@ -51,6 +51,19 @@ def get_registered_rules() -> list[type[BaseRule]]:
     return list(_registry)
 
 
+def _load_rules() -> None:
+    """Import all rule modules to trigger registration."""
+    import importlib
+    import pkgutil
+
+    package_path = __path__
+    for _importer, modname, _ispkg in pkgutil.iter_modules(package_path):
+        if modname.startswith("CL"):
+            importlib.import_module(f"{__name__}.{modname}")
+
+
+_load_rules()
+
 __all__ = [
     "BaseRule",
     "register_rule",

@@ -9,7 +9,10 @@ from typing import NoReturn
 
 from compose_lint import __version__
 from compose_lint.engine import filter_findings, run_rules
-from compose_lint.models import Finding, Severity
+from compose_lint.formatters.json import format_findings as format_json
+from compose_lint.formatters.text import format_findings as format_text
+from compose_lint.formatters.text import format_summary
+from compose_lint.models import Severity
 from compose_lint.parser import ComposeError, load_compose
 
 
@@ -62,43 +65,12 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _format_text(findings: list[Finding], filepath: str) -> str:
-    """Format findings as human-readable text."""
-    if not findings:
-        return ""
-    lines = []
-    for f in findings:
-        loc = f"{filepath}:{f.line}" if f.line else filepath
-        lines.append(f"{loc}: [{f.severity.value.upper()}] {f.rule_id} - {f.message}")
-        if f.fix:
-            lines.append(f"  Fix: {f.fix}")
-    return "\n".join(lines)
-
-
-def _format_json(findings: list[Finding], filepath: str) -> list[dict[str, object]]:
-    """Format findings as JSON-serializable dicts."""
-    results: list[dict[str, object]] = []
-    for f in findings:
-        entry: dict[str, object] = {
-            "file": filepath,
-            "line": f.line,
-            "rule_id": f.rule_id,
-            "severity": f.severity.value,
-            "service": f.service,
-            "message": f.message,
-            "fix": f.fix,
-            "references": list(f.references),
-        }
-        results.append(entry)
-    return results
-
-
 def main(argv: list[str] | None = None) -> NoReturn:
     """Main entry point for the CLI."""
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    json_results: list[dict[str, object]] = []
+    all_json: list[dict[str, object]] = []
     has_errors = False
 
     for filepath in args.files:
@@ -114,17 +86,18 @@ def main(argv: list[str] | None = None) -> NoReturn:
         findings = run_rules(data, lines)
 
         if args.output_format == "text":
-            output = _format_text(findings, filepath)
+            output = format_text(findings, filepath)
             if output:
                 print(output)
+            print(format_summary(findings, filepath))
         else:
-            json_results.extend(_format_json(findings, filepath))
+            all_json.extend(format_json(findings, filepath))
 
         failing = filter_findings(findings, args.fail_on)
         if failing:
             has_errors = True
 
     if args.output_format == "json":
-        print(json.dumps(json_results, indent=2))
+        print(json.dumps(all_json, indent=2))
 
     sys.exit(1 if has_errors else 0)
