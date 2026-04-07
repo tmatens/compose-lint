@@ -1,0 +1,11 @@
+services:
+  traefik:
+    image: traefik:3.3
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./traefik.yml:/etc/traefik/traefik.yml
+  portainer:
+    image: portainer/portainer-ce:2.27
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - portainer_data:/data
