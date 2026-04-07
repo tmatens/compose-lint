@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from compose_lint.models import Finding, Severity
-from compose_lint.rules import BaseRule, get_registered_rules
+from compose_lint.rules import get_registered_rules
 
 
 def run_rules(

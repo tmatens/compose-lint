@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterator
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 from compose_lint.engine import filter_findings, run_rules
 from compose_lint.models import Finding, RuleMetadata, Severity
-from compose_lint.rules import BaseRule, _registry, register_rule
+from compose_lint.rules import BaseRule, _registry
 
 
 class _DummyRule(BaseRule):

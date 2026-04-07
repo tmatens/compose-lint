@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import abc
-from typing import Any, Iterator
+from typing import TYPE_CHECKING, Any
 
-from compose_lint.models import Finding, RuleMetadata, Severity
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from compose_lint.models import Finding, RuleMetadata
 
 _registry: list[type[BaseRule]] = []
 

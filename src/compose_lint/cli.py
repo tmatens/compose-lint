@@ -21,7 +21,7 @@ def _severity_type(value: str) -> Severity:
         choices = ", ".join(s.value for s in Severity)
         raise argparse.ArgumentTypeError(
             f"invalid severity: '{value}' (choose from {choices})"
-        )
+        ) from None
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -77,9 +77,9 @@ def _format_text(findings: list[Finding], filepath: str) -> str:
 
 def _format_json(findings: list[Finding], filepath: str) -> list[dict[str, object]]:
     """Format findings as JSON-serializable dicts."""
-    results = []
+    results: list[dict[str, object]] = []
     for f in findings:
-        results.append({
+        entry: dict[str, object] = {
             "file": filepath,
             "line": f.line,
             "rule_id": f.rule_id,
@@ -87,8 +87,9 @@ def _format_json(findings: list[Finding], filepath: str) -> list[dict[str, objec
             "service": f.service,
             "message": f.message,
             "fix": f.fix,
-            "references": f.references,
-        })
+            "references": list(f.references),
+        }
+        results.append(entry)
     return results
 
 
@@ -97,7 +98,6 @@ def main(argv: list[str] | None = None) -> NoReturn:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    all_findings: list[Finding] = []
     json_results: list[dict[str, object]] = []
     has_errors = False
 

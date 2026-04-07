@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
 import yaml
 
@@ -18,12 +18,11 @@ class LineLoader(yaml.SafeLoader):
 
 def _construct_mapping(loader: LineLoader, node: yaml.MappingNode) -> dict[str, Any]:
     loader.flatten_mapping(node)
-    pairs = loader.construct_pairs(node)
     mapping: dict[str, Any] = {}
     line_map: dict[str, int] = {}
     for key_node, value_node in node.value:
-        key = loader.construct_object(key_node)
-        value = loader.construct_object(value_node)
+        key = loader.construct_object(key_node)  # type: ignore[no-untyped-call]
+        value = loader.construct_object(value_node)  # type: ignore[no-untyped-call]
         if isinstance(key, str):
             line_map[key] = key_node.start_mark.line + 1
         mapping[key] = value
@@ -33,7 +32,7 @@ def _construct_mapping(loader: LineLoader, node: yaml.MappingNode) -> dict[str, 
 
 LineLoader.add_constructor(
     yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
-    _construct_mapping,  # type: ignore[arg-type]
+    _construct_mapping,
 )
 
 
@@ -72,15 +71,11 @@ def _validate_compose(data: Any) -> dict[str, Any]:
         )
 
     if "services" not in data:
-        raise ComposeError(
-            "Not a valid Compose file: missing 'services' key"
-        )
+        raise ComposeError("Not a valid Compose file: missing 'services' key")
 
     services = data["services"]
     if not isinstance(services, dict):
-        raise ComposeError(
-            "Not a valid Compose file: 'services' must be a mapping"
-        )
+        raise ComposeError("Not a valid Compose file: 'services' must be a mapping")
 
     for name, config in services.items():
         if name == "__lines__":
@@ -94,7 +89,7 @@ def _validate_compose(data: Any) -> dict[str, Any]:
 
 
 def load_compose(
-    path: Union[str, Path],
+    path: str | Path,
 ) -> tuple[dict[str, Any], dict[str, int]]:
     """Load and validate a Docker Compose file.
 
