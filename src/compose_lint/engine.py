@@ -11,7 +11,6 @@ from compose_lint.rules import get_registered_rules
 def run_rules(
     data: dict[str, Any],
     lines: dict[str, int],
-    severity_threshold: Severity = Severity.ERROR,
     disabled_rules: set[str] | None = None,
     severity_overrides: dict[str, Severity] | None = None,
 ) -> list[Finding]:
