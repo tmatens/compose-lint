@@ -1,0 +1,11 @@
+services:
+  web:
+    image: nginx:1.27-alpine
+    ports:
+      - "127.0.0.1:8080:80"
+    security_opt:
+      - no-new-privileges:true
+  db:
+    image: postgres:16-alpine
+    security_opt:
+      - no-new-privileges:true

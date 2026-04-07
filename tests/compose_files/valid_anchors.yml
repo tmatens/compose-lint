@@ -1,0 +1,12 @@
+x-common: &common
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  web:
+    <<: *common
+    image: nginx:1.27-alpine
+  worker:
+    <<: *common
+    image: python:3.12-slim

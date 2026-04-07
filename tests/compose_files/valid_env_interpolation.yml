@@ -1,0 +1,5 @@
+services:
+  app:
+    image: myapp:${APP_VERSION:-latest}
+    environment:
+      - DB_HOST=${DB_HOST}
