@@ -1,0 +1,19 @@
+services:
+  traefik:
+    image: traefik:latest
+    privileged: true
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+  web:
+    image: nginx
+    ports:
+      - "8080:80"
+  db:
+    image: postgres:16-alpine
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:5432:5432"
