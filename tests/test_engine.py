@@ -41,26 +41,17 @@ class _DummyRule(BaseRule):
             )
 
 
-def _with_dummy_rule() -> None:
-    """Temporarily register the dummy rule."""
-    if _DummyRule not in _registry:
-        _registry.append(_DummyRule)
-
-
-def _cleanup_dummy_rule() -> None:
-    """Remove the dummy rule from the registry."""
-    while _DummyRule in _registry:
-        _registry.remove(_DummyRule)
-
-
 class TestRunRules:
     """Tests for run_rules function."""
 
     def setup_method(self) -> None:
-        _with_dummy_rule()
+        self._saved_registry = list(_registry)
+        _registry.clear()
+        _registry.append(_DummyRule)
 
     def teardown_method(self) -> None:
-        _cleanup_dummy_rule()
+        _registry.clear()
+        _registry.extend(self._saved_registry)
 
     def test_finds_flagged_service(self) -> None:
         data = {"services": {"web": {"test_flag": True}}}

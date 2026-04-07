@@ -18,9 +18,7 @@ class TestPrivilegedModeRule:
 
     def test_detects_privileged(self) -> None:
         data, lines = load_compose(FIXTURES / "insecure_privileged.yml")
-        findings = list(
-            self.rule.check("app", data["services"]["app"], data, lines)
-        )
+        findings = list(self.rule.check("app", data["services"]["app"], data, lines))
         assert len(findings) == 1
         assert findings[0].rule_id == "CL-0002"
         assert findings[0].severity.value == "critical"
@@ -33,9 +31,7 @@ class TestPrivilegedModeRule:
         assert len(findings) == 0
 
     def test_privileged_false_no_findings(self) -> None:
-        findings = list(
-            self.rule.check("app", {"privileged": False}, {}, {})
-        )
+        findings = list(self.rule.check("app", {"privileged": False}, {}, {}))
         assert len(findings) == 0
 
     def test_no_privileged_key_no_findings(self) -> None:
@@ -44,9 +40,7 @@ class TestPrivilegedModeRule:
 
     def test_has_fix_guidance(self) -> None:
         data, lines = load_compose(FIXTURES / "insecure_privileged.yml")
-        findings = list(
-            self.rule.check("app", data["services"]["app"], data, lines)
-        )
+        findings = list(self.rule.check("app", data["services"]["app"], data, lines))
         assert findings[0].fix is not None
         assert "cap_drop" in findings[0].fix.lower()
 

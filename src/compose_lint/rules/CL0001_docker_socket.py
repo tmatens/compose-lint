@@ -61,8 +61,9 @@ class DockerSocketRule(BaseRule):
                     line=lines.get(f"services.{service_name}.volumes[{i}]")
                     or lines.get(f"services.{service_name}.volumes"),
                     fix=(
-                        "Use a Docker socket proxy (e.g., tecnativa/docker-socket-proxy) "
-                        "to expose only the API endpoints your service needs."
+                        "Use a Docker socket proxy (e.g., "
+                        "tecnativa/docker-socket-proxy) to expose only "
+                        "the API endpoints your service needs."
                     ),
                     references=[OWASP_REF],
                 )

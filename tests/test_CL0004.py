@@ -16,7 +16,9 @@ class TestImageNotPinnedRule:
     def setup_method(self) -> None:
         self.rule = ImageNotPinnedRule()
 
-    def _check(self, service_name: str, fixture: str = "insecure_image_tags.yml") -> list:
+    def _check(
+        self, service_name: str, fixture: str = "insecure_image_tags.yml"
+    ) -> list:
         data, lines = load_compose(FIXTURES / fixture)
         return list(
             self.rule.check(service_name, data["services"][service_name], data, lines)

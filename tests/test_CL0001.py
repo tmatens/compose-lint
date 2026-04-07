@@ -36,9 +36,7 @@ class TestDockerSocketRule:
 
     def test_clean_service_no_findings(self) -> None:
         data, lines = load_compose(FIXTURES / "valid_basic.yml")
-        findings = list(
-            self.rule.check("web", data["services"]["web"], data, lines)
-        )
+        findings = list(self.rule.check("web", data["services"]["web"], data, lines))
         assert len(findings) == 0
 
     def test_no_volumes_no_findings(self) -> None:
