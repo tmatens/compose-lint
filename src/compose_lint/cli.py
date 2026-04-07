@@ -8,6 +8,7 @@ import sys
 from typing import NoReturn
 
 from compose_lint import __version__
+from compose_lint.config import ConfigError, load_config
 from compose_lint.engine import filter_findings, run_rules
 from compose_lint.formatters.json import format_findings as format_json
 from compose_lint.formatters.text import format_findings as format_text
@@ -70,6 +71,12 @@ def main(argv: list[str] | None = None) -> NoReturn:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
+    try:
+        disabled_rules, severity_overrides = load_config(args.config)
+    except ConfigError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(2)
+
     all_json: list[dict[str, object]] = []
     has_errors = False
 
@@ -83,7 +90,12 @@ def main(argv: list[str] | None = None) -> NoReturn:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(2)
 
-        findings = run_rules(data, lines)
+        findings = run_rules(
+            data,
+            lines,
+            disabled_rules=disabled_rules,
+            severity_overrides=severity_overrides,
+        )
 
         if args.output_format == "text":
             output = format_text(findings, filepath)
