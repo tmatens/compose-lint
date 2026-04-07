@@ -32,9 +32,7 @@ class TestIntegration:
         assert "CL-0005" in result.stdout
 
     def test_mixed_file_json_output(self) -> None:
-        result = run_cli(
-            "--format", "json", str(FIXTURES / "mixed.yml")
-        )
+        result = run_cli("--format", "json", str(FIXTURES / "mixed.yml"))
         assert result.returncode == 1
         data = json.loads(result.stdout)
         assert isinstance(data, list)
@@ -55,7 +53,8 @@ class TestIntegration:
 
     def test_mixed_file_fail_on_critical(self) -> None:
         result = run_cli(
-            "--fail-on", "critical",
+            "--fail-on",
+            "critical",
             str(FIXTURES / "mixed.yml"),
         )
         assert result.returncode == 1
@@ -65,20 +64,17 @@ class TestIntegration:
         assert result.returncode == 0
 
     def test_secure_db_not_flagged_for_ports(self) -> None:
-        result = run_cli(
-            "--format", "json", str(FIXTURES / "mixed.yml")
-        )
+        result = run_cli("--format", "json", str(FIXTURES / "mixed.yml"))
         data = json.loads(result.stdout)
         db_port_findings = [
-            f
-            for f in data
-            if f["service"] == "db" and f["rule_id"] == "CL-0005"
+            f for f in data if f["service"] == "db" and f["rule_id"] == "CL-0005"
         ]
         assert len(db_port_findings) == 0
 
     def test_multiple_files(self) -> None:
         result = run_cli(
-            "--format", "json",
+            "--format",
+            "json",
             str(FIXTURES / "mixed.yml"),
             str(FIXTURES / "valid_basic.yml"),
         )
