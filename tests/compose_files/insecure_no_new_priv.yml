@@ -1,0 +1,14 @@
+services:
+  missing:
+    image: nginx:1.27-alpine
+  empty_security_opt:
+    image: nginx:1.27-alpine
+    security_opt: []
+  has_other_opt:
+    image: nginx:1.27-alpine
+    security_opt:
+      - apparmor:unconfined
+  secure:
+    image: nginx:1.27-alpine
+    security_opt:
+      - no-new-privileges:true
