@@ -1,0 +1,31 @@
+services:
+  unbound_short:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+      - "443:443"
+  bound_short:
+    image: nginx:1.27-alpine
+    ports:
+      - "127.0.0.1:8080:80"
+  unbound_long:
+    image: nginx:1.27-alpine
+    ports:
+      - target: 80
+        published: 8080
+  bound_long:
+    image: nginx:1.27-alpine
+    ports:
+      - target: 80
+        published: 8080
+        host_ip: "127.0.0.1"
+  container_only:
+    image: nginx:1.27-alpine
+    ports:
+      - "80"
+  port_range:
+    image: nginx:1.27-alpine
+    ports:
+      - "8000-8100:8000-8100"
+  no_ports:
+    image: nginx:1.27-alpine
