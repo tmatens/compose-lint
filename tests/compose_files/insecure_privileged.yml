@@ -1,0 +1,6 @@
+services:
+  app:
+    image: myapp:1.0
+    privileged: true
+  clean:
+    image: nginx:1.27-alpine
