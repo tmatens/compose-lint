@@ -1,0 +1,19 @@
+services:
+  no_tag:
+    image: nginx
+  latest_tag:
+    image: nginx:latest
+  stable_tag:
+    image: redis:stable
+  pinned:
+    image: nginx:1.27-alpine
+  digest_pinned:
+    image: nginx@sha256:abc123
+  build_only:
+    build: .
+  registry_no_tag:
+    image: ghcr.io/org/myapp
+  registry_latest:
+    image: ghcr.io/org/myapp:latest
+  registry_pinned:
+    image: ghcr.io/org/myapp:1.2.3
