@@ -1,0 +1,12 @@
+services:
+  writable:
+    image: nginx:1.27-alpine
+  explicit_false:
+    image: nginx:1.27-alpine
+    read_only: false
+  read_only_true:
+    image: nginx:1.27-alpine
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run

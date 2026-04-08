@@ -2,3 +2,8 @@ version: "2.4"
 services:
   web:
     image: nginx:1.27-alpine
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true

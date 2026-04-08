@@ -1,0 +1,12 @@
+services:
+  host_network:
+    image: nginx:1.27-alpine
+    network_mode: host
+  bridge_network:
+    image: nginx:1.27-alpine
+    network_mode: bridge
+  service_network:
+    image: nginx:1.27-alpine
+    network_mode: "service:web"
+  no_network_mode:
+    image: nginx:1.27-alpine

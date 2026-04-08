@@ -1,0 +1,17 @@
+services:
+  no_cap_drop:
+    image: nginx:1.27-alpine
+  partial_cap_drop:
+    image: nginx:1.27-alpine
+    cap_drop:
+      - NET_RAW
+  cap_drop_all:
+    image: nginx:1.27-alpine
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+  cap_drop_all_lower:
+    image: nginx:1.27-alpine
+    cap_drop:
+      - all

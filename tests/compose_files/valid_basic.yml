@@ -5,7 +5,19 @@ services:
       - "127.0.0.1:8080:80"
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
   db:
     image: postgres:16-alpine
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run

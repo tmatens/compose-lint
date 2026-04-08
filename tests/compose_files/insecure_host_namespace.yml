@@ -1,0 +1,20 @@
+services:
+  pid_host:
+    image: nginx:1.27-alpine
+    pid: host
+  ipc_host:
+    image: nginx:1.27-alpine
+    ipc: host
+  userns_host:
+    image: nginx:1.27-alpine
+    userns_mode: host
+  all_host:
+    image: nginx:1.27-alpine
+    pid: host
+    ipc: host
+    userns_mode: host
+  no_namespace_sharing:
+    image: nginx:1.27-alpine
+  ipc_shareable:
+    image: nginx:1.27-alpine
+    ipc: shareable
