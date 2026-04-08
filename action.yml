@@ -1,0 +1,91 @@
+name: "compose-lint"
+description: "Security-focused linter for Docker Compose files"
+branding:
+  icon: "shield"
+  color: "blue"
+
+inputs:
+  files:
+    description: "Space-separated list of Compose files to lint"
+    required: false
+    default: ""
+  pattern:
+    description: "Glob pattern to find Compose files (e.g., '**/docker-compose*.yml')"
+    required: false
+    default: ""
+  fail-on:
+    description: "Minimum severity to trigger failure (warning, error, critical)"
+    required: false
+    default: "error"
+  config:
+    description: "Path to .compose-lint.yml config file"
+    required: false
+    default: ""
+  sarif-file:
+    description: "Path to write SARIF output (enables GitHub Code Scanning upload)"
+    required: false
+    default: ""
+  version:
+    description: "compose-lint version to install (default: latest)"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install compose-lint
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.version }}" ]; then
+          pip install "compose-lint==${{ inputs.version }}"
+        else
+          pip install compose-lint
+        fi
+
+    - name: Find Compose files
+      id: find-files
+      shell: bash
+      run: |
+        FILES="${{ inputs.files }}"
+        if [ -z "$FILES" ] && [ -n "${{ inputs.pattern }}" ]; then
+          FILES=$(find . -path "./.git" -prune -o -name "${{ inputs.pattern }}" -print | tr '\n' ' ')
+        fi
+        if [ -z "$FILES" ]; then
+          # Default: common Compose file names in repo root
+          for f in docker-compose.yml docker-compose.yaml compose.yml compose.yaml; do
+            [ -f "$f" ] && FILES="$FILES $f"
+          done
+        fi
+        if [ -z "$FILES" ]; then
+          echo "::warning::No Compose files found"
+          echo "files=" >> "$GITHUB_OUTPUT"
+        else
+          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Run compose-lint
+      if: steps.find-files.outputs.files != ''
+      shell: bash
+      run: |
+        ARGS=""
+        if [ -n "${{ inputs.config }}" ]; then
+          ARGS="$ARGS --config ${{ inputs.config }}"
+        fi
+        ARGS="$ARGS --fail-on ${{ inputs.fail-on }}"
+
+        # Text output for PR annotations
+        compose-lint $ARGS ${{ steps.find-files.outputs.files }} || TEXT_EXIT=$?
+
+        # SARIF output if requested
+        if [ -n "${{ inputs.sarif-file }}" ]; then
+          compose-lint --format sarif $ARGS ${{ steps.find-files.outputs.files }} \
+            > "${{ inputs.sarif-file }}" || true
+        fi
+
+        exit ${TEXT_EXIT:-0}
+
+    - name: Upload SARIF
+      if: inputs.sarif-file != '' && always() && steps.find-files.outputs.files != ''
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ inputs.sarif-file }}
