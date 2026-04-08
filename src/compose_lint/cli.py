@@ -11,6 +11,8 @@ from compose_lint import __version__
 from compose_lint.config import ConfigError, load_config
 from compose_lint.engine import filter_findings, run_rules
 from compose_lint.formatters.json import format_findings as format_json
+from compose_lint.formatters.sarif import build_sarif_log
+from compose_lint.formatters.sarif import format_findings as format_sarif
 from compose_lint.formatters.text import format_findings as format_text
 from compose_lint.formatters.text import format_summary
 from compose_lint.models import Severity
@@ -42,7 +44,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--format",
-        choices=["text", "json"],
+        choices=["text", "json", "sarif"],
         default="text",
         dest="output_format",
         help="output format (default: text)",
@@ -78,6 +80,7 @@ def main(argv: list[str] | None = None) -> NoReturn:
         sys.exit(2)
 
     all_json: list[dict[str, object]] = []
+    all_sarif: list[dict[str, object]] = []
     has_errors = False
 
     for filepath in args.files:
@@ -102,6 +105,8 @@ def main(argv: list[str] | None = None) -> NoReturn:
             if output:
                 print(output)
             print(format_summary(findings, filepath))
+        elif args.output_format == "sarif":
+            all_sarif.extend(format_sarif(findings, filepath))
         else:
             all_json.extend(format_json(findings, filepath))
 
@@ -111,5 +116,7 @@ def main(argv: list[str] | None = None) -> NoReturn:
 
     if args.output_format == "json":
         print(json.dumps(all_json, indent=2))
+    elif args.output_format == "sarif":
+        print(json.dumps(build_sarif_log(all_sarif), indent=2))
 
     sys.exit(1 if has_errors else 0)
