@@ -63,6 +63,28 @@ class TestIntegration:
         result = run_cli(str(FIXTURES / "valid_basic.yml"))
         assert result.returncode == 0
 
+    def test_warnings_only_exits_zero_by_default(self) -> None:
+        """Warnings alone should not cause exit 1 with default --fail-on error."""
+        result = run_cli(str(FIXTURES / "warnings_only.yml"))
+        assert result.returncode == 0
+        assert "WARNING" in result.stdout
+        assert "ERROR" not in result.stdout
+        assert "CRITICAL" not in result.stdout
+
+    def test_warnings_only_exits_one_with_fail_on_warning(self) -> None:
+        """--fail-on warning should cause exit 1 when warnings are present."""
+        result = run_cli("--fail-on", "warning", str(FIXTURES / "warnings_only.yml"))
+        assert result.returncode == 1
+
+    def test_mixed_file_exits_zero_with_fail_on_critical(self) -> None:
+        """Warnings-only file exits 0 even with --fail-on critical."""
+        result = run_cli(
+            "--fail-on",
+            "critical",
+            str(FIXTURES / "warnings_only.yml"),
+        )
+        assert result.returncode == 0
+
     def test_secure_db_not_flagged_for_ports(self) -> None:
         result = run_cli("--format", "json", str(FIXTURES / "mixed.yml"))
         data = json.loads(result.stdout)

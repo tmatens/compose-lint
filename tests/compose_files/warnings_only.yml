@@ -1,0 +1,9 @@
+# Triggers only WARNING-level rules (no ERROR or CRITICAL).
+# Used to test that --fail-on error (default) exits 0.
+services:
+  web:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    cap_drop:
+      - ALL

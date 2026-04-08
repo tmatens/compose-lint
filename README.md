@@ -46,13 +46,18 @@ docker-compose.yml: 1 critical, 1 warning
 
 ## Rules
 
-| ID | Severity | Description | Reference |
-|----|----------|-------------|-----------|
-| [CL-0001](docs/rules/CL-0001.md) | CRITICAL | Docker socket mounted | [OWASP Rule #1](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-1---do-not-expose-the-docker-daemon-socket-even-to-the-containers) |
-| [CL-0002](docs/rules/CL-0002.md) | CRITICAL | Privileged mode enabled | [OWASP Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3---do-not-run-containers-with-the---privileged-flag) |
-| [CL-0003](docs/rules/CL-0003.md) | WARNING | Privilege escalation not blocked | [OWASP Rule #4](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-4---add-no-new-privileges-flag) |
-| [CL-0004](docs/rules/CL-0004.md) | WARNING | Image not pinned to version | [OWASP Rule #13](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-13---enhance-supply-chain-security) |
-| [CL-0005](docs/rules/CL-0005.md) | WARNING | Ports bound to all interfaces | [OWASP Rule #5a](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5a---be-careful-when-mapping-container-ports-to-the-host-with-firewalls-like-ufw) |
+| ID | Severity | Description | OWASP | CIS |
+|----|----------|-------------|-------|-----|
+| [CL-0001](docs/rules/CL-0001.md) | CRITICAL | Docker socket mounted | [Rule #1](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-1---do-not-expose-the-docker-daemon-socket-even-to-the-containers) | 5.31 |
+| [CL-0002](docs/rules/CL-0002.md) | CRITICAL | Privileged mode enabled | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3---do-not-run-containers-with-the---privileged-flag) | 5.4 |
+| [CL-0003](docs/rules/CL-0003.md) | WARNING | Privilege escalation not blocked | [Rule #4](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-4---add-no-new-privileges-flag) | 5.25 |
+| [CL-0004](docs/rules/CL-0004.md) | WARNING | Image not pinned to version | [Rule #13](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-13---enhance-supply-chain-security) | 5.27 |
+| [CL-0005](docs/rules/CL-0005.md) | WARNING | Ports bound to all interfaces | [Rule #5a](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5a---be-careful-when-mapping-container-ports-to-the-host-with-firewalls-like-ufw) | 5.13 |
+| [CL-0006](docs/rules/CL-0006.md) | ERROR | No capability restrictions | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3---limit-capabilities-grant-only-specific-capabilities-needed-by-a-container) | 5.3 |
+| [CL-0007](docs/rules/CL-0007.md) | WARNING | Filesystem not read-only | [Rule #8](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8---set-filesystem-and-volumes-to-read-only) | 5.12 |
+| [CL-0008](docs/rules/CL-0008.md) | ERROR | Host network mode | [Rule #5](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5---be-mindful-of-inter-container-connectivity) | 5.9 |
+| [CL-0009](docs/rules/CL-0009.md) | WARNING | Security profile disabled | [Rule #6](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-6---use-linux-security-module-seccomp-apparmor-or-selinux) | 5.21 |
+| [CL-0010](docs/rules/CL-0010.md) | ERROR | Host namespace sharing | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3---limit-capabilities-grant-only-specific-capabilities-needed-by-a-container) | 5.8, 5.15, 5.16 |
 
 ## Configuration
 
@@ -75,13 +80,54 @@ compose-lint --config .compose-lint.yml docker-compose.yml
 ```
 compose-lint [OPTIONS] FILE [FILE...]
 
-  --format {text,json}    Output format (default: text)
-  --fail-on SEVERITY      Minimum severity to trigger exit 1 (default: error)
-  --config PATH           Path to .compose-lint.yml config file
-  --version               Show version and exit
+  --format {text,json,sarif}  Output format (default: text)
+  --fail-on SEVERITY          Minimum severity to trigger exit 1 (default: error)
+  --config PATH               Path to .compose-lint.yml config file
+  --version                   Show version and exit
+```
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | No findings at or above the `--fail-on` threshold |
+| 1 | One or more findings at or above the `--fail-on` threshold |
+| 2 | Usage error (invalid args, file not found, invalid Compose file) |
+
+The default threshold is `error`. This means **warnings alone do not cause a non-zero exit** — you can adopt compose-lint gradually without blocking CI on every finding immediately. To fail on all findings including warnings:
+
+```bash
+compose-lint --fail-on warning docker-compose.yml
+```
+
+To only fail on critical issues (container escape, host compromise):
+
+```bash
+compose-lint --fail-on critical docker-compose.yml
 ```
 
 ## CI Integration
+
+### GitHub Action
+
+```yaml
+# .github/workflows/lint.yml
+name: Compose Lint
+on: [push, pull_request]
+
+jobs:
+  compose-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: tmatens/compose-lint@main
+        with:
+          sarif-file: results.sarif
+```
+
+This runs compose-lint and uploads findings to GitHub Code Scanning, where they appear as annotations on pull requests.
+
+### Manual setup
 
 ```yaml
 # .github/workflows/lint.yml
@@ -98,6 +144,12 @@ jobs:
           python-version: "3.13"
       - run: pip install compose-lint
       - run: compose-lint docker-compose.yml
+```
+
+### SARIF output for Code Scanning
+
+```bash
+compose-lint --format sarif docker-compose.yml > results.sarif
 ```
 
 ## Pre-commit
