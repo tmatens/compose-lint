@@ -1,0 +1,121 @@
+# Test fixture mirroring KICS example patterns for direct comparison.
+# Each service is named after the KICS query it tests.
+
+services:
+  # KICS d6355c88 — Docker Socket Mounted In Container (HIGH)
+  # compose-lint CL-0001 (CRITICAL)
+  docker_socket_mounted:
+    image: notareal/image:1.0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  # KICS ae5b6871 — Privileged Containers Enabled (HIGH)
+  # compose-lint CL-0002 (CRITICAL)
+  privileged_enabled:
+    image: myapp:1.0
+    privileged: true
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  # KICS ae5b6871 — Privileged + cap_drop (still flagged by both tools)
+  privileged_with_cap_drop:
+    image: myapp:1.0
+    privileged: true
+    cap_drop:
+      - all
+    ports:
+      - "127.0.0.1:3001:3001"
+
+  # KICS 27fcc7d6 — No New Privileges Not Set (HIGH)
+  # compose-lint CL-0003 (WARNING)
+  no_new_privs_missing:
+    image: nginx:1.27-alpine
+    ports:
+      - "127.0.0.1:8081:80"
+
+  # KICS 27fcc7d6 — no-new-privileges explicitly false
+  no_new_privs_false:
+    image: nginx:1.27-alpine
+    security_opt:
+      - no-new-privileges:false
+    ports:
+      - "127.0.0.1:8082:80"
+
+  # KICS 27fcc7d6 — has security_opt but not no-new-privileges
+  no_new_privs_other_opt:
+    image: nginx:1.27-alpine
+    security_opt:
+      - "apparmor:unconfined"
+    ports:
+      - "127.0.0.1:8083:80"
+
+  # KICS 451d79dc — Container Traffic Not Bound To Host Interface (MEDIUM)
+  # compose-lint CL-0005 (WARNING)
+  unbound_port_short:
+    image: nginx:1.27-alpine
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "7000:8000"
+
+  # KICS 451d79dc — Port range without binding
+  unbound_port_range:
+    image: nginx:1.27-alpine
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "12400-12500:1240"
+
+  # KICS 451d79dc — Long syntax without host_ip
+  unbound_port_long:
+    image: nginx:1.27-alpine
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - target: 8080
+        published: 8080
+
+  # --- Secure services (should NOT trigger findings for the matched rule) ---
+
+  # KICS 451d79dc negative — bound to localhost
+  bound_port_secure:
+    image: nginx:1.27-alpine
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:8000:8001"
+
+  # KICS 451d79dc negative — port range bound to localhost
+  bound_port_range_secure:
+    image: nginx:1.27-alpine
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:5000-5010:5000-5010"
+
+  # KICS ae5b6871 negative — privileged: false
+  privileged_false:
+    image: myapp:1.0
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:3002:3002"
+    privileged: false
+
+  # KICS 27fcc7d6 negative — no-new-privileges: true
+  new_privs_secure:
+    image: nginx:1.27-alpine
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:8084:80"
+
+  # KICS d6355c88 negative — no socket mount
+  no_socket_secure:
+    image: notareal/image:1.0
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:8085:8080"
