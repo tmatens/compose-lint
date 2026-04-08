@@ -16,6 +16,8 @@ OWASP_REF = (
     "privileged-flag"
 )
 
+CIS_REF = "CIS Docker Benchmark 5.4 — Do not use privileged containers"
+
 
 @register_rule
 class PrivilegedModeRule(BaseRule):
@@ -32,7 +34,7 @@ class PrivilegedModeRule(BaseRule):
                 "devices, and can trivially escape to the host."
             ),
             severity=Severity.CRITICAL,
-            references=[OWASP_REF],
+            references=[OWASP_REF, CIS_REF],
         )
 
     def check(
@@ -61,5 +63,5 @@ class PrivilegedModeRule(BaseRule):
                     "  cap_add:\n"
                     "    - <SPECIFIC_CAP>"
                 ),
-                references=[OWASP_REF],
+                references=[OWASP_REF, CIS_REF],
             )

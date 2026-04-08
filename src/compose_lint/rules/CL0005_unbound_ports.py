@@ -17,6 +17,11 @@ OWASP_REF = (
     "ports-to-the-host-with-firewalls-like-ufw"
 )
 
+CIS_REF = (
+    "CIS Docker Benchmark 5.13"
+    " — Bind incoming container traffic to a specific host interface"
+)
+
 # Matches short syntax: "HOST:CONTAINER" or "HOST:CONTAINER/proto"
 # With optional IP prefix: "IP:HOST:CONTAINER"
 # Port ranges: "8000-8100:8000-8100"
@@ -49,7 +54,7 @@ class UnboundPortsRule(BaseRule):
                 "a bind address are accessible on all network interfaces."
             ),
             severity=Severity.WARNING,
-            references=[OWASP_REF],
+            references=[OWASP_REF, CIS_REF],
         )
 
     def check(
@@ -135,5 +140,5 @@ class UnboundPortsRule(BaseRule):
                 f"Bind to localhost: 127.0.0.1:{port_str}\n"
                 "If public access is needed, use a reverse proxy with TLS."
             ),
-            references=[OWASP_REF],
+            references=[OWASP_REF, CIS_REF],
         )

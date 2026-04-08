@@ -16,6 +16,10 @@ OWASP_REF = (
     "even-to-the-containers"
 )
 
+CIS_REF = (
+    "CIS Docker Benchmark 5.31 — Do not mount the Docker socket inside any containers"
+)
+
 
 @register_rule
 class DockerSocketRule(BaseRule):
@@ -33,7 +37,7 @@ class DockerSocketRule(BaseRule):
                 "escape to the host."
             ),
             severity=Severity.CRITICAL,
-            references=[OWASP_REF],
+            references=[OWASP_REF, CIS_REF],
         )
 
     def check(
@@ -65,5 +69,5 @@ class DockerSocketRule(BaseRule):
                         "tecnativa/docker-socket-proxy) to expose only "
                         "the API endpoints your service needs."
                     ),
-                    references=[OWASP_REF],
+                    references=[OWASP_REF, CIS_REF],
                 )

@@ -15,6 +15,11 @@ OWASP_REF = (
     "Docker_Security_Cheat_Sheet.html#rule-4---add-no-new-privileges-flag"
 )
 
+CIS_REF = (
+    "CIS Docker Benchmark 5.25"
+    " — Restrict container from acquiring additional privileges"
+)
+
 
 @register_rule
 class NoNewPrivilegesRule(BaseRule):
@@ -31,7 +36,7 @@ class NoNewPrivilegesRule(BaseRule):
                 "attacker who gains shell access could escalate to root."
             ),
             severity=Severity.WARNING,
-            references=[OWASP_REF],
+            references=[OWASP_REF, CIS_REF],
         )
 
     def check(
@@ -65,5 +70,5 @@ class NoNewPrivilegesRule(BaseRule):
                     "  security_opt:\n"
                     "    - no-new-privileges:true"
                 ),
-                references=[OWASP_REF],
+                references=[OWASP_REF, CIS_REF],
             )

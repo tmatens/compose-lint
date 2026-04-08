@@ -15,6 +15,12 @@ OWASP_REF = (
     "Docker_Security_Cheat_Sheet.html#rule-13---enhance-supply-chain-security"
 )
 
+CIS_REF = (
+    "CIS Docker Benchmark 5.27"
+    " — Ensure docker commands always get the latest version"
+    " of the image"
+)
+
 MUTABLE_TAGS = {"latest", "stable", "edge", "nightly", "dev", "test"}
 
 
@@ -33,7 +39,7 @@ class ImageNotPinnedRule(BaseRule):
                 "impossible, and opens supply chain risk."
             ),
             severity=Severity.WARNING,
-            references=[OWASP_REF],
+            references=[OWASP_REF, CIS_REF],
         )
 
     def check(
@@ -70,7 +76,7 @@ class ImageNotPinnedRule(BaseRule):
                 ),
                 line=lines.get(f"services.{service_name}.image"),
                 fix=f"Pin to a specific version, e.g.: image: {image}:<version>",
-                references=[OWASP_REF],
+                references=[OWASP_REF, CIS_REF],
             )
             return
 
@@ -86,5 +92,5 @@ class ImageNotPinnedRule(BaseRule):
                 ),
                 line=lines.get(f"services.{service_name}.image"),
                 fix=f"Pin to a specific version, e.g.: image: {parts[0]}:<version>",
-                references=[OWASP_REF],
+                references=[OWASP_REF, CIS_REF],
             )
