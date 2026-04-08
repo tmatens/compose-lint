@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 from typing import NoReturn
 
 from compose_lint import __version__
@@ -30,6 +31,19 @@ def _severity_type(value: str) -> Severity:
         ) from None
 
 
+_COMPOSE_FILENAMES = [
+    "compose.yml",
+    "compose.yaml",
+    "docker-compose.yml",
+    "docker-compose.yaml",
+]
+
+
+def _discover_compose_files() -> list[str]:
+    """Find Compose files in the current directory."""
+    return [name for name in _COMPOSE_FILENAMES if Path(name).is_file()]
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the argument parser."""
     parser = argparse.ArgumentParser(
@@ -38,9 +52,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "files",
-        nargs="+",
+        nargs="*",
         metavar="FILE",
-        help="Docker Compose file(s) to lint",
+        help=(
+            "Docker Compose file(s) to lint. If omitted, searches the "
+            "current directory for compose.yml, compose.yaml, "
+            "docker-compose.yml, or docker-compose.yaml."
+        ),
     )
     parser.add_argument(
         "--format",
@@ -78,6 +96,17 @@ def main(argv: list[str] | None = None) -> NoReturn:
     except ConfigError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(2)
+
+    if not args.files:
+        args.files = _discover_compose_files()
+        if not args.files:
+            print(
+                "Error: no Compose files found. Searched for: "
+                "compose.yml, compose.yaml, "
+                "docker-compose.yml, docker-compose.yaml",
+                file=sys.stderr,
+            )
+            sys.exit(2)
 
     all_json: list[dict[str, object]] = []
     all_sarif: list[dict[str, object]] = []

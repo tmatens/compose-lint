@@ -28,10 +28,10 @@ class TestCLI:
         assert "compose-lint" in result.stdout
         assert "0.1.0" in result.stdout
 
-    def test_no_args_shows_usage(self) -> None:
+    def test_no_args_no_compose_file(self) -> None:
         result = run_cli()
         assert result.returncode == 2
-        assert "usage" in result.stderr.lower() or "required" in result.stderr.lower()
+        assert "no compose files found" in result.stderr.lower()
 
     def test_file_not_found(self) -> None:
         result = run_cli("nonexistent.yml")

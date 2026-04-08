@@ -20,7 +20,13 @@ compose-lint targets the same niche [Hadolint](https://github.com/hadolint/hadol
 
 ```bash
 pip install compose-lint
-compose-lint docker-compose.yml
+compose-lint
+```
+
+When run without arguments, compose-lint automatically finds `compose.yml`, `compose.yaml`, `docker-compose.yml`, or `docker-compose.yaml` in the current directory. You can also pass files explicitly:
+
+```bash
+compose-lint docker-compose.yml docker-compose.prod.yml
 ```
 
 ## Example Output
@@ -78,7 +84,7 @@ compose-lint --config .compose-lint.yml docker-compose.yml
 ## CLI Options
 
 ```
-compose-lint [OPTIONS] FILE [FILE...]
+compose-lint [OPTIONS] [FILE ...]
 
   --format {text,json,sarif}  Output format (default: text)
   --fail-on SEVERITY          Minimum severity to trigger exit 1 (default: error)
