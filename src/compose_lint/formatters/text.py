@@ -8,8 +8,9 @@ from compose_lint.models import Finding, Severity
 
 _COLORS = {
     Severity.CRITICAL: "\033[1;31m",  # Bold red
-    Severity.ERROR: "\033[31m",  # Red
-    Severity.WARNING: "\033[33m",  # Yellow
+    Severity.HIGH: "\033[31m",  # Red
+    Severity.MEDIUM: "\033[33m",  # Yellow
+    Severity.LOW: "\033[36m",  # Cyan
 }
 _RESET = "\033[0m"
 _BOLD = "\033[1m"
@@ -78,7 +79,7 @@ def format_summary(
         by_severity[label] = by_severity.get(label, 0) + 1
 
     parts = []
-    for sev in (Severity.CRITICAL, Severity.ERROR, Severity.WARNING):
+    for sev in (Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW):
         count = by_severity.get(sev.value, 0)
         if count:
             color = _COLORS.get(sev, "")

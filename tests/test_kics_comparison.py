@@ -92,7 +92,7 @@ class TestKICSNoNewPrivileges:
     def test_detects_missing_no_new_privs(self) -> None:
         hits = _findings_for_service(self.findings, "no_new_privs_missing", "CL-0003")
         assert len(hits) == 1
-        assert hits[0].severity == Severity.WARNING
+        assert hits[0].severity == Severity.MEDIUM
 
     def test_detects_explicit_false(self) -> None:
         """KICS flags no-new-privileges:false — compose-lint should too."""
@@ -112,7 +112,7 @@ class TestKICSNoNewPrivileges:
 class TestKICSUnboundPorts:
     """KICS 451d79dc — Container Traffic Not Bound To Host Interface (MEDIUM).
 
-    compose-lint equivalent: CL-0005 (WARNING).
+    compose-lint equivalent: CL-0005 (HIGH).
     """
 
     def setup_method(self) -> None:
@@ -122,7 +122,7 @@ class TestKICSUnboundPorts:
     def test_detects_unbound_short_syntax(self) -> None:
         hits = _findings_for_service(self.findings, "unbound_port_short", "CL-0005")
         assert len(hits) == 1
-        assert hits[0].severity == Severity.WARNING
+        assert hits[0].severity == Severity.HIGH
 
     def test_detects_unbound_port_range(self) -> None:
         hits = _findings_for_service(self.findings, "unbound_port_range", "CL-0005")

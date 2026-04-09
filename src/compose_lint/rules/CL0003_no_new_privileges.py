@@ -35,7 +35,7 @@ class NoNewPrivilegesRule(BaseRule):
                 "gain additional privileges via setuid/setgid binaries. An "
                 "attacker who gains shell access could escalate to root."
             ),
-            severity=Severity.WARNING,
+            severity=Severity.MEDIUM,
             references=[OWASP_REF, CIS_REF],
         )
 
@@ -58,7 +58,7 @@ class NoNewPrivilegesRule(BaseRule):
         if not has_no_new_privs:
             yield Finding(
                 rule_id="CL-0003",
-                severity=Severity.WARNING,
+                severity=Severity.MEDIUM,
                 service=service_name,
                 message=(
                     "Service does not set no-new-privileges. Processes inside "

@@ -52,7 +52,7 @@ def run_rules(
 
 def filter_findings(
     findings: list[Finding],
-    severity_threshold: Severity = Severity.ERROR,
+    severity_threshold: Severity = Severity.HIGH,
 ) -> list[Finding]:
     """Filter findings to only those at or above the severity threshold."""
     return [f for f in findings if f.severity >= severity_threshold]

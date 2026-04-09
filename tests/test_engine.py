@@ -21,7 +21,7 @@ class _DummyRule(BaseRule):
             id="CL-TEST",
             name="Test rule",
             description="Flags services with test_flag: true",
-            severity=Severity.WARNING,
+            severity=Severity.MEDIUM,
         )
 
     def check(
@@ -34,7 +34,7 @@ class _DummyRule(BaseRule):
         if service_config.get("test_flag") is True:
             yield Finding(
                 rule_id="CL-TEST",
-                severity=Severity.WARNING,
+                severity=Severity.MEDIUM,
                 service=service_name,
                 message="test_flag is set",
                 line=lines.get(f"services.{service_name}.test_flag"),
@@ -119,7 +119,7 @@ class TestFilterFindings:
         findings = [
             Finding(
                 rule_id="CL-TEST",
-                severity=Severity.WARNING,
+                severity=Severity.MEDIUM,
                 service="web",
                 message="warning",
             ),
@@ -130,7 +130,7 @@ class TestFilterFindings:
                 message="critical",
             ),
         ]
-        filtered = filter_findings(findings, Severity.ERROR)
+        filtered = filter_findings(findings, Severity.HIGH)
         assert len(filtered) == 1
         assert filtered[0].severity == Severity.CRITICAL
 
@@ -143,14 +143,14 @@ class TestFilterFindings:
                 message="critical",
             ),
         ]
-        filtered = filter_findings(findings, Severity.WARNING)
+        filtered = filter_findings(findings, Severity.MEDIUM)
         assert len(filtered) == 1
 
     def test_none_above_threshold(self) -> None:
         findings = [
             Finding(
                 rule_id="CL-TEST",
-                severity=Severity.WARNING,
+                severity=Severity.MEDIUM,
                 service="web",
                 message="warning",
             ),

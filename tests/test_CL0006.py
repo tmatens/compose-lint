@@ -23,7 +23,7 @@ class TestCapDropRule:
         )
         assert len(findings) == 1
         assert findings[0].rule_id == "CL-0006"
-        assert findings[0].severity.value == "error"
+        assert findings[0].severity.value == "medium"
 
     def test_detects_partial_cap_drop(self) -> None:
         data, lines = load_compose(FIXTURES / "insecure_cap_drop.yml")
@@ -71,5 +71,5 @@ class TestCapDropRule:
     def test_metadata(self) -> None:
         meta = self.rule.metadata
         assert meta.id == "CL-0006"
-        assert meta.severity.value == "error"
+        assert meta.severity.value == "medium"
         assert len(meta.references) > 0

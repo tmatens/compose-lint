@@ -23,7 +23,7 @@ class TestHostNamespaceRule:
         )
         assert len(findings) == 1
         assert findings[0].rule_id == "CL-0010"
-        assert findings[0].severity.value == "error"
+        assert findings[0].severity.value == "high"
         assert "process namespace" in findings[0].message
 
     def test_detects_ipc_host(self) -> None:
@@ -89,5 +89,5 @@ class TestHostNamespaceRule:
     def test_metadata(self) -> None:
         meta = self.rule.metadata
         assert meta.id == "CL-0010"
-        assert meta.severity.value == "error"
+        assert meta.severity.value == "high"
         assert len(meta.references) > 0

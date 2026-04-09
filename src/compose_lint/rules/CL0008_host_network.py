@@ -32,7 +32,7 @@ class HostNetworkRule(BaseRule):
                 "container shares the host's IP address, can bind any port, and "
                 "can observe all host network traffic."
             ),
-            severity=Severity.ERROR,
+            severity=Severity.HIGH,
             references=[OWASP_REF, CIS_REF],
         )
 
@@ -47,7 +47,7 @@ class HostNetworkRule(BaseRule):
         if str(network_mode) == "host":
             yield Finding(
                 rule_id="CL-0008",
-                severity=Severity.ERROR,
+                severity=Severity.HIGH,
                 service=service_name,
                 message=(
                     "Service uses host network mode. This disables network "

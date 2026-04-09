@@ -41,7 +41,7 @@ class SecurityProfileRule(BaseRule):
                 "filtering and mandatory access controls that limit what a "
                 "compromised container can do."
             ),
-            severity=Severity.WARNING,
+            severity=Severity.HIGH,
             references=[OWASP_REF, CIS_SECCOMP_REF, CIS_APPARMOR_REF],
         )
 
@@ -67,7 +67,7 @@ class SecurityProfileRule(BaseRule):
                 )
                 yield Finding(
                     rule_id="CL-0009",
-                    severity=Severity.WARNING,
+                    severity=Severity.HIGH,
                     service=service_name,
                     message=(
                         f"Service disables {profile_type} profile "

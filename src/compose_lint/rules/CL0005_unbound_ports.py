@@ -53,7 +53,7 @@ class UnboundPortsRule(BaseRule):
                 "bypassing host firewalls like UFW and firewalld. Ports without "
                 "a bind address are accessible on all network interfaces."
             ),
-            severity=Severity.WARNING,
+            severity=Severity.HIGH,
             references=[OWASP_REF, CIS_REF],
         )
 
@@ -127,7 +127,7 @@ class UnboundPortsRule(BaseRule):
     ) -> Finding:
         return Finding(
             rule_id="CL-0005",
-            severity=Severity.WARNING,
+            severity=Severity.HIGH,
             service=service_name,
             message=(
                 f"Port '{port_str}' is bound to all interfaces. Docker bypasses "

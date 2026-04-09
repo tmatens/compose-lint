@@ -23,7 +23,7 @@ class TestReadOnlyFilesystemRule:
         )
         assert len(findings) == 1
         assert findings[0].rule_id == "CL-0007"
-        assert findings[0].severity.value == "warning"
+        assert findings[0].severity.value == "medium"
 
     def test_detects_explicit_false(self) -> None:
         data, lines = load_compose(FIXTURES / "insecure_read_only.yml")
@@ -56,5 +56,5 @@ class TestReadOnlyFilesystemRule:
     def test_metadata(self) -> None:
         meta = self.rule.metadata
         assert meta.id == "CL-0007"
-        assert meta.severity.value == "warning"
+        assert meta.severity.value == "medium"
         assert len(meta.references) > 0

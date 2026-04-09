@@ -20,14 +20,16 @@ SARIF_SCHEMA = (
 # Over 9.0 = critical, 7.0-8.9 = high, 4.0-6.9 = medium, 0.1-3.9 = low.
 _SECURITY_SEVERITY: dict[Severity, str] = {
     Severity.CRITICAL: "9.5",
-    Severity.ERROR: "7.5",
-    Severity.WARNING: "3.5",
+    Severity.HIGH: "7.5",
+    Severity.MEDIUM: "5.5",
+    Severity.LOW: "2.0",
 }
 
 _SARIF_LEVEL: dict[Severity, str] = {
     Severity.CRITICAL: "error",
-    Severity.ERROR: "error",
-    Severity.WARNING: "warning",
+    Severity.HIGH: "error",
+    Severity.MEDIUM: "warning",
+    Severity.LOW: "note",
 }
 
 

@@ -38,7 +38,7 @@ class ImageNotPinnedRule(BaseRule):
                 "different image. This breaks reproducibility, makes rollbacks "
                 "impossible, and opens supply chain risk."
             ),
-            severity=Severity.WARNING,
+            severity=Severity.MEDIUM,
             references=[OWASP_REF, CIS_REF],
         )
 
@@ -68,7 +68,7 @@ class ImageNotPinnedRule(BaseRule):
             # No tag specified — defaults to :latest
             yield Finding(
                 rule_id="CL-0004",
-                severity=Severity.WARNING,
+                severity=Severity.MEDIUM,
                 service=service_name,
                 message=(
                     f"Image '{image}' has no tag, which defaults to ':latest'. "
@@ -84,7 +84,7 @@ class ImageNotPinnedRule(BaseRule):
         if tag.lower() in MUTABLE_TAGS:
             yield Finding(
                 rule_id="CL-0004",
-                severity=Severity.WARNING,
+                severity=Severity.MEDIUM,
                 service=service_name,
                 message=(
                     f"Image '{image}' uses mutable tag ':{tag}'. "

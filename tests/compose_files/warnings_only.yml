@@ -1,9 +1,9 @@
-# Triggers only WARNING-level rules (no ERROR or CRITICAL).
-# Used to test that --fail-on error (default) exits 0.
+# Triggers only MEDIUM-level rules (no HIGH or CRITICAL).
+# Used to test that --fail-on high (default) exits 0.
 services:
   web:
     image: nginx:1.27-alpine
     ports:
-      - "8080:80"
+      - "127.0.0.1:8080:80"
     cap_drop:
       - ALL

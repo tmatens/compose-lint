@@ -70,8 +70,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--fail-on",
         type=_severity_type,
-        default=Severity.ERROR,
-        help="minimum severity to trigger exit 1 (default: error)",
+        default=Severity.HIGH,
+        help="minimum severity to trigger exit 1 (default: high)",
     )
     parser.add_argument(
         "--config",

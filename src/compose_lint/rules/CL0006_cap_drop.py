@@ -33,7 +33,7 @@ class CapDropRule(BaseRule):
                 "dropped. These include NET_RAW (ARP spoofing), SYS_CHROOT, and "
                 "MKNOD, which are unnecessary for most workloads."
             ),
-            severity=Severity.ERROR,
+            severity=Severity.MEDIUM,
             references=[OWASP_REF, CIS_REF],
         )
 
@@ -54,7 +54,7 @@ class CapDropRule(BaseRule):
         if "ALL" not in dropped:
             yield Finding(
                 rule_id="CL-0006",
-                severity=Severity.ERROR,
+                severity=Severity.MEDIUM,
                 service=service_name,
                 message=(
                     "Service does not drop all capabilities. Containers retain "

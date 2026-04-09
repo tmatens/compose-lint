@@ -82,8 +82,8 @@ class TestFormatFindings:
     def test_severity_mapping(self) -> None:
         for severity, expected_level in [
             (Severity.CRITICAL, "error"),
-            (Severity.ERROR, "error"),
-            (Severity.WARNING, "warning"),
+            (Severity.HIGH, "error"),
+            (Severity.MEDIUM, "warning"),
         ]:
             finding = Finding(
                 rule_id="CL-0001",

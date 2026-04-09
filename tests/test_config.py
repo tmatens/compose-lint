@@ -36,9 +36,9 @@ class TestLoadConfig:
 
     def test_severity_override(self, tmp_path: Path) -> None:
         config = tmp_path / ".compose-lint.yml"
-        config.write_text("rules:\n  CL-0005:\n    severity: error\n")
+        config.write_text("rules:\n  CL-0005:\n    severity: high\n")
         disabled, overrides = load_config(config)
-        assert overrides["CL-0005"] == Severity.ERROR
+        assert overrides["CL-0005"] == Severity.HIGH
 
     def test_multiple_rules(self, tmp_path: Path) -> None:
         config = tmp_path / ".compose-lint.yml"
@@ -47,13 +47,13 @@ class TestLoadConfig:
             "  CL-0001:\n"
             "    enabled: false\n"
             "  CL-0003:\n"
-            "    severity: error\n"
+            "    severity: high\n"
             "  CL-0005:\n"
             "    enabled: false\n"
         )
         disabled, overrides = load_config(config)
         assert disabled == {"CL-0001", "CL-0005"}
-        assert overrides["CL-0003"] == Severity.ERROR
+        assert overrides["CL-0003"] == Severity.HIGH
 
     def test_explicit_path_not_found(self) -> None:
         with pytest.raises(ConfigError, match="not found"):

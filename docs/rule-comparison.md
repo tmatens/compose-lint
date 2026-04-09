@@ -14,7 +14,7 @@ scanners that cover Docker Compose.
 - **KICS** covers 4 of compose-lint's 5 rules. CL-0004 (image not pinned) has no KICS
   equivalent for Compose files.
 - **Severity mapping**: KICS uses HIGH > MEDIUM > LOW > INFO (no CRITICAL level for
-  Compose). compose-lint uses CRITICAL > ERROR > WARNING.
+  Compose). compose-lint uses CRITICAL > HIGH > MEDIUM > LOW.
 
 ## Rule-by-Rule Comparison
 
@@ -39,15 +39,15 @@ to compose-lint CRITICAL — both treat this as the most severe category availab
 
 Same detection. Both flag `privileged: true`.
 
-### CL-0003: Privilege Escalation Not Blocked (WARNING)
+### CL-0003: Privilege Escalation Not Blocked (MEDIUM)
 
 | Tool | Check ID | Severity |
 |------|----------|----------|
-| compose-lint | CL-0003 | WARNING |
+| compose-lint | CL-0003 | MEDIUM |
 | KICS | `27fcc7d6` — No New Privileges Not Set | HIGH |
 | Checkov | No equivalent | — |
 
-**Severity gap**: KICS rates this HIGH; compose-lint rates it WARNING. compose-lint's
+**Severity gap**: KICS rates this HIGH; compose-lint rates it MEDIUM. compose-lint's
 lower severity reflects that this is a defense-in-depth hardening measure — the absence
 of `no-new-privileges` is not directly exploitable without a separate vulnerability in
 the container. KICS does not distinguish between direct exploitability and missing
@@ -56,11 +56,11 @@ hardening.
 KICS also has a broader check (`610e266e` — Security Opt Not Set, MEDIUM) that fires
 when `security_opt` is entirely absent, not just when `no-new-privileges` is missing.
 
-### CL-0004: Image Not Pinned to Version (WARNING)
+### CL-0004: Image Not Pinned to Version (MEDIUM)
 
 | Tool | Check ID | Severity |
 |------|----------|----------|
-| compose-lint | CL-0004 | WARNING |
+| compose-lint | CL-0004 | MEDIUM |
 | KICS | No equivalent | — |
 | Checkov | No equivalent | — |
 
@@ -69,26 +69,28 @@ Compose files. KICS has Dockerfile-level image checks but not Compose-level. Thi
 supply chain security concern grounded in
 [OWASP Rule #13](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-13---enhance-supply-chain-security).
 
-### CL-0005: Ports Bound to All Interfaces (WARNING)
+### CL-0005: Ports Bound to All Interfaces (HIGH)
 
 | Tool | Check ID | Severity |
 |------|----------|----------|
-| compose-lint | CL-0005 | WARNING |
+| compose-lint | CL-0005 | HIGH |
 | KICS | `451d79dc` — Container Traffic Not Bound To Host Interface | MEDIUM |
 | Checkov | No equivalent | — |
 
 Same detection. Both flag port mappings like `"8080:80"` that lack an explicit IP
-binding. Severity is comparable (KICS MEDIUM ≈ compose-lint WARNING).
+binding. compose-lint rates this higher than KICS because Docker's iptables manipulation
+bypasses host firewalls, making unbound ports an exposed attack surface.
 
 ## Severity Mapping
 
 | compose-lint | KICS |
 |-------------|------|
 | CRITICAL | HIGH |
-| ERROR | — |
-| WARNING | MEDIUM |
+| HIGH | HIGH / MEDIUM |
+| MEDIUM | MEDIUM |
+| LOW | LOW |
 
-Notable exception: CL-0003 is WARNING in compose-lint but HIGH in KICS.
+Notable exception: CL-0003 is MEDIUM in compose-lint but HIGH in KICS.
 
 ## KICS Checks Not in compose-lint
 

@@ -120,5 +120,5 @@ class TestSecurityProfileRule:
     def test_metadata(self) -> None:
         meta = self.rule.metadata
         assert meta.id == "CL-0009"
-        assert meta.severity.value == "warning"
+        assert meta.severity.value == "high"
         assert len(meta.references) > 0

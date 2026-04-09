@@ -23,7 +23,7 @@ class TestNoNewPrivilegesRule:
         )
         assert len(findings) == 1
         assert findings[0].rule_id == "CL-0003"
-        assert findings[0].severity.value == "warning"
+        assert findings[0].severity.value == "medium"
 
     def test_detects_empty_security_opt(self) -> None:
         data, lines = load_compose(FIXTURES / "insecure_no_new_priv.yml")

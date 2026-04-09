@@ -25,7 +25,7 @@ class TestHostNetworkRule:
         )
         assert len(findings) == 1
         assert findings[0].rule_id == "CL-0008"
-        assert findings[0].severity.value == "error"
+        assert findings[0].severity.value == "high"
 
     def test_bridge_network_clean(self) -> None:
         data, lines = load_compose(FIXTURES / "insecure_host_network.yml")
@@ -77,5 +77,5 @@ class TestHostNetworkRule:
     def test_metadata(self) -> None:
         meta = self.rule.metadata
         assert meta.id == "CL-0008"
-        assert meta.severity.value == "error"
+        assert meta.severity.value == "high"
         assert len(meta.references) > 0

@@ -31,7 +31,7 @@ class ReadOnlyFilesystemRule(BaseRule):
                 "A writable root filesystem allows attackers to modify binaries, "
                 "install backdoors, or persist malware inside the container."
             ),
-            severity=Severity.WARNING,
+            severity=Severity.MEDIUM,
             references=[OWASP_REF, CIS_REF],
         )
 
@@ -45,7 +45,7 @@ class ReadOnlyFilesystemRule(BaseRule):
         if service_config.get("read_only") is not True:
             yield Finding(
                 rule_id="CL-0007",
-                severity=Severity.WARNING,
+                severity=Severity.MEDIUM,
                 service=service_name,
                 message=(
                     "Service root filesystem is writable. An attacker can modify "

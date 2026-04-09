@@ -52,7 +52,7 @@ class HostNamespaceRule(BaseRule):
                 "isolation. The container gains visibility into or control over "
                 "host-level resources."
             ),
-            severity=Severity.ERROR,
+            severity=Severity.HIGH,
             references=[
                 OWASP_REF,
                 "CIS Docker Benchmark 5.8, 5.10, 5.15",
@@ -70,7 +70,7 @@ class HostNamespaceRule(BaseRule):
             if str(service_config.get(key, "")).lower() == value:
                 yield Finding(
                     rule_id="CL-0010",
-                    severity=Severity.ERROR,
+                    severity=Severity.HIGH,
                     service=service_name,
                     message=f"Service shares the host's {desc}",
                     line=lines.get(f"services.{service_name}.{key}"),

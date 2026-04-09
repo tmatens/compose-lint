@@ -9,8 +9,9 @@ from dataclasses import dataclass, field
 class Severity(enum.Enum):
     """Severity levels for lint findings, ordered by rank."""
 
-    WARNING = "warning"
-    ERROR = "error"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
     CRITICAL = "critical"
 
     def __ge__(self, other: object) -> bool:
@@ -35,9 +36,10 @@ class Severity(enum.Enum):
 
     def _rank(self) -> int:
         ranks = {
-            Severity.WARNING: 0,
-            Severity.ERROR: 1,
-            Severity.CRITICAL: 2,
+            Severity.LOW: 0,
+            Severity.MEDIUM: 1,
+            Severity.HIGH: 2,
+            Severity.CRITICAL: 3,
         }
         return ranks[self]
 
