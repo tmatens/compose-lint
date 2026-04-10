@@ -13,7 +13,14 @@ class ComposeError(Exception):
 
 
 class LineLoader(yaml.SafeLoader):
-    """YAML loader that captures line numbers for mapping keys."""
+    """YAML loader that captures line numbers for mapping keys.
+
+    Subclasses ``yaml.SafeLoader``, so it inherits the safe constructor set
+    and CANNOT instantiate arbitrary Python objects. Static analyzers that
+    flag ``yaml.load(...)`` calls below as unsafe are false positives — the
+    only override here is the mapping constructor, which records line
+    numbers for string keys and otherwise delegates to the safe loader.
+    """
 
 
 def _construct_mapping(loader: LineLoader, node: yaml.MappingNode) -> dict[str, Any]:
@@ -109,8 +116,14 @@ def load_compose(
     except OSError as e:
         raise ComposeError(f"Cannot read file: {e}") from e
 
+    # LineLoader is a yaml.SafeLoader subclass — this call cannot
+    # deserialize arbitrary Python objects. The assertion makes that
+    # invariant explicit so a future refactor can't silently break it.
+    assert issubclass(LineLoader, yaml.SafeLoader)  # noqa: S101
     try:
-        raw = yaml.load(content, Loader=LineLoader)  # noqa: S506
+        raw = yaml.load(  # noqa: S506  # nosec B506 - LineLoader extends SafeLoader
+            content, Loader=LineLoader
+        )
     except yaml.YAMLError as e:
         raise ComposeError(f"Invalid YAML: {e}") from e
 
