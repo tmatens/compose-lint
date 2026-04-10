@@ -5,21 +5,32 @@ on:
     tags:
       - "v*"
 
+# Default to read-only — individual jobs request what they need.
 permissions:
   contents: read
-  id-token: write
-  attestations: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - run: pip install build
       - run: python -m build
+      - name: Verify dist contents
+        run: |
+          pip install twine
+          twine check dist/*
+          # Wheel must NOT contain CLAUDE.md, .env, tests, or .git.
+          if unzip -l dist/*.whl | grep -E '(CLAUDE\.md|\.env|/tests/|\.git/)'; then
+            echo "::error::Wheel contains forbidden files"
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: dist
@@ -28,7 +39,15 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
-    environment: pypi
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/p/compose-lint
+    permissions:
+      # OIDC token for PyPI Trusted Publishing.
+      id-token: write
+      # Write Sigstore build attestations to the workflow run.
+      attestations: write
     steps:
       - uses: actions/download-artifact@v4
         with:
