@@ -66,3 +66,5 @@ class Finding:
     line: int | None = None
     fix: str | None = None
     references: list[str] = field(default_factory=list)
+    suppressed: bool = False
+    suppression_reason: str | None = None

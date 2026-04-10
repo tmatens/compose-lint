@@ -78,10 +78,25 @@ class TestRunRules:
         services = {f.service for f in findings}
         assert services == {"web", "worker"}
 
-    def test_disabled_rule(self) -> None:
+    def test_disabled_rule_produces_suppressed_findings(self) -> None:
         data = {"services": {"web": {"test_flag": True}}}
-        findings = run_rules(data, {}, disabled_rules={"CL-TEST"})
-        assert len(findings) == 0
+        findings = run_rules(data, {}, disabled_rules={"CL-TEST": None})
+        assert len(findings) == 1
+        assert findings[0].suppressed is True
+        assert findings[0].suppression_reason == "disabled in .compose-lint.yml"
+
+    def test_disabled_rule_with_reason(self) -> None:
+        data = {"services": {"web": {"test_flag": True}}}
+        findings = run_rules(data, {}, disabled_rules={"CL-TEST": "SEC-1234 approved"})
+        assert len(findings) == 1
+        assert findings[0].suppressed is True
+        assert findings[0].suppression_reason == "SEC-1234 approved"
+
+    def test_suppressed_findings_excluded_from_filter(self) -> None:
+        data = {"services": {"web": {"test_flag": True}}}
+        findings = run_rules(data, {}, disabled_rules={"CL-TEST": None})
+        filtered = filter_findings(findings, Severity.MEDIUM)
+        assert len(filtered) == 0
 
     def test_severity_override(self) -> None:
         data = {"services": {"web": {"test_flag": True}}}

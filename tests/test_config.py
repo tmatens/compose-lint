@@ -23,7 +23,7 @@ class TestLoadConfig:
         os.chdir(tmp_path)
         try:
             disabled, overrides = load_config()
-            assert disabled == set()
+            assert disabled == {}
             assert overrides == {}
         finally:
             os.chdir(old_cwd)
@@ -52,8 +52,27 @@ class TestLoadConfig:
             "    enabled: false\n"
         )
         disabled, overrides = load_config(config)
-        assert disabled == {"CL-0001", "CL-0005"}
+        assert set(disabled) == {"CL-0001", "CL-0005"}
         assert overrides["CL-0003"] == Severity.HIGH
+
+    def test_disable_rule_with_reason(self, tmp_path: Path) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text(
+            "rules:\n"
+            "  CL-0001:\n"
+            "    enabled: false\n"
+            '    reason: "SEC-1234 approved by J. Smith"\n'
+        )
+        disabled, overrides = load_config(config)
+        assert "CL-0001" in disabled
+        assert disabled["CL-0001"] == "SEC-1234 approved by J. Smith"
+
+    def test_disable_rule_without_reason(self, tmp_path: Path) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0001:\n    enabled: false\n")
+        disabled, overrides = load_config(config)
+        assert "CL-0001" in disabled
+        assert disabled["CL-0001"] is None
 
     def test_explicit_path_not_found(self) -> None:
         with pytest.raises(ConfigError, match="not found"):
@@ -75,7 +94,7 @@ class TestLoadConfig:
         config = tmp_path / ".compose-lint.yml"
         config.write_text("")
         disabled, overrides = load_config(config)
-        assert disabled == set()
+        assert disabled == {}
         assert overrides == {}
 
     def test_config_not_mapping(self, tmp_path: Path) -> None:

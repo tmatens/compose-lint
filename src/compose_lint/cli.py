@@ -79,6 +79,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="path to .compose-lint.yml config file",
     )
     parser.add_argument(
+        "--skip-suppressed",
+        action="store_true",
+        default=False,
+        help="hide suppressed findings from output",
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"%(prog)s {__version__}",
@@ -128,6 +134,9 @@ def main(argv: list[str] | None = None) -> NoReturn:
             disabled_rules=disabled_rules,
             severity_overrides=severity_overrides,
         )
+
+        if args.skip_suppressed:
+            findings = [f for f in findings if not f.suppressed]
 
         if args.output_format == "text":
             output = format_text(findings, filepath)

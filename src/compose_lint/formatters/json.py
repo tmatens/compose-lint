@@ -21,6 +21,9 @@ def format_findings(findings: list[Finding], filepath: str) -> list[dict[str, ob
             "message": f.message,
             "fix": f.fix,
             "references": list(f.references),
+            "suppressed": f.suppressed,
         }
+        if f.suppressed:
+            entry["suppression_reason"] = f.suppression_reason
         results.append(entry)
     return results

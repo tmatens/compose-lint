@@ -93,6 +93,67 @@ class TestIntegration:
         ]
         assert len(db_port_findings) == 0
 
+    def test_suppressed_findings_shown_by_default(self) -> None:
+        """Disabled rules produce SUPPRESSED findings in output."""
+        config = str(FIXTURES / "suppress_config.yml")
+        result = run_cli("--config", config, str(FIXTURES / "mixed.yml"))
+        assert "SUPPRESSED" in result.stdout
+        assert "SEC-1234" in result.stdout
+        assert "suppressed" in result.stdout.lower()
+
+    def test_suppressed_findings_in_json(self) -> None:
+        """JSON output includes suppressed field and reason."""
+        config = str(FIXTURES / "suppress_config.yml")
+        result = run_cli(
+            "--format", "json", "--config", config, str(FIXTURES / "mixed.yml")
+        )
+        data = json.loads(result.stdout)
+        suppressed = [f for f in data if f.get("suppressed")]
+        assert len(suppressed) > 0
+        with_reason = [f for f in suppressed if f.get("suppression_reason")]
+        assert any("SEC-1234" in f["suppression_reason"] for f in with_reason)
+
+    def test_suppressed_findings_do_not_affect_exit_code(self) -> None:
+        """Suppressed findings should not cause exit 1."""
+        config = str(FIXTURES / "suppress_config.yml")
+        result = run_cli("--config", config, str(FIXTURES / "warnings_only.yml"))
+        assert result.returncode == 0
+
+    def test_skip_suppressed_hides_findings(self) -> None:
+        """--skip-suppressed removes suppressed findings from output."""
+        config = str(FIXTURES / "suppress_config.yml")
+        result = run_cli(
+            "--skip-suppressed", "--config", config, str(FIXTURES / "mixed.yml")
+        )
+        assert "SUPPRESSED" not in result.stdout
+
+    def test_skip_suppressed_json(self) -> None:
+        """--skip-suppressed removes suppressed findings from JSON output."""
+        config = str(FIXTURES / "suppress_config.yml")
+        result = run_cli(
+            "--format",
+            "json",
+            "--skip-suppressed",
+            "--config",
+            config,
+            str(FIXTURES / "mixed.yml"),
+        )
+        data = json.loads(result.stdout)
+        suppressed = [f for f in data if f.get("suppressed")]
+        assert len(suppressed) == 0
+
+    def test_suppressed_findings_in_sarif(self) -> None:
+        """SARIF output uses native suppressions array."""
+        config = str(FIXTURES / "suppress_config.yml")
+        result = run_cli(
+            "--format", "sarif", "--config", config, str(FIXTURES / "mixed.yml")
+        )
+        sarif = json.loads(result.stdout)
+        results = sarif["runs"][0]["results"]
+        suppressed = [r for r in results if "suppressions" in r]
+        assert len(suppressed) > 0
+        assert suppressed[0]["suppressions"][0]["kind"] == "external"
+
     def test_multiple_files(self) -> None:
         result = run_cli(
             "--format",

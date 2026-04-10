@@ -1,0 +1,6 @@
+rules:
+  CL-0003:
+    enabled: false
+    reason: "SEC-1234 approved by J. Smith"
+  CL-0005:
+    enabled: false

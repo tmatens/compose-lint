@@ -27,10 +27,11 @@ def _parse_severity(value: str) -> Severity:
 
 def load_config(
     path: str | Path | None = None,
-) -> tuple[set[str], dict[str, Severity]]:
+) -> tuple[dict[str, str | None], dict[str, Severity]]:
     """Load a .compose-lint.yml config file.
 
     Returns a tuple of (disabled_rules, severity_overrides).
+    disabled_rules maps rule ID to an optional reason string.
     If path is None, looks for .compose-lint.yml in the current directory.
     If no config file is found, returns empty defaults.
     """
@@ -41,7 +42,7 @@ def load_config(
     else:
         config_path = Path(".compose-lint.yml")
         if not config_path.exists():
-            return set(), {}
+            return {}, {}
 
     try:
         content = config_path.read_text(encoding="utf-8")
@@ -54,7 +55,7 @@ def load_config(
         raise ConfigError(f"Invalid YAML in config file: {e}") from e
 
     if data is None:
-        return set(), {}
+        return {}, {}
 
     if not isinstance(data, dict):
         raise ConfigError("Config file must be a YAML mapping")
@@ -64,12 +65,12 @@ def load_config(
 
 def _parse_rules(
     rules: Any,
-) -> tuple[set[str], dict[str, Severity]]:
+) -> tuple[dict[str, str | None], dict[str, Severity]]:
     """Parse the rules section of a config file."""
     if not isinstance(rules, dict):
         raise ConfigError("'rules' must be a mapping")
 
-    disabled: set[str] = set()
+    disabled: dict[str, str | None] = {}
     overrides: dict[str, Severity] = {}
 
     for rule_id, rule_config in rules.items():
@@ -79,7 +80,8 @@ def _parse_rules(
             raise ConfigError(f"Config for rule '{rule_id}' must be a mapping")
 
         if rule_config.get("enabled") is False:
-            disabled.add(rule_id)
+            reason = rule_config.get("reason")
+            disabled[rule_id] = str(reason) if reason is not None else None
 
         if "severity" in rule_config:
             overrides[rule_id] = _parse_severity(str(rule_config["severity"]))

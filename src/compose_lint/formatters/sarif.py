@@ -101,6 +101,15 @@ def format_findings(
                 },
             ]
 
+        if f.suppressed:
+            result["suppressions"] = [
+                {
+                    "kind": "external",
+                    "justification": f.suppression_reason
+                    or "disabled in .compose-lint.yml",
+                },
+            ]
+
         results.append(result)
 
     return results

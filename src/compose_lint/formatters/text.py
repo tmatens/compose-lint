@@ -12,6 +12,7 @@ _COLORS = {
     Severity.MEDIUM: "\033[33m",  # Yellow
     Severity.LOW: "\033[36m",  # Cyan
 }
+_SUPPRESSED_COLOR = "\033[90m"  # Gray
 _RESET = "\033[0m"
 _BOLD = "\033[1m"
 _DIM = "\033[2m"
@@ -32,6 +33,20 @@ def format_findings(findings: list[Finding], filepath: str) -> str:
     lines: list[str] = []
 
     for f in findings:
+        if f.suppressed:
+            loc = f"{filepath}:{f.line}" if f.line else filepath
+            reason = f.suppression_reason or "disabled in .compose-lint.yml"
+            lines.append(
+                f"{_colorize(loc, _DIM)}  "
+                f"{_colorize('SUPPRESSED', _SUPPRESSED_COLOR)}  "
+                f"{_colorize(f.rule_id, _DIM)}  "
+                f"{_colorize(f.message, _SUPPRESSED_COLOR)}"
+            )
+            lines.append(f"  {_colorize('service:', _DIM)} {f.service}")
+            lines.append(f"  {_colorize('reason:', _DIM)} {reason}")
+            lines.append("")
+            continue
+
         severity_label = f.severity.value.upper()
         color = _COLORS.get(f.severity, "")
 
@@ -74,9 +89,13 @@ def format_summary(
         return _colorize(f"{filepath}: no issues found", _DIM)
 
     by_severity: dict[str, int] = {}
+    suppressed_count = 0
     for f in findings:
-        label = f.severity.value
-        by_severity[label] = by_severity.get(label, 0) + 1
+        if f.suppressed:
+            suppressed_count += 1
+        else:
+            label = f.severity.value
+            by_severity[label] = by_severity.get(label, 0) + 1
 
     parts = []
     for sev in (Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW):
@@ -84,5 +103,11 @@ def format_summary(
         if count:
             color = _COLORS.get(sev, "")
             parts.append(_colorize(f"{count} {sev.value}", color))
+
+    if suppressed_count:
+        parts.append(_colorize(f"{suppressed_count} suppressed", _SUPPRESSED_COLOR))
+
+    if not parts:
+        return _colorize(f"{filepath}: no issues found", _DIM)
 
     return f"{_colorize(filepath, _BOLD)}: {', '.join(parts)}"
