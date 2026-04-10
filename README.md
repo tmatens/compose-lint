@@ -79,8 +79,25 @@ Create a `.compose-lint.yml` to disable rules or adjust severity:
 rules:
   CL-0001:
     enabled: false          # Disable a rule
+  CL-0003:
+    enabled: false
+    reason: "SEC-1234 — Approved by J. Smith, expires 2026-07-01"
   CL-0005:
     severity: medium        # Downgrade to medium
+```
+
+Disabled rules still run — their findings appear as **SUPPRESSED** in the output without affecting the exit code. This gives reviewers and auditors visibility into what's being intentionally skipped.
+
+The optional `reason` field records why a rule was disabled (e.g., an exception ticket number). It appears in all output formats:
+
+- **Text**: shown after the `SUPPRESSED` label
+- **JSON**: `suppression_reason` field
+- **SARIF**: native `suppressions[].justification` (recognized by GitHub Code Scanning)
+
+To hide suppressed findings entirely:
+
+```bash
+compose-lint --skip-suppressed docker-compose.yml
 ```
 
 ```bash
@@ -94,6 +111,7 @@ compose-lint [OPTIONS] [FILE ...]
 
   --format {text,json,sarif}  Output format (default: text)
   --fail-on SEVERITY          Minimum severity to trigger exit 1 (default: high)
+  --skip-suppressed           Hide suppressed findings from output
   --config PATH               Path to .compose-lint.yml config file
   --version                   Show version and exit
 ```
