@@ -36,8 +36,33 @@ jobs:
           name: dist
           path: dist/
 
-  publish:
+  testpypi:
     needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Gate real PyPI on a successful TestPyPI publish — a TestPyPI failure
+    # almost always means real PyPI would fail too, so we fail fast before
+    # burning a version number on the real index.
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/compose-lint
+    permissions:
+      # OIDC token for TestPyPI Trusted Publishing.
+      id-token: write
+      # Write Sigstore build attestations to the workflow run.
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          attestations: true
+
+  publish:
+    needs: testpypi
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:

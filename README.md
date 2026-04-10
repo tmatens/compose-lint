@@ -188,7 +188,7 @@ compose-lint --format sarif docker-compose.yml > results.sarif
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/tmatens/compose-lint
-    rev: v0.1.0
+    rev: v0.2.0
     hooks:
       - id: compose-lint
 ```
