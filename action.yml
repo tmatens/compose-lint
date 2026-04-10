@@ -14,9 +14,9 @@ inputs:
     required: false
     default: ""
   fail-on:
-    description: "Minimum severity to trigger failure (warning, error, critical)"
+    description: "Minimum severity to trigger failure (low, medium, high, critical)"
     required: false
-    default: "error"
+    default: "high"
   config:
     description: "Path to .compose-lint.yml config file"
     required: false
@@ -33,11 +33,17 @@ inputs:
 runs:
   using: "composite"
   steps:
+    # User-controlled inputs are passed via the `env:` block rather than
+    # interpolated directly into the `run:` script. Direct ${{ }} expansion
+    # in shell bodies is a script-injection sink — see
+    # https://securitylab.github.com/research/github-actions-untrusted-input/
     - name: Install compose-lint
       shell: bash
+      env:
+        CL_VERSION: ${{ inputs.version }}
       run: |
-        if [ -n "${{ inputs.version }}" ]; then
-          pip install "compose-lint==${{ inputs.version }}"
+        if [ -n "$CL_VERSION" ]; then
+          pip install "compose-lint==${CL_VERSION}"
         else
           pip install compose-lint
         fi
@@ -45,10 +51,14 @@ runs:
     - name: Find Compose files
       id: find-files
       shell: bash
+      env:
+        CL_FILES: ${{ inputs.files }}
+        CL_PATTERN: ${{ inputs.pattern }}
       run: |
-        FILES="${{ inputs.files }}"
-        if [ -z "$FILES" ] && [ -n "${{ inputs.pattern }}" ]; then
-          FILES=$(find . -path "./.git" -prune -o -name "${{ inputs.pattern }}" -print | tr '\n' ' ')
+        FILES="$CL_FILES"
+        if [ -z "$FILES" ] && [ -n "$CL_PATTERN" ]; then
+          # -name takes a literal glob; we never eval the pattern as shell.
+          FILES=$(find . -path "./.git" -prune -o -name "$CL_PATTERN" -print | tr '\n' ' ')
         fi
         if [ -z "$FILES" ]; then
           # Default: common Compose file names in repo root
@@ -66,20 +76,27 @@ runs:
     - name: Run compose-lint
       if: steps.find-files.outputs.files != ''
       shell: bash
+      env:
+        CL_CONFIG: ${{ inputs.config }}
+        CL_FAIL_ON: ${{ inputs.fail-on }}
+        CL_SARIF_FILE: ${{ inputs.sarif-file }}
+        CL_TARGET_FILES: ${{ steps.find-files.outputs.files }}
       run: |
-        ARGS=""
-        if [ -n "${{ inputs.config }}" ]; then
-          ARGS="$ARGS --config ${{ inputs.config }}"
+        ARGS=()
+        if [ -n "$CL_CONFIG" ]; then
+          ARGS+=(--config "$CL_CONFIG")
         fi
-        ARGS="$ARGS --fail-on ${{ inputs.fail-on }}"
+        ARGS+=(--fail-on "$CL_FAIL_ON")
 
-        # Text output for PR annotations
-        compose-lint $ARGS ${{ steps.find-files.outputs.files }} || TEXT_EXIT=$?
+        # Word-split the file list intentionally — it is space-separated
+        # by `Find Compose files` above.
+        # shellcheck disable=SC2086
+        compose-lint "${ARGS[@]}" $CL_TARGET_FILES || TEXT_EXIT=$?
 
-        # SARIF output if requested
-        if [ -n "${{ inputs.sarif-file }}" ]; then
-          compose-lint --format sarif $ARGS ${{ steps.find-files.outputs.files }} \
-            > "${{ inputs.sarif-file }}" || true
+        if [ -n "$CL_SARIF_FILE" ]; then
+          # shellcheck disable=SC2086
+          compose-lint --format sarif "${ARGS[@]}" $CL_TARGET_FILES \
+            > "$CL_SARIF_FILE" || true
         fi
 
         exit ${TEXT_EXIT:-0}
