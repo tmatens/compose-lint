@@ -7,7 +7,7 @@ security fixes.
 
 | Version | Supported |
 | ------- | --------- |
-| 0.1.x   | Yes       |
+| 0.2.x   | Yes       |
 
 ## Reporting a Vulnerability
 
