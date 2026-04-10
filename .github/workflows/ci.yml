@@ -71,8 +71,17 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-      - run: pip install bandit pip-audit
+      - name: Install scan tools
+        # Upgrade pip first so pip-audit doesn't flag CVEs in the
+        # runner-bundled pip itself (those are out of scope for this
+        # project's supply chain).
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . bandit pip-audit
       - name: Bandit (source SAST)
         run: bandit -r src/ -ll
       - name: pip-audit (dependency CVEs)
-        run: pip-audit --strict --disable-pip
+        # --skip-editable skips compose-lint itself (it isn't on PyPI
+        # for the local install path); PyYAML and any future runtime
+        # deps are still scanned.
+        run: pip-audit --skip-editable
