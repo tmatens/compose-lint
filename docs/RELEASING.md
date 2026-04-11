@@ -11,6 +11,86 @@ uploads to real PyPI (gated on a second protected environment). Both
 environments require manual approval — the tag push alone does not
 release. Sigstore build attestations are generated automatically.
 
+## Choosing the version number
+
+compose-lint follows [Semantic Versioning](https://semver.org/), with one
+project-specific rule about new rules (see below). Pick the bump before
+you touch `pyproject.toml`; "what kind of release is this" is the first
+question to answer.
+
+### Pre-1.0 (current)
+
+While the major version is `0`, the guarantees are weaker and the MINOR
+slot does the work that MAJOR does post-1.0.
+
+- **PATCH** (`0.2.0 → 0.2.1`) — safe changes only. Bug fixes,
+  false-positive fixes, parser fixes, docs, internal refactors,
+  dependency digest bumps. A Compose file that passed on `0.2.0` must
+  still pass on `0.2.1`, and existing findings must not change their
+  rule ID, severity, or message shape.
+- **MINOR** (`0.2.0 → 0.3.0`) — everything else. New rules, new CLI
+  flags, new formatters, new config keys, severity upgrades, severity
+  downgrades, tightening an existing rule's logic, restructuring
+  JSON/SARIF output. If a user's CI could newly fail or newly pass
+  because of this release, it's a MINOR. Call the behavior change out
+  in `CHANGELOG.md` under `Changed` so pinned users know what to
+  expect on upgrade.
+- **MAJOR** (`0.x → 1.0.0`) — reserved. Cutting `1.0.0` is the
+  stabilization commitment: from that point on, the CLI, exit-code
+  contract, config schema, and JSON/SARIF output shape are stable
+  under the post-1.0 rules below. Don't bump to `1.0.0` casually — do
+  it when you're ready to stand behind those guarantees.
+
+### Post-1.0 (future)
+
+Once `1.0.0` ships, the contract tightens:
+
+- **PATCH** (`1.2.3 → 1.2.4`) — bug fixes that don't change which
+  findings are emitted for a given input. If the set of findings a
+  user sees on an unchanged Compose file could change, it's not a
+  patch.
+- **MINOR** (`1.2.3 → 1.3.0`) — additive or backward-compatible
+  changes. New rules, new CLI flags, new config keys, severity
+  *downgrades*, new formatters, additive fields in JSON/SARIF output.
+  **New rules are intentionally MINOR, not MAJOR**, following the
+  Hadolint / ShellCheck / ruff convention. Users who need
+  deterministic results across upgrades should pin the version; the
+  `--fail-on` flag is the documented escape hatch for tolerating new
+  findings without failing CI.
+- **MAJOR** (`1.2.3 → 2.0.0`) — anything that breaks a pinned,
+  working setup:
+  - Removing or renaming a CLI flag, subcommand, or config key.
+  - Removing or retiring a rule ID (note: rule IDs are never reused;
+    see `AGENTS.md`).
+  - Changing the exit-code contract (e.g., adding a new non-zero
+    exit code, changing the default `--fail-on` threshold).
+  - Severity *upgrades* on existing rules (`LOW → HIGH` can newly
+    fail CI for pinned users).
+  - Restructuring JSON/SARIF output in a way that removes or renames
+    existing fields.
+  - Dropping support for a Python version listed in `pyproject.toml`.
+
+### Judgment-call cheat sheet
+
+| Change                                       | Pre-1.0 | Post-1.0 |
+| -------------------------------------------- | ------- | -------- |
+| Fix false positive in an existing rule       | PATCH   | PATCH    |
+| Fix a parser crash                           | PATCH   | PATCH    |
+| Docs-only change                             | PATCH   | PATCH    |
+| Add a new rule                               | MINOR   | MINOR    |
+| Add a new CLI flag                           | MINOR   | MINOR    |
+| Downgrade a rule's severity (HIGH → MEDIUM)  | MINOR   | MINOR    |
+| Upgrade a rule's severity (LOW → HIGH)       | MINOR   | MAJOR    |
+| Tighten an existing rule (new true positive) | MINOR   | MINOR    |
+| Remove or rename a CLI flag                  | MINOR   | MAJOR    |
+| Retire a rule ID                             | MINOR   | MAJOR    |
+| Change the default `--fail-on` threshold     | MINOR   | MAJOR    |
+| Drop a Python version                        | MINOR   | MAJOR    |
+
+When in doubt pre-1.0, pick MINOR. When in doubt post-1.0, pick the
+higher bump — MAJOR costs the maintainer some release ceremony, but a
+too-low bump breaks users who trusted the version contract.
+
 ## Pre-release checks
 
 All of these run on `main`, on a clean working tree, before you touch the
