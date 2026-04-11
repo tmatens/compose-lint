@@ -108,18 +108,30 @@ version number.
 
 ## Bump the version
 
-compose-lint declares the version in **two** places that must stay in
-sync. Missing one is the mistake we almost made on 0.2.0 — check both.
+compose-lint declares the version in **three** places that must stay
+in sync. Missing any one of them is a release-blocker — check all
+three before opening the bump PR.
 
 - [ ] `pyproject.toml` — `version = "X.Y.Z"` under `[project]`
 - [ ] `src/compose_lint/__init__.py` — `__version__ = "X.Y.Z"`
+- [ ] `.github/workflows/marketplace-smoke.yml` — two
+      `uses: tmatens/compose-lint@<sha> # vX.Y.Z` lines. Update both
+      the full commit SHA and the trailing `# vX.Y.Z` comment. Get
+      the new SHA with `git rev-parse vX.Y.Z^{commit}` **after** you
+      push the signed tag in a later step, then open a follow-up PR
+      to bump the pin.
 
-Verify they match:
+Verify the first two match:
 
 ```bash
 grep -E '^version' pyproject.toml
 grep __version__ src/compose_lint/__init__.py
 ```
+
+The `marketplace-smoke.yml` bump has to land *after* the release
+tag exists, because the commit SHA only exists once the tag is
+pushed. Treat it as a post-release step, not part of the bump PR —
+see "Post-release" below.
 
 ## Update the changelog
 
@@ -196,6 +208,19 @@ reused even after deletion.
 - [ ] Create a GitHub Release from the tag
       (`gh release create vX.Y.Z --notes-from-tag` or use the web UI).
       Copy the relevant CHANGELOG section as the release notes.
+- [ ] **Bump the Marketplace smoke test pin.** The commit SHA only
+      exists once the tag is pushed, so this can't live in the
+      release bump PR. Grab the SHA and update both
+      `uses: tmatens/compose-lint@<sha> # vX.Y.Z` lines in
+      `.github/workflows/marketplace-smoke.yml`:
+
+      ```bash
+      git rev-parse vX.Y.Z^{commit}
+      ```
+
+      Open a follow-up PR with the bump. Once it's merged, trigger
+      **Actions → Marketplace smoke test → Run workflow** to verify
+      the published action end-to-end against the new tag.
 - [ ] Announce in Discussions if the release has user-visible changes.
 - [ ] Open a follow-up PR adding an empty `[Unreleased]` section at the
       top of `CHANGELOG.md` so the next change has somewhere to land.
