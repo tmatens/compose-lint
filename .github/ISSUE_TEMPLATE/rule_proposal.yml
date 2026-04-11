@@ -1,0 +1,101 @@
+name: Rule proposal
+description: Propose a new CL-XXXX rule. Rules must be grounded in an authoritative source — opinion-only rules are not accepted.
+title: "[rule] "
+labels: ["rule-proposal"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing a new rule. Every rule in compose-lint must be traceable to OWASP, CIS, or Docker's official documentation. If you can't point to an authoritative source, the rule probably isn't a fit for this tool.
+
+        Please read [CLAUDE.md — Rule Design Philosophy](https://github.com/tmatens/compose-lint/blob/main/CLAUDE.md#rule-design-philosophy) and [docs/severity.md](https://github.com/tmatens/compose-lint/blob/main/docs/severity.md) before filing.
+
+  - type: textarea
+    id: risk
+    attributes:
+      label: What is the risk?
+      description: Describe the real-world consequence of the misconfiguration. What can an attacker do? What's the blast radius?
+    validations:
+      required: true
+
+  - type: textarea
+    id: authoritative-source
+    attributes:
+      label: Authoritative source
+      description: |
+        Direct link to the OWASP Docker Security Cheat Sheet, CIS Docker Benchmark, or Docker official documentation section that supports this rule. Quote the relevant text.
+      placeholder: |
+        https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-1-...
+
+        "Do not use the --privileged flag..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: insecure-example
+    attributes:
+      label: Example insecure YAML
+      description: A Compose snippet the rule should flag.
+      render: yaml
+      placeholder: |
+        services:
+          web:
+            image: nginx:1.27
+            privileged: true
+    validations:
+      required: true
+
+  - type: textarea
+    id: fixed-example
+    attributes:
+      label: Example fixed YAML
+      description: The same snippet, remediated. This becomes the fix guidance shown to users.
+      render: yaml
+      placeholder: |
+        services:
+          web:
+            image: nginx:1.27
+            # privileged removed; add specific capabilities instead if needed
+            cap_add:
+              - NET_BIND_SERVICE
+    validations:
+      required: true
+
+  - type: dropdown
+    id: proposed-severity
+    attributes:
+      label: Proposed severity
+      description: See [docs/severity.md](https://github.com/tmatens/compose-lint/blob/main/docs/severity.md) for the scoring matrix.
+      options:
+        - CRITICAL — direct path to host compromise
+        - HIGH — exposed attack surface or requires chaining for cross-container/host impact
+        - MEDIUM — requires chaining for single-container impact, or hardening gap with cross-container scope
+        - LOW — hardening gap contained within a single container
+    validations:
+      required: true
+
+  - type: textarea
+    id: severity-reasoning
+    attributes:
+      label: Severity reasoning
+      description: Walk through the two axes — exploitability and impact scope — that justify your proposed severity.
+    validations:
+      required: true
+
+  - type: textarea
+    id: false-positives
+    attributes:
+      label: Known false positives or edge cases
+      description: Are there legitimate reasons to configure it this way? How should the rule handle them?
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing rules (`docs/rules/`) and issues to confirm this rule does not already exist and has not already been proposed.
+          required: true
+        - label: My authoritative source is OWASP, CIS, or Docker official documentation — not a blog post or personal opinion.
+          required: true

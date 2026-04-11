@@ -1,0 +1,45 @@
+name: Feature request
+description: Suggest a non-rule feature (CLI flag, output format, config option, tooling integration, etc.). For new rules, use the "Rule proposal" template instead.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        compose-lint's scope is deliberately narrow: static security analysis of Compose files. Features that push it toward being a general-purpose Compose linter, a runtime scanner, or a replacement for KICS/Checkov are out of scope. See [CLAUDE.md](https://github.com/tmatens/compose-lint/blob/main/CLAUDE.md#project-overview) for the full scope statement.
+
+        **Proposing a new security rule? Use the "Rule proposal" template instead.**
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the use case. What can't you do today that you want to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed solution
+      description: What should compose-lint do? Show the CLI invocation, config key, or output format you have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds exist today? What other approaches did you consider, and why is this the right one?
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: scope-check
+    attributes:
+      label: Scope check
+      options:
+        - label: This is not a new security rule (those use the "Rule proposal" template).
+          required: true
+        - label: This fits compose-lint's scope as a zero-config security linter, not a general Compose linter or runtime scanner.
+          required: true
