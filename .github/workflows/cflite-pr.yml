@@ -25,6 +25,7 @@ jobs:
         with:
           language: python
           sanitizer: address
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run fuzzers
         uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
@@ -34,3 +35,4 @@ jobs:
           fuzz-seconds: 300
           mode: code-change
           output-sarif: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
