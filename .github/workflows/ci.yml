@@ -85,3 +85,64 @@ jobs:
         # for the local install path); PyYAML and any future runtime
         # deps are still scanned.
         run: pip-audit --skip-editable
+
+  action-smoke:
+    name: Smoke test action.yml
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      # Fixtures are written inline so the smoke test is self-contained
+      # and doesn't couple to tests/compose_files/ (which may evolve as
+      # rules change). The action installs compose-lint from PyPI, so
+      # behavior here is pinned to the released version below, not the
+      # current source tree.
+      - name: Create smoke fixtures
+        run: |
+          mkdir -p smoke
+          cat > smoke/clean.yml <<'YAML'
+          services:
+            web:
+              image: nginx:1.27-alpine
+              ports:
+                - "127.0.0.1:8080:80"
+              security_opt:
+                - no-new-privileges:true
+              cap_drop:
+                - ALL
+              read_only: true
+              tmpfs:
+                - /tmp
+                - /run
+          YAML
+          cat > smoke/insecure.yml <<'YAML'
+          services:
+            app:
+              image: myapp:1.0
+              privileged: true
+          YAML
+
+      - name: Clean fixture should pass
+        uses: ./
+        with:
+          files: smoke/clean.yml
+          fail-on: high
+          version: "0.2.0"
+
+      - name: Insecure fixture should fail
+        id: insecure
+        continue-on-error: true
+        uses: ./
+        with:
+          files: smoke/insecure.yml
+          fail-on: high
+          version: "0.2.0"
+
+      - name: Assert insecure run failed
+        if: steps.insecure.outcome != 'failure'
+        run: |
+          echo "::error::Expected action to fail on insecure fixture, got '${{ steps.insecure.outcome }}'"
+          exit 1
