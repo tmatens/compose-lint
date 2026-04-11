@@ -1,0 +1,4 @@
+services:
+  ? image: nginx
+    cap_drop: [all]
+  : value

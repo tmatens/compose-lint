@@ -91,6 +91,8 @@ exclude = [
     "AGENTS.md",
     "CLAUDE.md",
     ".claude/",
+    "fuzz/",
+    ".clusterfuzzlite/",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -98,4 +100,6 @@ exclude = [
     "AGENTS.md",
     "CLAUDE.md",
     ".claude/",
+    "fuzz/",
+    ".clusterfuzzlite/",
 ]

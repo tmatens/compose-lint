@@ -29,6 +29,22 @@ def _construct_mapping(loader: LineLoader, node: yaml.MappingNode) -> dict[str, 
     line_map: dict[str, int] = {}
     for key_node, value_node in node.value:
         key = loader.construct_object(key_node)  # type: ignore[no-untyped-call]
+        try:
+            hash(key)
+        except TypeError as e:
+            # YAML's `? <complex>` syntax permits mappings and sequences as
+            # keys. Compose files never use these, and letting an unhashable
+            # key reach `mapping[key] = value` would raise a raw TypeError
+            # that bypasses load_compose's ComposeError wrapping. Surface it
+            # as a ConstructorError (subclass of YAMLError) so the public API
+            # reports it the same way as any other malformed input.
+            raise yaml.constructor.ConstructorError(
+                None,
+                None,
+                f"found unhashable key of type {type(key).__name__!s}; "
+                "Compose files may only use scalar keys",
+                key_node.start_mark,
+            ) from e
         value = loader.construct_object(value_node)  # type: ignore[no-untyped-call]
         if isinstance(key, str):
             line_map[key] = key_node.start_mark.line + 1

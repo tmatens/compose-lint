@@ -81,3 +81,10 @@ class TestLoadCompose:
     def test_invalid_yaml(self) -> None:
         with pytest.raises(ComposeError, match="Invalid YAML"):
             load_compose(FIXTURES / "invalid_yaml.yml")
+
+    def test_unhashable_complex_key(self) -> None:
+        # Regression: ClusterFuzzLite found that YAML's `? <mapping>` complex-key
+        # syntax raised a raw TypeError from parser._construct_mapping instead
+        # of a ComposeError. The parser now rejects unhashable keys up front.
+        with pytest.raises(ComposeError, match="unhashable key"):
+            load_compose(FIXTURES / "invalid_complex_key.yml")
