@@ -12,9 +12,20 @@ name: Marketplace smoke test
 # "Run workflow". No automatic triggers — this reaches out to PyPI
 # on every run and there's no reason to spend that on every push.
 #
-# When cutting a new release, bump the `@vX.Y.Z` pin on the two
-# `uses:` lines below. `steps[].uses` does not support ${{ }}
-# expressions, so the version has to live in the file.
+# When cutting a new release, bump the commit SHA on the two
+# `uses:` lines below (and the trailing `# vX.Y.Z` comment so a
+# human can still read the version at a glance). Third-party
+# actions in this repo are pinned to full commit SHAs per the
+# `workflow/third-party-action-not-pinned-to-commit-sha` CodeQL
+# rule and the precedent set in commit b59847c ("Pin third-party
+# GitHub Actions to commit SHAs"). `steps[].uses` does not support
+# ${{ }} expressions, so the SHA has to live in the file.
+#
+# Note: pinning to a SHA rather than the tag means this smoke test
+# would not catch a hypothetical force-push of `v0.2.0` to a new
+# commit. That failure mode is covered by our release process
+# (signed annotated tags, never re-tagged) rather than by this
+# workflow.
 
 on:
   workflow_dispatch:
@@ -54,7 +65,7 @@ jobs:
           YAML
 
       - name: Clean fixture should pass
-        uses: tmatens/compose-lint@v0.2.0
+        uses: tmatens/compose-lint@60c091c7cc8f86c6b0c5954031097364fea0a201 # v0.2.0
         with:
           files: smoke/clean.yml
           fail-on: high
@@ -62,7 +73,7 @@ jobs:
       - name: Insecure fixture should fail
         id: insecure
         continue-on-error: true
-        uses: tmatens/compose-lint@v0.2.0
+        uses: tmatens/compose-lint@60c091c7cc8f86c6b0c5954031097364fea0a201 # v0.2.0
         with:
           files: smoke/insecure.yml
           fail-on: high
