@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/tmatens/compose-lint/security/advisories/new
+    about: Report security vulnerabilities privately via GitHub security advisories. Do not open a public issue for security bugs.
+  - name: Question or discussion
+    url: https://github.com/tmatens/compose-lint/discussions
+    about: Open-ended questions, ideas, and discussion belong in Discussions, not Issues.

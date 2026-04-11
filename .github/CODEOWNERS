@@ -1,0 +1,8 @@
+# Every file in this repo is owned by @tmatens. This is a single-maintainer
+# project today; CODEOWNERS makes ownership explicit and gives us the hook
+# to hand off specific directories to co-maintainers later without rewriting
+# history.
+#
+# See https://docs.github.com/en/repositories/managing-your-repositories-settings-and-security/customizing-your-repository/about-code-owners
+
+* @tmatens

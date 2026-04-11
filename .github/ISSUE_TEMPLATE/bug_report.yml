@@ -1,0 +1,88 @@
+name: Bug report
+description: Report incorrect behavior in compose-lint (false positive, false negative, crash, wrong output).
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. Please include a **minimal** Compose file that reproduces the problem — the smaller, the better.
+
+        Security vulnerabilities should go through [private vulnerability reporting](https://github.com/tmatens/compose-lint/security/advisories/new), not this form.
+
+  - type: textarea
+    id: compose-file
+    attributes:
+      label: Minimal Compose file
+      description: The smallest `docker-compose.yml` that reproduces the issue. Strip anything unrelated.
+      render: yaml
+      placeholder: |
+        services:
+          web:
+            image: nginx:1.27
+            privileged: true
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Command you ran
+      description: The exact `compose-lint` invocation.
+      render: shell
+      placeholder: compose-lint docker-compose.yml
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened? Paste the full output.
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: compose-lint version
+      description: Output of `compose-lint --version`.
+      placeholder: "0.2.0"
+    validations:
+      required: true
+
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+      description: Output of `python --version`.
+      placeholder: "3.12.3"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Ubuntu 24.04, macOS 14.5, Windows 11, ..."
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I am running the latest released version, or I have confirmed the bug still reproduces on `main`.
+          required: true
