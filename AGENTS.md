@@ -278,6 +278,42 @@ exact mistake the checklist exists to prevent.
   reservation), they must be scoped to the `compose-lint` project, never account-wide.
   Delete tokens after one-off use.
 
+### Workflow pinning
+
+Every third-party `uses:` reference in `.github/workflows/*.yml`
+must be pinned to a full commit SHA, with the tag in a trailing
+comment so a human can still read the version:
+
+```yaml
+- uses: owner/repo@0123456789abcdef0123456789abcdef01234567 # v1.2.3
+```
+
+- **First-party actions are exempt.** `actions/*` and `github/*`
+  (e.g. `actions/checkout@v6`, `github/codeql-action@v4`) are on
+  CodeQL's whitelist and stay tag-pinned. Everything else —
+  including self-references like `tmatens/compose-lint` — pins to
+  a SHA.
+- **Get the SHA from the ref:** `git rev-parse vX.Y.Z^{commit}` for
+  tags you control, or copy from the action's release page on
+  GitHub for third-party actions.
+- **Keep the SHA and the `# vX.Y.Z` comment in sync.** Drift
+  between the two is worse than no comment — the human reads the
+  comment, the runner reads the SHA, and they should never
+  disagree.
+- **The one legitimate exception** is `uses: ./` (a local composite
+  action in this repo). That's a path, not a ref, and there is
+  nothing to pin.
+- **If a SHA pin is genuinely impossible for some other reason,
+  leave an inline comment explaining why** — don't silently ship a
+  tag pin and hope CodeQL doesn't notice. CodeQL's
+  `workflow/third-party-action-not-pinned-to-commit-sha` rule will
+  flag it on the next PR regardless.
+
+The motivating rationale is supply-chain integrity: a tag pin
+trusts the upstream author to never repoint the tag, and CodeQL's
+rule is the enforcement mechanism. Commit b59847c ("Pin third-party
+GitHub Actions to commit SHAs") is the precedent.
+
 ### Package contents safety
 
 Before any release, verify that the sdist and wheel contain only intended files:
@@ -320,3 +356,6 @@ insufficient.
 - Do not add inline suppression syntax unless explicitly planned
 - Do not reference private or internal-only tooling in any file -- if in
   doubt whether something belongs in a public repo, leave it out
+- Do not ship a workflow with a tag-pinned third-party `uses:` — pin to
+  a full commit SHA with a trailing `# vX.Y.Z` comment. See "Workflow
+  pinning" under CI/CD for the exemptions and the rationale.
