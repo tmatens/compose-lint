@@ -1,20 +1,35 @@
 # Contributing to compose-lint
 
-Thanks for your interest in contributing. This guide covers setup, code standards, and how to add new rules.
+Thanks for wanting to help. This is a small, focused project, so the bar for
+contributions is clarity and authoritative grounding rather than breadth.
 
-## Development Setup
+## Before you start
+
+- **Bug reports and feature requests**: open an issue using one of the templates.
+- **Security vulnerabilities**: do *not* open a public issue. See [SECURITY.md](SECURITY.md).
+- **New rule proposals**: use the "Rule proposal" issue template. Every rule must
+  be grounded in an authoritative source (OWASP Docker Security Cheat Sheet, CIS
+  Docker Benchmark, or Docker official documentation). Opinion-only rules are
+  not accepted.
+- **Larger changes**: open an issue to discuss first so you don't sink time into
+  a change that doesn't fit the project's scope.
+
+See [CLAUDE.md](CLAUDE.md) for the full design philosophy — especially the
+sections on rule grounding, severity assignment, and what's explicitly out of
+scope.
+
+## Development setup
 
 ```bash
 git clone https://github.com/tmatens/compose-lint.git
 cd compose-lint
-python -m venv .venv
-source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-## Running Quality Checks
+## Local quality checks
 
-All four must pass before submitting a PR:
+All four must pass locally before you push. CI runs the same commands.
 
 ```bash
 ruff check src/ tests/          # Linting
@@ -23,37 +38,121 @@ mypy src/                       # Type checking (strict mode)
 pytest                          # Tests
 ```
 
-## Code Standards
+## Code standards
 
-- **Python 3.10+** required
-- **Type annotations** on all public functions (`mypy --strict`)
-- **PyYAML** is the only runtime dependency. Do not add others without discussion.
-- **Rules receive plain Python types** (`dict`, `list`, `str`). Never leak parser-specific types into rule code.
+- **Python 3.10+** required. Don't use syntax or stdlib features added after
+  3.10 (e.g., no `type` aliases from 3.12, no `ExceptionGroup` from 3.11
+  without checking availability).
+- **Type annotations** on all public functions (`mypy --strict` is enforced).
+- **PyYAML is the only runtime dependency.** Do not add others without
+  discussion. Dev tooling goes in the `[dev]` extras.
+- **Rules receive plain Python types** (`dict`, `list`, `str`, `int`, `bool`).
+  Never leak parser-specific types into rule code.
+- **Latest stable versions** for any new dependency unless there's a specific,
+  documented reason otherwise.
 
-## Adding a New Rule
+## Adding a new rule
 
 1. Create `src/compose_lint/rules/CL{NNNN}_{snake_name}.py`
 2. Inherit from `BaseRule`, use the `@register_rule` decorator
-3. Set `id`, `name`, `severity`, `description`, `references`
-4. Implement `check(service_name, service_config, global_config, lines)` yielding `Finding` objects
-5. Add test file `tests/test_CL{NNNN}.py` with positive and negative cases
+3. Set `id`, `name`, `severity`, `description`, `references` — references must
+   cite OWASP, CIS, or Docker official docs
+4. Implement `check(service_name, service_config, global_config, lines)`
+   yielding `Finding` objects
+5. Add test file `tests/test_CL{NNNN}.py` with **both** positive (triggers) and
+   negative (clean) cases
 6. Add fixture YAML files in `tests/compose_files/`
 7. Add rule documentation in `docs/rules/CL-{NNNN}.md`
+8. Fix guidance must be specific and actionable — show the exact YAML change
+9. Include a direct link to the supporting OWASP/CIS/Docker docs section
 
 ### Rule requirements
 
-- Every rule must reference OWASP Docker Security Cheat Sheet, CIS Docker Benchmark, or Docker official docs. No opinion-only rules.
-- Every finding must be actionable with specific fix guidance.
-- Severity must reflect real-world exploitability, not subjective importance.
-- Rule IDs are permanent and never reused.
+- **Grounded in an authoritative source.** No opinion-only rules.
+- **Every finding must be actionable.** If you can't tell the user exactly what
+  to change, the finding isn't ready.
+- **Severity reflects real-world exploitability**, not subjective importance.
+  See [docs/severity.md](docs/severity.md) for the scoring matrix.
+- **Rule IDs are permanent.** Never reuse or retire a `CL-XXXX` ID.
 
-## Pull Requests
+## Commit conventions
 
-- One feature or fix per PR
-- All quality checks must pass
-- Include tests for any new behavior
-- Commit messages should explain *why*, not just *what*
+- **One logical change per commit.** Rules, features, and refactors each get
+  their own commit. Don't bundle unrelated changes.
+- **Imperative subject line, under 72 characters.** "Add CL-0011 rule for X",
+  not "Added CL-0011" or "CL-0011".
+- **Explain the *why* in the body, not just the *what*.** The diff already
+  shows what changed; the commit message exists to explain the reason.
+- **Sign your commits.** See [commit signing](#commit-signing) below.
+- **No AI attribution.** Do not include `Co-Authored-By` trailers or any other
+  references to AI/coding assistants in commit messages, code, or
+  documentation.
 
-## Questions?
+We do *not* use [Conventional Commits](https://www.conventionalcommits.org/)
+prefixes (`feat:`, `fix:`, etc.). Descriptive imperative subjects are preferred
+because they read naturally in `git log` without tooling.
 
-Open an issue if something is unclear.
+### Commit signing
+
+All commits to `main` must be signed so GitHub shows the "Verified" badge.
+Unsigned commits can be spoofed — anyone can set `user.email` to yours and
+open a PR from a fork that attributes to you.
+
+SSH signing is the easiest setup because it uses the same key you already
+push with:
+
+```bash
+git config --global gpg.format ssh
+git config --global user.signingkey "key::$(cat ~/.ssh/id_ed25519.pub)"
+git config --global commit.gpgsign true
+git config --global tag.gpgsign true
+```
+
+Then add the *same* public key to GitHub as a **Signing Key** (separate list
+from authentication keys) at <https://github.com/settings/ssh/new>.
+
+Verify locally with `git log --show-signature`. If it prints
+`Good "git" signature`, you're set. On GitHub, your commits will show a green
+**Verified** badge.
+
+## Pull requests
+
+All changes to `main` go through a PR — including maintainer changes.
+
+1. **Create a branch** from `main`. Name it descriptively:
+   `docs/contributor-workflow`, `rules/CL-0011-user-namespaces`,
+   `fix/parser-merge-keys`.
+2. **Make small, focused commits** (see [commit conventions](#commit-conventions)).
+3. **Run local checks.** All four must pass before you push.
+4. **Open a PR** and fill out the template. Link any related issue.
+5. **Wait for CI** — all required checks must be green before merge.
+6. **Respond to review comments.** All comments must be resolved before merge.
+7. **Squash-merge** when approved. We use squash-merge exclusively so `main`
+   stays linear with one commit per logical change. The full PR history is
+   preserved on the PR page for context.
+
+### PR expectations
+
+- **Keep PRs small.** Easier to review, easier to revert, easier to bisect.
+  A PR that touches 5 files is almost always better than one that touches 30.
+- **Don't mix refactors with behavior changes.** Land the refactor first, then
+  the behavior change, in separate PRs.
+- **Update tests.** New rules need positive and negative tests. Bug fixes need
+  a regression test.
+- **Update documentation** if you change behavior. Rule changes need
+  `docs/rules/CL-XXXX.md`; CLI changes need `README.md`; version-visible
+  changes need a CHANGELOG entry.
+
+## Reporting bugs
+
+Use the bug report issue template. Include:
+
+- The minimal Compose file that triggers the behavior
+- What you expected to happen
+- What actually happened (full command output)
+- Your compose-lint version (`compose-lint --version`) and Python version
+
+## Code of conduct
+
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). By
+participating you agree to uphold it.
