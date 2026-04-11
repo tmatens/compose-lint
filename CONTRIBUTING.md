@@ -14,7 +14,7 @@ contributions is clarity and authoritative grounding rather than breadth.
 - **Larger changes**: open an issue to discuss first so you don't sink time into
   a change that doesn't fit the project's scope.
 
-See [CLAUDE.md](CLAUDE.md) for the full design philosophy — especially the
+See [AGENTS.md](AGENTS.md) for the full design philosophy — especially the
 sections on rule grounding, severity assignment, and what's explicitly out of
 scope.
 

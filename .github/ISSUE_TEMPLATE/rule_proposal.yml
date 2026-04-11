@@ -8,7 +8,7 @@ body:
       value: |
         Thanks for proposing a new rule. Every rule in compose-lint must be traceable to OWASP, CIS, or Docker's official documentation. If you can't point to an authoritative source, the rule probably isn't a fit for this tool.
 
-        Please read [CLAUDE.md — Rule Design Philosophy](https://github.com/tmatens/compose-lint/blob/main/CLAUDE.md#rule-design-philosophy) and [docs/severity.md](https://github.com/tmatens/compose-lint/blob/main/docs/severity.md) before filing.
+        Please read [AGENTS.md — Rule Design Philosophy](https://github.com/tmatens/compose-lint/blob/main/AGENTS.md#rule-design-philosophy) and [docs/severity.md](https://github.com/tmatens/compose-lint/blob/main/docs/severity.md) before filing.
 
   - type: textarea
     id: risk

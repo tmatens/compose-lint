@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        compose-lint's scope is deliberately narrow: static security analysis of Compose files. Features that push it toward being a general-purpose Compose linter, a runtime scanner, or a replacement for KICS/Checkov are out of scope. See [CLAUDE.md](https://github.com/tmatens/compose-lint/blob/main/CLAUDE.md#project-overview) for the full scope statement.
+        compose-lint's scope is deliberately narrow: static security analysis of Compose files. Features that push it toward being a general-purpose Compose linter, a runtime scanner, or a replacement for KICS/Checkov are out of scope. See [AGENTS.md](https://github.com/tmatens/compose-lint/blob/main/AGENTS.md#project-overview) for the full scope statement.
 
         **Proposing a new security rule? Use the "Rule proposal" template instead.**
 

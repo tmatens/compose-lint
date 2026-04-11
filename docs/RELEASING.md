@@ -132,8 +132,8 @@ reused even after deletion.
   and cut a new release. PyPI treats deleted versions as permanently
   burned.
 - **Wrong files in the wheel**: the `Verify dist contents` step in
-  `publish.yml` fails the build if the wheel contains `CLAUDE.md`,
-  `.env`, `tests/`, or `.git/`. If this trips, check
+  `publish.yml` fails the build if the wheel contains `AGENTS.md`,
+  `CLAUDE.md`, `.env`, `tests/`, or `.git/`. If this trips, check
   `[tool.hatch.build.targets.wheel]` exclude patterns in
   `pyproject.toml`.
 

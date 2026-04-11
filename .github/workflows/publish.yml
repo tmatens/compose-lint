@@ -26,8 +26,8 @@ jobs:
         run: |
           pip install twine
           twine check dist/*
-          # Wheel must NOT contain CLAUDE.md, .env, tests, or .git.
-          if unzip -l dist/*.whl | grep -E '(CLAUDE\.md|\.env|/tests/|\.git/)'; then
+          # Wheel must NOT contain agent config, .env, tests, or .git.
+          if unzip -l dist/*.whl | grep -E '(AGENTS\.md|CLAUDE\.md|\.env|/tests/|\.git/)'; then
             echo "::error::Wheel contains forbidden files"
             exit 1
           fi

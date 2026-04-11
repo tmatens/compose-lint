@@ -1,8 +1,10 @@
 # Planning and internal docs
 compose-lint-plan.md
 
-# AI assistant configuration
-CLAUDE.md
+# Agent / AI assistant configuration.
+# AGENTS.md and CLAUDE.md are tracked (CLAUDE.md is a symlink to AGENTS.md for
+# tools that still look for the legacy name). Memory, session, and local
+# agent-runner state lives under .claude/ and stays untracked.
 .claude/
 
 # Python bytecode
