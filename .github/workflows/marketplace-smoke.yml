@@ -1,0 +1,74 @@
+name: Marketplace smoke test
+
+# Manually-triggered end-to-end test of the published action as it
+# appears on the GitHub Marketplace. Unlike the `action-smoke` job in
+# ci.yml (which uses `./` — the local action.yml in this repo), this
+# workflow consumes `tmatens/compose-lint@<tag>` the same way an
+# external user would. It catches regressions that only show up at
+# the Marketplace boundary: a missing tag, a broken published
+# action.yml, a PyPI outage, etc.
+#
+# Trigger it from the Actions tab → "Marketplace smoke test" →
+# "Run workflow". No automatic triggers — this reaches out to PyPI
+# on every run and there's no reason to spend that on every push.
+#
+# When cutting a new release, bump the `@vX.Y.Z` pin on the two
+# `uses:` lines below. `steps[].uses` does not support ${{ }}
+# expressions, so the version has to live in the file.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  marketplace-smoke:
+    name: Smoke test published action
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Create smoke fixtures
+        run: |
+          mkdir -p smoke
+          cat > smoke/clean.yml <<'YAML'
+          services:
+            web:
+              image: nginx:1.27-alpine
+              ports:
+                - "127.0.0.1:8080:80"
+              security_opt:
+                - no-new-privileges:true
+              cap_drop:
+                - ALL
+              read_only: true
+              tmpfs:
+                - /tmp
+                - /run
+          YAML
+          cat > smoke/insecure.yml <<'YAML'
+          services:
+            app:
+              image: myapp:1.0
+              privileged: true
+          YAML
+
+      - name: Clean fixture should pass
+        uses: tmatens/compose-lint@v0.2.0
+        with:
+          files: smoke/clean.yml
+          fail-on: high
+
+      - name: Insecure fixture should fail
+        id: insecure
+        continue-on-error: true
+        uses: tmatens/compose-lint@v0.2.0
+        with:
+          files: smoke/insecure.yml
+          fail-on: high
+
+      - name: Assert insecure run failed
+        if: steps.insecure.outcome != 'failure'
+        run: |
+          echo "::error::Expected action to fail on insecure fixture, got '${{ steps.insecure.outcome }}'"
+          exit 1
