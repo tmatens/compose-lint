@@ -20,11 +20,11 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-      - run: pip install build
+      - run: pip install build==1.4.3
       - run: python -m build
       - name: Verify dist contents
         run: |
-          pip install twine
+          pip install twine==6.2.0
           twine check dist/*
           # Wheel must NOT contain agent config, .env, tests, or .git.
           if unzip -l dist/*.whl | grep -E '(AGENTS\.md|CLAUDE\.md|\.env|/tests/|\.git/)'; then
