@@ -278,7 +278,19 @@ exact mistake the checklist exists to prevent.
   reservation), they must be scoped to the `compose-lint` project, never account-wide.
   Delete tokens after one-off use.
 
-### Workflow pinning
+### Dependency pinning
+
+Anything that resolves over the network at build, test, or release
+time must be pinned to an immutable ref. Mutable refs (tags,
+version ranges, `latest`) trust the upstream author to never
+repoint them and make every CI run a roll of the dice. Pin at
+rest; let Renovate or Dependabot bump the pin.
+
+The rule has five sub-cases with different conventions. They're
+all the same principle — pin what you can — but the mechanics
+differ.
+
+#### 1. GitHub Actions workflows
 
 Every third-party `uses:` reference in `.github/workflows/*.yml`
 must be pinned to a full commit SHA, with the tag in a trailing
@@ -313,6 +325,77 @@ The motivating rationale is supply-chain integrity: a tag pin
 trusts the upstream author to never repoint the tag, and CodeQL's
 rule is the enforcement mechanism. Commit b59847c ("Pin third-party
 GitHub Actions to commit SHAs") is the precedent.
+
+#### 2. Runtime dependencies (`pyproject.toml` `[project] dependencies`)
+
+compose-lint is a **library** published to PyPI, not an application.
+Library runtime deps use SemVer-compatible *ranges*, not exact
+pins. Exact-pinning `PyYAML==6.0.3` would create a resolver
+conflict for anyone who installs compose-lint alongside a different
+PyYAML patch, which is exactly the pain library consumers feel
+when careless upstream maintainers over-pin.
+
+The rule for compose-lint:
+
+- **Lower bound is the minimum version we've actually tested
+  against.** Not a guess, not a copy from the package's README.
+- **No upper bound unless we've observed a break.** A speculative
+  upper cap (`<7`) locks consumers out of versions that may be
+  fine; only add one after a concrete incompatibility.
+- **Never use `*`, unpinned, or `latest`.** Those aren't ranges;
+  they're abdication.
+
+This is the one place the "pin everything" rule bends, and only
+because the cost of over-pinning in a library is paid by every
+downstream user.
+
+#### 3. Development dependencies (`pyproject.toml` `[project.optional-dependencies.dev]`)
+
+Dev deps (ruff, mypy, pytest, and anything else under `[dev]`) are
+not consumer-visible, so the library-vs-app tension from (2) does
+not apply. These should be pinned tightly enough that CI is
+reproducible across days, ideally via a lockfile
+(`uv.lock` or a `pip-compile`-generated `requirements-dev.txt`)
+committed to the repo.
+
+Short of a full lockfile, exact-pin each dev dep in
+`pyproject.toml` (`ruff==X.Y.Z`, not `ruff>=X.Y`). The churn this
+creates is absorbed by Renovate/Dependabot.
+
+#### 4. CI tool installs (`pip install` inside workflows)
+
+Any `pip install <pkg>` in a workflow `run:` block must pin the
+package to an exact version:
+
+```yaml
+- run: pip install ruff==0.14.4     # good
+- run: pip install ruff             # bad — resolves to whatever's newest
+```
+
+An unpinned `pip install ruff` reaches out to PyPI on every CI run
+and can silently change behavior overnight when ruff cuts a new
+release. The only safe default is an exact pin, bumped by
+Renovate/Dependabot in a reviewable PR.
+
+If the tool is already listed in `[project.optional-dependencies.dev]`
+and the job runs `pip install -e ".[dev]"`, that's also fine — the
+pin lives in `pyproject.toml` per (3). What's *not* fine is a
+separate ad-hoc `pip install <pkg>` line inside the workflow with
+no version.
+
+#### 5. Docker base images
+
+Not applicable to this repo today (compose-lint is a Python
+package, no Dockerfile, no runtime images). If that ever changes,
+base images get **digest-pinned**:
+
+```dockerfile
+FROM python:3.13-slim@sha256:<64-char-digest>
+```
+
+Tag-only references like `python:3.13-slim` are mutable — Docker
+Hub repoints them on every patch rebuild — which defeats the
+purpose. Digest pins + Renovate is the standard pattern.
 
 ### Package contents safety
 
@@ -356,6 +439,9 @@ insufficient.
 - Do not add inline suppression syntax unless explicitly planned
 - Do not reference private or internal-only tooling in any file -- if in
   doubt whether something belongs in a public repo, leave it out
-- Do not ship a workflow with a tag-pinned third-party `uses:` — pin to
-  a full commit SHA with a trailing `# vX.Y.Z` comment. See "Workflow
-  pinning" under CI/CD for the exemptions and the rationale.
+- Do not ship anything that depends on a mutable ref. Workflows pin
+  third-party `uses:` to a full commit SHA; dev deps and CI tool
+  installs pin to exact versions; library runtime deps use SemVer
+  ranges (never `latest` or unpinned); Docker base images pin by
+  digest. See "Dependency pinning" under CI/CD for the full
+  breakdown and the rationale for each sub-case.
