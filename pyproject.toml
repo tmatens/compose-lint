@@ -33,9 +33,10 @@ dependencies = [
 # Focused extras groups exist so Dependabot can track the exact pins
 # (workflow-inline `pip install X==Y` lines aren't scanned). Each
 # extras group maps to one CI job; `dev` is the umbrella developers
-# install locally. Keep the per-group pins exact — these tools pin
-# tightly by policy (AGENTS.md → "Dependency pinning → CI tool
-# installs") — and let Dependabot's weekly pass bump them.
+# install locally. Every pin in every group is exact (`==`) — per
+# AGENTS.md "Dependency pinning → CI tool installs" and
+# "Development dependencies" — and Dependabot's weekly pass bumps
+# them.
 lint = [
     "ruff==0.15.10",
 ]
@@ -50,9 +51,9 @@ publish = [
 dev = [
     # Self-reference so the ruff pin lives only in [lint]; no drift.
     "compose-lint[lint]",
-    "mypy>=1.20.0",
-    "pytest>=9.0.2",
-    "types-pyyaml>=6.0.12",
+    "mypy==1.20.0",
+    "pytest==9.0.3",
+    "types-pyyaml==6.0.12.20260408",
 ]
 
 [project.scripts]
