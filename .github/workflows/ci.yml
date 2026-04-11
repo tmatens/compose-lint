@@ -26,7 +26,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-      - run: pip install ruff
+      - run: pip install ruff==0.15.10
       - run: ruff check src/ tests/
       - run: ruff format --check src/ tests/
 
@@ -74,10 +74,13 @@ jobs:
       - name: Install scan tools
         # Upgrade pip first so pip-audit doesn't flag CVEs in the
         # runner-bundled pip itself (those are out of scope for this
-        # project's supply chain).
+        # project's supply chain). The pip upgrade is deliberately
+        # unpinned per the "always-latest for the bootstrap" exception
+        # noted above; bandit and pip-audit are pinned to exact
+        # versions per AGENTS.md "Dependency pinning → CI tool installs".
         run: |
           python -m pip install --upgrade pip
-          pip install -e . bandit pip-audit
+          pip install -e . bandit==1.9.4 pip-audit==2.10.0
       - name: Bandit (source SAST)
         run: bandit -r src/ -ll
       - name: pip-audit (dependency CVEs)
