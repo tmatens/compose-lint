@@ -63,8 +63,62 @@ jobs:
           repository-url: https://test.pypi.org/legacy/
           attestations: true
 
-  publish:
+  testpypi-smoke:
     needs: testpypi
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Wait for TestPyPI index to update
+        run: sleep 30
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
+      - name: Install from TestPyPI and verify version
+        run: |
+          expected="${GITHUB_REF_NAME#v}"
+          pip install \
+            -i https://test.pypi.org/simple/ \
+            --extra-index-url https://pypi.org/simple/ \
+            "compose-lint==${expected}"
+          actual="$(compose-lint --version)"
+          echo "Expected: ${expected}"
+          echo "Actual:   ${actual}"
+          if [ "${actual}" != "${expected}" ]; then
+            echo "::error::TestPyPI version mismatch: installed '${actual}', expected '${expected}'"
+            exit 1
+          fi
+      - name: Smoke test — lint a clean fixture
+        run: |
+          cat > /tmp/clean.yml <<'YAML'
+          services:
+            web:
+              image: nginx:1.27-alpine
+              ports:
+                - "127.0.0.1:8080:80"
+              security_opt:
+                - no-new-privileges:true
+              cap_drop:
+                - ALL
+              read_only: true
+          YAML
+          compose-lint /tmp/clean.yml
+      - name: Smoke test — insecure fixture exits 1
+        run: |
+          cat > /tmp/insecure.yml <<'YAML'
+          services:
+            app:
+              image: myapp:1.0
+              privileged: true
+          YAML
+          exit_code=0
+          compose-lint /tmp/insecure.yml || exit_code=$?
+          if [ "${exit_code}" -ne 1 ]; then
+            echo "::error::Expected exit code 1, got ${exit_code}"
+            exit 1
+          fi
+
+  publish:
+    needs: testpypi-smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:

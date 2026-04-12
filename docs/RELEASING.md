@@ -180,16 +180,10 @@ git push origin vX.Y.Z
       version should be listed. Sigstore attestations should appear on
       the workflow run summary.
 
-Smoke test the TestPyPI build in a throwaway venv:
-
-```bash
-python -m venv /tmp/compose-lint-test && source /tmp/compose-lint-test/bin/activate
-pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ "compose-lint==X.Y.Z"
-compose-lint --version
-deactivate && rm -rf /tmp/compose-lint-test
-```
-
-- [ ] `compose-lint --version` prints `X.Y.Z`.
+The `testpypi-smoke` job runs automatically after TestPyPI publish:
+installs the package from TestPyPI, verifies `--version` matches the
+tag, and runs clean/insecure fixture smoke tests. The real PyPI publish
+is gated on this job succeeding — no manual venv test needed.
 
 ## Approve the real PyPI environment
 
@@ -211,9 +205,8 @@ builds a multi-arch image (`linux/amd64`, `linux/arm64`), runs smoke tests
 Hub as `composelint/compose-lint`, and signs the image with cosign
 (Sigstore keyless).
 
-- [ ] Docker publish workflow completes green.
-- [ ] `docker pull composelint/compose-lint:X.Y.Z` succeeds.
-- [ ] `cosign verify composelint/compose-lint:X.Y.Z --certificate-identity-regexp=github --certificate-oidc-issuer=https://token.actions.githubusercontent.com` passes.
+- [ ] Docker publish workflow completes green (includes automated
+      post-push verification: pull, cosign verify, and version check).
 
 ## Post-release
 

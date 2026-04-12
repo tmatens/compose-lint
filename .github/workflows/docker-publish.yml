@@ -121,3 +121,32 @@ jobs:
           DIGEST: ${{ steps.push.outputs.digest }}
         run: |
           cosign sign --yes "composelint/compose-lint@${DIGEST}"
+
+      # Post-push verification: pull and verify the published image
+      - name: Verify — pull published image
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          docker pull "composelint/compose-lint@${DIGEST}"
+
+      - name: Verify — cosign signature
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          cosign verify \
+            --certificate-identity-regexp="github\.com/tmatens/compose-lint" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            "composelint/compose-lint@${DIGEST}"
+
+      - name: Verify — published image version matches tag
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          expected="${GITHUB_REF_NAME#v}"
+          actual="$(docker run --rm "composelint/compose-lint@${DIGEST}" --version)"
+          echo "Expected: ${expected}"
+          echo "Actual:   ${actual}"
+          if [ "${actual}" != "${expected}" ]; then
+            echo "::error::Published image version mismatch: '${actual}' vs tag '${expected}'"
+            exit 1
+          fi
