@@ -71,18 +71,33 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           sha="$(git rev-parse HEAD)"
-          echo "Checking CI status for ${sha}..."
-          # Allow up to 60s for checks to appear
-          for attempt in 1 2 3 4; do
-            status="$(gh api "repos/${{ github.repository }}/commits/${sha}/status" -q .state)"
-            echo "Commit status: ${status}"
-            if [ "${status}" = "success" ]; then
-              break
-            elif [ "${status}" = "failure" ]; then
+          echo "Checking CI check-runs for ${sha}..."
+          # Poll check-runs (GitHub Actions) — not legacy commit status, which
+          # Actions workflows do not populate.
+          for attempt in 1 2 3 4 5 6; do
+            result="$(gh api "repos/${{ github.repository }}/commits/${sha}/check-runs" \
+              --jq '{
+                total: .total_count,
+                pending: [.check_runs[] | select(.status != "completed")] | length,
+                failed: [.check_runs[] | select(.status == "completed" and .conclusion != "success" and .conclusion != "skipped")] | length
+              }')"
+            total="$(echo "${result}" | jq -r .total)"
+            pending="$(echo "${result}" | jq -r .pending)"
+            failed="$(echo "${result}" | jq -r .failed)"
+            echo "Check runs: ${total} total, ${pending} pending, ${failed} failed"
+            if [ "${failed}" -gt 0 ]; then
               echo "::error::CI failed on main HEAD (${sha})"
               exit 1
             fi
-            echo "Status is '${status}', waiting 15s..."
+            if [ "${total}" -gt 0 ] && [ "${pending}" -eq 0 ]; then
+              echo "All check runs passed."
+              break
+            fi
+            if [ "${attempt}" -eq 6 ]; then
+              echo "::error::CI checks did not complete within timeout"
+              exit 1
+            fi
+            echo "Waiting 15s for checks to complete (attempt ${attempt}/6)..."
             sleep 15
           done
 
