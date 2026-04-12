@@ -160,20 +160,24 @@ gh pr create --fill
 
 ## Tag and release
 
-Go to **Actions → Release → Run workflow**. Enter the version number
-(e.g. `0.4.0`). The workflow validates that `pyproject.toml`,
-`__init__.py`, and `CHANGELOG.md` all match, checks CI passed on main,
-then creates an annotated tag. The tag push triggers `Publish to PyPI`
-and `Docker Publish` automatically.
+**Use the signed-tag-locally path by default.** The Actions UI path
+exists for dry-run validation, but tags created through the GitHub API
+with `GITHUB_TOKEN` do **not** trigger `Publish to PyPI` or
+`Docker Publish` — this is a documented GitHub security behavior. A tag
+pushed from your workstation with a signed push does trigger them.
 
-Use **Dry run** to validate everything without creating the tag.
-
-Alternatively, create a signed tag locally:
+Signed tag (normal path):
 
 ```bash
+git pull --ff-only
 git tag -s vX.Y.Z -m "compose-lint X.Y.Z"
 git push origin vX.Y.Z
 ```
+
+Dry-run validation via UI (does not publish):
+**Actions → Release → Run workflow**, enter the version, check
+**Dry run**. Validates `pyproject.toml`, `__init__.py`, and
+`CHANGELOG.md` match and CI is green, without creating a tag.
 
 - [ ] The tag exists and triggered `Publish to PyPI` and `Docker Publish`
       in Actions.
@@ -253,6 +257,19 @@ Hub as `composelint/compose-lint`, and signs the image with cosign
   `CLAUDE.md`, `.env`, `tests/`, or `.git/`. If this trips, check
   `[tool.hatch.build.targets.wheel]` exclude patterns in
   `pyproject.toml`.
+- **Docker push fails on rolling tag (`0.3`, `latest`)**: Docker Hub
+  repo setting "Immutable tags" must be **off**. Rolling tags are
+  overwritten on every release by design; immutability blocks that.
+  The versioned tag (`0.3.3`) is still effectively immutable because
+  the version string itself is never reused.
+- **Docker publish succeeded but left an orphan tag on Docker Hub**:
+  happens when a release is retried after a burned PyPI version. Delete
+  the orphan tag from Docker Hub — an image with no matching PyPI
+  release and no GitHub Release is untraceable back to source.
+- **Release workflow ran but nothing published**: tags created via the
+  GitHub API with `GITHUB_TOKEN` don't trigger downstream workflows.
+  Delete the tag and re-push it as a signed tag from your workstation
+  (see "Tag and release" above).
 
 ## Why this checklist exists
 
