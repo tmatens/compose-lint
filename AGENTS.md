@@ -429,14 +429,23 @@ lockfiles in the same commit:
 
 ```bash
 uv pip compile pyproject.toml \
+  --universal --python-version 3.10 \
   --generate-hashes \
   -o requirements.lock
 
 uv pip compile pyproject.toml \
   --extra dev --extra lint --extra security --extra publish \
+  --universal --python-version 3.10 \
   --generate-hashes \
   -o requirements-dev.lock
 ```
+
+`--universal` emits environment markers so a single lockfile
+works across platforms. `--python-version 3.10` matches
+`requires-python` so conditional backport deps (e.g.,
+`backports.tarfile` for Python <3.12) are included — without
+it, uv resolves against the interpreter version and silently
+drops deps that older Pythons in the test matrix still need.
 
 Commit `pyproject.toml` and both lockfiles together so the
 declared pins and the resolved hashes never drift apart.
