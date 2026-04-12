@@ -17,11 +17,18 @@ Each channel must have:
 
 - A **staging target** (TestPyPI, a pre-release registry, etc.)
 - **Smoke tests** that run automatically against the staging artifact
-- An **approval gate** (GitHub Environment with required reviewers) before
-  the production publish
+- An **approval gate** before the production publish
 - A **production publish** that only runs after the gate is approved
 
-The pattern is the same for every channel, even if the tooling differs.
+All per-channel smoke tests feed a single shared `release` gate
+(GitHub Environment with required reviewers). One approval covers all
+channels; production publish jobs for every channel run in parallel
+after the gate clears. New channels add a smoke job and a publish job —
+the gate itself does not change.
+
+If a channel's smoke is broken and another must ship independently, use
+`.github/workflows/publish-channel.yml` (manual `workflow_dispatch`).
+That workflow requires the same per-channel environment approval.
 
 ### 3. Version source of truth
 
@@ -52,14 +59,10 @@ ship in a defined order.
 
 ## Current channels
 
-| Channel    | Staging      | Smoke | Approval gate | Signed    |
-| ---------- | ------------ | ----- | ------------- | --------- |
-| PyPI       | TestPyPI     | yes   | `pypi` env    | Sigstore  |
-| Docker Hub | local build  | yes   | none yet      | cosign    |
-
-> **Known gap — Docker approval gate:** Docker currently has smoke tests but
-> no approval gate before the production push. This will be addressed before
-> additional channels are added.
+| Channel    | Staging     | Smoke | Approval gate   | Signed   |
+| ---------- | ----------- | ----- | --------------- | -------- |
+| PyPI       | TestPyPI    | yes   | `release` env   | Sigstore |
+| Docker Hub | local build | yes   | `release` env   | cosign   |
 
 ## Adding a new channel
 
