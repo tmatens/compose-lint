@@ -93,6 +93,8 @@ exclude = [
     ".claude/",
     "fuzz/",
     ".clusterfuzzlite/",
+    "requirements.lock",
+    "requirements-dev.lock",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -102,4 +104,6 @@ exclude = [
     ".claude/",
     "fuzz/",
     ".clusterfuzzlite/",
+    "requirements.lock",
+    "requirements-dev.lock",
 ]

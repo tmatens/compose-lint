@@ -359,37 +359,87 @@ downstream user.
 
 #### 3. Development dependencies (`pyproject.toml` `[project.optional-dependencies.dev]`)
 
-Dev deps (ruff, mypy, pytest, and anything else under `[dev]`) are
-not consumer-visible, so the library-vs-app tension from (2) does
-not apply. These should be pinned tightly enough that CI is
-reproducible across days, ideally via a lockfile
-(`uv.lock` or a `pip-compile`-generated `requirements-dev.txt`)
-committed to the repo.
+Dev deps (ruff, mypy, pytest, and anything else under `[dev]`,
+`[lint]`, `[security]`, `[publish]`) are not consumer-visible, so
+the library-vs-app tension from (2) does not apply. CI must be
+byte-for-byte reproducible: every dev install — local or in a
+workflow — resolves through a hash-pinned lockfile.
 
-Short of a full lockfile, exact-pin each dev dep in
-`pyproject.toml` (`ruff==X.Y.Z`, not `ruff>=X.Y`). The churn this
-creates is absorbed by Renovate/Dependabot.
+The repo ships two lockfiles, both generated with
+`uv pip compile --generate-hashes`:
+
+- `requirements.lock` — runtime deps only (pyyaml). Used by the
+  ClusterFuzzLite build so the fuzzer's instrumented install is
+  reproducible.
+- `requirements-dev.lock` — runtime + every dev/lint/security/publish
+  extra. Used by every CI job in `ci.yml` and `publish.yml`.
+
+`pyproject.toml` still lists each dev dep with an exact `==` pin
+inside the relevant extras group. That declaration is the input to
+`uv pip compile`; the lockfile is the resolved, hash-pinned output
+that CI actually consumes. Both must agree, and Renovate/Dependabot
+bumps the pin in `pyproject.toml`, after which the lockfiles are
+regenerated (see "Regenerating the lockfiles" below).
 
 #### 4. CI tool installs (`pip install` inside workflows)
 
-Any `pip install <pkg>` in a workflow `run:` block must pin the
-package to an exact version:
+Every `pip install` in a workflow `run:` block must install through
+a hash-pinned lockfile, never as an ad-hoc package install:
 
 ```yaml
-- run: pip install ruff==0.14.4     # good
-- run: pip install ruff             # bad — resolves to whatever's newest
+# good — resolves through the lockfile, hashes verified
+- run: |
+    pip install --require-hashes -r requirements-dev.lock
+    pip install --no-deps -e .
+
+# bad — version pin, but no hash verification, no transitive lock
+- run: pip install ruff==0.14.4
+
+# worst — resolves to whatever's newest on PyPI today
+- run: pip install ruff
 ```
 
-An unpinned `pip install ruff` reaches out to PyPI on every CI run
-and can silently change behavior overnight when ruff cuts a new
-release. The only safe default is an exact pin, bumped by
-Renovate/Dependabot in a reviewable PR.
+`--require-hashes` is the enforcement mechanism: pip will refuse to
+install any package whose download doesn't match a hash in the
+lockfile, which closes the window where a compromised PyPI mirror
+or a republished version (PyPI doesn't allow this today, but the
+defense is cheap) could substitute a malicious artifact. The
+`pip install --no-deps -e .` line installs compose-lint itself
+without re-resolving; its deps are already covered by the lockfile.
 
-If the tool is already listed in `[project.optional-dependencies.dev]`
-and the job runs `pip install -e ".[dev]"`, that's also fine — the
-pin lives in `pyproject.toml` per (3). What's *not* fine is a
-separate ad-hoc `pip install <pkg>` line inside the workflow with
-no version.
+The one legitimate exception is the **bootstrap pip upgrade** in
+the security-scan job:
+
+```yaml
+- run: python -m pip install --upgrade pip
+```
+
+This runs *before* the lockfile install so that pip-audit doesn't
+flag CVEs in the runner-bundled pip itself (those CVEs are out of
+scope for this project's supply chain — they're GitHub's to patch,
+not ours). It is deliberately unpinned and deliberately unhashed
+because the whole point is "always grab the latest pip security
+fix." If you find yourself reaching for this exception for any
+*other* reason, you're doing it wrong.
+
+##### Regenerating the lockfiles
+
+When a dev dep changes in `pyproject.toml`, regenerate both
+lockfiles in the same commit:
+
+```bash
+uv pip compile pyproject.toml \
+  --generate-hashes \
+  -o requirements.lock
+
+uv pip compile pyproject.toml \
+  --extra dev --extra lint --extra security --extra publish \
+  --generate-hashes \
+  -o requirements-dev.lock
+```
+
+Commit `pyproject.toml` and both lockfiles together so the
+declared pins and the resolved hashes never drift apart.
 
 #### 5. Docker base images
 

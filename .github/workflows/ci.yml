@@ -26,7 +26,10 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.13"
-      - run: pip install -e ".[lint]"
+      - name: Install pinned dev env
+        run: |
+          pip install --require-hashes -r requirements-dev.lock
+          pip install --no-deps -e .
       - run: ruff check src/ tests/
       - run: ruff format --check src/ tests/
 
@@ -40,7 +43,10 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.13"
-      - run: pip install -e ".[dev]"
+      - name: Install pinned dev env
+        run: |
+          pip install --require-hashes -r requirements-dev.lock
+          pip install --no-deps -e .
       - run: mypy src/
 
   test:
@@ -57,7 +63,10 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install -e ".[dev]"
+      - name: Install pinned dev env
+        run: |
+          pip install --require-hashes -r requirements-dev.lock
+          pip install --no-deps -e .
       - run: pytest
 
   security:
@@ -75,12 +84,13 @@ jobs:
         # Upgrade pip first so pip-audit doesn't flag CVEs in the
         # runner-bundled pip itself (those are out of scope for this
         # project's supply chain). The pip upgrade is deliberately
-        # unpinned per the "always-latest for the bootstrap" exception;
-        # bandit and pip-audit come from the [security] extras group
-        # in pyproject.toml, where Dependabot can track the pins.
+        # unpinned per the "always-latest for the bootstrap" exception
+        # in AGENTS.md sub-case 4. bandit and pip-audit come from the
+        # hash-pinned dev lockfile.
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[security]"
+          pip install --require-hashes -r requirements-dev.lock
+          pip install --no-deps -e .
       - name: Bandit (source SAST)
         run: bandit -r src/ -ll
       - name: pip-audit (dependency CVEs)
