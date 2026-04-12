@@ -14,7 +14,6 @@ build/
 # Dev/test files
 tests/
 fuzz/
-.clusterfuzzlite/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
