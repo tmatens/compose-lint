@@ -6,10 +6,10 @@ compose-lint. Contributors don't need to read this; see
 
 The release pipeline is **tag-triggered**: pushing an annotated, signed
 `vX.Y.Z` tag to `main` kicks off `.github/workflows/publish.yml`, which
-builds, uploads to TestPyPI (gated on a protected environment), then
-uploads to real PyPI (gated on a second protected environment). Both
-environments require manual approval — the tag push alone does not
-release. Sigstore build attestations are generated automatically.
+builds, publishes to TestPyPI and runs smoke tests for all channels, then
+waits for a single manual approval on the `release` environment before
+publishing to all production channels in parallel. Sigstore build
+attestations are generated automatically.
 
 ## Choosing the version number
 
@@ -162,9 +162,9 @@ gh pr create --fill
 
 **Use the signed-tag-locally path by default.** The Actions UI path
 exists for dry-run validation, but tags created through the GitHub API
-with `GITHUB_TOKEN` do **not** trigger `Publish to PyPI` or
-`Docker Publish` — this is a documented GitHub security behavior. A tag
-pushed from your workstation with a signed push does trigger them.
+with `GITHUB_TOKEN` do **not** trigger `Publish` — this is a documented
+GitHub security behavior. A tag pushed from your workstation with a signed
+push does trigger it.
 
 Signed tag (normal path):
 
@@ -179,45 +179,39 @@ Dry-run validation via UI (does not publish):
 **Dry run**. Validates `pyproject.toml`, `__init__.py`, and
 `CHANGELOG.md` match and CI is green, without creating a tag.
 
-- [ ] The tag exists and triggered `Publish to PyPI` and `Docker Publish`
-      in Actions.
+- [ ] The tag exists and triggered `Publish` in Actions.
 
-## Approve the TestPyPI environment
+## Watch smoke tests
 
-- [ ] Open the running workflow. The `testpypi` job will be pending
-      approval from the `testpypi` environment.
-- [ ] Approve it. Wait for it to complete.
-- [ ] Check <https://test.pypi.org/project/compose-lint/> — the new
-      version should be listed. Sigstore attestations should appear on
-      the workflow run summary.
+After the tag push, `publish.yml` runs automatically:
 
-The `testpypi-smoke` job runs automatically after TestPyPI publish:
-installs the package from TestPyPI, verifies `--version` matches the
-tag, and runs clean/insecure fixture smoke tests. The real PyPI publish
-is gated on this job succeeding — no manual venv test needed.
+1. Builds the wheel and publishes to TestPyPI.
+2. Runs PyPI smoke tests (version check, clean/insecure fixtures) against
+   the TestPyPI artifact.
+3. Runs Docker smoke tests (version check, clean/insecure fixtures, SARIF)
+   against a local image build.
 
-## Approve the real PyPI environment
+No manual action needed here. Wait for all smoke jobs to go green.
 
-Only proceed once TestPyPI looks correct — a bad TestPyPI build almost
-always means a bad real-PyPI build, and PyPI version numbers cannot be
-reused even after deletion.
+- [ ] `testpypi-smoke` green — TestPyPI artifact is correct.
+- [ ] `docker-smoke` green — Docker image builds and behaves correctly.
 
-- [ ] Approve the `pypi` environment in the running workflow.
-- [ ] Workflow completes green.
+## Approve the release gate
+
+Once all smoke tests pass, the `release-gate` job waits for approval.
+One approval publishes all channels.
+
+- [ ] Open the running workflow. The `release-gate` job will be pending
+      approval from the `release` environment.
+- [ ] Review the smoke test results, then approve.
+
+After approval, `publish` and `docker-publish` run in parallel.
+
 - [ ] <https://pypi.org/project/compose-lint/> shows the new version.
 - [ ] The "Build provenance" section on the PyPI page shows the Sigstore
       attestation linked to this repo and the `publish.yml` workflow.
-
-## Approve the Docker Hub publish
-
-The tag push also triggers `.github/workflows/docker-publish.yml`, which
-builds a multi-arch image (`linux/amd64`, `linux/arm64`), runs smoke tests
-(version check, clean/insecure fixtures, SARIF output), pushes to Docker
-Hub as `composelint/compose-lint`, and signs the image with cosign
-(Sigstore keyless).
-
-- [ ] Docker publish workflow completes green (includes automated
-      post-push verification: pull, cosign verify, and version check).
+- [ ] Docker publish completes green (post-push cosign verify and version
+      check run automatically).
 
 ## Post-release
 
@@ -243,6 +237,12 @@ Hub as `composelint/compose-lint`, and signs the image with cosign
 
 ## If something goes wrong
 
+- **One channel's smoke is broken but the other must ship**: use the
+  manual escape hatch at **Actions → Publish channel (manual) → Run
+  workflow**. Enter the tag and select the channel. That workflow bypasses
+  the shared gate but still requires the per-channel environment approval
+  (`pypi` or `dockerhub`). Document why you used it in the GitHub Release
+  notes.
 - **TestPyPI publish fails**: fix forward. Delete the tag locally and on
   origin (`git tag -d vX.Y.Z && git push origin :refs/tags/vX.Y.Z`),
   land the fix via PR, re-tag with the **same** version number, and push
