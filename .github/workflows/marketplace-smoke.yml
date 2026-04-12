@@ -65,7 +65,7 @@ jobs:
           YAML
 
       - name: Clean fixture should pass
-        uses: tmatens/compose-lint@8cffa3497225dd41bacc25f266ff7ec196129072 # v0.3.0
+        uses: tmatens/compose-lint@29d14a0e4178bec6d7b6b5309969c80d38f81bc7 # v0.3.3
         with:
           files: smoke/clean.yml
           fail-on: high
@@ -73,7 +73,7 @@ jobs:
       - name: Insecure fixture should fail
         id: insecure
         continue-on-error: true
-        uses: tmatens/compose-lint@8cffa3497225dd41bacc25f266ff7ec196129072 # v0.3.0
+        uses: tmatens/compose-lint@29d14a0e4178bec6d7b6b5309969c80d38f81bc7 # v0.3.3
         with:
           files: smoke/insecure.yml
           fail-on: high
