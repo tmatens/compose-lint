@@ -26,9 +26,8 @@ CLAUDE.md
 .vscode/
 .idea/
 
-# Lockfiles (not needed in image)
-requirements.lock
-requirements-dev.lock
+# Lockfiles not needed in compose-lint image but kept in context
+# because the ClusterFuzzLite Dockerfile (COPY .) needs requirements.lock
 
 # Misc
 .env
