@@ -1,0 +1,40 @@
+services:
+  sys_admin:
+    image: nginx:1.27-alpine
+    cap_add:
+      - SYS_ADMIN
+  sys_ptrace:
+    image: nginx:1.27-alpine
+    cap_add:
+      - SYS_PTRACE
+  net_admin:
+    image: nginx:1.27-alpine
+    cap_add:
+      - NET_ADMIN
+  multiple_dangerous:
+    image: nginx:1.27-alpine
+    cap_add:
+      - SYS_ADMIN
+      - SYS_PTRACE
+      - NET_ADMIN
+  safe_caps:
+    image: nginx:1.27-alpine
+    cap_add:
+      - NET_BIND_SERVICE
+      - CHOWN
+  no_cap_add:
+    image: nginx:1.27-alpine
+  lowercase_cap:
+    image: nginx:1.27-alpine
+    cap_add:
+      - sys_module
+  all_dangerous:
+    image: nginx:1.27-alpine
+    cap_add:
+      - SYS_ADMIN
+      - SYS_PTRACE
+      - NET_ADMIN
+      - SYS_MODULE
+      - SYS_RAWIO
+      - SYS_TIME
+      - DAC_READ_SEARCH

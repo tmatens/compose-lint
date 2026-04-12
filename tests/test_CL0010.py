@@ -42,6 +42,14 @@ class TestHostNamespaceRule:
         assert len(findings) == 1
         assert "user namespace" in findings[0].message
 
+    def test_detects_uts_host(self) -> None:
+        data, lines = load_compose(FIXTURES / "insecure_host_namespace.yml")
+        findings = list(
+            self.rule.check("uts_host", data["services"]["uts_host"], data, lines)
+        )
+        assert len(findings) == 1
+        assert "UTS namespace" in findings[0].message
+
     def test_detects_all_three(self) -> None:
         data, lines = load_compose(FIXTURES / "insecure_host_namespace.yml")
         findings = list(

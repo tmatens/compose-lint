@@ -1,0 +1,12 @@
+services:
+  disabled_zero:
+    image: nginx:1.27-alpine
+    pids_limit: 0
+  disabled_negative:
+    image: nginx:1.27-alpine
+    pids_limit: -1
+  positive_limit:
+    image: nginx:1.27-alpine
+    pids_limit: 200
+  no_limit_set:
+    image: nginx:1.27-alpine

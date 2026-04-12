@@ -15,6 +15,9 @@ services:
     userns_mode: host
   no_namespace_sharing:
     image: nginx:1.27-alpine
+  uts_host:
+    image: nginx:1.27-alpine
+    uts: host
   ipc_shareable:
     image: nginx:1.27-alpine
     ipc: shareable

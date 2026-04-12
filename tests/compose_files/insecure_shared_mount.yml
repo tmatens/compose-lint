@@ -1,0 +1,35 @@
+services:
+  shared_short:
+    image: nginx:1.27-alpine
+    volumes:
+      - /data:/app/data:shared
+  shared_with_ro:
+    image: nginx:1.27-alpine
+    volumes:
+      - /data:/app/data:ro,shared
+  shared_long:
+    image: nginx:1.27-alpine
+    volumes:
+      - type: bind
+        source: /data
+        target: /app/data
+        bind:
+          propagation: shared
+  rprivate_long:
+    image: nginx:1.27-alpine
+    volumes:
+      - type: bind
+        source: /data
+        target: /app/data
+        bind:
+          propagation: rprivate
+  normal_mount:
+    image: nginx:1.27-alpine
+    volumes:
+      - /data:/app/data
+  rw_mount:
+    image: nginx:1.27-alpine
+    volumes:
+      - /data:/app/data:rw
+  no_volumes:
+    image: nginx:1.27-alpine

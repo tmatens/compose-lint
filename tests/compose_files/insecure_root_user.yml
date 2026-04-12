@@ -1,0 +1,21 @@
+services:
+  root_name:
+    image: nginx:1.27-alpine
+    user: root
+  root_uid:
+    image: nginx:1.27-alpine
+    user: "0"
+  root_with_group:
+    image: nginx:1.27-alpine
+    user: "root:root"
+  root_uid_gid:
+    image: nginx:1.27-alpine
+    user: "0:0"
+  non_root:
+    image: nginx:1.27-alpine
+    user: "1000:1000"
+  named_user:
+    image: nginx:1.27-alpine
+    user: appuser
+  no_user:
+    image: nginx:1.27-alpine

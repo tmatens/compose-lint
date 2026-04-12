@@ -1,0 +1,41 @@
+services:
+  dev_mem:
+    image: nginx:1.27-alpine
+    devices:
+      - /dev/mem:/dev/mem
+  dev_kmem:
+    image: nginx:1.27-alpine
+    devices:
+      - /dev/kmem:/dev/kmem
+  dev_port:
+    image: nginx:1.27-alpine
+    devices:
+      - /dev/port:/dev/port
+  block_sda:
+    image: nginx:1.27-alpine
+    devices:
+      - /dev/sda:/dev/sda
+  block_sda1:
+    image: nginx:1.27-alpine
+    devices:
+      - /dev/sda1:/dev/sda1
+  block_nvme:
+    image: nginx:1.27-alpine
+    devices:
+      - /dev/nvme0n1:/dev/nvme0n1
+  disk_symlink:
+    image: nginx:1.27-alpine
+    devices:
+      - /dev/disk/by-id/ata-drive:/dev/xvda
+  multiple:
+    image: nginx:1.27-alpine
+    devices:
+      - /dev/mem:/dev/mem
+      - /dev/sda:/dev/sda
+  safe_device:
+    image: nginx:1.27-alpine
+    devices:
+      - /dev/net/tun:/dev/net/tun
+      - /dev/fuse:/dev/fuse
+  no_devices:
+    image: nginx:1.27-alpine

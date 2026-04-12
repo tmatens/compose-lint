@@ -1,0 +1,19 @@
+services:
+  disabled:
+    image: nginx:1.27-alpine
+    healthcheck:
+      disable: true
+  configured:
+    image: nginx:1.27-alpine
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+  no_healthcheck:
+    image: nginx:1.27-alpine
+  disable_false:
+    image: nginx:1.27-alpine
+    healthcheck:
+      disable: false
+      test: ["CMD", "curl", "-f", "http://localhost/"]
