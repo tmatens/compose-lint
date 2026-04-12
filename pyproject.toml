@@ -95,6 +95,8 @@ exclude = [
     ".clusterfuzzlite/",
     "requirements.lock",
     "requirements-dev.lock",
+    "Dockerfile",
+    ".dockerignore",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -106,4 +108,6 @@ exclude = [
     ".clusterfuzzlite/",
     "requirements.lock",
     "requirements-dev.lock",
+    "Dockerfile",
+    ".dockerignore",
 ]

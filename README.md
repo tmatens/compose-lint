@@ -29,6 +29,18 @@ When run without arguments, compose-lint automatically finds `compose.yml`, `com
 compose-lint docker-compose.yml docker-compose.prod.yml
 ```
 
+### Docker
+
+```bash
+docker run --rm -v "$(pwd):/src" composelint/compose-lint
+```
+
+Or scan a specific file:
+
+```bash
+docker run --rm -v "$(pwd):/src" composelint/compose-lint docker-compose.prod.yml
+```
+
 ## Example Output
 
 ```
@@ -63,7 +75,16 @@ docker-compose.yml: 1 critical, 1 high
 | [CL-0007](docs/rules/CL-0007.md) | MEDIUM | Filesystem not read-only | [Rule #8](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8---set-filesystem-and-volumes-to-read-only) | 5.12 |
 | [CL-0008](docs/rules/CL-0008.md) | HIGH | Host network mode | [Rule #5](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5---be-mindful-of-inter-container-connectivity) | 5.9 |
 | [CL-0009](docs/rules/CL-0009.md) | HIGH | Security profile disabled | [Rule #6](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-6---use-linux-security-module-seccomp-apparmor-or-selinux) | 5.21 |
-| [CL-0010](docs/rules/CL-0010.md) | HIGH | Host namespace sharing | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3---limit-capabilities-grant-only-specific-capabilities-needed-by-a-container) | 5.8, 5.15, 5.16 |
+| [CL-0010](docs/rules/CL-0010.md) | HIGH | Host namespace sharing | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3---limit-capabilities-grant-only-specific-capabilities-needed-by-a-container) | 5.8, 5.15, 5.16, 5.21 |
+| [CL-0011](docs/rules/CL-0011.md) | HIGH | Dangerous capabilities added | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3---limit-capabilities-grant-only-specific-capabilities-needed-by-a-container) | 5.5 |
+| [CL-0012](docs/rules/CL-0012.md) | MEDIUM | PIDs cgroup limit disabled | — | 5.29 |
+| [CL-0013](docs/rules/CL-0013.md) | HIGH | Sensitive host path mounted | [Rule #8](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8---set-filesystem-and-volumes-to-read-only) | 5.5 |
+| [CL-0014](docs/rules/CL-0014.md) | MEDIUM | Logging driver disabled | — | 5.x |
+| [CL-0015](docs/rules/CL-0015.md) | LOW | Healthcheck disabled | — | 4.6, 5.27 |
+| [CL-0016](docs/rules/CL-0016.md) | HIGH | Dangerous host device exposed | — | 5.18 |
+| [CL-0017](docs/rules/CL-0017.md) | MEDIUM | Shared mount propagation | — | 5.20 |
+| [CL-0018](docs/rules/CL-0018.md) | MEDIUM | Explicit root user | [Rule #7](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-7---do-not-run-containers-with-a-root-user) | 5.x |
+| [CL-0019](docs/rules/CL-0019.md) | MEDIUM | Image tag without digest | [Rule #13](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-13---enhance-supply-chain-security) | 5.27 |
 
 ## Severity Levels
 

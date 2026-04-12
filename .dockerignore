@@ -1,0 +1,38 @@
+# Git and CI
+.git
+.github
+.gitignore
+
+# Python artifacts
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+dist/
+build/
+
+# Dev/test files
+tests/
+fuzz/
+.clusterfuzzlite/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+
+# Agent/IDE config
+AGENTS.md
+CLAUDE.md
+.claude/
+.vscode/
+.idea/
+
+# Lockfiles (not needed in image)
+requirements.lock
+requirements-dev.lock
+
+# Misc
+.env
+*.md
+!README.md
+!LICENSE

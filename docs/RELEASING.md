@@ -203,6 +203,18 @@ reused even after deletion.
 - [ ] The "Build provenance" section on the PyPI page shows the Sigstore
       attestation linked to this repo and the `publish.yml` workflow.
 
+## Approve the Docker Hub publish
+
+The tag push also triggers `.github/workflows/docker-publish.yml`, which
+builds a multi-arch image (`linux/amd64`, `linux/arm64`), runs smoke tests
+(version check, clean/insecure fixtures, SARIF output), pushes to Docker
+Hub as `composelint/compose-lint`, and signs the image with cosign
+(Sigstore keyless).
+
+- [ ] Docker publish workflow completes green.
+- [ ] `docker pull composelint/compose-lint:X.Y.Z` succeeds.
+- [ ] `cosign verify composelint/compose-lint:X.Y.Z --certificate-identity-regexp=github --certificate-oidc-issuer=https://token.actions.githubusercontent.com` passes.
+
 ## Post-release
 
 - [ ] Create a GitHub Release from the tag
