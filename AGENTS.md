@@ -292,39 +292,47 @@ differ.
 
 #### 1. GitHub Actions workflows
 
-Every third-party `uses:` reference in `.github/workflows/*.yml`
-must be pinned to a full commit SHA, with the tag in a trailing
-comment so a human can still read the version:
+**Every** `uses:` reference in `.github/workflows/*.yml` must be
+pinned to a full commit SHA, with the tag in a trailing comment so a
+human can still read the version. No first-party carve-out:
+`actions/checkout`, `actions/setup-python`, `github/codeql-action`,
+and every other `actions/*` / `github/*` action pins to a SHA, same
+as third-party actions. Self-references like `tmatens/compose-lint`
+pin to a SHA too.
 
 ```yaml
 - uses: owner/repo@0123456789abcdef0123456789abcdef01234567 # v1.2.3
 ```
 
-- **First-party actions are exempt.** `actions/*` and `github/*`
-  (e.g. `actions/checkout@v6`, `github/codeql-action@v4`) are on
-  CodeQL's whitelist and stay tag-pinned. Everything else —
-  including self-references like `tmatens/compose-lint` — pins to
-  a SHA.
 - **Get the SHA from the ref:** `git rev-parse vX.Y.Z^{commit}` for
-  tags you control, or copy from the action's release page on
-  GitHub for third-party actions.
+  tags you control, or resolve via the API for third-party actions:
+  ```bash
+  gh api repos/OWNER/REPO/git/ref/tags/vX.Y.Z -q .object.sha
+  # if that returns a tag object (annotated tag), deref it:
+  gh api repos/OWNER/REPO/git/tags/<that-sha> -q .object.sha
+  ```
 - **Keep the SHA and the `# vX.Y.Z` comment in sync.** Drift
   between the two is worse than no comment — the human reads the
   comment, the runner reads the SHA, and they should never
-  disagree.
+  disagree. Dependabot/Renovate PRs update both atomically.
 - **The one legitimate exception** is `uses: ./` (a local composite
   action in this repo). That's a path, not a ref, and there is
   nothing to pin.
 - **If a SHA pin is genuinely impossible for some other reason,
   leave an inline comment explaining why** — don't silently ship a
-  tag pin and hope CodeQL doesn't notice. CodeQL's
-  `workflow/third-party-action-not-pinned-to-commit-sha` rule will
-  flag it on the next PR regardless.
+  tag pin. CodeQL's
+  `workflow/third-party-action-not-pinned-to-commit-sha` rule
+  enforces this for third-party actions, and Scorecard's
+  `Pinned-Dependencies` check enforces it for first-party actions
+  too.
 
 The motivating rationale is supply-chain integrity: a tag pin
-trusts the upstream author to never repoint the tag, and CodeQL's
-rule is the enforcement mechanism. Commit b59847c ("Pin third-party
-GitHub Actions to commit SHAs") is the precedent.
+trusts the upstream author to never repoint the tag. The earlier
+first-party exemption here relied on CodeQL's whitelist, but
+Scorecard does not whitelist first-party actions, and uniformity
+("pin everything you consume from a registry") is simpler than
+maintaining a policy seam. Commit b59847c ("Pin third-party GitHub
+Actions to commit SHAs") was the original precedent.
 
 #### 2. Runtime dependencies (`pyproject.toml` `[project] dependencies`)
 
@@ -351,37 +359,96 @@ downstream user.
 
 #### 3. Development dependencies (`pyproject.toml` `[project.optional-dependencies.dev]`)
 
-Dev deps (ruff, mypy, pytest, and anything else under `[dev]`) are
-not consumer-visible, so the library-vs-app tension from (2) does
-not apply. These should be pinned tightly enough that CI is
-reproducible across days, ideally via a lockfile
-(`uv.lock` or a `pip-compile`-generated `requirements-dev.txt`)
-committed to the repo.
+Dev deps (ruff, mypy, pytest, and anything else under `[dev]`,
+`[lint]`, `[security]`, `[publish]`) are not consumer-visible, so
+the library-vs-app tension from (2) does not apply. CI must be
+byte-for-byte reproducible: every dev install — local or in a
+workflow — resolves through a hash-pinned lockfile.
 
-Short of a full lockfile, exact-pin each dev dep in
-`pyproject.toml` (`ruff==X.Y.Z`, not `ruff>=X.Y`). The churn this
-creates is absorbed by Renovate/Dependabot.
+The repo ships two lockfiles, both generated with
+`uv pip compile --generate-hashes`:
+
+- `requirements.lock` — runtime deps only (pyyaml). Used by the
+  ClusterFuzzLite build so the fuzzer's instrumented install is
+  reproducible.
+- `requirements-dev.lock` — runtime + every dev/lint/security/publish
+  extra. Used by every CI job in `ci.yml` and `publish.yml`.
+
+`pyproject.toml` still lists each dev dep with an exact `==` pin
+inside the relevant extras group. That declaration is the input to
+`uv pip compile`; the lockfile is the resolved, hash-pinned output
+that CI actually consumes. Both must agree, and Renovate/Dependabot
+bumps the pin in `pyproject.toml`, after which the lockfiles are
+regenerated (see "Regenerating the lockfiles" below).
 
 #### 4. CI tool installs (`pip install` inside workflows)
 
-Any `pip install <pkg>` in a workflow `run:` block must pin the
-package to an exact version:
+Every `pip install` in a workflow `run:` block must install through
+a hash-pinned lockfile, never as an ad-hoc package install:
 
 ```yaml
-- run: pip install ruff==0.14.4     # good
-- run: pip install ruff             # bad — resolves to whatever's newest
+# good — resolves through the lockfile, hashes verified
+- run: |
+    pip install --require-hashes -r requirements-dev.lock
+    pip install --no-deps -e .
+
+# bad — version pin, but no hash verification, no transitive lock
+- run: pip install ruff==0.14.4
+
+# worst — resolves to whatever's newest on PyPI today
+- run: pip install ruff
 ```
 
-An unpinned `pip install ruff` reaches out to PyPI on every CI run
-and can silently change behavior overnight when ruff cuts a new
-release. The only safe default is an exact pin, bumped by
-Renovate/Dependabot in a reviewable PR.
+`--require-hashes` is the enforcement mechanism: pip will refuse to
+install any package whose download doesn't match a hash in the
+lockfile, which closes the window where a compromised PyPI mirror
+or a republished version (PyPI doesn't allow this today, but the
+defense is cheap) could substitute a malicious artifact. The
+`pip install --no-deps -e .` line installs compose-lint itself
+without re-resolving; its deps are already covered by the lockfile.
 
-If the tool is already listed in `[project.optional-dependencies.dev]`
-and the job runs `pip install -e ".[dev]"`, that's also fine — the
-pin lives in `pyproject.toml` per (3). What's *not* fine is a
-separate ad-hoc `pip install <pkg>` line inside the workflow with
-no version.
+The one legitimate exception is the **bootstrap pip upgrade** in
+the security-scan job:
+
+```yaml
+- run: python -m pip install --upgrade pip
+```
+
+This runs *before* the lockfile install so that pip-audit doesn't
+flag CVEs in the runner-bundled pip itself (those CVEs are out of
+scope for this project's supply chain — they're GitHub's to patch,
+not ours). It is deliberately unpinned and deliberately unhashed
+because the whole point is "always grab the latest pip security
+fix." If you find yourself reaching for this exception for any
+*other* reason, you're doing it wrong.
+
+##### Regenerating the lockfiles
+
+When a dev dep changes in `pyproject.toml`, regenerate both
+lockfiles in the same commit:
+
+```bash
+uv pip compile pyproject.toml \
+  --universal --python-version 3.10 \
+  --generate-hashes \
+  -o requirements.lock
+
+uv pip compile pyproject.toml \
+  --extra dev --extra lint --extra security --extra publish \
+  --universal --python-version 3.10 \
+  --generate-hashes \
+  -o requirements-dev.lock
+```
+
+`--universal` emits environment markers so a single lockfile
+works across platforms. `--python-version 3.10` matches
+`requires-python` so conditional backport deps (e.g.,
+`backports.tarfile` for Python <3.12) are included — without
+it, uv resolves against the interpreter version and silently
+drops deps that older Pythons in the test matrix still need.
+
+Commit `pyproject.toml` and both lockfiles together so the
+declared pins and the resolved hashes never drift apart.
 
 #### 5. Docker base images
 

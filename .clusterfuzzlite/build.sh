@@ -5,7 +5,8 @@
 # the existing test fixtures.
 set -euo pipefail
 
-pip install --no-cache-dir .
+pip install --no-cache-dir --require-hashes -r requirements.lock
+pip install --no-cache-dir --no-deps .
 
 for fuzzer in "$SRC"/compose-lint/fuzz/fuzz_*.py; do
   fuzzer_basename=$(basename "$fuzzer" .py)
