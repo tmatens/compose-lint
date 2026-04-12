@@ -1,36 +1,19 @@
-# Git and CI
-.git
-.github
-.gitignore
+# Shared by the compose-lint Dockerfile and the ClusterFuzzLite Dockerfile.
+# Keep this minimal — the compose-lint Dockerfile already COPYs only the
+# paths it needs; the fuzz Dockerfile uses COPY . and needs most of the repo.
 
-# Python artifacts
+.git
 __pycache__
 *.pyc
 *.pyo
 *.egg-info
 dist/
 build/
-
-# Dev/test files
-tests/
-fuzz/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
 htmlcov/
-
-# Agent/IDE config
-AGENTS.md
-CLAUDE.md
 .claude/
 .vscode/
 .idea/
-
-# Lockfiles not needed in compose-lint image but kept in context
-# because the ClusterFuzzLite Dockerfile (COPY .) needs requirements.lock
-
-# Misc
 .env
-*.md
-!README.md
-!LICENSE
