@@ -36,7 +36,7 @@ class TestImageNoDigestRule:
     def test_detects_registry_tag_without_digest(self) -> None:
         findings = self._check("registry_tag")
         assert len(findings) == 1
-        assert "ghcr.io" in findings[0].message
+        assert "ghcr.io/org/app:2.0.1" == findings[0].message.split("'")[1]
 
     def test_digest_pinned_no_findings(self) -> None:
         findings = self._check("digest_pinned")
