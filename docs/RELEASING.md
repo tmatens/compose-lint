@@ -158,18 +158,25 @@ gh pr create --fill
 - [ ] Squash-merge to `main`.
 - [ ] `git checkout main && git pull --ff-only`.
 
-## Tag and push
+## Tag and release
 
-Tags must be **annotated and signed**. The publish workflow only
-triggers on `v*` tags.
+Go to **Actions → Release → Run workflow**. Enter the version number
+(e.g. `0.4.0`). The workflow validates that `pyproject.toml`,
+`__init__.py`, and `CHANGELOG.md` all match, checks CI passed on main,
+then creates an annotated tag. The tag push triggers `Publish to PyPI`
+and `Docker Publish` automatically.
+
+Use **Dry run** to validate everything without creating the tag.
+
+Alternatively, create a signed tag locally:
 
 ```bash
 git tag -s vX.Y.Z -m "compose-lint X.Y.Z"
 git push origin vX.Y.Z
 ```
 
-- [ ] `git tag -v vX.Y.Z` prints a good signature.
-- [ ] The tag push triggered `Publish to PyPI` in Actions.
+- [ ] The tag exists and triggered `Publish to PyPI` and `Docker Publish`
+      in Actions.
 
 ## Approve the TestPyPI environment
 
