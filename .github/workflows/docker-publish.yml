@@ -52,12 +52,12 @@ jobs:
       # Smoke test: version check
       - name: Test — version output matches tag
         run: |
-          expected="${GITHUB_REF_NAME#v}"
+          expected="compose-lint ${GITHUB_REF_NAME#v}"
           actual="$(docker run --rm composelint/compose-lint:test --version)"
           echo "Expected: ${expected}"
           echo "Actual:   ${actual}"
           if [ "${actual}" != "${expected}" ]; then
-            echo "::error::Version mismatch: image reports '${actual}', tag is '${expected}'"
+            echo "::error::Version mismatch: image reports '${actual}', expected '${expected}'"
             exit 1
           fi
 
@@ -142,7 +142,7 @@ jobs:
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
         run: |
-          expected="${GITHUB_REF_NAME#v}"
+          expected="compose-lint ${GITHUB_REF_NAME#v}"
           actual="$(docker run --rm "composelint/compose-lint@${DIGEST}" --version)"
           echo "Expected: ${expected}"
           echo "Actual:   ${actual}"

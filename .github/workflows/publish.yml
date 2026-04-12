@@ -75,11 +75,12 @@ jobs:
           python-version: "3.13"
       - name: Install from TestPyPI and verify version
         run: |
-          expected="${GITHUB_REF_NAME#v}"
+          version="${GITHUB_REF_NAME#v}"
           pip install \
             -i https://test.pypi.org/simple/ \
             --extra-index-url https://pypi.org/simple/ \
-            "compose-lint==${expected}"
+            "compose-lint==${version}"
+          expected="compose-lint ${version}"
           actual="$(compose-lint --version)"
           echo "Expected: ${expected}"
           echo "Actual:   ${actual}"
