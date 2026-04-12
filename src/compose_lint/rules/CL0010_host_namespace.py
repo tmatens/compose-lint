@@ -35,6 +35,12 @@ _NAMESPACE_CHECKS: list[tuple[str, str, str, str]] = [
         "CIS Docker Benchmark 5.15 — Do not share the host's user namespace",
         "user namespace. UID/GID mapping between container and host is disabled.",
     ),
+    (
+        "uts",
+        "host",
+        "CIS Docker Benchmark 5.21 — Do not share the host's UTS namespace",
+        "UTS namespace. The container can change the host's hostname.",
+    ),
 ]
 
 
@@ -48,14 +54,14 @@ class HostNamespaceRule(BaseRule):
             id="CL-0010",
             name="Host namespace sharing",
             description=(
-                "Sharing host namespaces (PID, IPC, user) breaks container "
+                "Sharing host namespaces (PID, IPC, user, UTS) breaks container "
                 "isolation. The container gains visibility into or control over "
                 "host-level resources."
             ),
             severity=Severity.HIGH,
             references=[
                 OWASP_REF,
-                "CIS Docker Benchmark 5.8, 5.10, 5.15",
+                "CIS Docker Benchmark 5.8, 5.10, 5.15, 5.21",
             ],
         )
 

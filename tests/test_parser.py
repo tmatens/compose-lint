@@ -19,7 +19,10 @@ class TestLoadCompose:
         assert "services" in data
         assert "web" in data["services"]
         assert "db" in data["services"]
-        assert data["services"]["web"]["image"] == "nginx:1.27-alpine"
+        assert (
+            data["services"]["web"]["image"]
+            == "nginx:1.27-alpine@sha256:a1234567890abcdef"
+        )
 
     def test_returns_plain_dicts(self) -> None:
         data, _lines = load_compose(FIXTURES / "valid_basic.yml")

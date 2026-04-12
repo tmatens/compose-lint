@@ -1,6 +1,6 @@
 services:
   web:
-    image: nginx:1.27-alpine
+    image: nginx:1.27-alpine@sha256:a1234567890abcdef
     ports:
       - "127.0.0.1:8080:80"
     security_opt:
@@ -12,7 +12,7 @@ services:
       - /tmp
       - /run
   db:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:b1234567890abcdef
     security_opt:
       - no-new-privileges:true
     cap_drop:

@@ -1,0 +1,19 @@
+services:
+  logging_none:
+    image: nginx:1.27-alpine
+    logging:
+      driver: none
+  logging_json:
+    image: nginx:1.27-alpine
+    logging:
+      driver: json-file
+  logging_syslog:
+    image: nginx:1.27-alpine
+    logging:
+      driver: syslog
+  no_logging_config:
+    image: nginx:1.27-alpine
+  logging_none_uppercase:
+    image: nginx:1.27-alpine
+    logging:
+      driver: None

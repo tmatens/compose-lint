@@ -1,0 +1,49 @@
+services:
+  mounts_etc:
+    image: nginx:1.27-alpine
+    volumes:
+      - /etc:/host-etc:ro
+  mounts_proc:
+    image: nginx:1.27-alpine
+    volumes:
+      - /proc:/host-proc
+  mounts_sys:
+    image: nginx:1.27-alpine
+    volumes:
+      - /sys:/host-sys
+  mounts_boot:
+    image: nginx:1.27-alpine
+    volumes:
+      - /boot:/host-boot
+  mounts_root:
+    image: nginx:1.27-alpine
+    volumes:
+      - /root:/host-root
+  mounts_etc_subpath:
+    image: nginx:1.27-alpine
+    volumes:
+      - /etc/passwd:/etc/passwd:ro
+  mounts_multiple:
+    image: nginx:1.27-alpine
+    volumes:
+      - /etc:/host-etc
+      - /proc:/host-proc
+  safe_volume:
+    image: nginx:1.27-alpine
+    volumes:
+      - /data:/app/data
+      - myvolume:/app/storage
+  no_volumes:
+    image: nginx:1.27-alpine
+  long_syntax_bind:
+    image: nginx:1.27-alpine
+    volumes:
+      - type: bind
+        source: /etc
+        target: /host-etc
+  long_syntax_named:
+    image: nginx:1.27-alpine
+    volumes:
+      - type: volume
+        source: myvolume
+        target: /app/data

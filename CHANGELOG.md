@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-12
+
+### Added
+
+- 9 new security rules, bringing the total to 19:
+  - **CL-0011**: Dangerous capabilities added — `cap_add` with SYS_ADMIN,
+    SYS_PTRACE, NET_ADMIN, SYS_MODULE, SYS_RAWIO, SYS_TIME, or
+    DAC_READ_SEARCH (HIGH)
+  - **CL-0012**: PIDs cgroup limit disabled — `pids_limit: 0` or `-1` (MEDIUM)
+  - **CL-0013**: Sensitive host paths mounted — bind mounts of `/etc`, `/proc`,
+    `/sys`, `/boot`, or `/root` in short or long syntax (HIGH)
+  - **CL-0014**: Logging driver disabled — `logging.driver: none` (MEDIUM)
+  - **CL-0015**: Healthcheck disabled — `healthcheck.disable: true` (LOW)
+  - **CL-0016**: Dangerous host devices exposed — `/dev/mem`, `/dev/kmem`,
+    `/dev/port`, `/dev/sd*`, `/dev/nvme*`, `/dev/disk/*` (HIGH)
+  - **CL-0017**: Shared mount propagation — `:shared` suffix or
+    `bind.propagation: shared` (MEDIUM)
+  - **CL-0018**: Explicit root user — `user: root` or `user: "0"` overrides
+    image USER instruction (MEDIUM)
+  - **CL-0019**: Image tag without digest — version tag present but no
+    `@sha256:` pin; non-overlapping with CL-0004 (MEDIUM)
+
+### Changed
+
+- **CL-0010** now also detects `uts: host` (CIS 5.21 — sharing the host's UTS
+  namespace lets a container change the host's hostname).
+
 ## [0.2.0] - 2026-04-10
 
 First public release.
@@ -51,4 +78,5 @@ First public release.
   inputs through `env:` rather than direct `${{ }}` interpolation to prevent
   shell injection.
 
+[0.3.0]: https://github.com/tmatens/compose-lint/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/tmatens/compose-lint/releases/tag/v0.2.0
