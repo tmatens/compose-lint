@@ -292,39 +292,47 @@ differ.
 
 #### 1. GitHub Actions workflows
 
-Every third-party `uses:` reference in `.github/workflows/*.yml`
-must be pinned to a full commit SHA, with the tag in a trailing
-comment so a human can still read the version:
+**Every** `uses:` reference in `.github/workflows/*.yml` must be
+pinned to a full commit SHA, with the tag in a trailing comment so a
+human can still read the version. No first-party carve-out:
+`actions/checkout`, `actions/setup-python`, `github/codeql-action`,
+and every other `actions/*` / `github/*` action pins to a SHA, same
+as third-party actions. Self-references like `tmatens/compose-lint`
+pin to a SHA too.
 
 ```yaml
 - uses: owner/repo@0123456789abcdef0123456789abcdef01234567 # v1.2.3
 ```
 
-- **First-party actions are exempt.** `actions/*` and `github/*`
-  (e.g. `actions/checkout@v6`, `github/codeql-action@v4`) are on
-  CodeQL's whitelist and stay tag-pinned. Everything else —
-  including self-references like `tmatens/compose-lint` — pins to
-  a SHA.
 - **Get the SHA from the ref:** `git rev-parse vX.Y.Z^{commit}` for
-  tags you control, or copy from the action's release page on
-  GitHub for third-party actions.
+  tags you control, or resolve via the API for third-party actions:
+  ```bash
+  gh api repos/OWNER/REPO/git/ref/tags/vX.Y.Z -q .object.sha
+  # if that returns a tag object (annotated tag), deref it:
+  gh api repos/OWNER/REPO/git/tags/<that-sha> -q .object.sha
+  ```
 - **Keep the SHA and the `# vX.Y.Z` comment in sync.** Drift
   between the two is worse than no comment — the human reads the
   comment, the runner reads the SHA, and they should never
-  disagree.
+  disagree. Dependabot/Renovate PRs update both atomically.
 - **The one legitimate exception** is `uses: ./` (a local composite
   action in this repo). That's a path, not a ref, and there is
   nothing to pin.
 - **If a SHA pin is genuinely impossible for some other reason,
   leave an inline comment explaining why** — don't silently ship a
-  tag pin and hope CodeQL doesn't notice. CodeQL's
-  `workflow/third-party-action-not-pinned-to-commit-sha` rule will
-  flag it on the next PR regardless.
+  tag pin. CodeQL's
+  `workflow/third-party-action-not-pinned-to-commit-sha` rule
+  enforces this for third-party actions, and Scorecard's
+  `Pinned-Dependencies` check enforces it for first-party actions
+  too.
 
 The motivating rationale is supply-chain integrity: a tag pin
-trusts the upstream author to never repoint the tag, and CodeQL's
-rule is the enforcement mechanism. Commit b59847c ("Pin third-party
-GitHub Actions to commit SHAs") is the precedent.
+trusts the upstream author to never repoint the tag. The earlier
+first-party exemption here relied on CodeQL's whitelist, but
+Scorecard does not whitelist first-party actions, and uniformity
+("pin everything you consume from a registry") is simpler than
+maintaining a policy seam. Commit b59847c ("Pin third-party GitHub
+Actions to commit SHAs") was the original precedent.
 
 #### 2. Runtime dependencies (`pyproject.toml` `[project] dependencies`)
 
