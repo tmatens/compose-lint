@@ -1,44 +1,12 @@
 # Roadmap
 
-compose-lint v0.2.0 has a proven core engine — 10 rules, PyPI distribution, SARIF/JSON/text output, pre-commit support. The gap is coverage, distribution reach, and developer experience.
+compose-lint v0.3.0 shipped 19 rules, PyPI distribution, SARIF/JSON/text output, pre-commit support, and a GitHub Action. The gap is distribution reach and developer experience.
 
 ---
 
-## Milestone 1 — Rule Coverage (v0.3)
+## Milestone 1 — Rule Coverage (v0.3) [complete]
 
-The existing 10 rules cover the most critical OWASP/CIS items. This milestone fills the next tier before expanding distribution. More installs means more exposure to false negatives; completeness comes first.
-
-Each candidate was evaluated against three criteria: (1) actionability — is the finding specific enough to fix without guessing?; (2) false positive rate — does the absence of a field have a legitimate default?; (3) right tool — can a Compose linter detect this without image inspection or runtime state?
-
-**New rules (CL-0011 – CL-0017)**
-
-| Rule ID | Check | Severity | Grounding |
-|---------|-------|----------|-----------|
-| CL-0011 | Dangerous `cap_add` values (`SYS_ADMIN`, `SYS_PTRACE`, `NET_ADMIN`, `SYS_MODULE`, `SYS_RAWIO`, `SYS_TIME`, `DAC_READ_SEARCH`) | HIGH | OWASP Rule #3, CIS 5.5 |
-| CL-0012 | PIDs cgroup limit disabled (`pids_limit: 0` or `pids_limit: -1`) | MEDIUM | CIS 5.29 |
-| CL-0013 | Sensitive host paths mounted (`volumes:` containing `/etc`, `/proc`, `/sys`, `/boot`, `/root`) | HIGH | OWASP Rule #8, CIS 5.5 |
-| CL-0014 | Logging driver disabled (`logging.driver: none`) | MEDIUM | CIS 5.x |
-| CL-0015 | Healthcheck explicitly disabled (`healthcheck: {disable: true}`) | LOW | CIS 4.6, 5.27 |
-| CL-0016 | Dangerous host devices exposed (`devices:` matching `/dev/mem`, `/dev/kmem`, `/dev/port`, block devices `/dev/sd*`, `/dev/nvme*`, `/dev/disk/*`) | HIGH | CIS 5.18 |
-| CL-0017 | Shared mount propagation (`:shared` suffix or `bind.propagation: shared`) | MEDIUM | CIS 5.20 |
-| CL-0018 | Explicit root user (`user: root` or `user: "0"`) — overrides a correctly built image's non-root USER instruction | MEDIUM | OWASP Rule #7, CIS 5.x |
-| CL-0019 | Image pinned to tag but not digest (`nginx:1.25.3` without `@sha256:`) — tag can be silently overwritten on the registry | MEDIUM | OWASP Rule #13, CIS 5.27 |
-
-CL-0019 fires only when a version tag is present but no `@sha256:` digest. CL-0004 fires when there is no version tag at all. They are non-overlapping: `nginx` and `nginx:latest` trigger CL-0004 only; `nginx:1.25.3` triggers CL-0019 only; `nginx:1.25.3@sha256:…` triggers neither. Fix guidance should reference Dependabot and Renovate as the practical path for keeping digests current.
-
-**CL-0010 enhancement**: Add `uts: host` to the existing host namespace rule (CIS 5.21 — sharing the UTS namespace lets a container change the host's hostname).
-
-**Rules evaluated and rejected:**
-
-| Candidate | Rejection reason |
-|-----------|-----------------|
-| Hardcoded secrets in `environment:` | Too many false positives — `CONFIG_KEY`, `NEXT_PUBLIC_API_KEY`, `APP_SECRET_NAME` all match naive patterns but are not secrets. Regex on key names erodes trust. |
-| No memory/CPU resource limits | Absence check; fires on every dev Compose file where limits are intentionally omitted. Only explicit opt-outs like `pids_limit: -1` are appropriate. |
-| Service running as root (absence of `user:`) | Wrong tool — absence of `user:` does not imply root; the image's USER instruction determines the UID. Unactionable: "add `user:`" is not a specific fix without knowing the image's intended UID. CL-0018 catches the explicit override case instead. |
-| `restart: always` without failure limit | Fires on virtually every production Compose file; CIS 5.15 concern is system stability, not a security misconfiguration detectable by static analysis. |
-| Ulimit overrides (`ulimits: {nproc: -1}`) | Lower priority — `pids_limit: -1` covers the fork bomb case with higher signal and simpler detection. |
-
-**Section 4 (Container Images) verdict**: Only `healthcheck: {disable: true}` yields a viable rule. All other Section 4 controls require image inspection, Dockerfile analysis, or host-level configuration that a Compose linter cannot access.
+**Shipped in v0.3.0.** Added 9 rules (CL-0011 – CL-0019) plus CL-0010 `uts: host` enhancement, bringing the total to 19 rules. See CHANGELOG.md for details.
 
 ---
 
@@ -46,10 +14,12 @@ CL-0019 fires only when a version tag is present but no `@sha256:` digest. CL-00
 
 Reduce friction from "have Python" to "run one command."
 
-**Docker Hub image** (`composelint/compose-lint`)
-- Minimal image (python:3.13-alpine base, digest-pinned)
+**Docker Hub image** (`composelint/compose-lint`) [complete]
+- Multi-stage build on `python:3.13-alpine` (digest-pinned), ~25 MB final image
+- Multi-arch: `linux/amd64`, `linux/arm64`
 - Enables `docker run --rm -v $(pwd):/src composelint/compose-lint`
-- Published via GitHub Actions OIDC; signed with cosign
+- Published via GitHub Actions on tag push; signed with cosign (Sigstore keyless)
+- Automated smoke tests in CI: version check, clean/insecure fixtures, SARIF output validation
 - Primary audience: teams that distrust pip in CI, or non-Python shops
 
 **Linux packages**
@@ -61,7 +31,7 @@ Reduce friction from "have Python" to "run one command."
 - `brew install tmatens/tap/compose-lint`
 - Widens macOS developer reach beyond pip users
 
-**Implementation note**: The Docker image uses `shiv` to produce a zipapp (works on any Python 3.10+ host without a wheel install). The `.deb`/`.rpm` bundle Python via nfpm. This avoids PyInstaller cross-compilation maintenance.
+**Implementation note**: The Docker image builds a standard wheel in a build stage, then installs it into a clean Alpine runtime stage. The `.deb`/`.rpm` will bundle Python via nfpm. This avoids PyInstaller cross-compilation maintenance.
 
 ---
 
@@ -122,8 +92,8 @@ Pursue based on user demand after v1.0.
 
 | Milestone | Version |
 |-----------|---------|
-| Rule Coverage (19 rules) | v0.3 |
-| Distribution (Docker Hub, packages, Homebrew) | v0.4 |
+| Rule Coverage (19 rules) | v0.3 [complete] |
+| Distribution (Docker Hub, packages, Homebrew) | v0.4 [Docker Hub complete] |
 | Remediation (`--fix`, SARIF fixes, `--explain`) | v0.5 |
 | VS Code extension + GA | v1.0 |
 | Ecosystem integrations, custom rules | v1.x |

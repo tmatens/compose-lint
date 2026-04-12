@@ -1,0 +1,123 @@
+name: Docker Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# Default to read-only — individual jobs request what they need.
+permissions:
+  contents: read
+
+jobs:
+  build-test-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write      # ghcr.io push (optional mirror)
+      id-token: write      # cosign keyless signing via Sigstore OIDC
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+      - uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
+
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
+        with:
+          images: composelint/compose-lint
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+
+      # Build for testing (load into local docker, single platform)
+      - name: Build image for testing
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          load: true
+          tags: composelint/compose-lint:test
+
+      # Smoke test: version check
+      - name: Test — version output matches tag
+        run: |
+          expected="${GITHUB_REF_NAME#v}"
+          actual="$(docker run --rm composelint/compose-lint:test --version)"
+          echo "Expected: ${expected}"
+          echo "Actual:   ${actual}"
+          if [ "${actual}" != "${expected}" ]; then
+            echo "::error::Version mismatch: image reports '${actual}', tag is '${expected}'"
+            exit 1
+          fi
+
+      # Smoke test: lint a clean fixture
+      - name: Test — clean fixture exits 0
+        run: |
+          cat > /tmp/clean.yml <<'YAML'
+          services:
+            web:
+              image: nginx:1.27-alpine
+              ports:
+                - "127.0.0.1:8080:80"
+              security_opt:
+                - no-new-privileges:true
+              cap_drop:
+                - ALL
+              read_only: true
+          YAML
+          docker run --rm -v /tmp/clean.yml:/src/docker-compose.yml composelint/compose-lint:test
+
+      # Smoke test: lint an insecure fixture
+      - name: Test — insecure fixture exits 1
+        run: |
+          cat > /tmp/insecure.yml <<'YAML'
+          services:
+            app:
+              image: myapp:1.0
+              privileged: true
+          YAML
+          exit_code=0
+          docker run --rm -v /tmp/insecure.yml:/src/docker-compose.yml composelint/compose-lint:test || exit_code=$?
+          if [ "${exit_code}" -ne 1 ]; then
+            echo "::error::Expected exit code 1, got ${exit_code}"
+            exit 1
+          fi
+
+      # Smoke test: SARIF output is valid JSON
+      - name: Test — SARIF output is valid JSON
+        run: |
+          cat > /tmp/test.yml <<'YAML'
+          services:
+            db:
+              image: postgres:16
+          YAML
+          docker run --rm -v /tmp/test.yml:/src/docker-compose.yml composelint/compose-lint:test --format sarif --fail-on critical | python3 -c "import sys,json; json.load(sys.stdin); print('Valid SARIF JSON')"
+
+      # All tests passed — build multi-arch and push
+      - name: Build and push (multi-arch)
+        id: push
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      # Sign the image with cosign (keyless / Sigstore OIDC)
+      - name: Sign image with cosign
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          cosign sign --yes "composelint/compose-lint@${DIGEST}"
