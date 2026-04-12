@@ -1,0 +1,112 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 0.3.2). Must match pyproject.toml and __init__.py."
+        required: true
+        type: string
+      dry-run:
+        description: "Dry run — validate everything but don't create the tag."
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Validate version format
+        run: |
+          version="${{ inputs.version }}"
+          if ! echo "${version}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Invalid version format '${version}'. Expected X.Y.Z"
+            exit 1
+          fi
+
+      - name: Verify version matches pyproject.toml
+        run: |
+          expected='version = "${{ inputs.version }}"'
+          if ! grep -qF "${expected}" pyproject.toml; then
+            actual="$(grep -E '^version' pyproject.toml)"
+            echo "::error::pyproject.toml has '${actual}', expected '${expected}'"
+            exit 1
+          fi
+
+      - name: Verify version matches __init__.py
+        run: |
+          expected='__version__ = "${{ inputs.version }}"'
+          if ! grep -qF "${expected}" src/compose_lint/__init__.py; then
+            actual="$(grep __version__ src/compose_lint/__init__.py)"
+            echo "::error::__init__.py has '${actual}', expected '${expected}'"
+            exit 1
+          fi
+
+      - name: Verify CHANGELOG has this version
+        run: |
+          if ! grep -qF "## [${{ inputs.version }}]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no entry for [${{ inputs.version }}]"
+            exit 1
+          fi
+
+      - name: Check tag does not already exist
+        run: |
+          if git rev-parse "v${{ inputs.version }}" >/dev/null 2>&1; then
+            echo "::error::Tag v${{ inputs.version }} already exists"
+            exit 1
+          fi
+
+      - name: Verify CI passed on HEAD
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha="$(git rev-parse HEAD)"
+          echo "Checking CI status for ${sha}..."
+          # Allow up to 60s for checks to appear
+          for attempt in 1 2 3 4; do
+            status="$(gh api "repos/${{ github.repository }}/commits/${sha}/status" -q .state)"
+            echo "Commit status: ${status}"
+            if [ "${status}" = "success" ]; then
+              break
+            elif [ "${status}" = "failure" ]; then
+              echo "::error::CI failed on main HEAD (${sha})"
+              exit 1
+            fi
+            echo "Status is '${status}', waiting 15s..."
+            sleep 15
+          done
+
+      - name: Summary
+        run: |
+          echo "## Release v${{ inputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Version**: ${{ inputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Commit**: $(git rev-parse --short HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Dry run**: ${{ inputs.dry-run }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create annotated tag
+        if: ${{ !inputs.dry-run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha="$(git rev-parse HEAD)"
+          gh api "repos/${{ github.repository }}/git/tags" \
+            -f tag="v${{ inputs.version }}" \
+            -f message="compose-lint ${{ inputs.version }}" \
+            -f object="${sha}" \
+            -f type="commit" \
+            --jq .sha | xargs -I{} \
+          gh api "repos/${{ github.repository }}/git/refs" \
+            -f ref="refs/tags/v${{ inputs.version }}" \
+            -f sha="{}"
+          echo "::notice::Created tag v${{ inputs.version }} at ${sha}"
