@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-04-12
+
+### Added
+
+- Docker Hub image (`composelint/compose-lint`) — multi-stage build on
+  `python:3.13-alpine`, multi-arch (`linux/amd64`, `linux/arm64`), runs as
+  non-root, signed with cosign (Sigstore keyless).
+- Docker usage section in README.
+- README rules table now lists all 19 rules (CL-0011–CL-0019 were missing).
+- Automated TestPyPI smoke test in publish workflow — installs from TestPyPI,
+  verifies `--version`, runs fixture tests. Real PyPI publish is gated on it.
+- Automated post-push verification in Docker publish workflow — pulls by
+  digest, verifies cosign signature, checks version output.
+
 ## [0.3.0] - 2026-04-12
 
 ### Added
@@ -80,5 +94,6 @@ First public release.
   inputs through `env:` rather than direct `${{ }}` interpolation to prevent
   shell injection.
 
+[0.3.1]: https://github.com/tmatens/compose-lint/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/tmatens/compose-lint/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/tmatens/compose-lint/releases/tag/v0.2.0

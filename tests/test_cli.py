@@ -26,7 +26,9 @@ class TestCLI:
         result = run_cli("--version")
         assert result.returncode == 0
         assert "compose-lint" in result.stdout
-        assert "0.3.0" in result.stdout
+        from compose_lint import __version__
+
+        assert __version__ in result.stdout
 
     def test_no_args_no_compose_file(self) -> None:
         result = run_cli()
