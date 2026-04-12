@@ -133,10 +133,18 @@ jobs:
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
         run: |
-          cosign verify \
-            --certificate-identity-regexp="github\.com/tmatens/compose-lint" \
-            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-            "composelint/compose-lint@${DIGEST}"
+          for attempt in 1 2 3; do
+            if cosign verify \
+              --certificate-identity-regexp="github\.com/tmatens/compose-lint" \
+              --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+              "composelint/compose-lint@${DIGEST}"; then
+              exit 0
+            fi
+            echo "Attempt ${attempt} failed, waiting 15s for signature propagation..."
+            sleep 15
+          done
+          echo "::error::cosign verify failed after 3 attempts"
+          exit 1
 
       - name: Verify — published image version matches tag
         env:
