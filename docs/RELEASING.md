@@ -160,24 +160,11 @@ gh pr create --fill
 
 ## Tag and release
 
-**Use the signed-tag-locally path by default.** The Actions UI path
-exists for dry-run validation, but tags created through the GitHub API
-with `GITHUB_TOKEN` do **not** trigger `Publish` — this is a documented
-GitHub security behavior. A tag pushed from your workstation with a signed
-push does trigger it.
-
-Signed tag (normal path):
-
 ```bash
 git pull --ff-only
 git tag -s vX.Y.Z -m "compose-lint X.Y.Z"
 git push origin vX.Y.Z
 ```
-
-Dry-run validation via UI (does not publish):
-**Actions → Release → Run workflow**, enter the version, check
-**Dry run**. Validates `pyproject.toml`, `__init__.py`, and
-`CHANGELOG.md` match and CI is green, without creating a tag.
 
 - [ ] The tag exists and triggered `Publish` in Actions.
 
