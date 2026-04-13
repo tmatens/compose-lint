@@ -1,10 +1,4 @@
-```
-  ___  ___  _ __ ___  _ __   ___  ___  ___       _ _       _
- / __|/ _ \| '_ ` _ \| '_ \ / _ \/ __|/ _ \     | (_)_ __ | |_
-| (__| (_) | | | | | | |_) | (_) \__ \  __/     | | | '_ \| __|
- \___|\___/|_| |_| |_| .__/ \___/|___/\___|     |_|_|_| |_|\__|
-                      |_|
-```
+# compose-lint
 
 [![CI](https://github.com/tmatens/compose-lint/actions/workflows/ci.yml/badge.svg)](https://github.com/tmatens/compose-lint/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/compose-lint)](https://pypi.org/project/compose-lint/)
