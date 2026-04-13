@@ -14,9 +14,14 @@ from compose_lint.engine import filter_findings, run_rules
 from compose_lint.formatters.json import format_findings as format_json
 from compose_lint.formatters.sarif import build_sarif_log
 from compose_lint.formatters.sarif import format_findings as format_sarif
+from compose_lint.formatters.text import (
+    format_aggregate_summary,
+    format_header,
+    format_summary,
+    format_verdict,
+)
 from compose_lint.formatters.text import format_findings as format_text
-from compose_lint.formatters.text import format_summary
-from compose_lint.models import Severity
+from compose_lint.models import Finding, Severity
 from compose_lint.parser import ComposeError, load_compose
 
 
@@ -42,6 +47,14 @@ _COMPOSE_FILENAMES = [
 def _discover_compose_files() -> list[str]:
     """Find Compose files in the current directory."""
     return [name for name in _COMPOSE_FILENAMES if Path(name).is_file()]
+
+
+def _effective_config_path(explicit: str | None) -> Path | None:
+    """Return the config file path that will be used, or None if no config."""
+    if explicit:
+        return Path(explicit)
+    p = Path(".compose-lint.yml")
+    return p if p.exists() else None
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -97,6 +110,8 @@ def main(argv: list[str] | None = None) -> NoReturn:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
+    config_path = _effective_config_path(args.config)
+
     try:
         disabled_rules, severity_overrides = load_config(args.config)
     except ConfigError as e:
@@ -114,8 +129,20 @@ def main(argv: list[str] | None = None) -> NoReturn:
             )
             sys.exit(2)
 
+    # Print branded header in text mode before scanning begins.
+    if args.output_format == "text":
+        print(
+            format_header(
+                args.files,
+                str(config_path) if config_path else None,
+                args.fail_on,
+                __version__,
+            )
+        )
+
     all_json: list[dict[str, object]] = []
     all_sarif: list[dict[str, object]] = []
+    all_file_findings: list[tuple[list[Finding], str]] = []
     has_errors = False
 
     for filepath in args.files:
@@ -143,6 +170,7 @@ def main(argv: list[str] | None = None) -> NoReturn:
             if output:
                 print(output)
             print(format_summary(findings, filepath))
+            all_file_findings.append((findings, filepath))
         elif args.output_format == "sarif":
             all_sarif.extend(format_sarif(findings, filepath))
         else:
@@ -152,7 +180,12 @@ def main(argv: list[str] | None = None) -> NoReturn:
         if failing:
             has_errors = True
 
-    if args.output_format == "json":
+    if args.output_format == "text":
+        if len(args.files) > 1:
+            print()
+            print(format_aggregate_summary(all_file_findings))
+        print(format_verdict(all_file_findings, args.fail_on))
+    elif args.output_format == "json":
         print(json.dumps(all_json, indent=2))
     elif args.output_format == "sarif":
         print(json.dumps(build_sarif_log(all_sarif), indent=2))
