@@ -8,7 +8,7 @@
 
 [![CI](https://github.com/tmatens/compose-lint/actions/workflows/ci.yml/badge.svg)](https://github.com/tmatens/compose-lint/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/compose-lint)](https://pypi.org/project/compose-lint/)
-[![Docker](https://img.shields.io/docker/v/composelint/compose-lint?label=docker)](https://hub.docker.com/r/composelint/compose-lint)
+[![Docker](https://img.shields.io/badge/docker-composelint%2Fcompose--lint-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/composelint/compose-lint)
 [![Python](https://img.shields.io/pypi/pyversions/compose-lint)](https://pypi.org/project/compose-lint/)
 [![License](https://img.shields.io/github/license/tmatens/compose-lint)](LICENSE)
 
