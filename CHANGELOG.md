@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-04-13
+
+### Changed
+
+- Text output now opens with a branded one-line header showing the tool
+  version and active parameters (`files`, `config`, `fail-on`) so runs are
+  self-describing in CI logs.
+- Severity labels in findings are padded to 8 chars so rule IDs line up
+  across `MEDIUM`, `HIGH`, `CRITICAL`, and `LOW` rows.
+- "No issues found" message is now green instead of dim gray.
+- Multi-file text runs end with an aggregate `N files scanned · N issues
+  (...)` line.
+- Every text run ends with an explicit verdict relative to `--fail-on`:
+  `✓ PASS · threshold: high` or `✗ FAIL · N findings at or above high`.
+- Suppressed counts are separated from the severity breakdown and labeled
+  `(not counted)` so the severity totals reconcile at a glance.
+
+JSON and SARIF output shapes are unchanged. Exit codes (0/1/2) are
+preserved.
+
 ## [0.3.3] - 2026-04-12
 
 ### Added
