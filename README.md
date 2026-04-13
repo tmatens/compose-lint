@@ -197,14 +197,14 @@ repos:
 
 ## How it compares
 
-| Tool | Compose security rules | Scope | Zero config | Fix guidance |
-|------|----------------------|-------|-------------|--------------|
-| **compose-lint** | Yes | Docker Compose | Yes | Yes, per finding |
-| **KICS** | Yes | Broad IaC (Terraform, K8s, Compose, ...) | No | Partial |
-| **Hadolint** | No — Dockerfile only | Dockerfile | Yes | Yes |
-| **dclint** | No — schema/structure only | Docker Compose | Yes | No |
-| **Trivy** | No — Dockerfile + image scanning | Dockerfiles, images, repos | Yes | No |
-| **Checkov** | No — no Compose support | Broad IaC (Terraform, K8s, ...) | No | Partial |
+| Tool | Compose security rules | Scope | Zero config |
+|------|----------------------|-------|-------------|
+| **compose-lint** | Yes | Docker Compose | Yes |
+| **KICS** | Yes | Broad IaC (Terraform, K8s, Compose, ...) | No |
+| **Hadolint** | No — Dockerfile only | Dockerfile | Yes |
+| **dclint** | Yes — schema/structure only | Docker Compose | Yes |
+| **Trivy** | No — Dockerfile + image scanning | Dockerfiles, images, repos | Yes |
+| **Checkov** | No — no Compose support | Broad IaC (Terraform, K8s, ...) | No |
 
 If you need broad IaC coverage across Terraform, Kubernetes, and more, KICS covers Docker Compose and is worth evaluating. If you want a lightweight, focused tool with zero config and actionable fix guidance for Compose files specifically, this is it.
 
