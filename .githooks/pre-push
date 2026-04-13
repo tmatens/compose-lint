@@ -6,10 +6,10 @@ while read local_ref local_sha remote_ref remote_sha; do
     continue  # branch deletion, skip
   fi
 
-  base="${remote_sha:-$(git rev-list --max-parents=0 HEAD)}"
-  if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
-    base=$(git rev-list --max-parents=0 HEAD)
-  fi
+  # Only check commits unique to this branch — not commits already on main
+  # (including GitHub squash-merge commits which carry GitHub's own key).
+  base=$(git merge-base "$local_sha" origin/main 2>/dev/null \
+    || git rev-list --max-parents=0 HEAD)
 
   while IFS= read -r line; do
     sha="${line%% *}"
