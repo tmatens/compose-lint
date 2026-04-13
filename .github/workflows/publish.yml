@@ -117,6 +117,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -186,6 +189,13 @@ jobs:
           image: local://composelint/compose-lint:test
           only-severities: critical
           exit-code: true
+          sarif-file: scout-results.sarif
+      - name: Upload Scout results to GitHub Security
+        uses: github/codeql-action/upload-sarif@018511a1aac61b6e92783189d8c0081eb8f69932 # v3.28.13
+        if: always()
+        with:
+          sarif_file: scout-results.sarif
+          category: docker-scout
 
   # Single approval gate — all smoke tests (PyPI + Docker) must pass first.
   # Configure the 'release' GitHub Environment with required reviewers.
