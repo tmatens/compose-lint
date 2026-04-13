@@ -22,10 +22,11 @@ Reduce friction from "have Python" to "run one command."
 - Automated smoke tests in CI: version check, clean/insecure fixtures, SARIF output validation
 - Primary audience: teams that distrust pip in CI, or non-Python shops
 
-**Linux packages**
+**Linux packages** _(pending decision — [ADR-008](adr/008-linux-packages.md))_
 - `.deb` and `.rpm` via `nfpm` — self-contained, no Python required
-- Published to GitHub Releases as build artifacts on every tag
-- Secondary: AUR `compose-lint` PKGBUILD for Arch users
+- Published to GitHub Releases as build artifacts on every tag; signed via GitHub Artifact Attestation
+- Secondary: AUR `compose-lint` PKGBUILD for Arch users (manual push at release time)
+- CI shape: `linux-packages-build` → `linux-packages-smoke` → `release-gate` → `linux-packages-publish`, following the existing staging pattern
 
 **Homebrew tap**
 - `brew install tmatens/tap/compose-lint`
@@ -36,6 +37,12 @@ Reduce friction from "have Python" to "run one command."
 ## Milestone 3 — Better Remediation (v0.5)
 
 Finding a problem is half the value. Remediation guidance is the differentiator versus KICS, which identifies issues but rarely provides exact Compose-specific fix steps.
+
+**Shellcheck integration** _(pending decision — [ADR-007](adr/007-shellcheck-integration.md))_
+- Lint shell commands inside `command` and `entrypoint` (string form) and `healthcheck.test` with `CMD-SHELL`
+- shellcheck invoked via subprocess with `--format=json`; findings reported under their original `SC` codes alongside native `CL-XXXX` rules
+- Optional: rule skips silently if shellcheck is not present in `PATH`
+- Open question: deliver shellcheck as a Linux system package dependency or via `shellcheck-py`
 
 **`--fix` mode** — auto-fix for safe, unambiguous rules:
 - CL-0003: inject `no-new-privileges:true` into `security_opt:`
