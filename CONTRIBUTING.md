@@ -25,7 +25,10 @@ git clone https://github.com/tmatens/compose-lint.git
 cd compose-lint
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
+git config core.hooksPath .githooks
 ```
+
+The last command activates the repo's git hooks. The `pre-push` hook blocks unsigned commits — see [commit signing](#commit-signing) for setup.
 
 ## Local quality checks
 
