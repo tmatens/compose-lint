@@ -31,8 +31,6 @@ Reduce friction from "have Python" to "run one command."
 - `brew install tmatens/tap/compose-lint`
 - Widens macOS developer reach beyond pip users
 
-**Implementation note**: The Docker image builds a standard wheel in a build stage, then installs it into a clean Alpine runtime stage. The `.deb`/`.rpm` will bundle Python via nfpm. This avoids PyInstaller cross-compilation maintenance.
-
 ---
 
 ## Milestone 3 — Better Remediation (v0.5)

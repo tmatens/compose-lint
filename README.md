@@ -1,14 +1,8 @@
-```
-                                                 __ _       __
-  _________  ____ ___  ____  ____  ________     / /(_)___  / /_
- / ___/ __ \/ __ `__ \/ __ \/ __ \/ ___/ _ \   / // / __ \/ __/
-/ /__/ /_/ / / / / / / /_/ / /_/ (__  )  __/  / // / / / / /_
-\___/\____/_/ /_/ /_/ .___/\____/____/\___/  /_//_/_/ /_/\__/
-                   /_/
-```
+# compose-lint
 
 [![CI](https://github.com/tmatens/compose-lint/actions/workflows/ci.yml/badge.svg)](https://github.com/tmatens/compose-lint/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/compose-lint)](https://pypi.org/project/compose-lint/)
+[![Docker](https://img.shields.io/badge/docker-composelint%2Fcompose--lint-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/composelint/compose-lint)
 [![Python](https://img.shields.io/pypi/pyversions/compose-lint)](https://pypi.org/project/compose-lint/)
 [![License](https://img.shields.io/github/license/tmatens/compose-lint)](LICENSE)
 
@@ -16,26 +10,35 @@ A security-focused linter for Docker Compose files. Catches dangerous misconfigu
 
 compose-lint targets the same niche [Hadolint](https://github.com/hadolint/hadolint) occupies for Dockerfiles: zero-config, opinionated, fast, and grounded in [OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html) and [CIS](https://www.cisecurity.org/benchmark/docker) standards.
 
-## Quick Start
+## Installation
+
+**pip**
 
 ```bash
 pip install compose-lint
-compose-lint
 ```
 
-When run without arguments, compose-lint automatically finds `compose.yml`, `compose.yaml`, `docker-compose.yml`, or `docker-compose.yaml` in the current directory. You can also pass files explicitly:
-
-```bash
-compose-lint docker-compose.yml docker-compose.prod.yml
-```
-
-### Docker
+**Docker** — [composelint/compose-lint](https://hub.docker.com/r/composelint/compose-lint)
 
 ```bash
 docker run --rm -v "$(pwd):/src" composelint/compose-lint
 ```
 
-Or scan a specific file:
+## Quick Start
+
+Run without arguments to auto-detect `compose.yml`, `compose.yaml`, `docker-compose.yml`, or `docker-compose.yaml` in the current directory:
+
+```bash
+compose-lint
+```
+
+Or pass files explicitly:
+
+```bash
+compose-lint docker-compose.yml docker-compose.prod.yml
+```
+
+Docker equivalent:
 
 ```bash
 docker run --rm -v "$(pwd):/src" composelint/compose-lint docker-compose.prod.yml
@@ -90,42 +93,34 @@ docker-compose.yml: 1 critical, 1 high
 
 Findings are rated **LOW**, **MEDIUM**, **HIGH**, or **CRITICAL** based on exploitability and impact scope. See [docs/severity.md](docs/severity.md) for the full scoring matrix.
 
-Defaults are opinionated. Override any rule's severity in `.compose-lint.yml` if they don't match your environment.
-
 ## Configuration
 
-Create a `.compose-lint.yml` to disable rules or adjust severity:
+Create `.compose-lint.yml` to disable rules or adjust severity:
 
 ```yaml
 rules:
   CL-0001:
-    enabled: false          # Disable a rule
+    enabled: false
   CL-0003:
     enabled: false
     reason: "SEC-1234 — Approved by J. Smith, expires 2026-07-01"
   CL-0005:
-    severity: medium        # Downgrade to medium
+    severity: medium
 ```
 
-Disabled rules still run — their findings appear as **SUPPRESSED** in the output without affecting the exit code. This gives reviewers and auditors visibility into what's being intentionally skipped.
-
-The optional `reason` field records why a rule was disabled (e.g., an exception ticket number). It appears in all output formats:
+Disabled rules still run — findings appear as **SUPPRESSED** without affecting the exit code. The `reason` field is surfaced in all output formats:
 
 - **Text**: shown after the `SUPPRESSED` label
 - **JSON**: `suppression_reason` field
-- **SARIF**: native `suppressions[].justification` (recognized by GitHub Code Scanning)
+- **SARIF**: `suppressions[].justification` (recognized by GitHub Code Scanning)
 
-To hide suppressed findings entirely:
+To hide suppressed findings from output:
 
 ```bash
 compose-lint --skip-suppressed docker-compose.yml
 ```
 
-```bash
-compose-lint --config .compose-lint.yml docker-compose.yml
-```
-
-## CLI Options
+## CLI Reference
 
 ```
 compose-lint [OPTIONS] [FILE ...]
@@ -133,7 +128,7 @@ compose-lint [OPTIONS] [FILE ...]
   --format {text,json,sarif}  Output format (default: text)
   --fail-on SEVERITY          Minimum severity to trigger exit 1 (default: high)
   --skip-suppressed           Hide suppressed findings from output
-  --config PATH               Path to .compose-lint.yml config file
+  --config PATH               Path to config file (default: .compose-lint.yml)
   --version                   Show version and exit
 ```
 
@@ -145,21 +140,18 @@ compose-lint [OPTIONS] [FILE ...]
 | 1 | One or more findings at or above the `--fail-on` threshold |
 | 2 | Usage error (invalid args, file not found, invalid Compose file) |
 
-The default threshold is `high`. This means **medium and low findings do not cause a non-zero exit** — you can adopt compose-lint gradually without blocking CI on every finding immediately. To fail on all findings:
+The default threshold is `high` — medium and low findings don't fail CI unless you opt in:
 
 ```bash
-compose-lint --fail-on low docker-compose.yml
-```
-
-To only fail on critical issues (container escape, host compromise):
-
-```bash
-compose-lint --fail-on critical docker-compose.yml
+compose-lint --fail-on low docker-compose.yml   # fail on everything
+compose-lint --fail-on critical docker-compose.yml  # only critical
 ```
 
 ## CI Integration
 
-### GitHub Action
+### GitHub Actions
+
+The easiest path — runs compose-lint and uploads findings to GitHub Code Scanning:
 
 ```yaml
 # .github/workflows/lint.yml
@@ -171,25 +163,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: tmatens/compose-lint@main
+      - uses: tmatens/compose-lint@v0.3.3
         with:
           sarif-file: results.sarif
 ```
 
-This runs compose-lint and uploads findings to GitHub Code Scanning, where they appear as annotations on pull requests.
-
-### Manual setup
+Or install from PyPI directly:
 
 ```yaml
-# .github/workflows/lint.yml
-name: Compose Lint
-on: [push, pull_request]
-
-jobs:
-  compose-lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
@@ -197,7 +178,7 @@ jobs:
       - run: compose-lint docker-compose.yml
 ```
 
-### SARIF output for Code Scanning
+### SARIF output
 
 ```bash
 compose-lint --format sarif docker-compose.yml > results.sarif
@@ -209,21 +190,23 @@ compose-lint --format sarif docker-compose.yml > results.sarif
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/tmatens/compose-lint
-    rev: v0.2.0
+    rev: v0.3.3
     hooks:
       - id: compose-lint
 ```
 
-## Why not KICS/Checkov?
+## How it compares
 
-Those are excellent tools for full infrastructure scanning across Terraform, Kubernetes, Dockerfiles, and more. compose-lint solves a narrower problem:
+| Tool | Compose security rules | Scope | Zero config |
+|------|----------------------|-------|-------------|
+| **compose-lint** | Yes | Docker Compose | Yes |
+| **KICS** | Yes | Broad IaC (Terraform, K8s, Compose, ...) | No |
+| **Hadolint** | No — Dockerfile only | Dockerfile | Yes |
+| **dclint** | Yes — schema/structure only | Docker Compose | Yes |
+| **Trivy** | No — Dockerfile + image scanning | Dockerfiles, images, repos | Yes |
+| **Checkov** | No — no Compose support | Broad IaC (Terraform, K8s, ...) | No |
 
-- **Zero config**: `pip install && compose-lint file.yml`. No policies to write, no plugins to configure.
-- **Compose-specific**: Every rule is designed for Docker Compose semantics, not adapted from a generic policy engine.
-- **Actionable output**: Every finding includes specific fix guidance and a direct link to the OWASP/CIS reference.
-- **Fast**: Sub-second for any compose file. No container runtime needed.
-
-If you're already using KICS or Checkov and happy with the coverage, you don't need this. If you want a lightweight, focused tool for Compose files specifically, this is it.
+If you need broad IaC coverage across Terraform, Kubernetes, and more, KICS covers Docker Compose and is worth evaluating. If you want a lightweight, focused tool with zero config and actionable fix guidance for Compose files specifically, this is it.
 
 ## Contributing
 

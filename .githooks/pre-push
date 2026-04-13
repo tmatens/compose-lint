@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+while read local_ref local_sha remote_ref remote_sha; do
+  if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+    continue  # branch deletion, skip
+  fi
+
+  base="${remote_sha:-$(git rev-list --max-parents=0 HEAD)}"
+  if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+    base=$(git rev-list --max-parents=0 HEAD)
+  fi
+
+  while IFS= read -r line; do
+    sha="${line%% *}"
+    status="${line##* }"
+    if [ "$status" != "G" ]; then
+      echo "error: commit ${sha} is unsigned or unverified — sign your commits before pushing"
+      exit 1
+    fi
+  done < <(git log --format="%H %G?" "${base}..${local_sha}")
+done
