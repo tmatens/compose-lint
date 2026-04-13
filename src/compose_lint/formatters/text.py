@@ -13,9 +13,13 @@ _COLORS = {
     Severity.LOW: "\033[36m",  # Cyan
 }
 _SUPPRESSED_COLOR = "\033[90m"  # Gray
+_GREEN = "\033[32m"  # Green for pass / no issues
 _RESET = "\033[0m"
 _BOLD = "\033[1m"
 _DIM = "\033[2m"
+
+# All active severity labels are padded to this width so finding columns align.
+_SEV_WIDTH = max(len(s.value) for s in Severity)  # len("critical") == 8
 
 
 def _colorize(text: str, code: str) -> str:
@@ -23,6 +27,23 @@ def _colorize(text: str, code: str) -> str:
     if not sys.stdout.isatty():
         return text
     return f"{code}{text}{_RESET}"
+
+
+def format_header(
+    files: list[str],
+    config_path: str | None,
+    fail_on: Severity,
+    version: str,
+) -> str:
+    """Format a branded run header showing the tool version and active parameters."""
+    sep = _colorize("·", _DIM)
+    config_str = config_path if config_path else "none"
+    params = (
+        f"files: {', '.join(files)}"
+        f"  {sep}  config: {config_str}"
+        f"  {sep}  fail-on: {fail_on.value}"
+    )
+    return f"{_colorize(f'compose-lint {version}', _BOLD)}\n{params}\n"
 
 
 def format_findings(findings: list[Finding], filepath: str) -> str:
@@ -47,35 +68,28 @@ def format_findings(findings: list[Finding], filepath: str) -> str:
             lines.append("")
             continue
 
-        severity_label = f.severity.value.upper()
+        severity_label = f.severity.value.upper().ljust(_SEV_WIDTH)
         color = _COLORS.get(f.severity, "")
-
-        # Location
         loc = f"{filepath}:{f.line}" if f.line else filepath
 
-        # Main finding line
         lines.append(
             f"{_colorize(loc, _BOLD)}  "
             f"{_colorize(severity_label, color)}  "
             f"{_colorize(f.rule_id, _DIM)}  "
             f"{f.message}"
         )
-
-        # Service name
         lines.append(f"  {_colorize('service:', _DIM)} {f.service}")
 
-        # Fix guidance
         if f.fix:
             fix_lines = f.fix.split("\n")
             lines.append(f"  {_colorize('fix:', _DIM)} {fix_lines[0]}")
             for fix_line in fix_lines[1:]:
                 lines.append(f"       {fix_line}")
 
-        # References
         if f.references:
             lines.append(f"  {_colorize('ref:', _DIM)} {f.references[0]}")
 
-        lines.append("")  # Blank line between findings
+        lines.append("")
 
     return "\n".join(lines).rstrip()
 
@@ -84,9 +98,9 @@ def format_summary(
     findings: list[Finding],
     filepath: str,
 ) -> str:
-    """Format a one-line summary of findings."""
+    """Format a one-line summary of findings for a single file."""
     if not findings:
-        return _colorize(f"{filepath}: no issues found", _DIM)
+        return _colorize(f"{filepath}: no issues found", _GREEN)
 
     by_severity: dict[str, int] = {}
     suppressed_count = 0
@@ -104,10 +118,72 @@ def format_summary(
             color = _COLORS.get(sev, "")
             parts.append(_colorize(f"{count} {sev.value}", color))
 
+    if not parts and not suppressed_count:
+        return _colorize(f"{filepath}: no issues found", _GREEN)
+
+    sep = _colorize("·", _DIM)
+    body = ", ".join(parts) if parts else _colorize("0 issues", _DIM)
     if suppressed_count:
-        parts.append(_colorize(f"{suppressed_count} suppressed", _SUPPRESSED_COLOR))
+        supp_text = f"{suppressed_count} suppressed (not counted)"
+        body += f"  {sep}  {_colorize(supp_text, _SUPPRESSED_COLOR)}"
+    return f"{_colorize(filepath, _BOLD)}: {body}"
 
-    if not parts:
-        return _colorize(f"{filepath}: no issues found", _DIM)
 
-    return f"{_colorize(filepath, _BOLD)}: {', '.join(parts)}"
+def format_aggregate_summary(
+    file_findings: list[tuple[list[Finding], str]],
+) -> str:
+    """Format a combined summary line across all scanned files (multi-file runs)."""
+    total_files = len(file_findings)
+    by_severity: dict[str, int] = {}
+    suppressed_total = 0
+
+    for findings, _ in file_findings:
+        for f in findings:
+            if f.suppressed:
+                suppressed_total += 1
+            else:
+                by_severity[f.severity.value] = by_severity.get(f.severity.value, 0) + 1
+
+    total_issues = sum(by_severity.values())
+    files_label = _colorize(f"{total_files} files scanned", _BOLD)
+    sep = _colorize("·", _DIM)
+
+    if total_issues == 0 and suppressed_total == 0:
+        return f"{files_label}  {sep}  {_colorize('no issues found', _GREEN)}"
+
+    parts = []
+    for sev in (Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW):
+        count = by_severity.get(sev.value, 0)
+        if count:
+            parts.append(_colorize(f"{count} {sev.value}", _COLORS[sev]))
+
+    issue_word = "issue" if total_issues == 1 else "issues"
+    breakdown = f" ({', '.join(parts)})" if parts else ""
+    result = f"{files_label}  {sep}  {total_issues} {issue_word}{breakdown}"
+    if suppressed_total:
+        supp_text = f"{suppressed_total} suppressed (not counted)"
+        result += f"  {sep}  {_colorize(supp_text, _SUPPRESSED_COLOR)}"
+    return result
+
+
+def format_verdict(
+    file_findings: list[tuple[list[Finding], str]],
+    fail_on: Severity,
+) -> str:
+    """Return a pass/fail verdict line relative to the --fail-on threshold."""
+    failing = sum(
+        1
+        for findings, _ in file_findings
+        for f in findings
+        if not f.suppressed and f.severity >= fail_on
+    )
+
+    sep = _colorize("·", _DIM)
+    if failing == 0:
+        return f"{_colorize('✓ PASS', _GREEN)}  {sep}  threshold: {fail_on.value}"
+
+    word = "finding" if failing == 1 else "findings"
+    return (
+        f"{_colorize('✗ FAIL', _COLORS[Severity.HIGH])}  {sep}  "
+        f"{failing} {word} at or above {fail_on.value}"
+    )
