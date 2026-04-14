@@ -316,3 +316,43 @@ jobs:
         run: |
           cosign attest --yes --type spdxjson --predicate sbom.spdx.json \
             "composelint/compose-lint@${DIGEST}"
+
+  # Create the GitHub Release only after both production channels
+  # (PyPI + Docker Hub) have published successfully. `needs:` gating
+  # means a failure in either channel skips this job, so we never
+  # advertise a half-published version. Release notes come from the
+  # matching `## [X.Y.Z]` section in CHANGELOG.md. Creating the
+  # Release also updates the Marketplace listing for the action.
+  create-release:
+    needs: [publish, docker-publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Extract changelog section for this tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          awk -v v="${version}" '
+            $0 ~ "^## \\[" v "\\]" { found=1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::error::No CHANGELOG section found for ${version}"
+            exit 1
+          fi
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "${TAG}" \
+            --title "${TAG}" \
+            --notes-file notes.md \
+            --verify-tag
