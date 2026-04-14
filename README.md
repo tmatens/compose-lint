@@ -163,7 +163,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: tmatens/compose-lint@v0.3.3
+      - uses: tmatens/compose-lint@v0.3.4
         with:
           sarif-file: results.sarif
 ```
@@ -190,7 +190,7 @@ compose-lint --format sarif docker-compose.yml > results.sarif
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/tmatens/compose-lint
-    rev: v0.3.3
+    rev: v0.3.4
     hooks:
       - id: compose-lint
 ```
