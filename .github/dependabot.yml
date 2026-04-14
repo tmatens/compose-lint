@@ -22,11 +22,17 @@ updates:
 
   # Runtime image — digest-pinned per AGENTS.md policy. Keeps the
   # python:3.13-alpine base current so Alpine security fixes (musl,
-  # openssl, etc.) flow in as upstream rebuilds.
+  # openssl, etc.) flow in as upstream rebuilds. Python major bumps
+  # are held back because the CI matrix in pyproject.toml is
+  # 3.10–3.13; jumping the shipped image to 3.14 would run users on
+  # an untested interpreter. Re-evaluate when the matrix adds 3.14.
   - package-ecosystem: docker
     directory: "/"
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major"]
 
   # ClusterFuzzLite build image — digest-pinned per AGENTS.md policy.
   - package-ecosystem: docker
