@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "compose-lint"
-version = "0.3.3"
+version = "0.3.4"
 description = "A security-focused linter for Docker Compose files"
 readme = "README.md"
 license = "MIT"
