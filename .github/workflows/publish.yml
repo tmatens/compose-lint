@@ -314,5 +314,5 @@ jobs:
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
         run: |
-          cosign attest --yes --type spdx --predicate sbom.spdx.json \
+          cosign attest --yes --type spdxjson --predicate sbom.spdx.json \
             "composelint/compose-lint@${DIGEST}"
