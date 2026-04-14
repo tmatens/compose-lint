@@ -1,0 +1,39 @@
+name: Docker Scout (scheduled)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Daily; catches new advisories against the published image.
+    - cron: "0 6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  scout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      security-events: write
+      actions: read
+    steps:
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Scan published image (Docker Scout)
+        uses: docker/scout-action@bacf462e8d090c09660de30a6ccc718035f961e3 # v1.20.4
+        with:
+          command: cves
+          image: composelint/compose-lint:latest
+          only-severities: critical,high
+          exit-code: false
+          sarif-file: scout-results.sarif
+
+      - name: Upload Scout results to GitHub Security
+        uses: github/codeql-action/upload-sarif@018511a1aac61b6e92783189d8c0081eb8f69932 # v3.28.13
+        if: always()
+        with:
+          sarif_file: scout-results.sarif
+          category: docker-scout-scheduled
