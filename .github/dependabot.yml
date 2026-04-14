@@ -20,6 +20,14 @@ updates:
       python:
         patterns: ["*"]
 
+  # Runtime image — digest-pinned per AGENTS.md policy. Keeps the
+  # python:3.13-alpine base current so Alpine security fixes (musl,
+  # openssl, etc.) flow in as upstream rebuilds.
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+
   # ClusterFuzzLite build image — digest-pinned per AGENTS.md policy.
   - package-ecosystem: docker
     directory: "/.clusterfuzzlite"
