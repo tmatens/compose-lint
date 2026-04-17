@@ -104,7 +104,7 @@ version number.
 - [ ] `mypy src/`
 - [ ] `pytest`
 - [ ] CI on `main` is green for the commit you're about to release.
-- [ ] No open Dependabot PRs you meant to merge first.
+- [ ] No open Renovate PRs you meant to merge first.
 
 ## Bump the version
 

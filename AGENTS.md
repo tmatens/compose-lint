@@ -43,7 +43,7 @@ CONTRIBUTING.md is the source of truth for commits, signing, and PRs. Key points
 
 ## Dependency pinning
 
-Pin everything to an immutable ref. Dependabot/Renovate bumps the pins.
+Pin everything to an immutable ref. Renovate bumps the pins.
 
 - **GitHub Actions**: SHA-pin every `uses:` (including first-party). Tag in trailing comment. Only exception: `uses: ./`.
 - **Runtime deps**: SemVer ranges (this is a library — exact pins break downstream resolvers). Lower bound = tested minimum. No upper bound unless we've observed a break.
