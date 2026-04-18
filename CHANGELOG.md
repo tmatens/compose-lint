@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- CL-0003 fix guidance now warns that `no-new-privileges` breaks
+  images whose entrypoint switches users via `gosu`/`su-exec` (e.g.
+  official `postgres`, `redis`, `minecraft-server`). The finding's
+  `fix` field gains a one-line caveat; full compatibility notes and
+  a testing workflow live in `docs/rules/CL-0003.md`. Closes #2.
+- CL-0007 fix guidance now describes the writable-path discovery
+  workflow (`docker diff`) and the chown-on-startup pitfall seen on
+  `netdata` and `valkey`. The finding's `fix` field gains a one-line
+  caveat; details live in `docs/rules/CL-0007.md`. Closes #3.
+
+No rule logic, severity, or finding-shape changes. A compose file
+that passed on 0.3.6 passes identically on this revision; only the
+`fix` field text and rule docs changed.
+
 ## [0.3.6] - 2026-04-18
 
 ### Fixed

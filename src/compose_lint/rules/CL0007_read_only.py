@@ -53,12 +53,14 @@ class ReadOnlyFilesystemRule(BaseRule):
                 ),
                 line=lines.get(f"services.{service_name}"),
                 fix=(
-                    "Set the root filesystem to read-only and use tmpfs for "
+                    "Set the root filesystem to read-only and declare "
                     "writable paths:\n"
                     "  read_only: true\n"
                     "  tmpfs:\n"
                     "    - /tmp\n"
-                    "    - /run"
+                    "    - /run\n"
+                    "Note: run once without read_only and check "
+                    "`docker diff` first."
                 ),
                 references=[OWASP_REF, CIS_REF],
             )
