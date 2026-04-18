@@ -8,11 +8,13 @@ on:
       - ".clusterfuzzlite/**"
       - ".github/workflows/cflite-pr.yml"
 
-permissions: read-all
+permissions: {}
 
 jobs:
   pr-fuzzing:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     concurrency:
       group: cflite-pr-${{ github.ref }}
       cancel-in-progress: true

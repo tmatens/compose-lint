@@ -9,15 +9,15 @@ on:
     # Weekly run catches new advisories on unchanged code.
     - cron: "27 4 * * 1"
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   analyze:
     name: CodeQL (${{ matrix.language }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
+      contents: read
       # Required to upload SARIF results.
       security-events: write
       # Required for private repos; harmless on public.

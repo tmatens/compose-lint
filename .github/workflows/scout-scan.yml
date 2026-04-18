@@ -6,12 +6,11 @@ on:
     # Daily; catches new advisories against the published image.
     - cron: "0 6 * * *"
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   scout:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       security-events: write

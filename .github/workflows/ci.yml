@@ -11,14 +11,15 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Default to read-only — individual jobs can request more if they need it.
-permissions:
-  contents: read
+# Deny-all at the workflow level; every job declares the scopes it needs.
+permissions: {}
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -26,6 +27,11 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            requirements-dev.lock
+            requirements-build.lock
       - name: Install pinned dev env
         run: |
           pip install --require-hashes -r requirements-dev.lock
@@ -34,8 +40,10 @@ jobs:
       - run: ruff format --check src/ tests/
 
   type-check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -43,6 +51,11 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            requirements-dev.lock
+            requirements-build.lock
       - name: Install pinned dev env
         run: |
           pip install --require-hashes -r requirements-dev.lock
@@ -50,8 +63,10 @@ jobs:
       - run: mypy src/
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -63,6 +78,11 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            requirements-dev.lock
+            requirements-build.lock
       - name: Install pinned dev env
         run: |
           pip install --require-hashes -r requirements-dev.lock
@@ -71,8 +91,10 @@ jobs:
 
   security:
     name: Security scan (bandit + pip-audit)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -80,6 +102,11 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            requirements-dev.lock
+            requirements-build.lock
       - name: Install scan tools
         # Upgrade pip first so pip-audit doesn't flag CVEs in the
         # runner-bundled pip itself (those are out of scope for this
@@ -107,8 +134,10 @@ jobs:
   # wrong source of truth).
   version-consistency:
     name: Version strings in sync
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -135,9 +164,11 @@ jobs:
   # number on a broken release.
   changelog-gate:
     name: CHANGELOG entry for version bumps
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -171,9 +202,11 @@ jobs:
   # a base ref to diff against.
   dependency-review:
     name: Dependency review (PR deps)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -191,8 +224,10 @@ jobs:
   # Renovate's github-releases datasource handles version bumps.
   actionlint:
     name: Lint GitHub Actions workflows
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -214,8 +249,10 @@ jobs:
   # don't surface until docker-publish at release time.
   dockerfile-digests:
     name: Verify Dockerfile digests are manifest lists
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -229,8 +266,10 @@ jobs:
   # the gate cheap; the release pipeline covers multi-arch.
   docker-smoke:
     name: Smoke test Dockerfile (amd64)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -309,8 +348,10 @@ jobs:
 
   action-smoke:
     name: Smoke test action.yml
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
