@@ -161,10 +161,26 @@ the GitHub Release alongside the distributions and Sigstore bundles.
 and `cosign attest`s it to the manifest digest.
 
 The `bump-marketplace-smoke-pin` job opens a post-release PR updating
-`marketplace-smoke.yml` to the SHA the tag pointed at. Today that job is
-blocked from pushing directly because `GITHUB_TOKEN` lacks `workflows`
-scope — the PR is opened by hand until a PAT with `workflow` scope is
-wired in.
+`marketplace-smoke.yml` to the SHA the tag pointed at. `GITHUB_TOKEN`
+can't push commits that modify `.github/workflows/*`, so this job
+uses a repo-scoped PAT stored in the `MARKETPLACE_SMOKE_PAT` secret.
+The job preflights that secret and fails early if it's unset.
+
+### Provisioning `MARKETPLACE_SMOKE_PAT`
+
+Create a **fine-grained personal access token**:
+
+- Scope: this repository only
+- Permissions:
+  - **Contents:** Read and write
+  - **Workflows:** Read and write
+  - **Pull requests:** Read and write
+- Expiration: whatever your rotation policy allows; Renovate won't
+  prompt you, so a calendar reminder helps
+
+Store as the `MARKETPLACE_SMOKE_PAT` repo secret. Classic PATs with
+the `repo` + `workflow` scopes also work, but fine-grained is easier
+to revoke and audit.
 
 ---
 
