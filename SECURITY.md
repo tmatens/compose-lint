@@ -44,5 +44,5 @@ Out of scope:
 - Releases include [Sigstore build attestations](https://docs.pypi.org/attestations/).
   Verify with `pip install compose-lint --require-hashes` plus the published
   attestation.
-- Dependencies are kept current by Dependabot. CodeQL and OpenSSF Scorecard run
+- Dependencies are kept current by Renovate. CodeQL and OpenSSF Scorecard run
   on every push and weekly.
