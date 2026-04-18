@@ -2,44 +2,34 @@
 # Build: docker build -t composelint/compose-lint .
 # Run:   docker run --rm -v "$(pwd):/src" composelint/compose-lint
 #
-# Base: Chainguard Wolfi (free, daily CVE rebuilds, glibc).
-# Base digest refresh: docker buildx imagetools inspect cgr.dev/chainguard/wolfi-base:latest
-# apk versions are bumped by Renovate (see renovate.json customManagers).
-
-# renovate: datasource=apk depName=python-3.13 registryUrl=https://packages.wolfi.dev/os
-ARG PYTHON_APK_VERSION=3.13.13-r0
-# renovate: datasource=apk depName=py3.13-pip registryUrl=https://packages.wolfi.dev/os
-ARG PIP_APK_VERSION=26.0.1-r2
+# Runtime: Google distroless Python on Debian 13 (Python 3.13, no shell,
+# no package manager, runs as nonroot UID 65532). See docs/adr/009-runtime-base-image.md.
+# Build stage uses debian:trixie-slim so the build-time Python path
+# (/usr/bin/python3) matches the runtime — the venv transfers across
+# stages without shebang rewriting. Both digests are bumped by Renovate.
 
 # --- build stage: produce wheel, install into a venv ---
-FROM cgr.dev/chainguard/wolfi-base:latest@sha256:1af610c4a70668dad46159ee178b20378c79a49b554f76405670fc442d30183a AS build
-ARG PYTHON_APK_VERSION
-ARG PIP_APK_VERSION
-RUN apk add --no-cache \
-        "python-3.13=${PYTHON_APK_VERSION}" \
-        "py3.13-pip=${PIP_APK_VERSION}"
+FROM debian:trixie-slim@sha256:5fb70129351edec3723d13f427400ecae3f13b83750e23ad47c46721effcf2db AS build
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        python3 python3-pip python3-venv \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 COPY pyproject.toml README.md LICENSE ./
 COPY src/ src/
-RUN python3.13 -m venv /venv \
+RUN python3 -m venv /venv \
     && /venv/bin/pip install --no-cache-dir build~=1.0 \
     && /venv/bin/python -m build --wheel --outdir /dist \
     && /venv/bin/pip uninstall -y build \
     && /venv/bin/pip install --no-cache-dir /dist/*.whl
 
-# --- runtime stage: python interpreter + copied venv, no pip ---
-FROM cgr.dev/chainguard/wolfi-base:latest@sha256:1af610c4a70668dad46159ee178b20378c79a49b554f76405670fc442d30183a
-ARG PYTHON_APK_VERSION
+# --- runtime stage: distroless Python, nonroot by default ---
+FROM gcr.io/distroless/python3-debian13:nonroot@sha256:9b1e35ec38db9ee528a2107c84b7d839b4dd412c5e003186aed8bd5e62900bfc
 LABEL org.opencontainers.image.title="compose-lint" \
       org.opencontainers.image.description="Security-focused linter for Docker Compose files" \
       org.opencontainers.image.url="https://github.com/tmatens/compose-lint" \
       org.opencontainers.image.source="https://github.com/tmatens/compose-lint" \
       org.opencontainers.image.licenses="MIT"
-RUN apk add --no-cache "python-3.13=${PYTHON_APK_VERSION}" \
-    && mkdir -p /src \
-    && chown 65532:65532 /src
 COPY --from=build /venv /venv
-ENV PATH="/venv/bin:${PATH}"
-USER nonroot
 WORKDIR /src
-ENTRYPOINT ["compose-lint"]
+ENTRYPOINT ["/venv/bin/compose-lint"]
