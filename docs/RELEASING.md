@@ -11,6 +11,36 @@ waits for a single manual approval on the `release` environment before
 publishing to all production channels in parallel. Sigstore build
 attestations are generated automatically.
 
+## What's automated vs. manual
+
+Most of this checklist is now wired into CI. At a glance:
+
+| Step                                   | Where it runs                                      |
+| -------------------------------------- | -------------------------------------------------- |
+| Pre-release checks (ruff/mypy/pytest)  | `ci.yml` on every PR                               |
+| Version strings in sync                | `ci.yml` → `version-consistency` job               |
+| CHANGELOG section exists for bump      | `ci.yml` → `changelog-gate` job                    |
+| Open the "Prepare X.Y.Z release" PR    | `release-prep.yml` (`workflow_dispatch`)           |
+| Create signed tag and push             | **Manual** (your workstation)                      |
+| Build, sign, TestPyPI, smoke tests     | `publish.yml`                                      |
+| Release-gate approval                  | **Manual** (GitHub Environment `release`)          |
+| PyPI + Docker Hub publish              | `publish.yml`                                      |
+| GitHub Release created from CHANGELOG  | `publish.yml` → `create-release` job               |
+| Marketplace-smoke pin bump PR          | `publish.yml` → `bump-marketplace-smoke-pin` job   |
+| Merge pin bump PR, re-run smoke        | **Manual**                                         |
+
+Tag creation stays manual on purpose. Tags created by `GITHUB_TOKEN`
+don't trigger downstream workflows (see "If something goes wrong"), and
+the SSH-signed tag is the root of the Sigstore provenance chain for the
+built artifact. Release-gate approval stays manual because it's the
+human-in-the-loop safety between TestPyPI smoke passing and real PyPI /
+Docker Hub publishing.
+
+Everything below is the manual checklist for the steps that are not
+automated. If you invoke `Release prep` from the Actions tab, it does
+the "Bump the version", "Update the changelog", and "Commit the bump"
+sections for you — your job is to review the resulting PR.
+
 ## Choosing the version number
 
 compose-lint follows [Semantic Versioning](https://semver.org/), with one
@@ -202,25 +232,21 @@ After approval, `publish` and `docker-publish` run in parallel.
 
 ## Post-release
 
-- [ ] Create a GitHub Release from the tag
-      (`gh release create vX.Y.Z --notes-from-tag` or use the web UI).
-      Copy the relevant CHANGELOG section as the release notes.
-- [ ] **Bump the Marketplace smoke test pin.** The commit SHA only
-      exists once the tag is pushed, so this can't live in the
-      release bump PR. Grab the SHA and update both
-      `uses: tmatens/compose-lint@<sha> # vX.Y.Z` lines in
-      `.github/workflows/marketplace-smoke.yml`:
-
-      ```bash
-      git rev-parse vX.Y.Z^{commit}
-      ```
-
-      Open a follow-up PR with the bump. Once it's merged, trigger
-      **Actions → Marketplace smoke test → Run workflow** to verify
-      the published action end-to-end against the new tag.
+- [ ] **GitHub Release** — created automatically by `publish.yml`'s
+      `create-release` job (runs after both `publish` and
+      `docker-publish` succeed). Notes come from the matching
+      `## [X.Y.Z]` section in `CHANGELOG.md`. Wheels, sdist, and
+      Sigstore bundles are attached as release assets.
+- [ ] **Marketplace smoke test pin bump** — `publish.yml`'s
+      `bump-marketplace-smoke-pin` job (runs after `create-release`)
+      opens a follow-up PR with the new SHA in both
+      `uses: tmatens/compose-lint@<sha> # vX.Y.Z` lines. Review and
+      squash-merge, then trigger **Actions → Marketplace smoke test →
+      Run workflow** to verify the published Action end-to-end.
+- [ ] **Fresh `[Unreleased]` section** — already inserted by
+      `release-prep.yml` as part of the release bump PR. No follow-up
+      PR needed.
 - [ ] Announce in Discussions if the release has user-visible changes.
-- [ ] Open a follow-up PR adding an empty `[Unreleased]` section at the
-      top of `CHANGELOG.md` so the next change has somewhere to land.
 
 ## If something goes wrong
 

@@ -514,3 +514,95 @@ jobs:
             --notes-file notes.md \
             --verify-tag \
             dist/*.whl dist/*.tar.gz signatures/*
+
+  # Post-tag, post-publish automation. At this point:
+  #   - The signed tag ${{ github.ref_name }} exists (it triggered this
+  #     workflow), so `git rev-parse <tag>^{commit}` resolves.
+  #   - `publish` and `docker-publish` have both succeeded (gated via
+  #     `needs: create-release`), so PyPI + Docker Hub show the new
+  #     version and the GitHub Release page is live.
+  # Only in that state does updating the Marketplace smoke test pin make
+  # sense: the pinned SHA must point at an artifact that actually shipped.
+  # This job opens a PR; a human still reviews and merges it, and then
+  # triggers the Marketplace smoke workflow to verify end-to-end.
+  bump-marketplace-smoke-pin:
+    name: Bump marketplace-smoke pin (post-tag, post-publish)
+    needs: create-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Resolve release SHA from tag
+        id: sha
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          sha=$(git rev-parse "${TAG}^{commit}")
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Post-tag marketplace-smoke pin bump"
+            echo ""
+            echo "Tag: \`${TAG}\`"
+            echo "Commit: \`${sha}\`"
+            echo ""
+            echo "This runs **after** publish + docker-publish + create-release all"
+            echo "succeeded, so the pinned SHA points at a release that actually"
+            echo "shipped to PyPI, Docker Hub, and GitHub Releases."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Update .github/workflows/marketplace-smoke.yml
+        env:
+          TAG: ${{ github.ref_name }}
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          version="${TAG#v}"
+          sed -i -E \
+            "s|uses: tmatens/compose-lint@[0-9a-f]+ # v[0-9.]+|uses: tmatens/compose-lint@${SHA} # v${version}|g" \
+            .github/workflows/marketplace-smoke.yml
+          if git diff --quiet .github/workflows/marketplace-smoke.yml; then
+            echo "no_changes=1" >> "$GITHUB_ENV"
+            echo "::notice::marketplace-smoke.yml already points at ${SHA}; nothing to do."
+          else
+            echo "marketplace-smoke.yml updated to ${SHA} (${TAG})."
+          fi
+      - name: Commit, push, open PR
+        if: env.no_changes != '1'
+        env:
+          TAG: ${{ github.ref_name }}
+          SHA: ${{ steps.sha.outputs.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${TAG#v}"
+          branch="chore/marketplace-smoke-${version}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "${branch}"
+          git add .github/workflows/marketplace-smoke.yml
+          git commit -m "Bump marketplace-smoke pin to ${TAG}"
+          git push -u origin "${branch}"
+          cat > /tmp/pr-body.md <<EOF
+          **Post-tag follow-up.** This PR was opened automatically by \`publish.yml\` *after*:
+
+          - Tag \`${TAG}\` was pushed and triggered the Publish workflow
+          - TestPyPI + Docker smoke tests passed
+          - The \`release-gate\` environment was approved
+          - \`publish\` (PyPI) and \`docker-publish\` (Docker Hub) both succeeded
+          - \`create-release\` created the GitHub Release \`${TAG}\`
+
+          So the pinned SHA \`${SHA}\` is guaranteed to correspond to a release that actually shipped through every channel.
+
+          **After merging this PR**, trigger **Actions → Marketplace smoke test → Run workflow** to verify the published Action end-to-end against the new tag.
+          EOF
+          # Strip the 10-space indentation that the YAML block scalar requires.
+          sed -i -E 's/^          //' /tmp/pr-body.md
+          gh pr create \
+            --base main \
+            --head "${branch}" \
+            --title "Bump marketplace-smoke pin to ${TAG}" \
+            --body-file /tmp/pr-body.md
