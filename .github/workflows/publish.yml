@@ -13,6 +13,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -33,10 +36,63 @@ jobs:
             echo "::error::Wheel contains forbidden files"
             exit 1
           fi
+      # Sign dists with Sigstore so we can attach .sigstore bundles to the
+      # GitHub Release. PyPI gets its own PEP 740 attestations via the
+      # trusted-publisher flow in the `publish` job — this is an independent
+      # signing path whose artifacts are visible on the Release page (which
+      # is what OpenSSF Scorecard's Signed-Releases check inspects).
+      - uses: sigstore/gh-action-sigstore-python@04cffa1d795717b140764e8b640de88853c92acc # v3.3.0
+        with:
+          inputs: ./dist/*.tar.gz ./dist/*.whl
+      - name: Separate sigstore bundles from dist
+        # pypa/gh-action-pypi-publish expects dist/ to contain only wheels
+        # and sdists; move bundles out before the dist artifact is uploaded.
+        # sigstore-python has written both `.sigstore` and `.sigstore.json`
+        # depending on version — handle both.
+        run: |
+          mkdir -p signatures
+          shopt -s nullglob
+          for f in dist/*.sigstore dist/*.sigstore.json; do
+            mv "$f" signatures/
+          done
+          ls signatures/
+      - name: Verify every dist has a matching signature
+        # Pre-flight gate: catches a silent signing regression (e.g. the
+        # sigstore action changes output extension again) here, in `build`,
+        # before anything publishes to PyPI or Docker Hub. Without this, a
+        # signing regression would only surface at `create-release` — after
+        # PyPI has already immutably accepted the version, leaving a
+        # half-published state that requires manual recovery.
+        run: |
+          shopt -s nullglob
+          dists=(dist/*.whl dist/*.tar.gz)
+          sigs=(signatures/*)
+          if [ "${#dists[@]}" -eq 0 ]; then
+            echo "::error::No distributions found in dist/"
+            exit 1
+          fi
+          if [ "${#sigs[@]}" -ne "${#dists[@]}" ]; then
+            echo "::error::Signature count (${#sigs[@]}) does not match dist count (${#dists[@]})"
+            echo "dists: ${dists[*]}"
+            echo "sigs:  ${sigs[*]}"
+            exit 1
+          fi
+          for d in "${dists[@]}"; do
+            base="$(basename "$d")"
+            if ! ls "signatures/${base}".sigstore* >/dev/null 2>&1; then
+              echo "::error::No signature found for ${base}"
+              exit 1
+            fi
+          done
+          echo "All ${#dists[@]} distributions have matching signatures."
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist
           path: dist/
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: signatures
+          path: signatures/
 
   testpypi:
     needs: build
@@ -422,6 +478,14 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist/
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: signatures
+          path: signatures/
       - name: Extract changelog section for this tag
         env:
           TAG: ${{ github.ref_name }}
@@ -437,6 +501,10 @@ jobs:
             exit 1
           fi
       - name: Create GitHub Release
+        # Attach wheels, sdist, and Sigstore bundles as release assets.
+        # OpenSSF Scorecard's Signed-Releases check scans the last 5 GitHub
+        # releases for accompanying signature files (`.sigstore`, `.sig`,
+        # `.asc`, `.intoto.jsonl`) alongside distributions.
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
@@ -444,4 +512,5 @@ jobs:
           gh release create "${TAG}" \
             --title "${TAG}" \
             --notes-file notes.md \
-            --verify-tag
+            --verify-tag \
+            dist/*.whl dist/*.tar.gz signatures/*

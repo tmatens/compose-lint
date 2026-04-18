@@ -48,6 +48,12 @@ publish = [
     "build==1.4.3",
     "twine==6.2.0",
 ]
+# Minimal build-tool set for the Dockerfile build stage. Kept narrow so
+# the generated requirements-build.lock hash-pins only what's needed to
+# invoke `python -m build`, without pulling in pytest/ruff/mypy/etc.
+container = [
+    "build==1.4.3",
+]
 dev = [
     # Self-reference so the ruff pin lives only in [lint]; no drift.
     "compose-lint[lint]",

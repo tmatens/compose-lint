@@ -66,8 +66,15 @@ for ref in ${refs}; do
         if [ -z "${scope}" ]; then
             scope="repository:${path}:pull"
         fi
-        token=$(curl -s "${realm}?service=${service}&scope=${scope}" \
-            | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get("token") or d.get("access_token",""))')
+        # Fetch the registry auth token. Written to a temp file and parsed
+        # in a separate step so this is not a `curl | interpreter` pattern
+        # (Scorecard's downloadThenRun check flags piped downloads even
+        # when the receiver is just parsing JSON). Cleaned up inline so
+        # leaked files don't accumulate across iterations.
+        token_json=$(mktemp)
+        curl -sfL "${realm}?service=${service}&scope=${scope}" -o "${token_json}"
+        token=$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("token") or d.get("access_token",""))' "${token_json}")
+        rm -f "${token_json}"
         resp=$(curl -sI -H "Accept: ${accept}" -H "Authorization: Bearer ${token}" "${url}")
     fi
 

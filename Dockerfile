@@ -21,12 +21,20 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 COPY pyproject.toml README.md LICENSE ./
+COPY requirements.lock requirements-build.lock ./
 COPY src/ src/
-RUN python3 -m venv /venv \
-    && /venv/bin/pip install --no-cache-dir build~=1.0 \
-    && /venv/bin/python -m build --wheel --outdir /dist \
-    && /venv/bin/pip uninstall -y build \
-    && /venv/bin/pip install --no-cache-dir /dist/*.whl
+# Two-venv layout so every package entering the final image is hash-pinned:
+#   /build-venv — ephemeral, runs `python -m build` (build + transitives)
+#   /venv       — the runtime venv that gets copied into the final stage
+# The runtime venv installs PyYAML from requirements.lock, then the locally
+# built wheel with --no-deps so the only unpinned artifact is the wheel we
+# just produced from this checkout.
+RUN python3 -m venv /build-venv \
+    && /build-venv/bin/pip install --no-cache-dir --require-hashes -r requirements-build.lock \
+    && /build-venv/bin/python -m build --wheel --outdir /dist \
+    && python3 -m venv /venv \
+    && /venv/bin/pip install --no-cache-dir --require-hashes -r requirements.lock \
+    && /venv/bin/pip install --no-cache-dir --no-deps /dist/*.whl
 
 # --- runtime stage: distroless Python, nonroot by default ---
 FROM gcr.io/distroless/python3-debian13:nonroot@sha256:51b1acc177d535f20fa30a175a657079ee7dce6e326541cfd83a474d9928e123
