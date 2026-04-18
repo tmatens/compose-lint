@@ -21,20 +21,8 @@ pip install compose-lint
 **Docker** — [composelint/compose-lint](https://hub.docker.com/r/composelint/compose-lint)
 
 ```bash
-docker run --rm \
-  --read-only \
-  --cap-drop ALL \
-  --security-opt no-new-privileges \
-  --network none \
-  -v "$(pwd):/src:ro" \
-  composelint/compose-lint
+docker run --rm -v "$(pwd):/src" composelint/compose-lint
 ```
-
-compose-lint only reads local YAML, so it runs with no capabilities, no
-network, no privilege escalation, a read-only root filesystem, and a
-read-only mount. These flags aren't required — `docker run --rm -v
-"$(pwd):/src" composelint/compose-lint` works — but they model the
-least-privilege posture the linter itself recommends.
 
 ## Quick Start
 
@@ -53,10 +41,7 @@ compose-lint docker-compose.yml docker-compose.prod.yml
 Docker equivalent:
 
 ```bash
-docker run --rm \
-  --read-only --cap-drop ALL --security-opt no-new-privileges --network none \
-  -v "$(pwd):/src:ro" \
-  composelint/compose-lint docker-compose.prod.yml
+docker run --rm -v "$(pwd):/src" composelint/compose-lint docker-compose.prod.yml
 ```
 
 ## Example Output
@@ -178,7 +163,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: tmatens/compose-lint@v0.3.4
+      - uses: tmatens/compose-lint@v0.3.7
         with:
           sarif-file: results.sarif
 ```
@@ -205,7 +190,7 @@ compose-lint --format sarif docker-compose.yml > results.sarif
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/tmatens/compose-lint
-    rev: v0.3.4
+    rev: v0.3.7
     hooks:
       - id: compose-lint
 ```
