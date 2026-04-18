@@ -8,6 +8,16 @@ on:
 # Deny-all at the workflow level; every job declares the scopes it needs.
 permissions: {}
 
+# Serialize runs that share a tag so two overlapping pushes of the same
+# ref can't race past `release-gate` and double-publish. Different tags
+# still publish in parallel. Never `cancel-in-progress: true` here —
+# canceling a publish mid-run can leave PyPI accepting the wheel while
+# the GitHub Release is never minted, or Docker tags pushed without
+# cosign signatures, etc.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   # Gate every publish path on two lightweight tag checks:
   #   1. The ref is an annotated tag (not a lightweight tag). Release tags
