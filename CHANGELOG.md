@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read-only mount, modelling the least-privilege posture the linter
   itself recommends. The simpler form still works.
 
+### Fixed
+
+- Parser post-YAML traversals (`_collect_lines`, `_strip_lines`) no
+  longer recurse one Python frame per nesting level, so pathologically-
+  deep input raises `ComposeError` (or lints cleanly) instead of
+  crashing with an uncaught `RecursionError`. Found by ClusterFuzzLite.
+
 ### Security
 
 - Dockerfile sets `USER 65532:65532` explicitly at the runtime stage.
