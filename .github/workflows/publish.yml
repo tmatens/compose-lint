@@ -564,11 +564,28 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      # Fail fast with a clear message if the PAT isn't configured.
+      # GITHUB_TOKEN cannot push commits that modify .github/workflows/*
+      # (that scope is deliberately withheld to prevent an action from
+      # self-modifying its own triggers), so this job needs a PAT with
+      # the `workflow` scope. Without the secret, the checkout below
+      # would still succeed but `git push` would fail halfway through
+      # the job — catch it here instead.
+      - name: Preflight — MARKETPLACE_SMOKE_PAT must be configured
+        env:
+          PAT: ${{ secrets.MARKETPLACE_SMOKE_PAT }}
+        run: |
+          if [ -z "${PAT}" ]; then
+            echo "::error::MARKETPLACE_SMOKE_PAT secret is not configured. See docs/CI.md > bump-marketplace-smoke-pin for PAT scopes."
+            exit 1
+          fi
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: main
           fetch-depth: 0
           persist-credentials: true
+          # Use a PAT so `git push` can include workflow-file changes.
+          token: ${{ secrets.MARKETPLACE_SMOKE_PAT }}
       - name: Resolve release SHA from tag
         id: sha
         env:
