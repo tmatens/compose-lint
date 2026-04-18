@@ -14,6 +14,7 @@ jobs:
       contents: read
       actions: write
       security-events: write
+      issues: write
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -38,3 +39,21 @@ jobs:
           mode: batch
           output-sarif: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Report scheduled failure as issue
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW: ${{ github.workflow }}
+          SANITIZER: ${{ matrix.sanitizer }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Scheduled run failed: ${WORKFLOW} (${SANITIZER})"
+          body=$(printf -- '- Workflow: **%s**\n- Matrix leg: **%s**\n- Run: %s\n- Commit: %s\n\nReopen or close when triaged.' \
+            "${WORKFLOW}" "${SANITIZER}" "${RUN_URL}" "${GITHUB_SHA}")
+          existing=$(gh issue list --state open --search "\"${title}\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "${existing}" ]; then
+            gh issue comment "${existing}" --body "${body}"
+          else
+            gh issue create --title "${title}" --body "${body}"
+          fi
