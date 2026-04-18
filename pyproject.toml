@@ -48,6 +48,11 @@ security = [
 publish = [
     "build==1.4.3",
     "twine==6.2.0",
+    # Used by the post-release canary in publish.yml to verify the
+    # Sigstore bundles attached to the GitHub Release. Matches the
+    # version bundled by sigstore/gh-action-sigstore-python v3.3.0 so
+    # the signer and verifier are in lockstep.
+    "sigstore==4.2.0",
 ]
 # Minimal build-tool set for the Dockerfile build stage. Kept narrow so
 # the generated requirements-build.lock hash-pins only what's needed to

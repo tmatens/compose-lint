@@ -568,6 +568,91 @@ jobs:
             --verify-tag \
             dist/*.whl dist/*.tar.gz signatures/* sbom.spdx.json
 
+  # Post-release canary: download the just-attached Sigstore bundles from
+  # the GitHub Release and cryptographically verify each one against the
+  # expected OIDC identity (this workflow at this tag) and issuer.
+  #
+  # The pre-publish check in `build` confirms a bundle file *exists* for
+  # every dist; this closes the loop by confirming the bundle actually
+  # *verifies*. Catches malformed bundles, identity drift, or a shipped
+  # signature that can't be validated by downstream consumers.
+  #
+  # Runs after `create-release` so the Release page assets are available
+  # to `gh release download`. Fails the workflow if any bundle fails to
+  # verify, surfacing a red run on the tag.
+  verify-release-signatures:
+    needs: create-release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            requirements-dev.lock
+            requirements-build.lock
+      - name: Install sigstore verifier (hash-pinned)
+        run: pip install --require-hashes -r requirements-dev.lock
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p release-assets
+          gh release download "${TAG}" --dir release-assets
+          ls release-assets/
+      - name: Verify Sigstore bundles
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/publish.yml@refs/tags/${TAG}"
+          issuer="https://token.actions.githubusercontent.com"
+          echo "Expected identity: ${identity}"
+          echo "Expected issuer:   ${issuer}"
+          shopt -s nullglob
+          dists=(release-assets/*.whl release-assets/*.tar.gz)
+          if [ "${#dists[@]}" -eq 0 ]; then
+            echo "::error::No distributions found in release assets"
+            exit 1
+          fi
+          failures=0
+          for d in "${dists[@]}"; do
+            base="$(basename "$d")"
+            bundle=""
+            for cand in "release-assets/${base}.sigstore" "release-assets/${base}.sigstore.json"; do
+              if [ -f "${cand}" ]; then
+                bundle="${cand}"
+                break
+              fi
+            done
+            if [ -z "${bundle}" ]; then
+              echo "::error::No Sigstore bundle found alongside ${base}"
+              failures=$((failures + 1))
+              continue
+            fi
+            echo "Verifying ${base} against ${bundle}"
+            if ! python -m sigstore verify identity \
+                --cert-identity "${identity}" \
+                --cert-oidc-issuer "${issuer}" \
+                --bundle "${bundle}" \
+                "${d}"; then
+              echo "::error::Sigstore verify failed for ${base}"
+              failures=$((failures + 1))
+            fi
+          done
+          if [ "${failures}" -gt 0 ]; then
+            echo "::error::${failures} signature(s) failed verification"
+            exit 1
+          fi
+          echo "All ${#dists[@]} Sigstore bundles verified."
+
   # Post-tag, post-publish automation. At this point:
   #   - The signed tag ${{ github.ref_name }} exists (it triggered this
   #     workflow), so `git rev-parse <tag>^{commit}` resolves.
