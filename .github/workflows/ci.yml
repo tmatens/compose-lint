@@ -386,3 +386,41 @@ jobs:
         run: |
           echo "::error::Expected action to fail on insecure fixture, got '${{ steps.insecure.outcome }}'"
           exit 1
+
+  # Single rollup job for branch protection. Required-status-checks should
+  # point at this job name instead of the individual ci.yml job names, so
+  # adding/renaming/removing jobs doesn't require a protection-rule edit.
+  #
+  # `if: always()` ensures the rollup runs when any dependency fails or is
+  # skipped — otherwise the overall check stays pending and nothing fails
+  # the PR. The script then pass-or-fails explicitly by inspecting each
+  # dependency's `result`. `skipped` counts as pass so push-to-main (where
+  # pull_request-gated jobs skip) doesn't wedge the required check.
+  ci-ok:
+    name: ci-ok
+    needs:
+      - lint
+      - type-check
+      - test
+      - security
+      - version-consistency
+      - changelog-gate
+      - dependency-review
+      - actionlint
+      - dockerfile-digests
+      - docker-smoke
+      - action-smoke
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    permissions: {}
+    steps:
+      - name: All required CI jobs must succeed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS"
+          if ! echo "$RESULTS" | jq -e 'to_entries | all(.value.result == "success" or .value.result == "skipped")' >/dev/null; then
+            echo "::error::One or more required CI jobs failed or were cancelled."
+            exit 1
+          fi
