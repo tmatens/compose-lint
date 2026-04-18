@@ -85,8 +85,8 @@ jobs:
         # runner-bundled pip itself (those are out of scope for this
         # project's supply chain). The pip upgrade is deliberately
         # unpinned per the "always-latest for the bootstrap" exception
-        # in AGENTS.md sub-case 4. bandit and pip-audit come from the
-        # hash-pinned dev lockfile.
+        # in AGENTS.md "Dependency pinning". bandit and pip-audit come
+        # from the hash-pinned dev lockfile.
         run: |
           python -m pip install --upgrade pip
           pip install --require-hashes -r requirements-dev.lock
