@@ -16,6 +16,7 @@ jobs:
     permissions:
       security-events: write
       actions: read
+      issues: write
     steps:
       - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
@@ -37,3 +38,20 @@ jobs:
         with:
           sarif_file: scout-results.sarif
           category: docker-scout-scheduled
+
+      - name: Report scheduled failure as issue
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW: ${{ github.workflow }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Scheduled run failed: ${WORKFLOW}"
+          body=$(printf -- '- Workflow: **%s**\n- Run: %s\n- Commit: %s\n\nReopen or close when triaged.' \
+            "${WORKFLOW}" "${RUN_URL}" "${GITHUB_SHA}")
+          existing=$(gh issue list --state open --search "\"${title}\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "${existing}" ]; then
+            gh issue comment "${existing}" --body "${body}"
+          else
+            gh issue create --title "${title}" --body "${body}"
+          fi
