@@ -8,9 +8,12 @@ name: Marketplace smoke test
 # the Marketplace boundary: a missing tag, a broken published
 # action.yml, a PyPI outage, etc.
 #
-# Trigger it from the Actions tab → "Marketplace smoke test" →
-# "Run workflow". No automatic triggers — this reaches out to PyPI
-# on every run and there's no reason to spend that on every push.
+# Auto-triggers on push-to-main that touches this file — i.e., when
+# the `bump-marketplace-smoke-pin` PR from publish.yml merges, the
+# smoke runs against the newly-pinned SHA without a manual click.
+# `release: published` would fire before the pin bump lands, smoking
+# the *previous* release; gating on the pin-bump merge avoids that.
+# Also triggerable manually from Actions tab for ad-hoc re-verification.
 #
 # When cutting a new release, bump the commit SHA on the two
 # `uses:` lines below (and the trailing `# vX.Y.Z` comment so a
@@ -29,6 +32,10 @@ name: Marketplace smoke test
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/marketplace-smoke.yml
 
 permissions:
   contents: read
