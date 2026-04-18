@@ -50,15 +50,121 @@ jobs:
             echo "::error::Wheel contains forbidden files"
             exit 1
           fi
+      # Pre-publish smoke against the locally-built wheel. publish.yml runs
+      # the same check via TestPyPI before its `release-gate`; this emergency
+      # path previously had no smoke at all, so a bad wheel could ship
+      # straight to PyPI on a single approval. Install the wheel into a
+      # throwaway venv so the `compose-lint` on PATH is the one we're about
+      # to publish (not the editable install used by `python -m build`).
+      - name: Smoke the built wheel
+        run: |
+          python -m venv /tmp/smoke-venv
+          /tmp/smoke-venv/bin/pip install dist/*.whl
+          cat > /tmp/clean.yml <<'YAML'
+          services:
+            web:
+              image: nginx:1.27-alpine
+              ports:
+                - "127.0.0.1:8080:80"
+              security_opt:
+                - no-new-privileges:true
+              cap_drop:
+                - ALL
+              read_only: true
+              tmpfs:
+                - /tmp
+                - /run
+          YAML
+          cat > /tmp/insecure.yml <<'YAML'
+          services:
+            app:
+              image: myapp:1.0
+              privileged: true
+          YAML
+          /tmp/smoke-venv/bin/compose-lint /tmp/clean.yml
+          exit_code=0
+          /tmp/smoke-venv/bin/compose-lint /tmp/insecure.yml || exit_code=$?
+          if [ "${exit_code}" -ne 1 ]; then
+            echo "::error::Expected exit 1 on insecure fixture, got ${exit_code}"
+            exit 1
+          fi
       - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
         with:
           attestations: true
+
+  # Pre-publish smoke for the docker channel. publish.yml runs docker-smoke
+  # multi-arch before the release-gate; this emergency path has no shared
+  # gate, so a broken Dockerfile or runtime dep could push straight to Docker
+  # Hub on a single approval. Single-arch (amd64) keeps the smoke cheap —
+  # multi-arch is still covered by the real build-docker matrix below.
+  docker-smoke:
+    if: inputs.channel == 'docker'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - name: Build image for testing
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: composelint/compose-lint:channel-smoke
+      - name: Test — version output matches tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          expected="compose-lint ${TAG#v}"
+          actual="$(docker run --rm composelint/compose-lint:channel-smoke --version)"
+          if [ "${actual}" != "${expected}" ]; then
+            echo "::error::Version mismatch: '${actual}' vs expected '${expected}'"
+            exit 1
+          fi
+      - name: Test — clean fixture exits 0
+        run: |
+          cat > /tmp/clean.yml <<'YAML'
+          services:
+            web:
+              image: nginx:1.27-alpine
+              ports:
+                - "127.0.0.1:8080:80"
+              security_opt:
+                - no-new-privileges:true
+              cap_drop:
+                - ALL
+              read_only: true
+              tmpfs:
+                - /tmp
+                - /run
+          YAML
+          docker run --rm -v /tmp/clean.yml:/src/docker-compose.yml \
+            composelint/compose-lint:channel-smoke
+      - name: Test — insecure fixture exits 1
+        run: |
+          cat > /tmp/insecure.yml <<'YAML'
+          services:
+            app:
+              image: myapp:1.0
+              privileged: true
+          YAML
+          exit_code=0
+          docker run --rm -v /tmp/insecure.yml:/src/docker-compose.yml \
+            composelint/compose-lint:channel-smoke || exit_code=$?
+          if [ "${exit_code}" -ne 1 ]; then
+            echo "::error::Expected exit 1 on insecure fixture, got ${exit_code}"
+            exit 1
+          fi
 
   # Build one image per arch on a native runner (no QEMU) and push by
   # digest only. See the matching block in publish.yml for the full
   # rationale — the emulated arm64 apt-get path is unreliable.
   build-docker:
     if: inputs.channel == 'docker'
+    needs: docker-smoke
     strategy:
       fail-fast: false
       matrix:
@@ -197,3 +303,28 @@ jobs:
           done
           echo "::error::cosign verify failed after 3 attempts"
           exit 1
+      - name: Verify — published image version matches tag
+        env:
+          DIGEST: ${{ steps.inspect.outputs.digest }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          expected="compose-lint ${TAG#v}"
+          actual="$(docker run --rm "composelint/compose-lint@${DIGEST}" --version)"
+          echo "Expected: ${expected}"
+          echo "Actual:   ${actual}"
+          if [ "${actual}" != "${expected}" ]; then
+            echo "::error::Published image version mismatch: '${actual}' vs tag '${expected}'"
+            exit 1
+          fi
+      - name: Generate SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: composelint/compose-lint@${{ steps.inspect.outputs.digest }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+      - name: Attest SBOM to image
+        env:
+          DIGEST: ${{ steps.inspect.outputs.digest }}
+        run: |
+          cosign attest --yes --type spdxjson --predicate sbom.spdx.json \
+            "composelint/compose-lint@${DIGEST}"
