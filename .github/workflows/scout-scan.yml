@@ -32,7 +32,7 @@ jobs:
           sarif-file: scout-results.sarif
 
       - name: Upload Scout results to GitHub Security
-        uses: github/codeql-action/upload-sarif@018511a1aac61b6e92783189d8c0081eb8f69932 # v3.28.13
+        uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4.35.2
         if: always()
         with:
           sarif_file: scout-results.sarif
