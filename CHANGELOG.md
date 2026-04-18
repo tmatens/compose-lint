@@ -139,6 +139,8 @@ First public release.
   inputs through `env:` rather than direct `${{ }}` interpolation to prevent
   shell injection.
 
+[0.3.5]: https://github.com/tmatens/compose-lint/compare/v0.3.4...v0.3.5
+[0.3.4]: https://github.com/tmatens/compose-lint/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/tmatens/compose-lint/compare/v0.3.0...v0.3.3
 [0.3.0]: https://github.com/tmatens/compose-lint/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/tmatens/compose-lint/releases/tag/v0.2.0
