@@ -93,6 +93,22 @@ Pursue based on user demand after v1.0.
 
 ---
 
+## Python version support
+
+Track current CPython: add new minor versions to the CI matrix within ~3 months of each October release, drop versions at upstream end-of-life. Adding a version is additive (PATCH per `docs/RELEASING.md`); dropping a version is a MINOR pre-1.0 and a MAJOR post-1.0.
+
+| Version | Released  | EOL       | In matrix as of |
+|---------|-----------|-----------|-----------------|
+| 3.10    | 2021-10   | 2026-10   | 0.2.0           |
+| 3.11    | 2022-10   | 2027-10   | 0.2.0           |
+| 3.12    | 2023-10   | 2028-10   | 0.2.0           |
+| 3.13    | 2024-10   | 2029-10   | 0.2.0           |
+| 3.14    | 2025-10   | 2030-10   | 0.3.8           |
+
+Python 3.10 is scheduled to age out of the matrix when it reaches upstream EOL in October 2026 (release bump to 0.4.x or later).
+
+---
+
 ## Summary
 
 | Milestone | Version |
