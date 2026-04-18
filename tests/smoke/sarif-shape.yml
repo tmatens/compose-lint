@@ -1,0 +1,7 @@
+# Minimal fixture used only to exercise `--format sarif` output shape.
+# Not asserted for specific findings — the smoke test just verifies
+# that the produced SARIF parses as JSON. Any real Compose file would
+# do; a single unpinned image keeps it short.
+services:
+  db:
+    image: postgres:16

@@ -119,6 +119,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.13"
@@ -153,30 +156,11 @@ jobs:
             exit 1
           fi
       - name: Smoke test — lint a clean fixture
-        run: |
-          cat > /tmp/clean.yml <<'YAML'
-          services:
-            web:
-              image: nginx:1.27-alpine
-              ports:
-                - "127.0.0.1:8080:80"
-              security_opt:
-                - no-new-privileges:true
-              cap_drop:
-                - ALL
-              read_only: true
-          YAML
-          compose-lint /tmp/clean.yml
+        run: compose-lint tests/smoke/clean.yml
       - name: Smoke test — insecure fixture exits 1
         run: |
-          cat > /tmp/insecure.yml <<'YAML'
-          services:
-            app:
-              image: myapp:1.0
-              privileged: true
-          YAML
           exit_code=0
-          compose-lint /tmp/insecure.yml || exit_code=$?
+          compose-lint tests/smoke/insecure.yml || exit_code=$?
           if [ "${exit_code}" -ne 1 ]; then
             echo "::error::Expected exit code 1, got ${exit_code}"
             exit 1
@@ -230,41 +214,25 @@ jobs:
           fi
       - name: Test — clean fixture exits 0
         run: |
-          cat > /tmp/clean.yml <<'YAML'
-          services:
-            web:
-              image: nginx:1.27-alpine
-              ports:
-                - "127.0.0.1:8080:80"
-              security_opt:
-                - no-new-privileges:true
-              cap_drop:
-                - ALL
-              read_only: true
-          YAML
-          docker run --rm -v /tmp/clean.yml:/src/docker-compose.yml composelint/compose-lint:test
+          docker run --rm \
+            -v "${PWD}/tests/smoke/clean.yml":/src/docker-compose.yml \
+            composelint/compose-lint:test
       - name: Test — insecure fixture exits 1
         run: |
-          cat > /tmp/insecure.yml <<'YAML'
-          services:
-            app:
-              image: myapp:1.0
-              privileged: true
-          YAML
           exit_code=0
-          docker run --rm -v /tmp/insecure.yml:/src/docker-compose.yml composelint/compose-lint:test || exit_code=$?
+          docker run --rm \
+            -v "${PWD}/tests/smoke/insecure.yml":/src/docker-compose.yml \
+            composelint/compose-lint:test || exit_code=$?
           if [ "${exit_code}" -ne 1 ]; then
             echo "::error::Expected exit code 1, got ${exit_code}"
             exit 1
           fi
       - name: Test — SARIF output is valid JSON
         run: |
-          cat > /tmp/test.yml <<'YAML'
-          services:
-            db:
-              image: postgres:16
-          YAML
-          docker run --rm -v /tmp/test.yml:/src/docker-compose.yml composelint/compose-lint:test --format sarif --fail-on critical | python3 -c "import sys,json; json.load(sys.stdin); print('Valid SARIF JSON')"
+          docker run --rm \
+            -v "${PWD}/tests/smoke/sarif-shape.yml":/src/docker-compose.yml \
+            composelint/compose-lint:test --format sarif --fail-on critical \
+            | python3 -c "import sys, json; json.load(sys.stdin); print('Valid SARIF JSON')"
       - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         if: matrix.scout
         with:

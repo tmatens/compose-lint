@@ -1,0 +1,17 @@
+# Canonical "clean" smoke fixture shared by every workflow that runs
+# compose-lint end-to-end (ci.yml, publish.yml, marketplace-smoke.yml).
+# Keeping one copy prevents the drift we had through 0.3.x where the
+# fixture existed in five heredocs and only some included `tmpfs:`.
+services:
+  web:
+    image: nginx:1.27-alpine
+    ports:
+      - "127.0.0.1:8080:80"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
