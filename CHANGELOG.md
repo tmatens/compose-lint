@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-04-18
+
+### Fixed
+
+- Dockerfile `FROM` lines now pin the multi-arch OCI image index
+  (manifest list) digest instead of the per-arch amd64 manifest
+  digest. The 0.3.5 per-arch pins resolved correctly during the
+  single-arch `docker-smoke` but failed in `docker-publish`'s arm64
+  leg because the pinned digest referenced an amd64-only manifest.
+
+### Changed
+
+- `docker-smoke` in `publish.yml` now runs as a native-runner matrix
+  across `linux/amd64` (`ubuntu-latest`) and `linux/arm64`
+  (`ubuntu-24.04-arm`). Each leg builds the image without QEMU
+  emulation and runs the full fixture battery (version check, clean,
+  insecure, SARIF). Multi-arch regressions — per-arch digest pins,
+  native-wheel mismatches, future base-image surprises — now fail
+  the release-gate instead of surfacing mid-release during the
+  production Docker Hub push.
+- New `ci.yml` job `dockerfile-digests` runs
+  `scripts/verify-dockerfile-digests.sh` on every PR. The script
+  HEADs each `FROM ...@sha256:` in the Dockerfile and fails if the
+  `Content-Type` is not an OCI image index or Docker manifest list
+  — catching the per-arch-pin mistake at review time rather than
+  release time. No image pulls; ~1s total.
+
+No CLI, config, or finding-shape changes. Exit codes (0/1/2) are
+preserved. A Compose file that passed on 0.3.5 passes identically on
+0.3.6.
+
 ## [0.3.5] - 2026-04-17
 
 ### Changed
@@ -146,6 +177,7 @@ First public release.
   inputs through `env:` rather than direct `${{ }}` interpolation to prevent
   shell injection.
 
+[0.3.6]: https://github.com/tmatens/compose-lint/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/tmatens/compose-lint/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/tmatens/compose-lint/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/tmatens/compose-lint/compare/v0.3.0...v0.3.3
