@@ -261,12 +261,16 @@ jobs:
               privileged: true
           YAML
 
+      # No `version:` pin — the action defaults to installing the latest
+      # release from PyPI. What this job tests is the action.yml contract
+      # (inputs, file discovery, SARIF wiring) against whatever compose-lint
+      # is currently published. Pinning to a stale version hid breakages
+      # between the source action and the published package through 0.3.x.
       - name: Clean fixture should pass
         uses: ./
         with:
           files: smoke/clean.yml
           fail-on: high
-          version: "0.2.0"
 
       - name: Insecure fixture should fail
         id: insecure
@@ -275,7 +279,6 @@ jobs:
         with:
           files: smoke/insecure.yml
           fail-on: high
-          version: "0.2.0"
 
       - name: Assert insecure run failed
         if: steps.insecure.outcome != 'failure'
