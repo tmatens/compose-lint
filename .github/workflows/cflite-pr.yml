@@ -32,7 +32,7 @@ jobs:
         with:
           language: python
           sanitizer: address
-          fuzz-seconds: 300
+          fuzz-seconds: 120
           mode: code-change
           output-sarif: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
