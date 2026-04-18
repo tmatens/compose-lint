@@ -5,8 +5,7 @@ on:
     - cron: "17 4 * * *"
   workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   batch-fuzzing:
@@ -15,7 +14,7 @@ jobs:
       actions: write
       security-events: write
       issues: write
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:

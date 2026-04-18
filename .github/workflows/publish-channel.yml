@@ -16,13 +16,12 @@ on:
           - pypi
           - docker
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   publish-pypi:
     if: inputs.channel == 'pypi'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment:
       name: pypi
@@ -56,6 +55,11 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            requirements-dev.lock
+            requirements-build.lock
       - name: Install pinned build env
         run: |
           pip install --require-hashes -r requirements-dev.lock
@@ -133,8 +137,10 @@ jobs:
   # multi-arch is still covered by the real build-docker matrix below.
   docker-smoke:
     if: inputs.channel == 'docker'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -219,7 +225,7 @@ jobs:
       matrix:
         include:
           - platform: linux/amd64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
@@ -265,7 +271,7 @@ jobs:
   publish-docker:
     if: inputs.channel == 'docker'
     needs: build-docker
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment:
       name: dockerhub
