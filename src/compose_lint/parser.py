@@ -60,29 +60,75 @@ LineLoader.add_constructor(
 
 
 def _strip_lines(data: Any) -> Any:
-    """Recursively remove __lines__ metadata from parsed data."""
-    if isinstance(data, dict):
-        return {k: _strip_lines(v) for k, v in data.items() if k != "__lines__"}
-    if isinstance(data, list):
-        return [_strip_lines(item) for item in data]
-    return data
+    """Remove __lines__ metadata from parsed data at every depth.
+
+    Iterative post-order traversal with an explicit work stack so
+    pathologically-nested YAML can't exhaust the interpreter's recursion
+    limit. The memo table keyed by object id() also collapses YAML
+    anchor-shared subtrees into O(n) work instead of O(2^n).
+    """
+    if not isinstance(data, (dict, list)):
+        return data
+
+    _BUILD = object()
+    memo: dict[int, Any] = {}
+    stack: list[tuple[Any, ...]] = [(data,)]
+
+    while stack:
+        top = stack[-1]
+        node = top[0]
+        if len(top) == 1:
+            if id(node) in memo:
+                stack.pop()
+                continue
+            stack[-1] = (node, _BUILD)
+            if isinstance(node, dict):
+                for v in node.values():
+                    if isinstance(v, (dict, list)) and id(v) not in memo:
+                        stack.append((v,))
+            elif isinstance(node, list):
+                for item in node:
+                    if isinstance(item, (dict, list)) and id(item) not in memo:
+                        stack.append((item,))
+        else:
+            stack.pop()
+            if isinstance(node, dict):
+                memo[id(node)] = {
+                    k: memo[id(v)] if isinstance(v, (dict, list)) else v
+                    for k, v in node.items()
+                    if k != "__lines__"
+                }
+            else:
+                memo[id(node)] = [
+                    memo[id(item)] if isinstance(item, (dict, list)) else item
+                    for item in node
+                ]
+
+    return memo[id(data)]
 
 
 def _collect_lines(data: Any, prefix: str = "") -> dict[str, int]:
-    """Recursively collect line numbers into a flat dot-notation map."""
+    """Collect line numbers into a flat dot-notation map.
+
+    Iterative traversal with an explicit work stack so pathologically-
+    nested YAML can't exhaust the interpreter's recursion limit.
+    """
     lines: dict[str, int] = {}
-    if isinstance(data, dict):
-        line_map = data.get("__lines__", {})
-        for key, value in data.items():
-            if key == "__lines__":
-                continue
-            full_key = f"{prefix}.{key}" if prefix else key
-            if key in line_map:
-                lines[full_key] = line_map[key]
-            lines.update(_collect_lines(value, full_key))
-    if isinstance(data, list):
-        for i, item in enumerate(data):
-            lines.update(_collect_lines(item, f"{prefix}[{i}]"))
+    stack: list[tuple[Any, str]] = [(data, prefix)]
+    while stack:
+        current, current_prefix = stack.pop()
+        if isinstance(current, dict):
+            line_map = current.get("__lines__", {})
+            for key, value in current.items():
+                if key == "__lines__":
+                    continue
+                full_key = f"{current_prefix}.{key}" if current_prefix else key
+                if key in line_map:
+                    lines[full_key] = line_map[key]
+                stack.append((value, full_key))
+        elif isinstance(current, list):
+            for i, item in enumerate(current):
+                stack.append((item, f"{current_prefix}[{i}]"))
     return lines
 
 
