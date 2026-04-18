@@ -231,35 +231,10 @@ jobs:
         with:
           persist-credentials: false
 
-      # Fixtures are written inline so the smoke test is self-contained
-      # and doesn't couple to tests/compose_files/ (which may evolve as
-      # rules change). The action installs compose-lint from PyPI, so
-      # behavior here is pinned to the released version below, not the
-      # current source tree.
-      - name: Create smoke fixtures
-        run: |
-          mkdir -p smoke
-          cat > smoke/clean.yml <<'YAML'
-          services:
-            web:
-              image: nginx:1.27-alpine
-              ports:
-                - "127.0.0.1:8080:80"
-              security_opt:
-                - no-new-privileges:true
-              cap_drop:
-                - ALL
-              read_only: true
-              tmpfs:
-                - /tmp
-                - /run
-          YAML
-          cat > smoke/insecure.yml <<'YAML'
-          services:
-            app:
-              image: myapp:1.0
-              privileged: true
-          YAML
+      # Smoke fixtures live in tests/smoke/ and are shared with every
+      # other workflow that runs compose-lint end-to-end (publish.yml
+      # testpypi-smoke, publish.yml docker-smoke, marketplace-smoke.yml).
+      # One source of truth prevents per-workflow drift.
 
       # No `version:` pin — the action defaults to installing the latest
       # release from PyPI. What this job tests is the action.yml contract
@@ -269,7 +244,7 @@ jobs:
       - name: Clean fixture should pass
         uses: ./
         with:
-          files: smoke/clean.yml
+          files: tests/smoke/clean.yml
           fail-on: high
 
       - name: Insecure fixture should fail
@@ -277,7 +252,7 @@ jobs:
         continue-on-error: true
         uses: ./
         with:
-          files: smoke/insecure.yml
+          files: tests/smoke/insecure.yml
           fail-on: high
 
       - name: Assert insecure run failed

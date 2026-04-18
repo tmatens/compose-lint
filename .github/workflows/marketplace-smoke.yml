@@ -39,35 +39,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Create smoke fixtures
-        run: |
-          mkdir -p smoke
-          cat > smoke/clean.yml <<'YAML'
-          services:
-            web:
-              image: nginx:1.27-alpine
-              ports:
-                - "127.0.0.1:8080:80"
-              security_opt:
-                - no-new-privileges:true
-              cap_drop:
-                - ALL
-              read_only: true
-              tmpfs:
-                - /tmp
-                - /run
-          YAML
-          cat > smoke/insecure.yml <<'YAML'
-          services:
-            app:
-              image: myapp:1.0
-              privileged: true
-          YAML
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Clean fixture should pass
         uses: tmatens/compose-lint@5d5a43a6134b7a0820b391a1f7876fe7b10df323 # v0.3.7
         with:
-          files: smoke/clean.yml
+          files: tests/smoke/clean.yml
           fail-on: high
 
       - name: Insecure fixture should fail
@@ -75,7 +54,7 @@ jobs:
         continue-on-error: true
         uses: tmatens/compose-lint@5d5a43a6134b7a0820b391a1f7876fe7b10df323 # v0.3.7
         with:
-          files: smoke/insecure.yml
+          files: tests/smoke/insecure.yml
           fail-on: high
 
       - name: Assert insecure run failed
