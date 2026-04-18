@@ -17,7 +17,7 @@ per-channel publish contract see [`DISTRIBUTION.md`](DISTRIBUTION.md).
 | `publish.yml`             | `v*` tag push                              | Release pipeline — see `RELEASING.md`                  |
 | `release-prep.yml`        | Manual (`workflow_dispatch`, maintainer)   | Opens the "Prepare X.Y.Z release" PR                   |
 | `publish-channel.yml`     | Manual (`workflow_dispatch`, maintainer)   | Emergency single-channel publish                       |
-| `marketplace-smoke.yml`   | Manual (`workflow_dispatch`, maintainer)   | Verifies the published Marketplace action end-to-end   |
+| `marketplace-smoke.yml`   | Push to `main` touching the file + manual  | Verifies the published Marketplace action end-to-end   |
 
 ---
 
@@ -32,14 +32,17 @@ cancels in-progress runs when you push new commits to the same PR.
 | `type-check`              | `mypy src/` in strict mode                                                                |
 | `test`                    | `pytest` across the Python matrix — 3.10, 3.11, 3.12, 3.13, 3.14                          |
 | `security`                | `bandit -r src/ -ll` + `pip-audit` for CVEs in hash-pinned dev deps                       |
+| `dependency-review`       | Blocks PRs adding deps with known high-severity CVEs or disallowed licenses               |
+| `actionlint`              | Lints every workflow under `.github/workflows/` (embeds shellcheck for `run:` blocks)     |
 | `dockerfile-digests`      | Fails if any `FROM @sha256:` in the Dockerfile is a per-arch manifest instead of an index |
 | `docker-smoke`            | Builds `linux/amd64` from the Dockerfile and runs it against fixtures (path-filtered)     |
 | `action-smoke`            | Runs `./action.yml` against clean and insecure fixtures; asserts exit codes               |
 | `version-consistency`     | Fails if `pyproject.toml` and `src/compose_lint/__init__.py` disagree on the version      |
 | `changelog-gate`          | If a PR bumps the `version`, `CHANGELOG.md` must have a matching `## [X.Y.Z]` section     |
 
-The last two were added in 0.3.8 to catch the historically painful
-release-bump mistakes at review time rather than tag-push time.
+`version-consistency` and `changelog-gate` were added in 0.3.8 to catch
+the historically painful release-bump mistakes at review time rather
+than tag-push time.
 
 ### Dependency lockfiles
 
@@ -64,10 +67,10 @@ Any uncaught exception outside the expected-error set is a crash.
 
 ### PR fuzzing (`cflite-pr.yml`)
 
-Runs on PRs that change files the harness actually exercises — parser,
-engine, config, models, rules, fuzz/, or the harness workflow itself.
-Docs-only, CLI-only, and formatter-only PRs skip fuzzing because they
-can't affect the paths under test. `fuzz-seconds: 120`, `mode: code-change`.
+Path-filtered to PRs touching `src/**`, `fuzz/**`, `.clusterfuzzlite/**`,
+or the workflow itself — i.e., any source change (CLI and formatters
+included, since they sit under `src/`). Docs-only, tests-only, and
+config-only PRs skip. `fuzz-seconds: 120`, `mode: code-change`.
 
 Failures surface as a red X on the PR plus a SARIF entry in the Security
 tab. Reproducer bytes are in the run's artifacts — download, feed to the
@@ -136,14 +139,26 @@ digest, which ships in the next patch release.
 Tag-triggered. Full detail in [`RELEASING.md`](RELEASING.md) and the
 per-channel contract in [`DISTRIBUTION.md`](DISTRIBUTION.md). Summary:
 
-`build` → `testpypi` → `testpypi-smoke` + `docker-smoke` → **`release-gate`
-(manual approval)** → `publish` + `docker-publish` in parallel →
-`create-release` → `bump-marketplace-smoke-pin`.
+`verify-tag` → `build` → `testpypi` → `testpypi-smoke` + `docker-smoke`
+→ **`release-gate` (manual approval)** → `publish` + `docker-publish`
+in parallel → `create-release` → `bump-marketplace-smoke-pin`.
+
+`verify-tag` is the first gate: it asserts the tag is annotated (not
+lightweight) and the tag commit is reachable from `origin/main`. Every
+downstream job inherits the check via `needs:`. Full SSH signature
+verification is not yet wired — it would require committing an
+allowed-signers file listing the maintainer's SSH signing key.
 
 `release-gate` is the single human-in-the-loop gate: one approval on the
 `release` environment covers every channel. Per-channel environments
 (`pypi`, `dockerhub`) add a second required approval before each production
 publish.
+
+`build` generates an SPDX SBOM (`sbom.spdx.json`) covering the wheel
+and sdist via `anchore/sbom-action`. `create-release` attaches it to
+the GitHub Release alongside the distributions and Sigstore bundles.
+`docker-publish` does the equivalent for the image — generates an SBOM
+and `cosign attest`s it to the manifest digest.
 
 The `bump-marketplace-smoke-pin` job opens a post-release PR updating
 `marketplace-smoke.yml` to the SHA the tag pointed at. Today that job is
@@ -170,9 +185,15 @@ provenance chain. See `RELEASING.md`.
 ### `publish-channel.yml`
 
 Emergency escape hatch when one channel's smoke is broken and another
-must ship. Enter the tag and the channel (`pypi` or `dockerhub`). Bypasses
+must ship. Enter the tag and the channel (`pypi` or `docker`). Bypasses
 the shared `release-gate` but still requires the per-channel environment
 approval.
+
+Both paths re-apply the `verify-tag` check (annotated + reachable from
+`origin/main`) inline — the emergency route doesn't skip supply-chain
+gates. The pypi path also generates an SBOM and attaches it to the
+existing GitHub Release with `gh release upload --clobber`, matching
+what `publish.yml`'s normal path produces.
 
 Document why you used it in the GitHub Release notes — every invocation
 should leave a paper trail.
@@ -186,7 +207,11 @@ would. Unlike `ci.yml`'s `action-smoke` job (which uses the local
 boundary: a missing tag, a broken published `action.yml`, a PyPI outage
 during install.
 
-Run it after every release bump PR merges.
+Auto-runs on push to `main` that touches `marketplace-smoke.yml` — i.e.,
+when `bump-marketplace-smoke-pin`'s PR lands — so the freshly-pinned
+SHA is verified without a manual step. Also triggerable from the
+Actions tab for ad-hoc re-verification (e.g., to confirm the listing
+still works weeks after release).
 
 ---
 
