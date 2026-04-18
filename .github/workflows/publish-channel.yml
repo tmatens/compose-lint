@@ -54,8 +54,62 @@ jobs:
         with:
           attestations: true
 
+  # Build one image per arch on a native runner (no QEMU) and push by
+  # digest only. See the matching block in publish.yml for the full
+  # rationale — the emulated arm64 apt-get path is unreliable.
+  build-docker:
+    if: inputs.channel == 'docker'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Derive artifact slug from platform
+        id: slug
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: echo "slug=${PLATFORM//\//-}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=composelint/compose-lint,push-by-digest=true,name-canonical=true,push=true
+      - name: Export digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digests-${{ steps.slug.outputs.slug }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
   publish-docker:
     if: inputs.channel == 'docker'
+    needs: build-docker
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -66,41 +120,68 @@ jobs:
       packages: write
       id-token: write
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          ref: ${{ inputs.tag }}
-          persist-credentials: false
+          pattern: digests-*
+          merge-multiple: true
+          path: /tmp/digests
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
       - uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
       - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Extract metadata (tags, labels)
+      # workflow_dispatch sets GITHUB_REF to the dispatched branch, so
+      # docker/metadata-action's semver patterns can't derive tags from the
+      # release tag on their own. Compute them explicitly from inputs.tag
+      # to mirror publish.yml's output shape (version, major.minor, and
+      # major for v1+).
+      - name: Compute tags
         id: meta
-        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
-        with:
-          images: composelint/compose-lint
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}},enable=${{ !startsWith(inputs.tag, 'refs/tags/v0.') }}
-      - name: Build and push (multi-arch)
-        id: push
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-      - name: Sign image with cosign
         env:
-          DIGEST: ${{ steps.push.outputs.digest }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          version="${TAG#v}"
+          major_minor="${version%.*}"
+          major="${major_minor%.*}"
+          tags="composelint/compose-lint:${version}"
+          tags="${tags},composelint/compose-lint:${major_minor}"
+          if [[ ! "${version}" =~ ^0\. ]]; then
+            tags="${tags},composelint/compose-lint:${major}"
+          fi
+          {
+            echo "tags=${tags}"
+            echo "version=${version}"
+          } >> "$GITHUB_OUTPUT"
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          IFS=',' read -ra TAG_ARGS <<< "${TAGS}"
+          tag_flags=()
+          for t in "${TAG_ARGS[@]}"; do
+            tag_flags+=(-t "$t")
+          done
+          docker buildx imagetools create \
+            "${tag_flags[@]}" \
+            $(printf 'composelint/compose-lint@sha256:%s ' *)
+      - name: Inspect manifest digest
+        id: inspect
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          digest="$(docker buildx imagetools inspect \
+            "composelint/compose-lint:${VERSION}" \
+            --format '{{json .Manifest}}' | jq -r '.digest')"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+      - name: Sign manifest with cosign
+        env:
+          DIGEST: ${{ steps.inspect.outputs.digest }}
         run: cosign sign --yes "composelint/compose-lint@${DIGEST}"
       - name: Verify — cosign signature
         env:
-          DIGEST: ${{ steps.push.outputs.digest }}
+          DIGEST: ${{ steps.inspect.outputs.digest }}
         run: |
           for attempt in 1 2 3; do
             if cosign verify \
