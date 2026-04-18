@@ -10,6 +10,9 @@ on:
 permissions: {}
 
 jobs:
+  # Scorecard's webapp verification rejects a SARIF publish if the analysis
+  # job contains any non-`uses:` steps (see ossf/scorecard-action workflow
+  # restrictions). The auto-issue step lives in a downstream job instead.
   analysis:
     name: Scorecard analysis
     runs-on: ubuntu-24.04
@@ -18,7 +21,6 @@ jobs:
       contents: read
       security-events: write
       id-token: write
-      issues: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -37,8 +39,15 @@ jobs:
         with:
           sarif_file: results.sarif
 
-      - name: Report scheduled failure as issue
-        if: failure() && github.event_name == 'schedule'
+  report-failure:
+    needs: analysis
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update scheduled-failure issue
         env:
           GH_TOKEN: ${{ github.token }}
           WORKFLOW: ${{ github.workflow }}
