@@ -68,7 +68,9 @@ class NoNewPrivilegesRule(BaseRule):
                 fix=(
                     "Add to your service:\n"
                     "  security_opt:\n"
-                    "    - no-new-privileges:true"
+                    "    - no-new-privileges:true\n"
+                    "Note: breaks images that switch users via "
+                    "gosu/su-exec — test first."
                 ),
                 references=[OWASP_REF, CIS_REF],
             )
