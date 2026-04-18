@@ -10,6 +10,11 @@
 
 # --- build stage: produce wheel, install into a venv ---
 FROM debian:trixie-slim@sha256:5fb70129351edec3723d13f427400ecae3f13b83750e23ad47c46721effcf2db AS build
+# apt versions intentionally unpinned: the base image digest above is
+# immutable, apt verifies package signatures, and Renovate has no
+# datasource for Debian apt. Pinning would bitrot when Debian purges
+# old versions from the index. See docs/adr/009-runtime-base-image.md.
+# hadolint ignore=DL3008
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         python3 python3-pip python3-venv \
@@ -32,4 +37,7 @@ LABEL org.opencontainers.image.title="compose-lint" \
       org.opencontainers.image.licenses="MIT"
 COPY --from=build /venv /venv
 WORKDIR /src
+# Distroless :nonroot already sets USER 65532; restated here so the
+# intent survives a future base-image swap that might not default nonroot.
+USER 65532:65532
 ENTRYPOINT ["/venv/bin/compose-lint"]
