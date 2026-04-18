@@ -33,6 +33,7 @@ cancels in-progress runs when you push new commits to the same PR.
 | `test`                    | `pytest` across the Python matrix — 3.10, 3.11, 3.12, 3.13, 3.14                          |
 | `security`                | `bandit -r src/ -ll` + `pip-audit` for CVEs in hash-pinned dev deps                       |
 | `dockerfile-digests`      | Fails if any `FROM @sha256:` in the Dockerfile is a per-arch manifest instead of an index |
+| `docker-smoke`            | Builds `linux/amd64` from the Dockerfile and runs it against fixtures (path-filtered)     |
 | `action-smoke`            | Runs `./action.yml` against clean and insecure fixtures; asserts exit codes               |
 | `version-consistency`     | Fails if `pyproject.toml` and `src/compose_lint/__init__.py` disagree on the version      |
 | `changelog-gate`          | If a PR bumps the `version`, `CHANGELOG.md` must have a matching `## [X.Y.Z]` section     |
@@ -66,7 +67,7 @@ Any uncaught exception outside the expected-error set is a crash.
 Runs on PRs that change files the harness actually exercises — parser,
 engine, config, models, rules, fuzz/, or the harness workflow itself.
 Docs-only, CLI-only, and formatter-only PRs skip fuzzing because they
-can't affect the paths under test. `fuzz-seconds: 180`, `mode: code-change`.
+can't affect the paths under test. `fuzz-seconds: 120`, `mode: code-change`.
 
 Failures surface as a red X on the PR plus a SARIF entry in the Security
 tab. Reproducer bytes are in the run's artifacts — download, feed to the
