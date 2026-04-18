@@ -165,6 +165,50 @@ jobs:
           fi
           echo "Found matching CHANGELOG section for ${head_version}."
 
+  # Surfaces new dependencies introduced by a PR that carry known CVEs
+  # or incompatible licenses — before pip-audit would catch them post-merge
+  # against the dev lockfile. Run only on pull_request; the action requires
+  # a base ref to diff against.
+  dependency-review:
+    name: Dependency review (PR deps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+
+  # Lints every workflow under .github/workflows/. Catches shell-quoting
+  # bugs (via embedded shellcheck), unsafe ${{ }} interpolation in run:
+  # blocks, unknown expressions, matrix-config typos, etc. actionlint is
+  # installed from its GitHub Release tarball with SHA256 verification so
+  # there's no curl-pipe-bash and no third-party composite action to pin.
+  # Renovate's github-releases datasource handles version bumps.
+  actionlint:
+    name: Lint GitHub Actions workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Install actionlint
+        env:
+          ACTIONLINT_VERSION: "1.7.12"
+          ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+        run: |
+          url="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL -o actionlint.tar.gz "${url}"
+          echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum -c -
+          tar -xzf actionlint.tar.gz actionlint
+          rm actionlint.tar.gz
+      - run: ./actionlint -color
+
   # Fails the PR if any FROM in the Dockerfile pins a per-arch manifest
   # instead of a multi-arch OCI index. Multi-arch regressions otherwise
   # don't surface until docker-publish at release time.
