@@ -63,18 +63,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Wait for TestPyPI index to update
-        run: sleep 30
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.13"
       - name: Install from TestPyPI and verify version
+        # TestPyPI's JSON API sees a new release within seconds of the
+        # publish step, but the /simple/ index pip uses can lag by
+        # minutes. A fixed sleep has flaked mid-release before (0.3.6),
+        # so retry the install with backoff until the index catches up
+        # or we hit ~2 minutes of attempts.
         run: |
           version="${GITHUB_REF_NAME#v}"
-          pip install \
-            -i https://test.pypi.org/simple/ \
-            --extra-index-url https://pypi.org/simple/ \
-            "compose-lint==${version}"
+          for attempt in 1 2 3 4 5 6; do
+            if pip install \
+                -i https://test.pypi.org/simple/ \
+                --extra-index-url https://pypi.org/simple/ \
+                "compose-lint==${version}"; then
+              break
+            fi
+            if [ "${attempt}" = 6 ]; then
+              echo "::error::TestPyPI install failed after 6 attempts; index may still be propagating"
+              exit 1
+            fi
+            echo "Attempt ${attempt} failed; sleeping 20s for /simple/ index propagation..."
+            sleep 20
+          done
           expected="compose-lint ${version}"
           actual="$(compose-lint --version)"
           echo "Expected: ${expected}"
