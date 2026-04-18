@@ -1,0 +1,139 @@
+name: Release prep
+
+# Maintainer-triggered. Opens the "Prepare X.Y.Z release" PR for you:
+# bumps pyproject.toml + src/compose_lint/__init__.py, renames the
+# CHANGELOG [Unreleased] section to [X.Y.Z] - <today>, inserts a fresh
+# empty [Unreleased] above it, commits on a release/X.Y.Z branch, and
+# opens a PR against main.
+#
+# The signed annotated tag is NOT created here. After the PR merges,
+# run `git tag -s vX.Y.Z -m "compose-lint X.Y.Z" && git push origin vX.Y.Z`
+# from your workstation. That signature is the root of the Sigstore
+# provenance chain; the publish workflow also refuses to trigger on tags
+# created via GITHUB_TOKEN, so automating tag creation here would break
+# the pipeline even if we wanted to.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 0.3.7) — no 'v' prefix"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  prep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Validate version input
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version '${VERSION}' is not in X.Y.Z format"
+            exit 1
+          fi
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            echo "::error::Tag v${VERSION} already exists"
+            exit 1
+          fi
+          if git ls-remote --exit-code --heads origin "release/${VERSION}" >/dev/null 2>&1; then
+            echo "::error::Branch release/${VERSION} already exists on origin"
+            exit 1
+          fi
+
+      - name: Bump pyproject.toml
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          sed -i -E "s/^version = \"[^\"]+\"/version = \"${VERSION}\"/" pyproject.toml
+          grep -E '^version = ' pyproject.toml
+
+      - name: Bump src/compose_lint/__init__.py
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          sed -i -E "s/^__version__ = \"[^\"]+\"/__version__ = \"${VERSION}\"/" src/compose_lint/__init__.py
+          grep '__version__' src/compose_lint/__init__.py
+
+      - name: Rename CHANGELOG [Unreleased] and insert fresh header
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          today=$(date -u +%Y-%m-%d)
+          awk -v v="${VERSION}" -v d="${today}" '
+            !done && /^## \[Unreleased\]/ {
+              print "## [Unreleased]"
+              print ""
+              print "## [" v "] - " d
+              done=1
+              next
+            }
+            { print }
+          ' CHANGELOG.md > CHANGELOG.md.new
+          if ! grep -qE "^## \[${VERSION}\] - " CHANGELOG.md.new; then
+            echo "::error::Failed to rewrite CHANGELOG.md — no [Unreleased] header found?"
+            rm -f CHANGELOG.md.new
+            exit 1
+          fi
+          mv CHANGELOG.md.new CHANGELOG.md
+
+      - name: Verify versions match
+        run: |
+          pyproject=$(grep -E '^version = ' pyproject.toml | head -1 | cut -d'"' -f2)
+          init=$(grep '__version__' src/compose_lint/__init__.py | head -1 | cut -d'"' -f2)
+          if [ "${pyproject}" != "${init}" ] || [ "${pyproject}" != "${{ inputs.version }}" ]; then
+            echo "::error::Post-bump version mismatch: pyproject=${pyproject}, init=${init}, input=${{ inputs.version }}"
+            exit 1
+          fi
+
+      - name: Commit, push, open PR
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="release/${VERSION}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "${branch}"
+          git add pyproject.toml src/compose_lint/__init__.py CHANGELOG.md
+          git commit -m "Prepare ${VERSION} release"
+          git push -u origin "${branch}"
+          cat > /tmp/pr-body.md <<EOF
+          Automated release prep for \`${VERSION}\`. Review the CHANGELOG entry and version bumps, then squash-merge.
+
+          **After this PR merges**, create and push a signed annotated tag from your workstation:
+
+          \`\`\`
+          git checkout main && git pull --ff-only
+          git tag -s v${VERSION} -m "compose-lint ${VERSION}"
+          git push origin v${VERSION}
+          \`\`\`
+
+          The tag push triggers \`publish.yml\`, which runs TestPyPI/Docker smoke tests, waits for your approval on the \`release\` environment, then publishes PyPI + Docker Hub, creates the GitHub Release, and opens a follow-up PR to bump the \`marketplace-smoke\` pin.
+          EOF
+          sed -i -E 's/^          //' /tmp/pr-body.md
+          gh pr create \
+            --base main \
+            --head "${branch}" \
+            --title "Prepare ${VERSION} release" \
+            --body-file /tmp/pr-body.md
+
+          {
+            echo "### Release prep PR opened"
+            echo "Branch: \`${branch}\`"
+            echo "Next step: review and merge, then sign-push \`v${VERSION}\`."
+          } >> "$GITHUB_STEP_SUMMARY"

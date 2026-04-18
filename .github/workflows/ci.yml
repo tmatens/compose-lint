@@ -99,6 +99,72 @@ jobs:
         # deps are still scanned.
         run: pip-audit --skip-editable
 
+  # Fails the PR if `pyproject.toml` and `src/compose_lint/__init__.py`
+  # disagree about the project version. The two strings drifted silently
+  # before 0.2.0 and are the single most-called-out release hazard in
+  # docs/RELEASING.md. This guard catches the drift at review time rather
+  # than at tag-push time (where the tag would already be minted against a
+  # wrong source of truth).
+  version-consistency:
+    name: Version strings in sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Compare pyproject.toml and __init__.py
+        run: |
+          pyproject=$(grep -E '^version = ' pyproject.toml | head -1 | cut -d'"' -f2)
+          init=$(grep '__version__' src/compose_lint/__init__.py | head -1 | cut -d'"' -f2)
+          echo "pyproject.toml: ${pyproject}"
+          echo "__init__.py:    ${init}"
+          if [ -z "${pyproject}" ] || [ -z "${init}" ]; then
+            echo "::error::Could not extract version from one or both files"
+            exit 1
+          fi
+          if [ "${pyproject}" != "${init}" ]; then
+            echo "::error::Version drift: pyproject.toml (${pyproject}) vs src/compose_lint/__init__.py (${init})"
+            exit 1
+          fi
+
+  # If a PR bumps the `version` in pyproject.toml, CHANGELOG.md must already
+  # contain a matching `## [X.Y.Z]` section. Without this, a release PR can
+  # merge with no release notes and the Publish workflow's `create-release`
+  # job fails *after* the tag has been minted — burning a PyPI version
+  # number on a broken release.
+  changelog-gate:
+    name: CHANGELOG entry for version bumps
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require matching CHANGELOG section if version changed
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if ! git diff --name-only "${BASE_SHA}" "${HEAD_SHA}" | grep -q '^pyproject.toml$'; then
+            echo "pyproject.toml not touched; no version bump to gate."
+            exit 0
+          fi
+          base_version=$(git show "${BASE_SHA}:pyproject.toml" | grep -E '^version = ' | head -1 | cut -d'"' -f2)
+          head_version=$(git show "${HEAD_SHA}:pyproject.toml" | grep -E '^version = ' | head -1 | cut -d'"' -f2)
+          if [ "${base_version}" = "${head_version}" ]; then
+            echo "pyproject.toml changed but version line did not; not a release bump."
+            exit 0
+          fi
+          echo "Version bump detected: ${base_version} -> ${head_version}"
+          if ! grep -qE "^## \[${head_version}\]" CHANGELOG.md; then
+            echo "::error::pyproject.toml bumped to ${head_version} but CHANGELOG.md has no '## [${head_version}]' section"
+            exit 1
+          fi
+          echo "Found matching CHANGELOG section for ${head_version}."
+
   # Fails the PR if any FROM in the Dockerfile pins a per-arch manifest
   # instead of a multi-arch OCI index. Multi-arch regressions otherwise
   # don't surface until docker-publish at release time.
