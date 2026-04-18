@@ -28,6 +28,14 @@
       "matchManagers": ["dockerfile"],
       "matchDatasources": ["docker"],
       "pinDigests": true
+    },
+    {
+      "description": "Automerge low-risk routine updates once CI is green. Patch-level Python dep bumps, pinned-digest refreshes for GitHub Actions, and lockFileMaintenance go in without human review. Docker base images stay manual because the OCI manifest-list vs per-arch digest check (see MEMORY.md) is not mechanically verified in CI.",
+      "matchManagers": ["pep621", "pip_requirements", "github-actions"],
+      "matchUpdateTypes": ["patch", "pin", "digest", "lockFileMaintenance"],
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": true
     }
   ]
 }
