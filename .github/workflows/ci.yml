@@ -99,6 +99,19 @@ jobs:
         # deps are still scanned.
         run: pip-audit --skip-editable
 
+  # Fails the PR if any FROM in the Dockerfile pins a per-arch manifest
+  # instead of a multi-arch OCI index. Multi-arch regressions otherwise
+  # don't surface until docker-publish at release time.
+  dockerfile-digests:
+    name: Verify Dockerfile digests are manifest lists
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - run: scripts/verify-dockerfile-digests.sh Dockerfile
+
   action-smoke:
     name: Smoke test action.yml
     runs-on: ubuntu-latest
