@@ -22,12 +22,27 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Scan published image (Docker Scout)
+      # Gate the run on criticals so a fresh critical CVE fails the job
+      # and the `Report scheduled failure as issue` step downstream fires
+      # on schedule. High-severity stays warning-only — still uploaded to
+      # the Security tab by the second scan, just doesn't page.
+      - name: Scan for critical CVEs (fails the run)
         uses: docker/scout-action@bacf462e8d090c09660de30a6ccc718035f961e3 # v1.20.4
         with:
           command: cves
           image: composelint/compose-lint:latest
-          only-severities: critical,high
+          only-severities: critical
+          exit-code: true
+
+      # Full-severity sweep for SARIF upload. Runs even when the
+      # critical scan fails, so the Security tab always reflects the
+      # complete picture rather than a partial snapshot.
+      - name: Scan all severities for SARIF upload
+        if: always()
+        uses: docker/scout-action@bacf462e8d090c09660de30a6ccc718035f961e3 # v1.20.4
+        with:
+          command: cves
+          image: composelint/compose-lint:latest
           exit-code: false
           sarif-file: scout-results.sarif
 
