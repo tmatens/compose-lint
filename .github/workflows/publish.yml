@@ -405,9 +405,15 @@ jobs:
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'composelint/compose-lint@sha256:%s ' *)
+          tag_flags=()
+          while IFS= read -r t; do
+            tag_flags+=(-t "$t")
+          done < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          digest_refs=()
+          for f in *; do
+            digest_refs+=("composelint/compose-lint@sha256:${f}")
+          done
+          docker buildx imagetools create "${tag_flags[@]}" "${digest_refs[@]}"
       - name: Inspect manifest digest
         id: inspect
         env:
