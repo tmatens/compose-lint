@@ -113,9 +113,26 @@ jobs:
             exit 1
           fi
 
+  # Build the image natively on each target arch and run the fixture battery.
+  # Emulated arm64 via QEMU crashes on Debian apt-get, and a single-arch smoke
+  # can't catch per-arch digest pins or native-wheel mismatches before the
+  # release-gate — so both legs are exercised here, on their own runners, no
+  # QEMU. Scout CVE scanning stays single-arch (amd64): CVE findings come from
+  # base-image layers that are identical across arch in practice, and running
+  # Scout twice would double-upload SARIF under the same category.
   docker-smoke:
     needs: build
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            scout: true
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            scout: false
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -129,6 +146,7 @@ jobs:
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: .
+          platforms: ${{ matrix.platform }}
           load: true
           tags: composelint/compose-lint:test
       - name: Test — version output matches tag
@@ -179,10 +197,12 @@ jobs:
           YAML
           docker run --rm -v /tmp/test.yml:/src/docker-compose.yml composelint/compose-lint:test --format sarif --fail-on critical | python3 -c "import sys,json; json.load(sys.stdin); print('Valid SARIF JSON')"
       - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        if: matrix.scout
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Scan for vulnerabilities (Docker Scout)
+        if: matrix.scout
         uses: docker/scout-action@bacf462e8d090c09660de30a6ccc718035f961e3 # v1.20.4
         with:
           command: cves
@@ -191,8 +211,8 @@ jobs:
           exit-code: true
           sarif-file: scout-results.sarif
       - name: Upload Scout results to GitHub Security
+        if: matrix.scout && always()
         uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4.35.2
-        if: always()
         with:
           sarif_file: scout-results.sarif
           category: docker-scout
