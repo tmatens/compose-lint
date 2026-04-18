@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from compose_lint.parser import ComposeError, load_compose
+from compose_lint.parser import (
+    ComposeError,
+    _collect_lines,
+    _strip_lines,
+    load_compose,
+)
 
 FIXTURES = Path(__file__).parent / "compose_files"
 
@@ -91,3 +98,59 @@ class TestLoadCompose:
         # of a ComposeError. The parser now rejects unhashable keys up front.
         with pytest.raises(ComposeError, match="unhashable key"):
             load_compose(FIXTURES / "invalid_complex_key.yml")
+
+
+class TestDeepNestingTraversal:
+    """Regression for ClusterFuzzLite-found RecursionError in _collect_lines.
+
+    The parser's post-YAML traversals used to recurse one Python frame per
+    nesting level. An input deeper than sys.getrecursionlimit() crashed the
+    tool with an uncaught RecursionError instead of either linting or
+    rejecting the file. These tests construct dicts deeper than the default
+    recursion limit, bypassing YAML parsing (which has its own independent
+    limit) to exercise the traversal functions directly.
+    """
+
+    @staticmethod
+    def _build_deep_chain(depth: int) -> dict[str, Any]:
+        node: Any = "leaf"
+        for i in range(depth):
+            node = {"a": node, "__lines__": {"a": i + 1}}
+        return node
+
+    def test_collect_lines_handles_depth_above_recursion_limit(self) -> None:
+        depth = sys.getrecursionlimit() * 2
+        node = self._build_deep_chain(depth)
+        result = _collect_lines(node)
+        # One entry per level (all keyed "a"-chained via dot notation).
+        assert len(result) == depth
+
+    def test_strip_lines_handles_depth_above_recursion_limit(self) -> None:
+        depth = sys.getrecursionlimit() * 2
+        node = self._build_deep_chain(depth)
+        result = _strip_lines(node)
+        # Walk iteratively (not recursively) to verify every level was stripped.
+        walk: Any = result
+        for _ in range(depth):
+            assert isinstance(walk, dict)
+            assert "__lines__" not in walk
+            walk = walk["a"]
+        assert walk == "leaf"
+
+    def test_strip_lines_dedupes_shared_subtrees(self) -> None:
+        # YAML anchors produce the same Python dict reachable from multiple
+        # parents. The iterative impl memoizes by id() so shared subtrees
+        # are processed once, keeping work linear in the underlying graph.
+        shared = {"image": "nginx", "__lines__": {"image": 3}}
+        root = {
+            "services": {
+                "web": shared,
+                "api": shared,
+                "__lines__": {"web": 2, "api": 4},
+            },
+            "__lines__": {"services": 1},
+        }
+        stripped = _strip_lines(root)
+        # Same stripped dict returned for both aliases.
+        assert stripped["services"]["web"] is stripped["services"]["api"]
+        assert "__lines__" not in stripped["services"]["web"]
