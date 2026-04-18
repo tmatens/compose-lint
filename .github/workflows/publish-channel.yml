@@ -163,9 +163,11 @@ jobs:
           for t in "${TAG_ARGS[@]}"; do
             tag_flags+=(-t "$t")
           done
-          docker buildx imagetools create \
-            "${tag_flags[@]}" \
-            $(printf 'composelint/compose-lint@sha256:%s ' *)
+          digest_refs=()
+          for f in *; do
+            digest_refs+=("composelint/compose-lint@sha256:${f}")
+          done
+          docker buildx imagetools create "${tag_flags[@]}" "${digest_refs[@]}"
       - name: Inspect manifest digest
         id: inspect
         env:
