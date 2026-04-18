@@ -28,23 +28,6 @@
       "matchManagers": ["dockerfile"],
       "matchDatasources": ["docker"],
       "pinDigests": true
-    },
-    {
-      "description": "Hold back python-3.13 apk to patch bumps only; a python-minor jump must be a deliberate package-name change.",
-      "matchDatasources": ["apk"],
-      "matchPackageNames": ["python-3.13"],
-      "matchUpdateTypes": ["major", "minor"],
-      "enabled": false
-    }
-  ],
-  "customManagers": [
-    {
-      "customType": "regex",
-      "description": "Pick up apk versions declared via 'ARG X=version' with a renovate marker comment.",
-      "fileMatch": ["(^|/)Dockerfile$", "(^|/)\\.clusterfuzzlite/Dockerfile$"],
-      "matchStrings": [
-        "#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s+registryUrl=(?<registryUrl>\\S+)\\s*\\nARG\\s+[A-Z0-9_]+=(?<currentValue>\\S+)"
-      ]
     }
   ]
 }
