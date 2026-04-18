@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-04-17
+
+### Changed
+
+- Runtime Docker image switched from `python:3.13-alpine` to
+  `gcr.io/distroless/python3-debian13:nonroot`. The image no longer
+  ships `/bin/sh`, `apk`, or busybox — only the Python interpreter,
+  stdlib, libc, and the project venv. Attack surface in the event of
+  a container escape is significantly reduced. See
+  [ADR-009](docs/adr/009-runtime-base-image.md) for the rationale.
+- `docker run` examples in the README now show `--read-only --cap-drop
+  ALL --security-opt no-new-privileges --network none` with a
+  read-only mount, modelling the least-privilege posture the linter
+  itself recommends. The simpler form still works.
+
+### Security
+
+- Dockerfile sets `USER 65532:65532` explicitly at the runtime stage.
+  Distroless `:nonroot` already enforces this; the redundancy survives
+  a future base-image swap that might not default to nonroot.
+
+No CLI, config, or finding-shape changes. Exit codes (0/1/2) are
+preserved. A Compose file that passed on 0.3.4 passes identically on
+0.3.5.
+
 ## [0.3.4] - 2026-04-13
 
 ### Changed
@@ -114,6 +139,8 @@ First public release.
   inputs through `env:` rather than direct `${{ }}` interpolation to prevent
   shell injection.
 
+[0.3.5]: https://github.com/tmatens/compose-lint/compare/v0.3.4...v0.3.5
+[0.3.4]: https://github.com/tmatens/compose-lint/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/tmatens/compose-lint/compare/v0.3.0...v0.3.3
 [0.3.0]: https://github.com/tmatens/compose-lint/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/tmatens/compose-lint/releases/tag/v0.2.0
