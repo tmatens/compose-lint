@@ -2,12 +2,8 @@
 
 ## Supported Versions
 
-compose-lint follows semantic versioning. Only the latest minor release receives
-security fixes.
-
-| Version | Supported |
-| ------- | --------- |
-| 0.3.x   | Yes       |
+compose-lint follows semantic versioning. Only the latest minor release
+receives security fixes.
 
 ## Reporting a Vulnerability
 
