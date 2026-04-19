@@ -1,73 +1,77 @@
 # Roadmap
 
-compose-lint v0.3.0 shipped 19 rules, PyPI distribution, SARIF/JSON/text output, pre-commit support, and a GitHub Action. The gap is distribution reach and developer experience.
+compose-lint v0.3.0 shipped 19 rules, PyPI distribution, SARIF/JSON/text output, pre-commit support, and a GitHub Action. The product has a solid foundation; the next investments should make the tool more useful to the users already running it, not chase speculative distribution channels.
+
+## Strategic framing
+
+compose-lint's differentiation is depth in Compose-specific security, not distribution breadth. Competitors (KICS, Checkov, Trivy) cover Compose as one format among many; they are wide and shallow per-format. Compose-lint wins by being the one tool that tells you exactly what's wrong with a Compose file and exactly how to fix it. Roadmap priorities are ordered around that thesis.
+
+Open issues #4 (CL-0006 capability profiles) and #5 (per-service rule overrides) are both signal from real-world usage. Distribution items beyond the already-shipped Docker image have no demand signal and are deprioritized accordingly.
 
 ---
 
 ## Milestone 1 — Rule Coverage (v0.3) [complete]
 
-**Shipped in v0.3.0.** Added 9 rules (CL-0011 – CL-0019) plus CL-0010 `uts: host` enhancement, bringing the total to 19 rules. See CHANGELOG.md for details.
+Shipped in v0.3.0. Added 9 rules (CL-0011 – CL-0019) plus CL-0010 `uts: host` enhancement, bringing the total to 19 rules. See CHANGELOG.md.
 
 ---
 
-## Milestone 2 — Distribution (v0.4)
+## Milestone 2 — Configuration Depth + Install Polish (v0.4)
 
-Reduce friction from "have Python" to "run one command."
+Make the tool more useful for users already running it, and close the one distribution gap with a real UX win.
 
-**Docker Hub image** (`composelint/compose-lint`) [complete]
-- Multi-stage build on `python:3.13-alpine` (digest-pinned), ~25 MB final image
-- Multi-arch: `linux/amd64`, `linux/arm64`
-- Enables `docker run --rm -v $(pwd):/src composelint/compose-lint`
-- Published via GitHub Actions on tag push; signed with cosign (Sigstore keyless)
-- Automated smoke tests in CI: version check, clean/insecure fixtures, SARIF output validation
-- Primary audience: teams that distrust pip in CI, or non-Python shops
+**Per-service rule overrides** _(issue #5)_
+- `.compose-lint.yml` gains a way to disable or tune rules on a per-service basis.
+- Motivation: in multi-service compose files, a rule like CL-0003 (`no-new-privileges`) is valid for some services and impossible for others (e.g. entrypoints that switch users). Global disable loses the valid findings; leaving it enabled produces unactionable noise.
+- Schema design TBD — two shapes proposed in the issue, needs an ADR before implementation.
 
-**Linux packages** _(pending decision — [ADR-008](adr/008-linux-packages.md))_
-- `.deb` and `.rpm` via `nfpm` — self-contained, no Python required
-- Published to GitHub Releases as build artifacts on every tag; signed via GitHub Artifact Attestation
-- Secondary: AUR `compose-lint` PKGBUILD for Arch users (manual push at release time)
-- CI shape: `linux-packages-build` → `linux-packages-smoke` → `release-gate` → `linux-packages-publish`, following the existing staging pattern
+**CL-0006 capability profiles** _(issue #4)_
+- Ship known capability profiles for popular base images (PostgreSQL, Redis, Caddy, Netdata, etc.) so the finding's `fix` field names the specific `cap_add` list instead of a generic `<SPECIFIC_CAP>` placeholder.
+- Data-driven: ships as a profile table in the rule, no engine changes.
+- Scope-limit: data + docs only in v0.4. A `--suggest-caps` CLI flag is out of scope here; revisit if the profiles land well.
 
 **Homebrew tap**
-- `brew install tmatens/tap/compose-lint`
-- Widens macOS developer reach beyond pip users
+- `brew install tmatens/tap/compose-lint` — works on macOS (Intel + Apple Silicon) and Linux via Homebrew-on-Linux.
+- Closes the "not everyone has pip" gap with working `brew upgrade` UX (which GitHub-Releases-hosted `.deb`/`.rpm` could not match).
+- Formula lives in a separate `homebrew-tap` repo; release workflow uses `brew bump-formula-pr` to keep versions in sync with low manual overhead.
+
+_Deferred:_ `.deb`/`.rpm` Linux packages (see [ADR-008](adr/008-linux-packages.md) — no user demand, no upgrade path without hosted repo infrastructure).
 
 ---
 
-## Milestone 3 — Better Remediation (v0.5)
+## Milestone 3 — Remediation (v0.5)
 
-Finding a problem is half the value. Remediation guidance is the differentiator versus KICS, which identifies issues but rarely provides exact Compose-specific fix steps.
+Turn findings into fixes. This is where the product's differentiation grows the most against KICS/Checkov.
 
-**Shellcheck integration** _(pending decision — [ADR-007](adr/007-shellcheck-integration.md))_
-- Lint shell commands inside `command` and `entrypoint` (string form) and `healthcheck.test` with `CMD-SHELL`
-- shellcheck invoked via subprocess with `--format=json`; findings reported under their original `SC` codes alongside native `CL-XXXX` rules
-- Optional: rule skips silently if shellcheck is not present in `PATH`
-- Open question: deliver shellcheck as a Linux system package dependency or via `shellcheck-py`
+**`--explain CL-XXXX`** — print the full prose from `docs/rules/CL-XXXX.md` in the terminal, reducing context-switching to the browser during triage. Small, no new deps, foundation for `--fix` UX.
 
 **`--fix` mode** — auto-fix for safe, unambiguous rules:
 - CL-0003: inject `no-new-privileges:true` into `security_opt:`
 - CL-0005: prepend `127.0.0.1:` to unbound port mappings
 - CL-0007: add `read_only: true`
-- Dry run by default; `--fix --apply` writes in-place
-- Out of scope for auto-fix: CL-0001 (socket proxy replacement is non-trivial), CL-0016 (correct secret management is context-dependent)
+- Dry run by default; `--fix --apply` writes in-place.
+- Out of scope for auto-fix: CL-0001 (socket proxy replacement is non-trivial), CL-0016 (correct secret management is context-dependent).
 
 **Remediation snippets in SARIF** — populate `fix.changes[]` objects so GitHub Code Scanning can display a suggested-change diff inline on pull requests.
 
-**`--explain CL-XXXX`** — print the full prose from `docs/rules/CL-XXXX.md` in the terminal, reducing context-switching to the browser during triage.
+**Shellcheck integration** _(pending decision — [ADR-007](adr/007-shellcheck-integration.md))_
+- Lint shell commands inside `command` and `entrypoint` (string form) and `healthcheck.test` with `CMD-SHELL`.
+- Unique coverage vs. KICS/Checkov — reinforces the "depth" thesis.
+- Optional dependency; rule skips silently if shellcheck is not in `PATH`.
 
 ---
 
 ## Milestone 4 — VS Code Extension + GA (v1.0)
 
-**Why VS Code before LSP**: the extension market is where Docker Compose authors spend most of their editing time. LSP can follow after v1.0.
+The biggest reach multiplier. Compose authors spend most editing time in editors, not CI. Sequenced after `--fix` because the extension's value pops only once fixes are one-click.
 
-**Architecture**: the extension shells out to `compose-lint --format json` on save. No embedded Python runtime in the extension — this keeps it thin and ensures the user's installed version is always what runs.
+**Architecture:** the extension shells out to `compose-lint --format json` on save. No embedded Python runtime in the extension — this keeps it thin and ensures the user's installed version is always what runs.
 
 - Underlines findings inline with diagnostic severity mapping
 - Hover tooltip shows the `fix:` and `ref:` fields
 - Command palette: `Compose Lint: Fix All Auto-fixable` (requires Milestone 3)
 
-**GA declaration**: v1.0 moves the PyPI classifier from `3 - Alpha` to `5 - Production/Stable`. Prerequisites: 19+ rules, `--fix` mode, VS Code extension, and a documented upgrade/deprecation policy.
+**GA declaration:** v1.0 moves the PyPI classifier from `3 - Alpha` to `5 - Production/Stable`. Prerequisites: 19+ rules, `--fix` mode, VS Code extension, and a documented upgrade/deprecation policy.
 
 ---
 
@@ -82,6 +86,7 @@ Pursue based on user demand after v1.0.
 | JetBrains plugin | Same shell-out pattern as VS Code |
 | Custom rule plugins | `entry_points` hook (`compose_lint.rules` group) for third-party rules |
 | LSP server | Language Server Protocol support — follows VS Code extension post-v1.0 |
+| Linux packages (`.deb`/`.rpm`) | Revisit [ADR-008](adr/008-linux-packages.md) on first concrete user request |
 
 ---
 
@@ -111,10 +116,10 @@ Python 3.10 is scheduled to age out of the matrix when it reaches upstream EOL i
 
 ## Summary
 
-| Milestone | Version |
-|-----------|---------|
-| Rule Coverage (19 rules) | v0.3 [complete] |
-| Distribution (Docker Hub, packages, Homebrew) | v0.4 [Docker Hub complete] |
-| Remediation (`--fix`, SARIF fixes, `--explain`) | v0.5 |
-| VS Code extension + GA | v1.0 |
-| Ecosystem integrations, custom rules | v1.x |
+| Milestone | Version | Status |
+|-----------|---------|--------|
+| Rule Coverage (19 rules) | v0.3 | complete |
+| Config depth + Homebrew tap | v0.4 | in progress (Docker Hub shipped in v0.3.x) |
+| Remediation (`--explain`, `--fix`, SARIF fixes, shellcheck) | v0.5 | |
+| VS Code extension + GA | v1.0 | |
+| Ecosystem integrations, custom rules | v1.x | |
