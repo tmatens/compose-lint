@@ -120,6 +120,31 @@ To hide suppressed findings from output:
 compose-lint --skip-suppressed docker-compose.yml
 ```
 
+### Per-service rule exclusions
+
+When a rule is valid for some services but architecturally incompatible with
+others (e.g. CL-0003 `no-new-privileges` and an image whose entrypoint
+switches users), use `exclude_services` to suppress it for just the
+affected services while keeping it active elsewhere:
+
+```yaml
+rules:
+  CL-0003:
+    exclude_services:
+      minecraft: "entrypoint switches users via su-exec"
+      backup: "forks as different user"
+  CL-0007:
+    exclude_services:
+      - legacy-worker   # list form when no reason is needed
+```
+
+Excluded services still produce findings marked **SUPPRESSED** with the
+per-service reason flowing to `suppression_reason` / SARIF `justification`,
+same as a global disable. Service names are matched exactly; unknown names
+produce a stderr warning but do not error (Compose files are edited
+independently of config). Global `enabled: false` takes precedence over
+per-service exclusions.
+
 ## CLI Reference
 
 ```
