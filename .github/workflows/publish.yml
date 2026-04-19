@@ -64,6 +64,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -149,6 +150,31 @@ jobs:
           format: spdx-json
           output-file: sbom.spdx.json
           upload-artifact: false
+      # Generate SLSA build provenance for each dist. The attestation is
+      # pushed to GitHub's attestations API (verifiable via `gh attestation
+      # verify`) and also written to disk so we can attach .intoto.jsonl
+      # files to the GitHub Release — which is what OpenSSF Scorecard's
+      # Signed-Releases provenance check looks for.
+      - name: Generate SLSA build provenance
+        id: provenance
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: |
+            dist/*.whl
+            dist/*.tar.gz
+      - name: Stage provenance bundles per artifact
+        # attest-build-provenance emits a single bundle covering all
+        # subjects. Alias it per-artifact so the filename convention
+        # (<artifact>.intoto.jsonl) matches Scorecard's pattern scan of
+        # Release assets.
+        run: |
+          mkdir -p provenance
+          shopt -s nullglob
+          for d in dist/*.whl dist/*.tar.gz; do
+            base="$(basename "$d")"
+            cp "${{ steps.provenance.outputs.bundle-path }}" "provenance/${base}.intoto.jsonl"
+          done
+          ls provenance/
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist
@@ -161,6 +187,10 @@ jobs:
         with:
           name: sbom
           path: sbom.spdx.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: provenance
+          path: provenance/
 
   testpypi:
     needs: build
@@ -539,6 +569,10 @@ jobs:
         with:
           name: sbom
           path: .
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: provenance
+          path: provenance/
       - name: Extract changelog section for this tag
         env:
           TAG: ${{ github.ref_name }}
@@ -554,10 +588,11 @@ jobs:
             exit 1
           fi
       - name: Create GitHub Release
-        # Attach wheels, sdist, and Sigstore bundles as release assets.
-        # OpenSSF Scorecard's Signed-Releases check scans the last 5 GitHub
-        # releases for accompanying signature files (`.sigstore`, `.sig`,
-        # `.asc`, `.intoto.jsonl`) alongside distributions.
+        # Attach wheels, sdist, Sigstore bundles, SBOM, and SLSA build
+        # provenance (.intoto.jsonl) as release assets. OpenSSF Scorecard's
+        # Signed-Releases check scans the last 5 GitHub releases for
+        # accompanying signature files (`.sigstore`, `.sig`, `.asc`,
+        # `.intoto.jsonl`) alongside distributions.
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
@@ -566,7 +601,7 @@ jobs:
             --title "${TAG}" \
             --notes-file notes.md \
             --verify-tag \
-            dist/*.whl dist/*.tar.gz signatures/* sbom.spdx.json
+            dist/*.whl dist/*.tar.gz signatures/* sbom.spdx.json provenance/*
 
   # Post-release canary: download the just-attached Sigstore bundles from
   # the GitHub Release and cryptographically verify each one against the
