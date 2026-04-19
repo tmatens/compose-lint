@@ -46,24 +46,51 @@ docker run --rm -v "$(pwd):/src" composelint/compose-lint docker-compose.prod.ym
 
 ## Example Output
 
+Given this `docker-compose.yml`:
+
+```yaml
+services:
+  traefik:
+    image: traefik:v3.0@sha256:aaaabbbbccccddddeeeeffff00001111222233334444555566667777888899990
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8080:80"
 ```
-docker-compose.yml:5  CRITICAL  CL-0001  Docker socket mounted via
-  '/var/run/docker.sock:/var/run/docker.sock'. This gives the container
-  full control over the Docker daemon.
+
+and this `.compose-lint.yml` (suppressing CL-0001 for `traefik` with a tracked reason):
+
+```yaml
+rules:
+  CL-0001:
+    exclude_services:
+      traefik: "SEC-1234 approved — socket proxy planned for 2026-Q3"
+```
+
+running `compose-lint docker-compose.yml` produces:
+
+```
+compose-lint 0.3.7
+files: docker-compose.yml  ·  config: .compose-lint.yml  ·  fail-on: high
+
+docker-compose.yml:8  SUPPRESSED  CL-0001  Docker socket mounted via '/var/run/docker.sock:/var/run/docker.sock'. This gives the container full control over the Docker daemon.
   service: traefik
-  fix: Use a Docker socket proxy (e.g., tecnativa/docker-socket-proxy)
-       to expose only the API endpoints your service needs.
-  ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-1
+  reason: SEC-1234 approved — socket proxy planned for 2026-Q3
 
-docker-compose.yml:3  HIGH  CL-0005  Port '8080:80' is bound to all
-  interfaces. Docker bypasses host firewalls (UFW/firewalld), potentially
-  exposing this port to the public internet.
-  service: web
+docker-compose.yml:10  HIGH      CL-0005  Port '8080:80' is bound to all interfaces. Docker bypasses host firewalls (UFW/firewalld), potentially exposing this port to the public internet.
+  service: traefik
   fix: Bind to localhost: 127.0.0.1:8080:80
-  ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5a
-
-docker-compose.yml: 1 critical, 1 high
+       If public access is needed, use a reverse proxy with TLS.
+  ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5a---be-careful-when-mapping-container-ports-to-the-host-with-firewalls-like-ufw
+docker-compose.yml: 1 high  ·  1 suppressed (not counted)
+✗ FAIL  ·  1 finding at or above high
 ```
+
+Exit code is `1` (one finding at or above the default `--fail-on high` threshold). Suppressed findings are shown for auditability but do not count toward the threshold.
 
 ## Rules
 
