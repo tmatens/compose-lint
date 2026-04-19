@@ -96,6 +96,10 @@ pytest                          # Tests
 - **Explain the *why* in the body, not just the *what*.** The diff already
   shows what changed; the commit message exists to explain the reason.
 - **Sign your commits.** See [commit signing](#commit-signing) below.
+- **Sign off your commits.** Use `git commit -s` to add the
+  `Signed-off-by:` trailer required by the
+  [DCO](#developer-certificate-of-origin) — this is separate from
+  cryptographic signing.
 - **No AI attribution.** Do not include `Co-Authored-By` trailers or any other
   references to AI/coding assistants in commit messages, code, or
   documentation.
@@ -126,6 +130,30 @@ from authentication keys) at <https://github.com/settings/ssh/new>.
 Verify locally with `git log --show-signature`. If it prints
 `Good "git" signature`, you're set. On GitHub, your commits will show a green
 **Verified** badge.
+
+### Developer Certificate of Origin
+
+All commits must carry a `Signed-off-by:` trailer certifying that you wrote
+the change (or have the right to submit it under this project's MIT license).
+This is the [Developer Certificate of Origin](https://developercertificate.org).
+It is independent of [commit signing](#commit-signing) above: cryptographic
+signing proves *who committed*, DCO asserts *right to contribute*.
+
+Add the trailer automatically with `-s`:
+
+```bash
+git commit -s -m "Your change"
+```
+
+Or enable it once per-clone so every commit gets signed off:
+
+```bash
+git config format.signOff true
+```
+
+The `Signed-off-by` name and email must match your commit author identity. CI
+will block the PR if any commit is missing a matching trailer. Fix existing
+commits with `git commit --amend --signoff` or `git rebase --signoff main`.
 
 ## Pull requests
 
