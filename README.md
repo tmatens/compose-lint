@@ -7,6 +7,7 @@
 [![License](https://img.shields.io/github/license/tmatens/compose-lint)](LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/tmatens/compose-lint/badge)](https://scorecard.dev/viewer/?uri=github.com/tmatens/compose-lint)
 [![OpenSSF Baseline](https://www.bestpractices.dev/projects/12472/baseline)](https://www.bestpractices.dev/projects/12472)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12472/badge)](https://www.bestpractices.dev/projects/12472)
 
 A security-focused linter for Docker Compose files. Catches dangerous misconfigurations before they reach production.
 
