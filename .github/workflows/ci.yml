@@ -196,6 +196,49 @@ jobs:
           fi
           echo "Found matching CHANGELOG section for ${head_version}."
 
+  dco:
+    name: Developer Certificate of Origin
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require matching Signed-off-by on every PR commit
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # Bot commits (Dependabot, Renovate, github-actions) can't add a
+          # Signed-off-by trailer from the Probot runtime. They're allow-listed.
+          bot_pattern='(dependabot|renovate|github-actions|mend)\[bot\]'
+          bad=""
+          while IFS=$'\t' read -r sha author_name author_email; do
+            if echo "${author_name}${author_email}" | grep -iqE "${bot_pattern}"; then
+              continue
+            fi
+            expected="Signed-off-by: ${author_name} <${author_email}>"
+            if ! git log -1 --format='%B' "${sha}" | grep -qiF "${expected}"; then
+              bad="${bad}${sha}	${author_name} <${author_email}>
+          "
+            fi
+          done < <(git log --format='%H%x09%an%x09%ae' "${BASE_SHA}..${HEAD_SHA}")
+          if [ -n "${bad}" ]; then
+            echo "::error::Commits missing matching Signed-off-by (DCO) trailer:"
+            printf '%s' "${bad}" | while IFS=$'\t' read -r sha author; do
+              [ -n "${sha}" ] && echo "::error::  ${sha}  ${author}"
+            done
+            echo "::error::Add 'Signed-off-by: Name <email>' matching your author identity."
+            echo "::error::Fix with 'git commit --amend --signoff' or 'git rebase --signoff ${BASE_SHA}'."
+            exit 1
+          fi
+          echo "All PR commits carry a matching Signed-off-by trailer."
+
   no-ai-attribution:
     name: No AI authorship attribution
     runs-on: ubuntu-24.04
@@ -441,6 +484,7 @@ jobs:
       - security
       - version-consistency
       - changelog-gate
+      - dco
       - no-ai-attribution
       - dependency-review
       - actionlint
