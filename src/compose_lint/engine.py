@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from compose_lint.models import Finding, Severity
@@ -13,15 +14,18 @@ def run_rules(
     lines: dict[str, int],
     disabled_rules: dict[str, str | None] | None = None,
     severity_overrides: dict[str, Severity] | None = None,
+    excluded_services: dict[str, dict[str, str | None]] | None = None,
 ) -> list[Finding]:
     """Run all registered rules against the parsed Compose data.
 
-    Disabled rules are still executed but their findings are marked as
-    suppressed. Returns a list of findings sorted by line number
-    (None-line findings last).
+    Disabled rules and per-service exclusions still produce findings, but
+    those findings are marked suppressed with an appropriate reason. A
+    global disable takes precedence over per-service exclusions (see
+    ADR-010). Returns findings sorted by line number (None-line last).
     """
     disabled = disabled_rules or {}
     overrides = severity_overrides or {}
+    excluded = excluded_services or {}
     findings: list[Finding] = []
 
     rule_classes = get_registered_rules()
@@ -32,33 +36,28 @@ def run_rules(
     for rule in rules:
         rule_id = rule.metadata.id
         is_suppressed = rule_id in disabled
+        rule_excluded = excluded.get(rule_id, {})
 
         for service_name, service_config in services.items():
             for finding in rule.check(service_name, service_config, data, lines):
                 if rule_id in overrides and not is_suppressed:
-                    finding = Finding(
-                        rule_id=finding.rule_id,
-                        severity=overrides[rule_id],
-                        service=finding.service,
-                        message=finding.message,
-                        line=finding.line,
-                        fix=finding.fix,
-                        references=finding.references,
-                    )
+                    finding = replace(finding, severity=overrides[rule_id])
                 if is_suppressed:
                     reason = disabled[rule_id]
-                    finding = Finding(
-                        rule_id=finding.rule_id,
-                        severity=finding.severity,
-                        service=finding.service,
-                        message=finding.message,
-                        line=finding.line,
-                        fix=finding.fix,
-                        references=finding.references,
+                    finding = replace(
+                        finding,
                         suppressed=True,
-                        suppression_reason=reason
-                        if reason
-                        else "disabled in .compose-lint.yml",
+                        suppression_reason=reason or "disabled in .compose-lint.yml",
+                    )
+                elif service_name in rule_excluded:
+                    reason = rule_excluded[service_name]
+                    default = (
+                        f"excluded for service '{service_name}' in .compose-lint.yml"
+                    )
+                    finding = replace(
+                        finding,
+                        suppressed=True,
+                        suppression_reason=reason or default,
                     )
                 findings.append(finding)
 

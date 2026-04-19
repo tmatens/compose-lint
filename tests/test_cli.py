@@ -65,3 +65,42 @@ class TestCLI:
             str(FIXTURES / "valid_v2.yml"),
         )
         assert result.returncode == 0
+
+    def test_exclude_services_suppresses_named_service(self, tmp_path: Path) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text(
+            "rules:\n"
+            "  CL-0003:\n"
+            "    exclude_services:\n"
+            '      missing: "entrypoint switches users"\n'
+        )
+        result = run_cli(
+            "--config",
+            str(config),
+            "--format",
+            "json",
+            str(FIXTURES / "insecure_no_new_priv.yml"),
+        )
+        assert result.returncode in (0, 1)
+        data = json.loads(result.stdout)
+        by_service = {f["service"]: f for f in data if f["rule_id"] == "CL-0003"}
+        assert by_service["missing"]["suppressed"] is True
+        assert (
+            by_service["missing"]["suppression_reason"] == "entrypoint switches users"
+        )
+        assert by_service["empty_security_opt"]["suppressed"] is False
+
+    def test_exclude_services_unknown_service_warns(self, tmp_path: Path) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text(
+            "rules:\n  CL-0003:\n    exclude_services:\n      - does-not-exist\n"
+        )
+        result = run_cli(
+            "--config",
+            str(config),
+            "--format",
+            "json",
+            str(FIXTURES / "insecure_no_new_priv.yml"),
+        )
+        assert "unknown service 'does-not-exist'" in result.stderr
+        assert "CL-0003" in result.stderr

@@ -113,9 +113,7 @@ def main(argv: list[str] | None = None) -> NoReturn:
     config_path = _effective_config_path(args.config)
 
     try:
-        disabled_rules, severity_overrides, _excluded_services = load_config(
-            args.config
-        )
+        disabled_rules, severity_overrides, excluded_services = load_config(args.config)
     except ConfigError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(2)
@@ -146,6 +144,7 @@ def main(argv: list[str] | None = None) -> NoReturn:
     all_sarif: list[dict[str, object]] = []
     all_file_findings: list[tuple[list[Finding], str]] = []
     has_errors = False
+    seen_services: set[str] = set()
 
     for filepath in args.files:
         try:
@@ -157,11 +156,14 @@ def main(argv: list[str] | None = None) -> NoReturn:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(2)
 
+        seen_services.update(data.get("services", {}).keys())
+
         findings = run_rules(
             data,
             lines,
             disabled_rules=disabled_rules,
             severity_overrides=severity_overrides,
+            excluded_services=excluded_services,
         )
 
         if args.skip_suppressed:
@@ -181,6 +183,15 @@ def main(argv: list[str] | None = None) -> NoReturn:
         failing = filter_findings(findings, args.fail_on)
         if failing:
             has_errors = True
+
+    for rule_id, services_map in excluded_services.items():
+        for service_name in services_map:
+            if service_name not in seen_services:
+                print(
+                    f"Warning: exclude_services for {rule_id} references "
+                    f"unknown service '{service_name}'",
+                    file=sys.stderr,
+                )
 
     if args.output_format == "text":
         if len(args.files) > 1:

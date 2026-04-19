@@ -126,6 +126,89 @@ class TestRunRules:
         findings = run_rules(data, {})
         assert len(findings) == 0
 
+    def test_excluded_service_produces_suppressed_finding(self) -> None:
+        data = {
+            "services": {
+                "web": {"test_flag": True},
+                "worker": {"test_flag": True},
+            }
+        }
+        findings = run_rules(
+            data,
+            {},
+            excluded_services={"CL-TEST": {"worker": "entrypoint switches users"}},
+        )
+        assert len(findings) == 2
+        by_service = {f.service: f for f in findings}
+        assert by_service["web"].suppressed is False
+        assert by_service["worker"].suppressed is True
+        assert by_service["worker"].suppression_reason == "entrypoint switches users"
+
+    def test_excluded_service_without_reason(self) -> None:
+        data = {"services": {"worker": {"test_flag": True}}}
+        findings = run_rules(
+            data,
+            {},
+            excluded_services={"CL-TEST": {"worker": None}},
+        )
+        assert len(findings) == 1
+        assert findings[0].suppressed is True
+        assert "worker" in (findings[0].suppression_reason or "")
+
+    def test_excluded_service_only_affects_named_service(self) -> None:
+        data = {
+            "services": {
+                "web": {"test_flag": True},
+                "worker": {"test_flag": True},
+            }
+        }
+        findings = run_rules(
+            data,
+            {},
+            excluded_services={"CL-TEST": {"worker": None}},
+        )
+        assert len(findings) == 2
+        suppressed = {f.service: f.suppressed for f in findings}
+        assert suppressed == {"web": False, "worker": True}
+
+    def test_global_disable_takes_precedence_over_per_service(self) -> None:
+        """Per ADR-010: global disable wins over per-service exclusion."""
+        data = {"services": {"worker": {"test_flag": True}}}
+        findings = run_rules(
+            data,
+            {},
+            disabled_rules={"CL-TEST": None},
+            excluded_services={"CL-TEST": {"worker": "per-service reason"}},
+        )
+        assert len(findings) == 1
+        assert findings[0].suppressed is True
+        assert findings[0].suppression_reason == "disabled in .compose-lint.yml"
+
+    def test_excluded_service_with_severity_override(self) -> None:
+        """Severity overrides apply before suppression tagging."""
+        data = {"services": {"worker": {"test_flag": True}}}
+        findings = run_rules(
+            data,
+            {},
+            severity_overrides={"CL-TEST": Severity.CRITICAL},
+            excluded_services={"CL-TEST": {"worker": None}},
+        )
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.CRITICAL
+        assert findings[0].suppressed is True
+
+    def test_excluded_unknown_service_is_noop(self) -> None:
+        """Stale service names in config do not affect findings for real services."""
+        data = {"services": {"web": {"test_flag": True}}}
+        findings = run_rules(
+            data,
+            {},
+            excluded_services={"CL-TEST": {"does-not-exist": "stale"}},
+        )
+        assert len(findings) == 1
+        assert findings[0].service == "web"
+        assert findings[0].suppressed is False
+
 
 class TestFilterFindings:
     """Tests for filter_findings function."""
