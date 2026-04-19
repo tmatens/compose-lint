@@ -113,7 +113,9 @@ def main(argv: list[str] | None = None) -> NoReturn:
     config_path = _effective_config_path(args.config)
 
     try:
-        disabled_rules, severity_overrides = load_config(args.config)
+        disabled_rules, severity_overrides, _excluded_services = load_config(
+            args.config
+        )
     except ConfigError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(2)
