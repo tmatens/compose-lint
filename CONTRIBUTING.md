@@ -18,6 +18,15 @@ See [AGENTS.md](AGENTS.md) for the full design philosophy — especially the
 sections on rule grounding, severity assignment, and what's explicitly out of
 scope.
 
+## Maintainers
+
+- Todd Matens ([@tmatens](https://github.com/tmatens)) — repository admin,
+  releases, security response.
+
+Maintainers review and merge PRs, triage issues within 14 days, respond to
+security reports within 7 days per [SECURITY.md](SECURITY.md), and cut
+releases per [docs/RELEASING.md](docs/RELEASING.md).
+
 ## Development setup
 
 ```bash
