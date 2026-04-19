@@ -21,6 +21,10 @@ CRITICAL > HIGH > MEDIUM > LOW. See `docs/severity.md` for the scoring matrix. D
 - 2: Usage error (bad args, file not found, invalid Compose)
 - Default threshold: HIGH. Configurable via `--fail-on`.
 
+## CLI output
+
+Stdout carries data (findings in `check`; future artifacts in operations like `fix` or `completion`). Stderr carries human status and errors. Today's text-mode banner, per-file summary, aggregate summary, and verdict are the exception — gated on `output_format == "text"` in `cli.py` so JSON/SARIF redirects stay clean. When a second stdout-emitting mode lands, decide in that feature's ADR whether to extend the gate or move human-status lines to stderr permanently.
+
 ## Config file (`.compose-lint.yml`)
 
 Disables still produce suppressed findings. `reason` flows to `suppression_reason` (JSON), `justification` (SARIF), or after `SUPPRESSED` (text). No inline suppression comments.
