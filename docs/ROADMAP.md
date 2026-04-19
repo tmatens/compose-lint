@@ -1,12 +1,12 @@
 # Roadmap
 
-compose-lint v0.3.0 shipped 19 rules, PyPI distribution, SARIF/JSON/text output, pre-commit support, and a GitHub Action. The product has a solid foundation; the next investments should make the tool more useful to the users already running it, not chase speculative distribution channels.
+compose-lint v0.3.0 shipped 19 rules, PyPI distribution, SARIF/JSON/text output, pre-commit support, and a GitHub Action. v0.4.0 added per-service rule overrides. The product has a solid foundation; the next investments should make the tool more useful to the users already running it, not chase speculative distribution channels.
 
 ## Strategic framing
 
 compose-lint's differentiation is depth in Compose-specific security, not distribution breadth. Competitors (KICS, Checkov, Trivy) cover Compose as one format among many; they are wide and shallow per-format. Compose-lint wins by being the one tool that tells you exactly what's wrong with a Compose file and exactly how to fix it. Roadmap priorities are ordered around that thesis.
 
-Open issues #4 (CL-0006 capability profiles) and #5 (per-service rule overrides) are both signal from real-world usage. Distribution items beyond the already-shipped Docker image have no demand signal and are deprioritized accordingly.
+Open issues #4 (CL-0006 capability profiles) and #111 (real-world examples library) are the live signal from real-world usage now that #5 is closed. Distribution items beyond the already-shipped Docker image have no demand signal and are deprioritized accordingly.
 
 ---
 
@@ -16,19 +16,25 @@ Shipped in v0.3.0. Added 9 rules (CL-0011 – CL-0019) plus CL-0010 `uts: host` 
 
 ---
 
-## Milestone 2 — Configuration Depth + Install Polish (v0.4)
+## Milestone 2 — Configuration Depth (v0.4) [shipped]
 
-Make the tool more useful for users already running it, and close the one distribution gap with a real UX win.
+Per-service rule overrides shipped in v0.4.0 (issue #5, [ADR-010](adr/010-per-service-rule-overrides.md)). `.compose-lint.yml` now supports `exclude_services` per rule, with mapping (service → reason) and list forms. Excluded services still produce suppressed findings carrying the per-service reason — same suppression plumbing as global disables.
 
-**Per-service rule overrides** _(issue #5)_
-- `.compose-lint.yml` gains a way to disable or tune rules on a per-service basis.
-- Motivation: in multi-service compose files, a rule like CL-0003 (`no-new-privileges`) is valid for some services and impossible for others (e.g. entrypoints that switch users). Global disable loses the valid findings; leaving it enabled produces unactionable noise.
-- Schema design TBD — two shapes proposed in the issue, needs an ADR before implementation.
+---
+
+## Milestone 2.5 — Trust Surface + Install Polish (v0.4.x)
+
+The leftover Milestone 2 items, plus the new real-world examples ask. All additive over 0.4.0; no breaking changes.
 
 **CL-0006 capability profiles** _(issue #4)_
 - Ship known capability profiles for popular base images (PostgreSQL, Redis, Caddy, Netdata, etc.) so the finding's `fix` field names the specific `cap_add` list instead of a generic `<SPECIFIC_CAP>` placeholder.
 - Data-driven: ships as a profile table in the rule, no engine changes.
-- Scope-limit: data + docs only in v0.4. A `--suggest-caps` CLI flag is out of scope here; revisit if the profiles land well.
+- Scope-limit: data + docs only. A `--suggest-caps` CLI flag is out of scope here; revisit if the profiles land well.
+
+**Real-world examples library** _(issue #111)_
+- `examples/real-world/` with one subdirectory per project (Traefik, Vaultwarden, Immich, Pi-hole, Portainer, Gitea). Each shows upstream Compose file → raw `compose-lint` output → hardened version → suppression config for unfixable findings, with per-finding narrative.
+- Doubles as the canonical teaching surface for ADR-010 suppression semantics — the interesting suppression cases only appear against real files.
+- **Gating prerequisite:** weekly drift-check job (re-fetch upstream files, open an issue on diff) before landing examples. Stale examples erode trust faster than no examples; ship the watchdog first, even as a stub.
 
 **Homebrew tap**
 - `brew install tmatens/tap/compose-lint` — works on macOS (Intel + Apple Silicon) and Linux via Homebrew-on-Linux.
@@ -119,7 +125,8 @@ Python 3.10 is scheduled to age out of the matrix when it reaches upstream EOL i
 | Milestone | Version | Status |
 |-----------|---------|--------|
 | Rule Coverage (19 rules) | v0.3 | complete |
-| Config depth + Homebrew tap | v0.4 | in progress (Docker Hub shipped in v0.3.x) |
+| Per-service rule overrides | v0.4 | complete |
+| CL-0006 profiles + real-world examples + Homebrew tap | v0.4.x | in progress |
 | Remediation (`--explain`, `--fix`, SARIF fixes, shellcheck) | v0.5 | |
 | VS Code extension + GA | v1.0 | |
 | Ecosystem integrations, custom rules | v1.x | |
