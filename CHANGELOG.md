@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Per-service rule exclusions in `.compose-lint.yml`. A rule's
+  `exclude_services` key accepts either a mapping (service name →
+  reason) or a list of service names. Excluded services still produce
+  findings marked suppressed, with the per-service reason flowing to
+  `suppression_reason` (JSON), SARIF `justification`, and the text
+  formatter's `SUPPRESSED` trailer. Global `enabled: false` takes
+  precedence over per-service exclusions. Unknown service names in
+  `exclude_services` warn on stderr rather than erroring. Closes #5.
+  See [ADR-010](docs/adr/010-per-service-rule-overrides.md).
+
+### Changed
+
+- v0.4 roadmap repointed from Linux package distribution to
+  configuration depth and a Homebrew tap. ADR-008 deferred: no
+  demand signal, and GitHub-Releases-hosted `.deb`/`.rpm` have
+  strictly worse upgrade UX than pip/Docker without hosted-repo
+  infrastructure.
+
 ## [0.3.7] - 2026-04-18
 
 ### Changed
