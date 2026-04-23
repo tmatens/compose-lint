@@ -541,6 +541,29 @@ jobs:
           cosign attest --yes --type spdxjson --predicate sbom.spdx.json \
             "composelint/compose-lint@${DIGEST}"
 
+  # Sync the Docker Hub repository overview (long description shown on the
+  # tags page) from this tag's README.md after a successful image push.
+  # README.md uses absolute https://github.com/... links so it renders
+  # correctly off-platform — Hub does not resolve relative paths.
+  dockerhub-description:
+    needs: docker-publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment:
+      name: dockerhub
+      url: https://hub.docker.com/r/composelint/compose-lint
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5.0.1
+        with:
+          persist-credentials: false
+      - uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa # v5.0.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: composelint/compose-lint
+          short-description: Security-focused linter for Docker Compose files
+          readme-filepath: ./README.md
+
   # Create the GitHub Release only after both production channels
   # (PyPI + Docker Hub) have published successfully. `needs:` gating
   # means a failure in either channel skips this job, so we never
