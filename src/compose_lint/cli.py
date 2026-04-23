@@ -11,6 +11,7 @@ from typing import NoReturn
 from compose_lint import __version__
 from compose_lint.config import ConfigError, load_config
 from compose_lint.engine import filter_findings, run_rules
+from compose_lint.explain import UnknownRuleError, load_rule_doc
 from compose_lint.formatters.json import format_findings as format_json
 from compose_lint.formatters.sarif import build_sarif_log
 from compose_lint.formatters.sarif import format_findings as format_sarif
@@ -98,6 +99,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="hide suppressed findings from output",
     )
     parser.add_argument(
+        "--explain",
+        metavar="CL-XXXX",
+        help=(
+            "print the prose documentation for a single rule and exit. "
+            "Cannot be combined with FILE arguments."
+        ),
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"%(prog)s {__version__}",
@@ -109,6 +118,23 @@ def main(argv: list[str] | None = None) -> NoReturn:
     """Main entry point for the CLI."""
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    if args.explain is not None:
+        if args.files:
+            print(
+                "Error: --explain cannot be combined with FILE arguments",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        try:
+            print(load_rule_doc(args.explain))
+        except UnknownRuleError:
+            print(
+                f"Error: unknown rule id '{args.explain}' (expected format: CL-XXXX)",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        sys.exit(0)
 
     config_path = _effective_config_path(args.config)
 

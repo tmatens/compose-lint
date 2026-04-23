@@ -27,6 +27,8 @@ pip install compose-lint
 docker run --rm -v "$(pwd):/src" composelint/compose-lint
 ```
 
+The image runs on [Google's distroless Python](https://github.com/GoogleContainerTools/distroless) (Debian 13, Python 3.13): no shell, no package manager, no `apt`, no `pip` at runtime. The entrypoint runs as nonroot (UID 65532). Only the Python interpreter, PyYAML, and `compose_lint` itself live in the final image — pip and the `dist-info` metadata are stripped from the venv after the build stage so Python-ecosystem CVEs don't surface on an unreachable binary. Multi-arch (linux/amd64 + linux/arm64), SHA-pinned base images bumped by Renovate, SLSA build provenance and Sigstore attestations published with every release. See [ADR-009](https://github.com/tmatens/compose-lint/blob/main/docs/adr/009-runtime-base-image.md).
+
 ## Quick Start
 
 Run without arguments to auto-detect `compose.yml`, `compose.yaml`, `docker-compose.yml`, or `docker-compose.yaml` in the current directory:
@@ -184,6 +186,7 @@ compose-lint [OPTIONS] [FILE ...]
   --fail-on SEVERITY          Minimum severity to trigger exit 1 (default: high)
   --skip-suppressed           Hide suppressed findings from output
   --config PATH               Path to config file (default: .compose-lint.yml)
+  --explain CL-XXXX           Print the full documentation for a single rule
   --version                   Show version and exit
 ```
 
