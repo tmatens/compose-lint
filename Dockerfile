@@ -23,6 +23,10 @@ WORKDIR /build
 COPY pyproject.toml README.md LICENSE ./
 COPY requirements.lock requirements-build.lock ./
 COPY src/ src/
+# Rule-doc markdown is force-included into the wheel at
+# compose_lint/rule_docs/ so `--explain CL-XXXX` can read it at runtime.
+# See pyproject.toml [tool.hatch.build.targets.wheel.force-include].
+COPY docs/rules/ docs/rules/
 # Two-venv layout so every package entering the final image is hash-pinned:
 #   /build-venv — ephemeral, runs `python -m build` (build + transitives)
 #   /venv       — the runtime venv that gets copied into the final stage
