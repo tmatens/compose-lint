@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `--explain CL-XXXX` prints the per-rule prose documentation
+  (`docs/rules/CL-XXXX.md`) to stdout so reviewers can read the full
+  rationale, references, and fix guidance without context-switching to
+  the browser. Accepts any case, exits 2 on unknown or malformed rule
+  ids, and refuses to run alongside FILE arguments. The rule-doc
+  markdown ships inside the wheel under `compose_lint/rule_docs/`.
+
 ## [0.4.1] - 2026-04-23
 
 ### Security

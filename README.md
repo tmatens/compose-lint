@@ -184,6 +184,7 @@ compose-lint [OPTIONS] [FILE ...]
   --fail-on SEVERITY          Minimum severity to trigger exit 1 (default: high)
   --skip-suppressed           Hide suppressed findings from output
   --config PATH               Path to config file (default: .compose-lint.yml)
+  --explain CL-XXXX           Print the full documentation for a single rule
   --version                   Show version and exit
 ```
 

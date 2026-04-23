@@ -90,6 +90,34 @@ class TestCLI:
         )
         assert by_service["empty_security_opt"]["suppressed"] is False
 
+    def test_explain_prints_rule_doc(self) -> None:
+        result = run_cli("--explain", "CL-0003")
+        assert result.returncode == 0
+        assert "CL-0003: Privilege Escalation Not Blocked" in result.stdout
+        assert "no-new-privileges:true" in result.stdout
+
+    def test_explain_is_case_insensitive(self) -> None:
+        result = run_cli("--explain", "cl-0003")
+        assert result.returncode == 0
+        assert "CL-0003" in result.stdout
+
+    def test_explain_unknown_rule_exits_2(self) -> None:
+        result = run_cli("--explain", "CL-9999")
+        assert result.returncode == 2
+        assert "unknown rule id" in result.stderr.lower()
+        assert "CL-9999" in result.stderr
+
+    def test_explain_rejects_malformed_id(self) -> None:
+        result = run_cli("--explain", "not-a-rule")
+        assert result.returncode == 2
+        assert result.stderr
+
+    def test_explain_rejects_file_argument(self) -> None:
+        result = run_cli("--explain", "CL-0003", str(FIXTURES / "valid_basic.yml"))
+        assert result.returncode == 2
+        assert "--explain" in result.stderr
+        assert "FILE" in result.stderr
+
     def test_exclude_services_unknown_service_warns(self, tmp_path: Path) -> None:
         config = tmp_path / ".compose-lint.yml"
         config.write_text(

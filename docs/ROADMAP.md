@@ -49,7 +49,7 @@ _Deferred:_ `.deb`/`.rpm` Linux packages (see [ADR-008](adr/008-linux-packages.m
 
 Turn findings into fixes. This is where the product's differentiation grows the most against KICS/Checkov.
 
-**`--explain CL-XXXX`** — print the full prose from `docs/rules/CL-XXXX.md` in the terminal, reducing context-switching to the browser during triage. Small, no new deps, foundation for `--fix` UX.
+**`--explain CL-XXXX`** _(shipped in v0.4.x)_ — prints the full prose from `docs/rules/CL-XXXX.md` in the terminal, reducing context-switching to the browser during triage. Rule-doc markdown is force-included into the wheel at build time. No new deps; pulled forward out of Milestone 3 because it's strictly additive and unblocks the `--fix` UX work.
 
 **`--fix` mode** — auto-fix for safe, unambiguous rules:
 - CL-0003: inject `no-new-privileges:true` into `security_opt:`
