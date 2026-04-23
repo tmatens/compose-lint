@@ -99,6 +99,17 @@ class TestLoadCompose:
         with pytest.raises(ComposeError, match="unhashable key"):
             load_compose(FIXTURES / "invalid_complex_key.yml")
 
+    def test_deeply_nested_yaml_raises_compose_error(self, tmp_path: Path) -> None:
+        # Regression: ClusterFuzzLite found that deeply-nested flow sequences
+        # (`[[[[...]]]]`) exhaust PyYAML's recursive composer and raise
+        # RecursionError, which is a RuntimeError and bypassed the
+        # `except yaml.YAMLError` wrapper. load_compose now catches it.
+        depth = sys.getrecursionlimit() * 2
+        path = tmp_path / "deeply_nested.yml"
+        path.write_text("[" * depth + "]" * depth, encoding="utf-8")
+        with pytest.raises(ComposeError, match="too deeply nested"):
+            load_compose(path)
+
 
 class TestDeepNestingTraversal:
     """Regression for ClusterFuzzLite-found RecursionError in _collect_lines.
