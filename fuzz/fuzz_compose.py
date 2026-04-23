@@ -33,6 +33,11 @@ def _test_one_input(data: bytes) -> None:
         # PyYAML converts some malformed scalars (e.g. massive ints, bad
         # timestamps) into Python exceptions before our ComposeError wrapper.
         return
+    except RecursionError:
+        # PyYAML's composer is recursive; deeply-nested flow input exhausts
+        # the interpreter stack. load_compose wraps this as ComposeError, but
+        # the harness calls yaml.load directly, so swallow it here too.
+        return
 
     if raw is None:
         return

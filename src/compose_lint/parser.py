@@ -188,6 +188,14 @@ def load_compose(
         )
     except yaml.YAMLError as e:
         raise ComposeError(f"Invalid YAML: {e}") from e
+    except RecursionError as e:
+        # PyYAML's composer is recursive (compose_node -> compose_sequence_node
+        # -> compose_node) with no built-in depth limit, so deeply-nested input
+        # like `[[[[...]]]]` exhausts the interpreter stack from inside the
+        # parser. RecursionError is a RuntimeError, not a YAMLError, so it
+        # bypasses the wrapper above; surface it as ComposeError so the public
+        # contract holds for all malformed input.
+        raise ComposeError("Invalid YAML: input is too deeply nested") from e
 
     if raw is None:
         raise ComposeError("Not a valid Compose file: file is empty")
