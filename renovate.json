@@ -30,6 +30,13 @@
       "pinDigests": true
     },
     {
+      "description": "Production runtime + build-stage base images bypass the weekly schedule. Debian and distroless rebuilds carry CVE patches we cannot apply ourselves (no shell, no apt at runtime), so opening the bump PR same-day shrinks the window between upstream patch and our published image. Still manual-merge — the manifest-list-vs-per-arch digest gotcha (memory/feedback_dockerfile_manifest_list_digest.md) needs human verification.",
+      "matchManagers": ["dockerfile"],
+      "matchFileNames": ["Dockerfile"],
+      "matchPackageNames": ["debian", "gcr.io/distroless/python3-debian13"],
+      "schedule": ["at any time"]
+    },
+    {
       "description": "Automerge low-risk routine updates once CI is green. Patch-level Python dep bumps, pinned-digest refreshes for GitHub Actions, and lockFileMaintenance go in without human review. Docker base images stay manual because the OCI manifest-list vs per-arch digest check (see MEMORY.md) is not mechanically verified in CI.",
       "matchManagers": ["pep621", "pip_requirements", "github-actions"],
       "matchUpdateTypes": ["patch", "pin", "digest", "lockFileMaintenance"],
