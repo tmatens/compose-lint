@@ -34,7 +34,20 @@ RUN python3 -m venv /build-venv \
     && /build-venv/bin/python -m build --wheel --outdir /dist \
     && python3 -m venv /venv \
     && /venv/bin/pip install --no-cache-dir --require-hashes -r requirements.lock \
-    && /venv/bin/pip install --no-cache-dir --no-deps /dist/*.whl
+    && /venv/bin/pip install --no-cache-dir --no-deps /dist/*.whl \
+    && rm -rf /venv/lib/python3.13/site-packages/pip \
+        /venv/lib/python3.13/site-packages/pip-*.dist-info \
+    && rm -f /venv/bin/pip /venv/bin/pip3 /venv/bin/pip3.13 \
+        /venv/bin/activate /venv/bin/activate.csh /venv/bin/activate.fish \
+        /venv/bin/Activate.ps1
+# Post-install cleanup: pip is only needed during build (the install steps
+# above), and the activate* scripts target shells the distroless runtime
+# doesn't have. Stripping pip eliminates Docker Scout CVEs in pip itself
+# (CVE-2025-8869, CVE-2026-1703 as of pip 25.1.1) — neither is reachable
+# at runtime since the entrypoint is /venv/bin/compose-lint and there's no
+# shell, but removing the bits also removes their attack surface and
+# future-CVE noise. PyYAML, compose_lint, and the Python interpreter
+# symlinks remain.
 
 # --- runtime stage: distroless Python, nonroot by default ---
 FROM gcr.io/distroless/python3-debian13:nonroot@sha256:51b1acc177d535f20fa30a175a657079ee7dce6e326541cfd83a474d9928e123
