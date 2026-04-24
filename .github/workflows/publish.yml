@@ -545,6 +545,11 @@ jobs:
   # tags page) from this tag's README.md after a successful image push.
   # README.md uses absolute https://github.com/... links so it renders
   # correctly off-platform — Hub does not resolve relative paths.
+  #
+  # Uses a first-party composite action so no third-party Node bundle
+  # ever holds the delete-capable Docker Hub PAT. Implementation lives in
+  # `scripts/update-dockerhub-description.sh`; the action.yml just forwards
+  # inputs.
   dockerhub-description:
     needs: docker-publish
     runs-on: ubuntu-24.04
@@ -556,12 +561,11 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5.0.1
         with:
           persist-credentials: false
-      - uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa # v5.0.0
+      - uses: ./.github/actions/update-dockerhub-description
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          token: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: composelint/compose-lint
-          short-description: Security-focused linter for Docker Compose files
           readme-filepath: ./README.md
 
   # Create the GitHub Release only after both production channels
