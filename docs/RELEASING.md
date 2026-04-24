@@ -135,6 +135,14 @@ version number.
 - [ ] `pytest`
 - [ ] CI on `main` is green for the commit you're about to release.
 - [ ] No open Renovate PRs you meant to merge first.
+- [ ] `.vex/compose-lint.openvex.json` is current: any new pip (or other
+      stripped-component) CVE that a scanner now reports against the image
+      is either covered by an existing `not_affected` statement with
+      `vulnerable_code_not_present`, or added in a fresh statement after
+      you've manually verified the vulnerable code path is absent from
+      the runtime image. If the CVE **is** reachable, do not VEX it — fix
+      it. Bump `version` and `timestamp` in the VEX doc when statements
+      change.
 
 ## Bump the version
 

@@ -22,6 +22,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is `/venv/bin/compose-lint`. The `activate*` shell-script stripping
   from 0.4.1 stays.
 
+### Added
+
+- OpenVEX document (`.vex/compose-lint.openvex.json`) published as a
+  release asset alongside the SBOM, Sigstore bundles, and SLSA
+  provenance. Declares the known pip CVEs (CVE-2025-8869, CVE-2026-1703)
+  as `not_affected` against the container image with justification
+  `vulnerable_code_not_present`, so downstream scanners (Trivy, Grype,
+  Docker Scout) invoked with `--vex` render them as non-exploitable
+  rather than either hiding pip or flagging reachable risk. New pip
+  CVEs get added to the VEX when verified as covered by the same
+  mitigation; CVEs in any actually-reachable code path do not.
+
 ## [0.5.0] - 2026-04-23
 
 ### Added

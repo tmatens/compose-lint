@@ -615,11 +615,15 @@ jobs:
             exit 1
           fi
       - name: Create GitHub Release
-        # Attach wheels, sdist, Sigstore bundles, SBOM, and SLSA build
-        # provenance (.intoto.jsonl) as release assets. OpenSSF Scorecard's
-        # Signed-Releases check scans the last 5 GitHub releases for
-        # accompanying signature files (`.sigstore`, `.sig`, `.asc`,
-        # `.intoto.jsonl`) alongside distributions.
+        # Attach wheels, sdist, Sigstore bundles, SBOM, SLSA build
+        # provenance (.intoto.jsonl), and the OpenVEX document as release
+        # assets. OpenSSF Scorecard's Signed-Releases check scans the last
+        # 5 GitHub releases for accompanying signature files (`.sigstore`,
+        # `.sig`, `.asc`, `.intoto.jsonl`) alongside distributions. The
+        # VEX document (`.vex/compose-lint.openvex.json`) lets downstream
+        # scanners apply `not_affected` justifications for CVEs whose
+        # vulnerable code has been removed from the runtime image (see
+        # Dockerfile post-install cleanup).
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
@@ -628,7 +632,8 @@ jobs:
             --title "${TAG}" \
             --notes-file notes.md \
             --verify-tag \
-            dist/*.whl dist/*.tar.gz signatures/* sbom.spdx.json provenance/*
+            dist/*.whl dist/*.tar.gz signatures/* sbom.spdx.json provenance/* \
+            .vex/compose-lint.openvex.json
 
   # Post-release canary: download the just-attached Sigstore bundles from
   # the GitHub Release and cryptographically verify each one against the
