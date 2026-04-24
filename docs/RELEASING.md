@@ -243,6 +243,15 @@ After approval, `publish` and `docker-publish` run in parallel.
       `uses: tmatens/compose-lint@<sha> # vX.Y.Z` lines. Review and
       squash-merge, then trigger **Actions → Marketplace smoke test →
       Run workflow** to verify the published Action end-to-end.
+- [ ] **Docker Hub overview (README) sync** — runs automatically in
+      `publish.yml`'s `dockerhub-description` job after `docker-publish`,
+      via the first-party composite action at
+      `.github/actions/update-dockerhub-description` (which just forwards
+      to `scripts/update-dockerhub-description.sh`). Requires
+      `DOCKERHUB_TOKEN` to have **Read, Write, Delete** scope — Read &
+      Write is not enough for the description PATCH endpoint. Verify
+      `https://hub.docker.com/r/composelint/compose-lint` reflects the
+      current README.
 - [ ] **Fresh `[Unreleased]` section** — already inserted by
       `release-prep.yml` as part of the release bump PR. No follow-up
       PR needed.
