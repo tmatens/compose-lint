@@ -1,0 +1,45 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/tmatens/compose-lint/.vex/compose-lint.openvex.json",
+  "author": "Todd Matens <tmatens@gmail.com>",
+  "role": "Project Maintainer",
+  "timestamp": "2026-04-23T00:00:00Z",
+  "version": 1,
+  "tooling": "hand-authored",
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2025-8869",
+        "description": "pip tarfile fallback extraction symlink handling"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=docker.io/composelint/compose-lint",
+          "subcomponents": [
+            { "@id": "pkg:pypi/pip@25.1.1" }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The pip package code (/venv/lib/python3.13/site-packages/pip/) and pip CLI binaries (/venv/bin/pip, pip3, pip3.13) are removed during the container build stage. Only pip's .dist-info metadata directory is retained so SCA scanners can identify the package. At runtime `import pip` raises ModuleNotFoundError and no pip binary is present. The runtime base is distroless (no shell, no package manager) and the entrypoint is /venv/bin/compose-lint running as nonroot UID 65532, so the vulnerable code is both physically absent from the image and unreachable by execution path."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-1703",
+        "description": "pip credential handling in index URLs"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=docker.io/composelint/compose-lint",
+          "subcomponents": [
+            { "@id": "pkg:pypi/pip@25.1.1" }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Same mitigation as CVE-2025-8869: pip package code and CLI binaries are removed from the runtime image during the container build stage; only the .dist-info metadata directory remains so SCA scanners can identify pip. `import pip` raises ModuleNotFoundError at runtime; no pip binary exists. The distroless runtime (no shell, nonroot entrypoint /venv/bin/compose-lint) makes the code both absent and unreachable."
+    }
+  ]
+}
