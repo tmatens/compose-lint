@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Container image once again ships `pip` and its `dist-info`. 0.4.1
+  stripped them to silence Docker Scout alerts on unreachable pip CVEs,
+  but removing the `dist-info` also removes the signal SCA scanners use
+  to detect pip — making the image appear vuln-free instead of being
+  vuln-free. The CVEs remain unreachable (distroless, no shell,
+  entrypoint is `/venv/bin/compose-lint`), but scanners can now report
+  them honestly. The `activate*` shell-script stripping from 0.4.1
+  stays, since those are unrelated to scanner visibility.
+
 ## [0.5.0] - 2026-04-23
 
 ### Added
