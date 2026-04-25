@@ -135,6 +135,14 @@ version number.
 - [ ] `pytest`
 - [ ] CI on `main` is green for the commit you're about to release.
 - [ ] No open Renovate PRs you meant to merge first.
+- [ ] `[Unreleased]` in `CHANGELOG.md` covers every user-facing PR
+      merged since the last release tag. `release-prep.yml` only
+      *renames* `[Unreleased]` → `[X.Y.Z]`; it does not author entries,
+      so anything missing here ships with no changelog. Cross-check
+      `gh pr list --state merged --search "merged:>$(git log -1 --format=%cI v$(grep -E '^version' pyproject.toml | head -1 | cut -d'"' -f2))"`
+      against the bullets in `[Unreleased]` and backfill the gaps in a
+      separate chore PR before dispatching `release-prep.yml`. (0.5.2
+      tripped on this — four merged PRs had no changelog entries.)
 - [ ] `.vex/compose-lint.openvex.json` is current: any new pip (or other
       stripped-component) CVE that a scanner now reports against the image
       is either covered by an existing `not_affected` statement with
