@@ -28,6 +28,30 @@ services:
     volumes:
       - /etc:/host-etc
       - /proc:/host-proc
+  mounts_root_filesystem:
+    image: nginx:1.27-alpine
+    volumes:
+      - "/:/host"
+  mounts_root_filesystem_ro:
+    image: nginx:1.27-alpine
+    volumes:
+      - "/:/host:ro"
+  mounts_var_lib_docker:
+    image: nginx:1.27-alpine
+    volumes:
+      - /var/lib/docker:/host-docker
+  mounts_var_run:
+    image: nginx:1.27-alpine
+    volumes:
+      - /var/run:/host-var-run
+  mounts_home:
+    image: nginx:1.27-alpine
+    volumes:
+      - /home:/host-home
+  mounts_root_ssh:
+    image: nginx:1.27-alpine
+    volumes:
+      - /root/.ssh:/keys:ro
   safe_volume:
     image: nginx:1.27-alpine
     volumes:
@@ -41,6 +65,16 @@ services:
       - type: bind
         source: /etc
         target: /host-etc
+  long_syntax_bind_no_type:
+    image: nginx:1.27-alpine
+    volumes:
+      - source: /etc
+        target: /host-etc
+  long_syntax_root_no_type:
+    image: nginx:1.27-alpine
+    volumes:
+      - source: /
+        target: /host
   long_syntax_named:
     image: nginx:1.27-alpine
     volumes:
