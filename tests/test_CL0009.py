@@ -122,3 +122,43 @@ class TestSecurityProfileRule:
         assert meta.id == "CL-0009"
         assert meta.severity.value == "high"
         assert len(meta.references) > 0
+
+    def test_detects_selinux_label_disable(self) -> None:
+        data, lines = load_compose(FIXTURES / "insecure_security_profile.yml")
+        findings = list(
+            self.rule.check(
+                "selinux_disabled",
+                data["services"]["selinux_disabled"],
+                data,
+                lines,
+            )
+        )
+        assert len(findings) == 1
+        assert findings[0].rule_id == "CL-0009"
+        assert "SELinux" in findings[0].message
+        assert "label:disable" in findings[0].message
+
+    def test_detects_all_three_profiles(self) -> None:
+        data, lines = load_compose(FIXTURES / "insecure_security_profile.yml")
+        findings = list(
+            self.rule.check(
+                "all_three_disabled",
+                data["services"]["all_three_disabled"],
+                data,
+                lines,
+            )
+        )
+        assert len(findings) == 3
+
+    def test_selinux_label_user_no_finding(self) -> None:
+        """label:user:... is a label override, not a disable — don't fire."""
+        data, lines = load_compose(FIXTURES / "insecure_security_profile.yml")
+        findings = list(
+            self.rule.check(
+                "selinux_label_user",
+                data["services"]["selinux_label_user"],
+                data,
+                lines,
+            )
+        )
+        assert len(findings) == 0

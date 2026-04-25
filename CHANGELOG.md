@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CL-0009** now detects SELinux disabled via `security_opt:
+  [label:disable]`. The rule's description and references promised
+  SELinux coverage but the implementation only checked seccomp and
+  AppArmor — `label:disable` turns off SELinux type enforcement for
+  the container and was silently ignored. Description updated to
+  reflect actual coverage; messages now read "SELinux" rather than
+  "label profile". `label:user:...`, `label:type:...`, `label:role:...`
+  and `label:level:...` overrides remain unflagged since they
+  reconfigure rather than disable confinement.
 - **CL-0004** and **CL-0019** now parse OCI image references via a
   shared `split_image_ref` helper that recognizes `registry:port/name`
   prefixes. The previous naive `image.rsplit(":", 1)` mistook the

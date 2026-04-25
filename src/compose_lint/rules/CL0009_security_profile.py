@@ -24,6 +24,19 @@ CIS_APPARMOR_REF = (
 _DISABLED_PROFILES = {
     "seccomp:unconfined",
     "apparmor:unconfined",
+    "label:disable",
+}
+
+_PROFILE_DISPLAY_NAME = {
+    "seccomp": "seccomp",
+    "apparmor": "AppArmor",
+    "label": "SELinux",
+}
+
+_PROFILE_REMOVAL = {
+    "seccomp": "syscall filtering",
+    "apparmor": "mandatory access controls",
+    "label": "SELinux labeling and confinement",
 }
 
 
@@ -37,9 +50,9 @@ class SecurityProfileRule(BaseRule):
             id="CL-0009",
             name="Security profile disabled",
             description=(
-                "Explicitly disabling seccomp or AppArmor removes syscall "
-                "filtering and mandatory access controls that limit what a "
-                "compromised container can do."
+                "Explicitly disabling seccomp, AppArmor, or SELinux removes "
+                "syscall filtering, mandatory access controls, and labeling "
+                "that limit what a compromised container can do."
             ),
             severity=Severity.HIGH,
             references=[OWASP_REF, CIS_SECCOMP_REF, CIS_APPARMOR_REF],
@@ -58,26 +71,24 @@ class SecurityProfileRule(BaseRule):
 
         for opt in security_opt:
             opt_str = str(opt).strip().lower()
-            if opt_str in _DISABLED_PROFILES:
-                profile_type = opt_str.split(":")[0]
-                removal = (
-                    "syscall filtering"
-                    if profile_type == "seccomp"
-                    else "mandatory access controls"
-                )
-                yield Finding(
-                    rule_id="CL-0009",
-                    severity=Severity.HIGH,
-                    service=service_name,
-                    message=(
-                        f"Service disables {profile_type} profile "
-                        f"('{opt_str}'). This removes {removal} "
-                        "that limit what a compromised container can do."
-                    ),
-                    line=lines.get(f"services.{service_name}.security_opt"),
-                    fix=(
-                        f"Remove '{opt_str}' from security_opt. Docker applies "
-                        f"a default {profile_type} profile automatically."
-                    ),
-                    references=[OWASP_REF, CIS_SECCOMP_REF, CIS_APPARMOR_REF],
-                )
+            if opt_str not in _DISABLED_PROFILES:
+                continue
+            profile_key = opt_str.split(":", 1)[0]
+            profile_name = _PROFILE_DISPLAY_NAME[profile_key]
+            removal = _PROFILE_REMOVAL[profile_key]
+            yield Finding(
+                rule_id="CL-0009",
+                severity=Severity.HIGH,
+                service=service_name,
+                message=(
+                    f"Service disables {profile_name} "
+                    f"('{opt_str}'). This removes {removal} "
+                    "that limit what a compromised container can do."
+                ),
+                line=lines.get(f"services.{service_name}.security_opt"),
+                fix=(
+                    f"Remove '{opt_str}' from security_opt. The host applies "
+                    f"a default {profile_name} policy automatically."
+                ),
+                references=[OWASP_REF, CIS_SECCOMP_REF, CIS_APPARMOR_REF],
+            )
