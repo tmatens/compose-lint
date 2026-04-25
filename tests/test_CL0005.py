@@ -59,3 +59,29 @@ class TestUnboundPortsRule:
     def test_has_references(self) -> None:
         assert len(self.rule.metadata.references) > 0
         assert "owasp" in self.rule.metadata.references[0].lower()
+
+    def test_detects_ipv6_wildcard_short(self) -> None:
+        findings = self._check("ipv6_wildcard_short")
+        assert len(findings) == 1
+        assert "[::]:8080:80" in findings[0].message
+
+    def test_ipv6_loopback_short_no_findings(self) -> None:
+        findings = self._check("ipv6_loopback_short")
+        assert len(findings) == 0
+
+    def test_detects_ipv4_wildcard_short(self) -> None:
+        findings = self._check("ipv4_wildcard_short")
+        assert len(findings) == 1
+        assert "0.0.0.0:8080:80" in findings[0].message
+
+    def test_detects_long_ipv6_wildcard(self) -> None:
+        findings = self._check("long_ipv6_wildcard")
+        assert len(findings) == 1
+
+    def test_detects_long_ipv4_wildcard(self) -> None:
+        findings = self._check("long_ipv4_wildcard")
+        assert len(findings) == 1
+
+    def test_long_ipv6_loopback_no_findings(self) -> None:
+        findings = self._check("long_ipv6_loopback")
+        assert len(findings) == 0
