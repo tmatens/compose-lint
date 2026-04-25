@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CL-0013** now detects mounting the entire host root filesystem
+  (`"/:/host"`, `"/:/host:ro"`) at CRITICAL severity — previously the
+  short-syntax regex required at least one non-colon character after `/`
+  and silently skipped the most dangerous bind possible.
+- **CL-0013** now detects long-syntax binds where `source:` is an absolute
+  path even when `type: bind` is omitted. Compose infers bind mounts from
+  absolute-path sources, but the rule previously gated on `type` and missed
+  this realistic configuration.
+- **CL-0013** sensitive-paths list extended with `/var/lib/docker`,
+  `/var/run`, and `/home`. The existing `/root` entry already covered
+  `/root/.ssh` and `/root/.aws` via subpath matching.
 - OpenVEX product identifier in `.vex/compose-lint.openvex.json` now uses
   `repository_url=index.docker.io/composelint/compose-lint`. The previous
   `docker.io/...` form loaded successfully but matched zero scanned

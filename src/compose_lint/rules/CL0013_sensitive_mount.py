@@ -18,10 +18,20 @@ OWASP_REF = (
 
 CIS_REF = "CIS Docker Benchmark 5.5 — Do not mount sensitive host system directories"
 
-_SENSITIVE_PATHS = ("/etc", "/proc", "/sys", "/boot", "/root")
+_SENSITIVE_PATHS = (
+    "/etc",
+    "/proc",
+    "/sys",
+    "/boot",
+    "/root",
+    "/var/lib/docker",
+    "/var/run",
+    "/home",
+)
 
-# Matches host:container or host:container:mode in short syntax
-_SHORT_VOLUME_RE = re.compile(r"^(?P<host>/[^:]+):(?P<container>[^:]+)")
+# Matches host:container or host:container:mode in short syntax.
+# Host group allows a bare "/" (root mount) by using `*` instead of `+`.
+_SHORT_VOLUME_RE = re.compile(r"^(?P<host>/[^:]*):(?P<container>[^:]+)")
 
 
 def _extract_host_path(volume: Any) -> str | None:
@@ -35,9 +45,15 @@ def _extract_host_path(volume: Any) -> str | None:
 
 
 def _is_sensitive(host_path: str) -> str | None:
-    """Return the sensitive prefix if host_path starts with one, else None."""
-    # Normalize trailing slashes for comparison
+    """Return the sensitive prefix if host_path starts with one, else None.
+
+    Returns "/" for a literal root mount — the most sensitive path possible.
+    """
+    if host_path == "/":
+        return "/"
     normalized = host_path.rstrip("/")
+    if normalized == "":
+        return "/"
     for sensitive in _SENSITIVE_PATHS:
         if normalized == sensitive or normalized.startswith(sensitive + "/"):
             return sensitive
@@ -55,8 +71,10 @@ class SensitiveMountRule(BaseRule):
             name="Sensitive host path mounted",
             description=(
                 "Mounting sensitive host directories like /etc, /proc, /sys, "
-                "/boot, or /root into a container exposes host configuration "
-                "and kernel interfaces."
+                "/boot, /root, /var/lib/docker, /var/run, or /home into a "
+                "container exposes host configuration, kernel interfaces, and "
+                "credentials. Mounting the entire host root filesystem is a "
+                "one-line container escape."
             ),
             severity=Severity.HIGH,
             references=[OWASP_REF, CIS_REF],
@@ -76,35 +94,49 @@ class SensitiveMountRule(BaseRule):
         for volume in volumes:
             # Short syntax: /host/path:/container/path[:mode]
             host_path = _extract_host_path(volume)
-            if (
-                host_path is None
-                and isinstance(volume, dict)
-                and volume.get("type") == "bind"
-            ):
-                # Long syntax: dict with 'source' key
+            if host_path is None and isinstance(volume, dict):
+                # Long syntax: dict with 'source' key.
+                # Treat as a bind when type == "bind" OR when source is an
+                # absolute path (Compose infers bind from absolute paths even
+                # when type is omitted).
                 source = volume.get("source")
-                if isinstance(source, str):
+                vtype = volume.get("type")
+                if isinstance(source, str) and (
+                    vtype == "bind" or source.startswith("/")
+                ):
                     host_path = source
 
             if host_path is None:
                 continue
 
             sensitive = _is_sensitive(host_path)
-            if sensitive:
-                yield Finding(
-                    rule_id="CL-0013",
-                    severity=Severity.HIGH,
-                    service=service_name,
-                    message=(
-                        f"Service mounts sensitive host path '{host_path}' "
-                        f"(under {sensitive}). This exposes host system files "
-                        "to the container."
-                    ),
-                    line=lines.get(f"services.{service_name}.volumes"),
-                    fix=(
-                        f"Remove the bind mount for {host_path}. If the container "
-                        "needs specific files, copy them into the image at build time "
-                        "or use a named volume with only the required data."
-                    ),
-                    references=[OWASP_REF, CIS_REF],
+            if sensitive is None:
+                continue
+
+            is_root_mount = sensitive == "/"
+            severity = Severity.CRITICAL if is_root_mount else Severity.HIGH
+            if is_root_mount:
+                message = (
+                    f"Service mounts the entire host root filesystem "
+                    f"('{host_path}'). This is a one-line container escape — "
+                    "the container has full read/write access to the host."
                 )
+            else:
+                message = (
+                    f"Service mounts sensitive host path '{host_path}' "
+                    f"(under {sensitive}). This exposes host system files "
+                    "to the container."
+                )
+            yield Finding(
+                rule_id="CL-0013",
+                severity=severity,
+                service=service_name,
+                message=message,
+                line=lines.get(f"services.{service_name}.volumes"),
+                fix=(
+                    f"Remove the bind mount for {host_path}. If the container "
+                    "needs specific files, copy them into the image at build time "
+                    "or use a named volume with only the required data."
+                ),
+                references=[OWASP_REF, CIS_REF],
+            )

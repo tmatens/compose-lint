@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from compose_lint.models import Severity
 from compose_lint.parser import load_compose
 from compose_lint.rules.CL0013_sensitive_mount import SensitiveMountRule
 
@@ -27,6 +28,7 @@ class TestSensitiveMountRule:
         assert len(findings) == 1
         assert findings[0].rule_id == "CL-0013"
         assert "/etc" in findings[0].message
+        assert findings[0].severity == Severity.HIGH
 
     def test_detects_proc(self) -> None:
         findings = self._check("mounts_proc")
@@ -57,6 +59,37 @@ class TestSensitiveMountRule:
         findings = self._check("mounts_multiple")
         assert len(findings) == 2
 
+    def test_detects_root_filesystem(self) -> None:
+        findings = self._check("mounts_root_filesystem")
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.CRITICAL
+        assert "root filesystem" in findings[0].message
+
+    def test_detects_root_filesystem_ro(self) -> None:
+        findings = self._check("mounts_root_filesystem_ro")
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.CRITICAL
+
+    def test_detects_var_lib_docker(self) -> None:
+        findings = self._check("mounts_var_lib_docker")
+        assert len(findings) == 1
+        assert "/var/lib/docker" in findings[0].message
+
+    def test_detects_var_run(self) -> None:
+        findings = self._check("mounts_var_run")
+        assert len(findings) == 1
+        assert "/var/run" in findings[0].message
+
+    def test_detects_home(self) -> None:
+        findings = self._check("mounts_home")
+        assert len(findings) == 1
+        assert "/home" in findings[0].message
+
+    def test_detects_root_ssh(self) -> None:
+        findings = self._check("mounts_root_ssh")
+        assert len(findings) == 1
+        assert "/root/.ssh" in findings[0].message
+
     def test_safe_volume_no_findings(self) -> None:
         findings = self._check("safe_volume")
         assert len(findings) == 0
@@ -69,6 +102,17 @@ class TestSensitiveMountRule:
         findings = self._check("long_syntax_bind")
         assert len(findings) == 1
         assert "/etc" in findings[0].message
+
+    def test_long_syntax_bind_no_type(self) -> None:
+        findings = self._check("long_syntax_bind_no_type")
+        assert len(findings) == 1
+        assert "/etc" in findings[0].message
+        assert findings[0].severity == Severity.HIGH
+
+    def test_long_syntax_root_no_type(self) -> None:
+        findings = self._check("long_syntax_root_no_type")
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.CRITICAL
 
     def test_long_syntax_named_no_findings(self) -> None:
         findings = self._check("long_syntax_named")
