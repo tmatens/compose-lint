@@ -59,13 +59,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   images: Trivy, Grype (per anchore/grype#2818), and Scout all canonicalise
   Docker Hub to `index.docker.io` for VEX product matching. Confirmed
   locally with Trivy 0.70.0 against the published image.
-- Every `docker/scout-action` step that passes `vex-location` also now
-  passes `vex-author: <.*@gmail\.com>`. Scout's default `--vex-author`
-  allowlist is `<.*@docker.com>` and silently drops statements signed
-  outside that pattern, which is why 0.5.1's `Loaded 1 VEX document`
-  log line was followed by both pip CVEs still flagged. Applied to
-  both `scout-scan.yml` steps and the `docker-smoke` Scout step in
-  `publish.yml`.
+- Every VEX statement now ships two `products[]` entries —
+  `pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint`
+  for Trivy and Grype, plus a bare `pkg:docker/composelint/compose-lint`
+  for Docker Scout, whose own "Create exceptions" docs example uses the
+  `pkg:docker/` form. Trivy honoured the single-PURL form from PR #143
+  but Scout did not — verified empirically on commit `5abd036`'s
+  `scout-scan.yml` dispatch where `Loaded 1 VEX document` was followed
+  by all three pip CVEs still flagged. OpenVEX explicitly invites
+  multi-identifier products for exactly this scanner-disagreement case.
+- Every `docker/scout-action` step that passes `vex-location` now passes
+  `vex-author: .*`. Scout's default `--vex-author` allowlist is
+  `<.*@docker.com>` and silently drops statements signed outside that
+  pattern. PR #143's first override (`<.*@gmail\.com>`) was also
+  silently dropped — Scout appears to use full-string regex match on
+  the author field rather than substring, so the bracket-anchored shape
+  did not match the full author string `Todd Matens <tmatens@gmail.com>`.
+  `.*` accepts any author and is safe because the document is also
+  cosign-attested to the image manifest. Applied to both `scout-scan.yml`
+  steps and the `docker-smoke` Scout step in `publish.yml`.
 
 ### Added
 
@@ -77,9 +89,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- VEX document `version` bumped to 2 and `timestamp` refreshed. See
+- VEX document `version` bumped to 3 and `timestamp` refreshed. See
   ADR-012 (`docs/adr/012-vex-product-identifier.md`) for the full
-  rationale on the product-identifier and author-allowlist decisions.
+  rationale on the product-identifier and author-allowlist decisions,
+  including the empirical evidence from PR #143's first attempt.
 
 ## [0.5.1] - 2026-04-24
 

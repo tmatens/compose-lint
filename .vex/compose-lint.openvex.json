@@ -3,8 +3,8 @@
   "@id": "https://github.com/tmatens/compose-lint/.vex/compose-lint.openvex.json",
   "author": "Todd Matens <tmatens@gmail.com>",
   "role": "Project Maintainer",
-  "timestamp": "2026-04-24T00:00:00Z",
-  "version": 2,
+  "timestamp": "2026-04-25T00:00:00Z",
+  "version": 3,
   "tooling": "hand-authored",
   "statements": [
     {
@@ -15,6 +15,12 @@
       "products": [
         {
           "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint",
+          "subcomponents": [
+            { "@id": "pkg:pypi/pip@25.1.1" }
+          ]
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint",
           "subcomponents": [
             { "@id": "pkg:pypi/pip@25.1.1" }
           ]
@@ -35,6 +41,12 @@
           "subcomponents": [
             { "@id": "pkg:pypi/pip@25.1.1" }
           ]
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint",
+          "subcomponents": [
+            { "@id": "pkg:pypi/pip@25.1.1" }
+          ]
         }
       ],
       "status": "not_affected",
@@ -49,6 +61,12 @@
       "products": [
         {
           "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint",
+          "subcomponents": [
+            { "@id": "pkg:pypi/pip@25.1.1" }
+          ]
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint",
           "subcomponents": [
             { "@id": "pkg:pypi/pip@25.1.1" }
           ]
