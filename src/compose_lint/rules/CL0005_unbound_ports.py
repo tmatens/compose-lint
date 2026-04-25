@@ -30,7 +30,8 @@ _PORT_PATTERN = re.compile(
 )
 
 # Values that publish on all interfaces — equivalent to no bind address.
-_WILDCARD_IPS = frozenset({"0.0.0.0", "::", "[::]", "*"})
+# These are detection patterns, not actual bind addresses.
+_WILDCARD_IPS = frozenset({"0.0.0.0", "::", "[::]", "*"})  # nosec B104
 
 
 def _is_wildcard_ip(value: str) -> bool:
@@ -42,7 +43,7 @@ def _is_wildcard_ip(value: str) -> bool:
     # Bracketed IPv6 form like "[::]" — already covered above, but also
     # accept "[0.0.0.0]" defensively.
     if value.startswith("[") and value.endswith("]"):
-        return value[1:-1] in {"::", "0.0.0.0", "*"}
+        return value[1:-1] in {"::", "0.0.0.0", "*"}  # nosec B104
     return False
 
 
