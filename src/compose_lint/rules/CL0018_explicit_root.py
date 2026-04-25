@@ -17,7 +17,19 @@ OWASP_REF = (
 
 CIS_REF = "CIS Docker Benchmark 5.x — Do not run containers as root"
 
-_ROOT_VALUES = {"root", "0", "root:root", "0:0"}
+_ROOT_USER_PARTS = {"root", "0"}
+
+
+def _is_root_user(user_str: str) -> bool:
+    """Return True if user_str names UID 0 / root, regardless of group.
+
+    A non-root group does not change the effective user — running as root with
+    GID 1000 is still root. Cross-spec forms (root:0, 0:root) and the bare
+    forms (root, 0, root:root, 0:0) all collapse to "is the user portion
+    root?".
+    """
+    user_part = user_str.split(":", 1)[0]
+    return user_part in _ROOT_USER_PARTS
 
 
 @register_rule
@@ -50,7 +62,7 @@ class ExplicitRootRule(BaseRule):
             return
 
         user_str = str(user).strip().lower()
-        if user_str in _ROOT_VALUES:
+        if _is_root_user(user_str):
             yield Finding(
                 rule_id="CL-0018",
                 severity=Severity.MEDIUM,

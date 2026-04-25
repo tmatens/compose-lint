@@ -40,6 +40,26 @@ class TestExplicitRootRule:
         findings = self._check("root_uid_gid")
         assert len(findings) == 1
 
+    def test_detects_root_colon_zero(self) -> None:
+        findings = self._check("root_colon_zero")
+        assert len(findings) == 1
+
+    def test_detects_zero_colon_root(self) -> None:
+        findings = self._check("zero_colon_root")
+        assert len(findings) == 1
+
+    def test_detects_root_with_nonroot_group(self) -> None:
+        findings = self._check("root_nonroot_group")
+        assert len(findings) == 1
+
+    def test_detects_zero_with_nonroot_group(self) -> None:
+        findings = self._check("zero_nonroot_group")
+        assert len(findings) == 1
+
+    def test_nonroot_uid_with_root_group_no_findings(self) -> None:
+        findings = self._check("nonroot_uid_root_group")
+        assert len(findings) == 0
+
     def test_non_root_no_findings(self) -> None:
         findings = self._check("non_root")
         assert len(findings) == 0
