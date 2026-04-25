@@ -124,7 +124,16 @@ jobs:
         # --skip-editable skips compose-lint itself (it isn't on PyPI
         # for the local install path); PyYAML and any future runtime
         # deps are still scanned.
-        run: pip-audit --skip-editable
+        #
+        # --ignore-vuln CVE-2026-3219: pip-audit transitively requires
+        # pip via pip-api, so it ends up auditing pip itself (pinned at
+        # 26.0.1 in requirements-dev.lock). pip CVEs are out of scope
+        # for this project's supply chain — pip is not in the runtime
+        # lockfile and is explicitly stripped from the runtime Docker
+        # image (Dockerfile lines 42-43). No fixed pip version is yet
+        # published; remove this flag once pip 26.0.2+ ships and the
+        # dev lockfile is regenerated.
+        run: pip-audit --skip-editable --ignore-vuln CVE-2026-3219
 
   # Fails the PR if `pyproject.toml` and `src/compose_lint/__init__.py`
   # disagree about the project version. The two strings drifted silently
