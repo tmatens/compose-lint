@@ -143,6 +143,10 @@ version number.
       the runtime image. If the CVE **is** reachable, do not VEX it — fix
       it. Bump `version` and `timestamp` in the VEX doc when statements
       change.
+- [ ] Product identifiers in the VEX doc keep using
+      `repository_url=index.docker.io/composelint/compose-lint` (not
+      `docker.io/...`). The `docker.io` alias is silently ignored by
+      Scout, Trivy, and Grype for VEX matching. See ADR-012.
 
 ## Bump the version
 
