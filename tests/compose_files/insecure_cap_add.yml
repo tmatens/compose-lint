@@ -38,3 +38,11 @@ services:
       - SYS_RAWIO
       - SYS_TIME
       - DAC_READ_SEARCH
+  cap_all:
+    image: nginx:1.27-alpine
+    cap_add:
+      - ALL
+  cap_all_lowercase:
+    image: nginx:1.27-alpine
+    cap_add:
+      - all

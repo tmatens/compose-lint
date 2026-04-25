@@ -19,6 +19,10 @@ OWASP_REF = (
 CIS_REF = "CIS Docker Benchmark 5.5 — Do not mount sensitive host system directories"
 
 DANGEROUS_CAPS: dict[str, str] = {
+    "ALL": (
+        "grants every Linux capability — functionally equivalent to disabling "
+        "capability-based isolation"
+    ),
     "SYS_ADMIN": "near-root access: mount filesystems, configure namespaces, BPF",
     "SYS_PTRACE": "trace/inspect any process, read secrets from memory",
     "NET_ADMIN": "modify routing tables, firewall rules, sniff traffic",
@@ -27,6 +31,8 @@ DANGEROUS_CAPS: dict[str, str] = {
     "SYS_TIME": "change system clock, affecting all containers and the host",
     "DAC_READ_SEARCH": "bypass file read permission checks on the host",
 }
+
+CRITICAL_CAPS: frozenset[str] = frozenset({"ALL"})
 
 
 @register_rule
@@ -61,9 +67,12 @@ class DangerousCapAddRule(BaseRule):
         for cap in cap_add:
             cap_upper = str(cap).upper()
             if cap_upper in DANGEROUS_CAPS:
+                severity = (
+                    Severity.CRITICAL if cap_upper in CRITICAL_CAPS else Severity.HIGH
+                )
                 yield Finding(
                     rule_id="CL-0011",
-                    severity=Severity.HIGH,
+                    severity=severity,
                     service=service_name,
                     message=(
                         f"Service adds dangerous capability {cap_upper}: "
