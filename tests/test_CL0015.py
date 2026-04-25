@@ -40,6 +40,21 @@ class TestHealthcheckDisabledRule:
         findings = self._check("disable_false")
         assert len(findings) == 0
 
+    def test_detects_test_none_list(self) -> None:
+        findings = self._check("disabled_via_test_list")
+        assert len(findings) == 1
+        assert findings[0].rule_id == "CL-0015"
+        assert 'test: ["NONE"]' in findings[0].message
+
+    def test_detects_test_none_string(self) -> None:
+        findings = self._check("disabled_via_test_string")
+        assert len(findings) == 1
+        assert 'test: ["NONE"]' in findings[0].message
+
+    def test_test_none_lowercase_no_findings(self) -> None:
+        findings = self._check("disabled_via_test_lowercase")
+        assert len(findings) == 0
+
     def test_has_fix_guidance(self) -> None:
         findings = self._check("disabled")
         assert findings[0].fix is not None
