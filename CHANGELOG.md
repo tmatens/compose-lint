@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CL-0005** now detects IPv6 wildcard binds in short syntax
+  (`"[::]:8080:80"`) — the previous regex's IP capture group rejected
+  any colon-containing prefix, causing the rule to silently skip the
+  port. Bracketed IPv6 prefixes are now stripped before the main pattern
+  runs.
+- **CL-0005** now detects explicit wildcard `host_ip` values in long
+  syntax (`host_ip: "0.0.0.0"`, `host_ip: "::"`). The previous
+  implementation treated *any* non-empty `host_ip` as a real bind, so
+  operators who explicitly wildcarded their long-syntax bind got no
+  warning. Loopback (`127.0.0.1`, `::1`) and specific addresses still
+  suppress the finding.
+- **CL-0005** also detects IPv4 wildcard short syntax (`"0.0.0.0:8080:80"`)
+  — incidental fix; the previous `_is_ip_address` helper accepted
+  `0.0.0.0` as a "real" IP and suppressed the finding.
 - **CL-0013** now detects mounting the entire host root filesystem
   (`"/:/host"`, `"/:/host:ro"`) at CRITICAL severity — previously the
   short-syntax regex required at least one non-colon character after `/`

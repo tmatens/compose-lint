@@ -22,21 +22,29 @@ CIS_REF = (
     " — Bind incoming container traffic to a specific host interface"
 )
 
-# Matches short syntax: "HOST:CONTAINER" or "HOST:CONTAINER/proto"
-# With optional IP prefix: "IP:HOST:CONTAINER"
-# Port ranges: "8000-8100:8000-8100"
+# Matches HOST:CONTAINER (with optional non-bracketed IPv4/hostname prefix)
+# or HOST:CONTAINER/proto. Bracketed IPv6 prefixes are stripped before this
+# pattern is applied — see _check_short_syntax.
 _PORT_PATTERN = re.compile(
     r"^(?:(?P<ip>[^:]+):)?(?P<host>[\d\-]+):(?P<container>[\d\-]+(?:/\w+)?)$"
 )
 
+# Values that publish on all interfaces — equivalent to no bind address.
+# These are detection patterns, not actual bind addresses.
+_WILDCARD_IPS = frozenset({"0.0.0.0", "::", "[::]", "*"})  # nosec B104
 
-def _is_ip_address(value: str) -> bool:
-    """Check if a string looks like an IP address."""
-    parts = value.split(".")
-    if len(parts) == 4:
-        return all(p.isdigit() and 0 <= int(p) <= 255 for p in parts)
-    # IPv6 or :: shorthand
-    return ":" in value or value == "[::]"
+
+def _is_wildcard_ip(value: str) -> bool:
+    """Return True if the value publishes on all interfaces."""
+    if not value:
+        return True
+    if value in _WILDCARD_IPS:
+        return True
+    # Bracketed IPv6 form like "[::]" — already covered above, but also
+    # accept "[0.0.0.0]" defensively.
+    if value.startswith("[") and value.endswith("]"):
+        return value[1:-1] in {"::", "0.0.0.0", "*"}  # nosec B104
+    return False
 
 
 @register_rule
@@ -51,7 +59,8 @@ class UnboundPortsRule(BaseRule):
             description=(
                 "Docker publishes ports by manipulating iptables directly, "
                 "bypassing host firewalls like UFW and firewalld. Ports without "
-                "a bind address are accessible on all network interfaces."
+                "a bind address — or bound to a wildcard like 0.0.0.0 or :: — "
+                "are accessible on all network interfaces."
             ),
             severity=Severity.HIGH,
             references=[OWASP_REF, CIS_REF],
@@ -70,10 +79,8 @@ class UnboundPortsRule(BaseRule):
 
         for i, port in enumerate(ports):
             if isinstance(port, dict):
-                # Long syntax
                 yield from self._check_long_syntax(port, service_name, lines, i)
             else:
-                # Short syntax
                 yield from self._check_short_syntax(str(port), service_name, lines, i)
 
     def _check_short_syntax(
@@ -87,18 +94,29 @@ class UnboundPortsRule(BaseRule):
         if ":" not in port_str:
             return
 
-        match = _PORT_PATTERN.match(port_str)
+        # Extract bracketed IPv6 prefix (e.g. "[::]:8080:80") before the
+        # main regex, which doesn't accept colons inside the IP group.
+        ip: str | None = None
+        rest = port_str
+        if port_str.startswith("["):
+            end = port_str.find("]:")
+            if end == -1:
+                return  # malformed
+            ip = port_str[: end + 1]
+            rest = port_str[end + 2 :]
+
+        match = _PORT_PATTERN.match(rest)
         if not match:
             return
 
-        ip = match.group("ip")
+        if ip is None:
+            ip = match.group("ip")
 
-        # If there's an IP prefix and it looks like an IP, it's bound
-        if ip and _is_ip_address(ip):
-            return
-
-        # No IP prefix or IP doesn't look like an address — bound to all interfaces
-        yield self._make_finding(port_str, service_name, lines, index)
+        # Fire when there's no bind address or it's a wildcard form.
+        # Any other value (loopback, specific interface IP, hostname) is
+        # treated as a real bind.
+        if ip is None or _is_wildcard_ip(ip):
+            yield self._make_finding(port_str, service_name, lines, index)
 
     def _check_long_syntax(
         self,
@@ -112,7 +130,7 @@ class UnboundPortsRule(BaseRule):
             return
 
         host_ip = port_config.get("host_ip", "")
-        if host_ip:
+        if isinstance(host_ip, str) and not _is_wildcard_ip(host_ip):
             return
 
         port_desc = f"{port_config.get('published')}:{port_config.get('target')}"
