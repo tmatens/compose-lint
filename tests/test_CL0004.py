@@ -69,3 +69,26 @@ class TestImageNotPinnedRule:
 
     def test_has_references(self) -> None:
         assert len(self.rule.metadata.references) > 0
+
+    def test_port_registry_no_tag_fires(self) -> None:
+        findings = self._check("port_registry_no_tag")
+        assert len(findings) == 1
+        assert "no tag" in findings[0].message.lower()
+        assert "localhost:5000/foo" in findings[0].message
+
+    def test_port_registry_latest_fires(self) -> None:
+        findings = self._check("port_registry_latest")
+        assert len(findings) == 1
+        assert "latest" in findings[0].message
+
+    def test_port_registry_pinned_no_findings(self) -> None:
+        findings = self._check("port_registry_pinned")
+        assert len(findings) == 0
+
+    def test_port_registry_digest_no_findings(self) -> None:
+        findings = self._check("port_registry_digest")
+        assert len(findings) == 0
+
+    def test_port_registry_pinned_digest_no_findings(self) -> None:
+        findings = self._check("port_registry_pinned_digest")
+        assert len(findings) == 0

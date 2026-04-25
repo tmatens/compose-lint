@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
+from compose_lint.rules._image import split_image_ref
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -56,13 +57,11 @@ class ImageNoDigestRule(BaseRule):
         if "@sha256:" in image:
             return
 
-        # Split into name and tag
-        parts = image.rsplit(":", 1)
-        if len(parts) != 2:
+        _, tag = split_image_ref(image)
+        if tag is None:
             # No tag at all — CL-0004 handles this
             return
 
-        tag = parts[1]
         if tag.lower() in _MUTABLE_TAGS:
             # Mutable tags are CL-0004's domain
             return
