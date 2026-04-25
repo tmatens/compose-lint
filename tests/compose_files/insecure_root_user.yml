@@ -11,9 +11,24 @@ services:
   root_uid_gid:
     image: nginx:1.27-alpine
     user: "0:0"
+  root_colon_zero:
+    image: nginx:1.27-alpine
+    user: "root:0"
+  zero_colon_root:
+    image: nginx:1.27-alpine
+    user: "0:root"
+  root_nonroot_group:
+    image: nginx:1.27-alpine
+    user: "root:1000"
+  zero_nonroot_group:
+    image: nginx:1.27-alpine
+    user: "0:1000"
   non_root:
     image: nginx:1.27-alpine
     user: "1000:1000"
+  nonroot_uid_root_group:
+    image: nginx:1.27-alpine
+    user: "1000:0"
   named_user:
     image: nginx:1.27-alpine
     user: appuser
