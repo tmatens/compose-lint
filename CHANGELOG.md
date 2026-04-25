@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- OpenVEX product identifier in `.vex/compose-lint.openvex.json` now uses
+  `repository_url=index.docker.io/composelint/compose-lint`. The previous
+  `docker.io/...` form loaded successfully but matched zero scanned
+  images: Trivy, Grype (per anchore/grype#2818), and Scout all canonicalise
+  Docker Hub to `index.docker.io` for VEX product matching. Confirmed
+  locally with Trivy 0.70.0 against the published image.
+- Every `docker/scout-action` step that passes `vex-location` also now
+  passes `vex-author: <.*@gmail\.com>`. Scout's default `--vex-author`
+  allowlist is `<.*@docker.com>` and silently drops statements signed
+  outside that pattern, which is why 0.5.1's `Loaded 1 VEX document`
+  log line was followed by both pip CVEs still flagged. Applied to
+  both `scout-scan.yml` steps and the `docker-smoke` Scout step in
+  `publish.yml`.
+
+### Added
+
+- VEX statement covering CVE-2026-3219 (pip 25.1.1 — incorrect file
+  installation due to improper archive handling). Same
+  `vulnerable_code_not_present` mitigation as the existing pip CVEs:
+  pip's runtime code is removed from the container image during build,
+  only `.dist-info` metadata remains for SCA scanner identification.
+
+### Changed
+
+- VEX document `version` bumped to 2 and `timestamp` refreshed. See
+  ADR-012 (`docs/adr/012-vex-product-identifier.md`) for the full
+  rationale on the product-identifier and author-allowlist decisions.
+
 ## [0.5.1] - 2026-04-24
 
 ### Changed

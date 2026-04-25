@@ -3,8 +3,8 @@
   "@id": "https://github.com/tmatens/compose-lint/.vex/compose-lint.openvex.json",
   "author": "Todd Matens <tmatens@gmail.com>",
   "role": "Project Maintainer",
-  "timestamp": "2026-04-23T00:00:00Z",
-  "version": 1,
+  "timestamp": "2026-04-24T00:00:00Z",
+  "version": 2,
   "tooling": "hand-authored",
   "statements": [
     {
@@ -14,7 +14,7 @@
       },
       "products": [
         {
-          "@id": "pkg:oci/compose-lint?repository_url=docker.io/composelint/compose-lint",
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint",
           "subcomponents": [
             { "@id": "pkg:pypi/pip@25.1.1" }
           ]
@@ -31,7 +31,7 @@
       },
       "products": [
         {
-          "@id": "pkg:oci/compose-lint?repository_url=docker.io/composelint/compose-lint",
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint",
           "subcomponents": [
             { "@id": "pkg:pypi/pip@25.1.1" }
           ]
@@ -40,6 +40,23 @@
       "status": "not_affected",
       "justification": "vulnerable_code_not_present",
       "impact_statement": "Same mitigation as CVE-2025-8869: pip package code and CLI binaries are removed from the runtime image during the container build stage; only the .dist-info metadata directory remains so SCA scanners can identify pip. `import pip` raises ModuleNotFoundError at runtime; no pip binary exists. The distroless runtime (no shell, nonroot entrypoint /venv/bin/compose-lint) makes the code both absent and unreachable."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-3219",
+        "description": "pip incorrect file installation due to improper archive handling"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint",
+          "subcomponents": [
+            { "@id": "pkg:pypi/pip@25.1.1" }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Same mitigation as CVE-2025-8869 and CVE-2026-1703: the pip archive-handling code lives in /venv/lib/python3.13/site-packages/pip/ which is removed at container build time. Only the .dist-info metadata directory is retained for SCA scanner identification; the executable code paths exercised by this CVE are physically absent from the runtime image. The distroless runtime (no shell, nonroot entrypoint /venv/bin/compose-lint) makes pip both absent and unreachable."
     }
   ]
 }
