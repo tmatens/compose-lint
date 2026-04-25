@@ -74,3 +74,17 @@ class TestImageNoDigestRule:
         meta = self.rule.metadata
         assert meta.id == "CL-0019"
         assert meta.severity.value == "medium"
+
+    def test_port_registry_pinned_fires(self) -> None:
+        findings = self._check("port_registry_pinned")
+        assert len(findings) == 1
+        assert "localhost:5000/foo:v1.2.3" in findings[0].message
+
+    def test_port_registry_no_tag_no_findings(self) -> None:
+        """No tag at all is CL-0004's domain, not CL-0019."""
+        findings = self._check("port_registry_no_tag")
+        assert len(findings) == 0
+
+    def test_port_registry_digest_no_findings(self) -> None:
+        findings = self._check("port_registry_digest")
+        assert len(findings) == 0

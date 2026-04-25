@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CL-0004** and **CL-0019** now parse OCI image references via a
+  shared `split_image_ref` helper that recognizes `registry:port/name`
+  prefixes. The previous naive `image.rsplit(":", 1)` mistook the
+  registry port for a tag separator, causing two related bugs:
+  (a) `localhost:5000/foo` was treated as tag-pinned by CL-0004, so
+  the "no tag, defaults to :latest" finding never fired; and
+  (b) CL-0019 fired on the same input with a misleading message
+  ("pinned to a tag but not a digest") for an image that had no tag at
+  all. Verified for `localhost:5000/foo`, `localhost:5000/foo:latest`,
+  `localhost:5000/foo:v1`, and digest variants of each.
 - **CL-0005** now detects IPv6 wildcard binds in short syntax
   (`"[::]:8080:80"`) — the previous regex's IP capture group rejected
   any colon-containing prefix, causing the rule to silently skip the

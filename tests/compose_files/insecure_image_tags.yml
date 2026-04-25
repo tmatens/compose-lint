@@ -17,3 +17,13 @@ services:
     image: ghcr.io/org/myapp:latest
   registry_pinned:
     image: ghcr.io/org/myapp:1.2.3
+  port_registry_no_tag:
+    image: localhost:5000/foo
+  port_registry_latest:
+    image: localhost:5000/foo:latest
+  port_registry_pinned:
+    image: localhost:5000/foo:v1.2.3
+  port_registry_digest:
+    image: localhost:5000/foo@sha256:abc123
+  port_registry_pinned_digest:
+    image: localhost:5000/foo:v1.2.3@sha256:abc123

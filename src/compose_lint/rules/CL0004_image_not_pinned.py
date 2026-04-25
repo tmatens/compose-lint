@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
+from compose_lint.rules._image import split_image_ref
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -61,10 +62,8 @@ class ImageNotPinnedRule(BaseRule):
         if "@sha256:" in image:
             return
 
-        # Split image into name and tag
-        # Handle registry prefixes like ghcr.io/org/image:tag
-        parts = image.rsplit(":", 1)
-        if len(parts) == 1:
+        name, tag = split_image_ref(image)
+        if tag is None:
             # No tag specified — defaults to :latest
             yield Finding(
                 rule_id="CL-0004",
@@ -75,12 +74,11 @@ class ImageNotPinnedRule(BaseRule):
                     "Pin to a specific version for reproducible builds."
                 ),
                 line=lines.get(f"services.{service_name}.image"),
-                fix=f"Pin to a specific version, e.g.: image: {image}:<version>",
+                fix=f"Pin to a specific version, e.g.: image: {name}:<version>",
                 references=[OWASP_REF, CIS_REF],
             )
             return
 
-        tag = parts[1]
         if tag.lower() in MUTABLE_TAGS:
             yield Finding(
                 rule_id="CL-0004",
@@ -91,6 +89,6 @@ class ImageNotPinnedRule(BaseRule):
                     "Pin to a specific version for reproducible builds."
                 ),
                 line=lines.get(f"services.{service_name}.image"),
-                fix=f"Pin to a specific version, e.g.: image: {parts[0]}:<version>",
+                fix=f"Pin to a specific version, e.g.: image: {name}:<version>",
                 references=[OWASP_REF, CIS_REF],
             )
