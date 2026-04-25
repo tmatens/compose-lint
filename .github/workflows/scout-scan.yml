@@ -47,9 +47,13 @@ jobs:
           # not_affected doesn't spuriously fail the schedule.
           vex-location: .vex/compose-lint.openvex.json
           # Scout's default vex-author allowlist is `<.*@docker.com>`,
-          # so without this override our maintainer-authored statements
-          # are silently dropped. See ADR-012.
-          vex-author: <.*@gmail\.com>
+          # which silently drops our maintainer-authored statements.
+          # The first override attempt (`<.*@gmail\.com>`) was also
+          # silently dropped — Scout appears to require a full-string
+          # regex match on the author field, not substring. `.*`
+          # accepts any author and is safe because the document is
+          # also cosign-attested to the image manifest. See ADR-012.
+          vex-author: .*
 
       # Full-severity sweep for SARIF upload. Runs even when the
       # critical scan fails, so the Security tab always reflects the
@@ -69,7 +73,7 @@ jobs:
           vex-location: .vex/compose-lint.openvex.json
           # See note on the gate step above re: the default vex-author
           # allowlist. Same override required here.
-          vex-author: <.*@gmail\.com>
+          vex-author: .*
 
       - name: Upload Scout results to GitHub Security
         uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4.35.2

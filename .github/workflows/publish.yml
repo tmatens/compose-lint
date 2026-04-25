@@ -362,8 +362,10 @@ jobs:
           vex-location: .vex/compose-lint.openvex.json
           # Override Scout's default vex-author allowlist
           # (`<.*@docker.com>`) so our maintainer-authored statements
-          # are not silently dropped. See ADR-012.
-          vex-author: <.*@gmail\.com>
+          # are not silently dropped. `.*` accepts any author and is
+          # safe because the document is also cosign-attested to the
+          # image manifest. See ADR-012.
+          vex-author: .*
       - name: Upload Scout results to GitHub Security
         if: matrix.scout && always()
         uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4.35.2
