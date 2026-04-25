@@ -53,6 +53,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CL-0013** sensitive-paths list extended with `/var/lib/docker`,
   `/var/run`, and `/home`. The existing `/root` entry already covered
   `/root/.ssh` and `/root/.aws` via subpath matching.
+- **CL-0011** now flags `cap_add: [ALL]` (and lowercase `[all]`) at
+  CRITICAL severity. Granting all Linux capabilities is functionally
+  equivalent to `--privileged` for capability isolation, but the rule
+  previously only knew the seven named caps and silently ignored the
+  catch-all. Named caps (`SYS_ADMIN`, `NET_ADMIN`, etc.) continue to
+  fire at HIGH; the rule now emits per-finding severity so `--fail-on`
+  thresholds against the named caps are unchanged.
+- **CL-0015** now flags `test: ["NONE"]` and the string form
+  `test: NONE`, the idiomatic way to disable a healthcheck inherited
+  from a base image. Lowercase `["none"]` deliberately does not fire
+  — Docker's runtime treats only uppercase `NONE` as the disable
+  sentinel; lowercase is executed as a command and is a different
+  problem (a broken healthcheck, not a disabled one). Severity stays
+  at LOW.
+- **CL-0018** now detects the cross-spec root forms `root:0`, `0:root`,
+  `root:1000`, and `0:1000` by parsing `user:` rather than matching a
+  fixed allowlist. The previous `{"root", "0", "root:root", "0:0"}`
+  set silently passed any value where a non-root group was paired with
+  a root user, even though the container still runs as UID 0. The
+  inverse (`user: "1000:0"` — non-root UID with root group) correctly
+  does not fire.
 - OpenVEX product identifier in `.vex/compose-lint.openvex.json` now uses
   `repository_url=index.docker.io/composelint/compose-lint`. The previous
   `docker.io/...` form loaded successfully but matched zero scanned
@@ -93,6 +114,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ADR-012 (`docs/adr/012-vex-product-identifier.md`) for the full
   rationale on the product-identifier and author-allowlist decisions,
   including the empirical evidence from PR #143's first attempt.
+
+### Security
+
+- CI `pip-audit` step ignores `CVE-2026-3219` (pip 26.0.1) until pip
+  26.0.2+ ships on PyPI and the dev lockfile is regenerated. pip is a
+  dev-only transitive of `pip-audit` here — it is not in
+  `requirements.lock` and is stripped from the runtime container image
+  (only `.dist-info` metadata is kept for SCA attribution). The same
+  CVE is declared `not_affected` against the published image via the
+  OpenVEX document on the same `vulnerable_code_not_present` grounds
+  as the existing pip CVEs.
 
 ## [0.5.1] - 2026-04-24
 
