@@ -48,18 +48,23 @@ class HealthcheckDisabledRule(BaseRule):
             return
 
         disable = healthcheck.get("disable")
-        if disable is True:
+        test = healthcheck.get("test")
+        disabled_via_test = test == ["NONE"] or test == "NONE"
+
+        if disable is True or disabled_via_test:
+            offending = "disable: true" if disable is True else 'test: ["NONE"]'
             yield Finding(
                 rule_id="CL-0015",
                 severity=Severity.LOW,
                 service=service_name,
                 message=(
-                    "Healthcheck is explicitly disabled. The orchestrator cannot "
-                    "detect or automatically restart unhealthy containers."
+                    f"Healthcheck is explicitly disabled via {offending}. The "
+                    "orchestrator cannot detect or automatically restart "
+                    "unhealthy containers."
                 ),
                 line=lines.get(f"services.{service_name}.healthcheck"),
                 fix=(
-                    "Remove 'disable: true' and configure a healthcheck:\n"
+                    f"Remove '{offending}' and configure a healthcheck:\n"
                     "  healthcheck:\n"
                     '    test: ["CMD", "curl", "-f", "http://localhost/"]\n'
                     "    interval: 30s\n"

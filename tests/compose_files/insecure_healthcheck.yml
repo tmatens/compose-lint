@@ -17,3 +17,15 @@ services:
     healthcheck:
       disable: false
       test: ["CMD", "curl", "-f", "http://localhost/"]
+  disabled_via_test_list:
+    image: nginx:1.27-alpine
+    healthcheck:
+      test: ["NONE"]
+  disabled_via_test_string:
+    image: nginx:1.27-alpine
+    healthcheck:
+      test: NONE
+  disabled_via_test_lowercase:
+    image: nginx:1.27-alpine
+    healthcheck:
+      test: ["none"]
