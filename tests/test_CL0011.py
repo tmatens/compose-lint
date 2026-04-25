@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from compose_lint.models import Severity
 from compose_lint.parser import load_compose
 from compose_lint.rules.CL0011_dangerous_cap_add import DangerousCapAddRule
 
@@ -58,6 +59,22 @@ class TestDangerousCapAddRule:
     def test_all_seven_dangerous(self) -> None:
         findings = self._check("all_dangerous")
         assert len(findings) == 7
+
+    def test_detects_cap_all_critical(self) -> None:
+        findings = self._check("cap_all")
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.CRITICAL
+        assert "ALL" in findings[0].message
+
+    def test_detects_cap_all_lowercase(self) -> None:
+        findings = self._check("cap_all_lowercase")
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.CRITICAL
+        assert "ALL" in findings[0].message
+
+    def test_named_cap_still_high(self) -> None:
+        findings = self._check("sys_admin")
+        assert findings[0].severity == Severity.HIGH
 
     def test_has_fix_guidance(self) -> None:
         findings = self._check("sys_admin")
