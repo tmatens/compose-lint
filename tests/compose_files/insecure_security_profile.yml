@@ -22,3 +22,17 @@ services:
       - no-new-privileges:true
   no_security_opt:
     image: nginx:1.27-alpine
+  selinux_disabled:
+    image: nginx:1.27-alpine
+    security_opt:
+      - label:disable
+  all_three_disabled:
+    image: nginx:1.27-alpine
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
+      - label:disable
+  selinux_label_user:
+    image: nginx:1.27-alpine
+    security_opt:
+      - label:user:system_u
