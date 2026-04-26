@@ -10,6 +10,7 @@ import pytest
 
 from compose_lint.parser import (
     ComposeError,
+    ComposeNotApplicableError,
     _collect_lines,
     _strip_lines,
     load_compose,
@@ -76,9 +77,35 @@ class TestLoadCompose:
         with pytest.raises(ComposeError, match="file is empty"):
             load_compose(FIXTURES / "invalid_empty.yml")
 
-    def test_no_services_key(self) -> None:
+    def test_no_services_key_unrecognised_shape(self) -> None:
+        # Top-level mapping with neither `services:`, fragment-shaped keys,
+        # nor v1-shaped service mappings: still a hard error per ADR-013.
         with pytest.raises(ComposeError, match="missing 'services' key"):
             load_compose(FIXTURES / "invalid_no_services.yml")
+        # Specifically NOT the not-applicable subtype.
+        with pytest.raises(ComposeError) as excinfo:
+            load_compose(FIXTURES / "invalid_no_services.yml")
+        assert not isinstance(excinfo.value, ComposeNotApplicableError)
+
+    def test_fragment_skipped_as_not_applicable(self) -> None:
+        # ADR-013: a file containing only top-level structural keys
+        # (volumes/networks/configs/secrets/x-*) is a fragment for
+        # `extends:`/`-f` overlay use; the linter doesn't apply.
+        with pytest.raises(ComposeNotApplicableError, match="Compose fragment"):
+            load_compose(FIXTURES / "fragment_volumes_only.yml")
+
+    def test_legacy_v1_skipped_as_not_applicable(self) -> None:
+        # ADR-013: services declared at the top level (no `services:` wrapper)
+        # is the v1 schema. Docker retired Compose v1 in 2023; we skip rather
+        # than fail so directory sweeps don't drop downstream files.
+        with pytest.raises(ComposeNotApplicableError, match="Compose v1"):
+            load_compose(FIXTURES / "legacy_v1_compose.yml")
+
+    def test_not_applicable_is_a_compose_error_subtype(self) -> None:
+        # Callers that catch ComposeError still see fragment/v1 errors;
+        # callers that want to special-case "skip" can catch the subtype.
+        with pytest.raises(ComposeError):
+            load_compose(FIXTURES / "fragment_volumes_only.yml")
 
     def test_services_not_mapping(self) -> None:
         with pytest.raises(ComposeError, match="'services' must be a mapping"):

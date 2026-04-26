@@ -1,3 +1,2 @@
-volumes:
-  data:
-    driver: local
+foo: 5
+bar: "not a service mapping"
