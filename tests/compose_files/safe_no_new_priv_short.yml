@@ -1,0 +1,10 @@
+services:
+  short_form:
+    image: nginx:1.27-alpine
+    security_opt:
+      - no-new-privileges
+  short_form_with_others:
+    image: nginx:1.27-alpine
+    security_opt:
+      - apparmor:docker-default
+      - no-new-privileges

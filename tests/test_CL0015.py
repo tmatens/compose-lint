@@ -68,3 +68,22 @@ class TestHealthcheckDisabledRule:
         meta = self.rule.metadata
         assert meta.id == "CL-0015"
         assert meta.severity.value == "low"
+
+    def test_safe_cmd_shell_list_no_findings(self) -> None:
+        data, lines = load_compose(FIXTURES / "safe_healthcheck_cmd_shell.yml")
+        findings = list(
+            self.rule.check("cmd_shell", data["services"]["cmd_shell"], data, lines)
+        )
+        assert len(findings) == 0
+
+    def test_safe_cmd_shell_string_no_findings(self) -> None:
+        data, lines = load_compose(FIXTURES / "safe_healthcheck_cmd_shell.yml")
+        findings = list(
+            self.rule.check(
+                "cmd_shell_string",
+                data["services"]["cmd_shell_string"],
+                data,
+                lines,
+            )
+        )
+        assert len(findings) == 0

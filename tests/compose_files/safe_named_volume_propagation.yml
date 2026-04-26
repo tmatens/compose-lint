@@ -1,0 +1,20 @@
+services:
+  named_short:
+    image: nginx:1.27-alpine
+    volumes:
+      - data:/var/lib/app
+      - cache:/var/cache/app:ro
+  named_long:
+    image: nginx:1.27-alpine
+    volumes:
+      - type: volume
+        source: data
+        target: /var/lib/app
+      - type: volume
+        source: cache
+        target: /var/cache/app
+        read_only: true
+
+volumes:
+  data:
+  cache:
