@@ -69,7 +69,7 @@ class SecurityProfileRule(BaseRule):
         if not isinstance(security_opt, list):
             return
 
-        for opt in security_opt:
+        for i, opt in enumerate(security_opt):
             opt_str = str(opt).strip().lower()
             if opt_str not in _DISABLED_PROFILES:
                 continue
@@ -85,7 +85,8 @@ class SecurityProfileRule(BaseRule):
                     f"('{opt_str}'). This removes {removal} "
                     "that limit what a compromised container can do."
                 ),
-                line=lines.get(f"services.{service_name}.security_opt"),
+                line=lines.get(f"services.{service_name}.security_opt[{i}]")
+                or lines.get(f"services.{service_name}.security_opt"),
                 fix=(
                     f"Remove '{opt_str}' from security_opt. The host applies "
                     f"a default {profile_name} policy automatically."

@@ -64,7 +64,7 @@ class DangerousCapAddRule(BaseRule):
         if not isinstance(cap_add, list):
             return
 
-        for cap in cap_add:
+        for i, cap in enumerate(cap_add):
             cap_upper = str(cap).upper()
             if cap_upper in DANGEROUS_CAPS:
                 severity = (
@@ -78,7 +78,8 @@ class DangerousCapAddRule(BaseRule):
                         f"Service adds dangerous capability {cap_upper}: "
                         f"{DANGEROUS_CAPS[cap_upper]}."
                     ),
-                    line=lines.get(f"services.{service_name}.cap_add"),
+                    line=lines.get(f"services.{service_name}.cap_add[{i}]")
+                    or lines.get(f"services.{service_name}.cap_add"),
                     fix=(
                         f"Remove {cap_upper} from cap_add. If this capability is "
                         "required, document the justification and consider running "

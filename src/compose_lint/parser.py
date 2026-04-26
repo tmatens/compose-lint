@@ -13,14 +13,28 @@ class ComposeError(Exception):
 
 
 class LineLoader(yaml.SafeLoader):
-    """YAML loader that captures line numbers for mapping keys.
+    """YAML loader that captures line numbers for mapping keys and sequence items.
 
     Subclasses ``yaml.SafeLoader``, so it inherits the safe constructor set
     and CANNOT instantiate arbitrary Python objects. Static analyzers that
     flag ``yaml.load(...)`` calls below as unsafe are false positives — the
-    only override here is the mapping constructor, which records line
-    numbers for string keys and otherwise delegates to the safe loader.
+    only overrides here are the mapping and sequence constructors, both of
+    which record line numbers and otherwise delegate to the safe loader.
+
+    Mapping line numbers are stored in a ``__lines__`` key on the dict
+    itself (stripped before returning to callers). Sequence line numbers
+    can't live on the list (lists don't carry attributes and adding a
+    sentinel item would change semantics), so they're stashed on the
+    loader instance under ``_seq_lines``, keyed by ``id(list)``. The id
+    keys are stable for the lifetime of the load because ``raw`` holds
+    references to every constructed list, so nothing is GC'd until
+    ``_collect_lines`` finishes.
     """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # id(list) -> {index: line}
+        self._seq_lines: dict[int, dict[int, int]] = {}
 
 
 def _construct_mapping(loader: LineLoader, node: yaml.MappingNode) -> dict[str, Any]:
@@ -53,9 +67,24 @@ def _construct_mapping(loader: LineLoader, node: yaml.MappingNode) -> dict[str, 
     return mapping
 
 
+def _construct_sequence(loader: LineLoader, node: yaml.SequenceNode) -> list[Any]:
+    items: list[Any] = [
+        loader.construct_object(item_node)  # type: ignore[no-untyped-call]
+        for item_node in node.value
+    ]
+    loader._seq_lines[id(items)] = {
+        i: item_node.start_mark.line + 1 for i, item_node in enumerate(node.value)
+    }
+    return items
+
+
 LineLoader.add_constructor(
     yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
     _construct_mapping,
+)
+LineLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_SEQUENCE_TAG,
+    _construct_sequence,
 )
 
 
@@ -107,7 +136,11 @@ def _strip_lines(data: Any) -> Any:
     return memo[id(data)]
 
 
-def _collect_lines(data: Any, prefix: str = "") -> dict[str, int]:
+def _collect_lines(
+    data: Any,
+    seq_lines: dict[int, dict[int, int]] | None = None,
+    prefix: str = "",
+) -> dict[str, int]:
     """Collect line numbers into a flat dot-notation map.
 
     Iterative traversal with an explicit work stack so pathologically-
@@ -116,10 +149,12 @@ def _collect_lines(data: Any, prefix: str = "") -> dict[str, int]:
     chained aliases can't fan out into O(branching^depth) work — each
     unique container is walked once under the first prefix that reaches
     it. Recorded line numbers come from the container's own __lines__
-    map, which is identical no matter which alias path arrived first, so
-    rule lookups against any reachable path still resolve correctly for
-    keys directly on that container.
+    map (mappings) or the loader's seq_lines sidecar (sequences), which
+    are identical no matter which alias path arrived first, so rule
+    lookups against any reachable path still resolve correctly for keys
+    directly on that container.
     """
+    seq_lines = seq_lines or {}
     lines: dict[str, int] = {}
     visited: set[int] = set()
     stack: list[tuple[Any, str]] = [(data, prefix)]
@@ -141,8 +176,12 @@ def _collect_lines(data: Any, prefix: str = "") -> dict[str, int]:
             if id(current) in visited:
                 continue
             visited.add(id(current))
+            item_lines = seq_lines.get(id(current), {})
             for i, item in enumerate(current):
-                stack.append((item, f"{current_prefix}[{i}]"))
+                full_key = f"{current_prefix}[{i}]"
+                if i in item_lines:
+                    lines[full_key] = item_lines[i]
+                stack.append((item, full_key))
     return lines
 
 
@@ -196,10 +235,12 @@ def load_compose(
     # deserialize arbitrary Python objects. The assertion makes that
     # invariant explicit so a future refactor can't silently break it.
     assert issubclass(LineLoader, yaml.SafeLoader)  # noqa: S101
+    # Instantiate explicitly (instead of yaml.load) so we can read the
+    # per-load seq_lines sidecar after parsing finishes.
+    loader = LineLoader(content)  # noqa: S506  # nosec B506 - SafeLoader subclass
     try:
-        raw = yaml.load(  # noqa: S506  # nosec B506 - LineLoader extends SafeLoader
-            content, Loader=LineLoader
-        )
+        raw = loader.get_single_data()
+        seq_lines = loader._seq_lines
     except yaml.YAMLError as e:
         raise ComposeError(f"Invalid YAML: {e}") from e
     except RecursionError as e:
@@ -210,13 +251,15 @@ def load_compose(
         # bypasses the wrapper above; surface it as ComposeError so the public
         # contract holds for all malformed input.
         raise ComposeError("Invalid YAML: input is too deeply nested") from e
+    finally:
+        loader.dispose()  # type: ignore[no-untyped-call]
 
     if raw is None:
         raise ComposeError("Not a valid Compose file: file is empty")
 
     _validate_compose(raw)
 
-    lines = _collect_lines(raw)
+    lines = _collect_lines(raw, seq_lines)
     data = _strip_lines(raw)
 
     return data, lines
