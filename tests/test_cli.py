@@ -45,6 +45,36 @@ class TestCLI:
         assert result.returncode == 2
         assert "services" in result.stderr.lower()
 
+    def test_fragment_file_skipped_with_exit_zero(self) -> None:
+        # ADR-013: fragments are skipped (exit 0) with a per-file stderr note,
+        # so a directory sweep doesn't fail because someone has a `-f` overlay.
+        result = run_cli(str(FIXTURES / "fragment_volumes_only.yml"))
+        assert result.returncode == 0
+        assert "fragment" in result.stderr.lower()
+
+    def test_legacy_v1_file_skipped_with_exit_zero(self) -> None:
+        # ADR-013: v1 files are skipped (exit 0). Stderr message must mention
+        # the 2023 retirement so users know the format isn't broken — Docker
+        # just stopped supporting it.
+        result = run_cli(str(FIXTURES / "legacy_v1_compose.yml"))
+        assert result.returncode == 0
+        assert "compose v1" in result.stderr.lower()
+        assert "2023" in result.stderr
+
+    def test_skipped_file_does_not_block_subsequent_lint(self) -> None:
+        # The point of exit-0 skip: in `compose-lint a.yml b.yml c.yml`, a
+        # fragment in the middle must not hide findings from the file after it.
+        result = run_cli(
+            str(FIXTURES / "valid_basic.yml"),
+            str(FIXTURES / "fragment_volumes_only.yml"),
+            str(FIXTURES / "insecure_privileged.yml"),
+        )
+        # insecure_privileged.yml has CL-0002 at HIGH (default fail-on),
+        # so the run must reach it and exit 1.
+        assert result.returncode == 1
+        assert "CL-0002" in result.stdout
+        assert "fragment" in result.stderr.lower()
+
     def test_valid_file_no_findings(self) -> None:
         result = run_cli(str(FIXTURES / "valid_basic.yml"))
         assert result.returncode == 0

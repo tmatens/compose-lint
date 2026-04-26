@@ -23,7 +23,7 @@ from compose_lint.formatters.text import (
 )
 from compose_lint.formatters.text import format_findings as format_text
 from compose_lint.models import Finding, Severity
-from compose_lint.parser import ComposeError, load_compose
+from compose_lint.parser import ComposeError, ComposeNotApplicableError, load_compose
 
 
 def _severity_type(value: str) -> Severity:
@@ -178,6 +178,13 @@ def main(argv: list[str] | None = None) -> NoReturn:
         except FileNotFoundError:
             print(f"Error: file not found: {filepath}", file=sys.stderr)
             sys.exit(2)
+        except ComposeNotApplicableError as e:
+            # v1 / fragment file: not malformed, just outside what we lint.
+            # Per ADR-013 this is exit 0 (skipped, not a parse error).
+            # Multi-file fail-fast for genuine ComposeError remains as-is
+            # pending #158.
+            print(f"{filepath}: {e}", file=sys.stderr)
+            continue
         except ComposeError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(2)

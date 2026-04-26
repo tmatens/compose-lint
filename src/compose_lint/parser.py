@@ -12,6 +12,97 @@ class ComposeError(Exception):
     """Raised when a file is not a valid Docker Compose file."""
 
 
+class ComposeNotApplicableError(ComposeError):
+    """Raised when a file parses as YAML but is not a v2/v3 Compose file.
+
+    Covers Compose v1 files (services declared at top level, no `services:`
+    wrapper; Docker retired Compose v1 in 2023) and structural fragments
+    (e.g. files holding only `volumes:`, `networks:`, or `x-*` blocks for
+    use with `extends:` or `-f` overlays). The CLI maps this to a per-file
+    skip with exit 0, distinct from malformed input which still exits 2.
+    See ADR-013.
+    """
+
+
+# Keys that v2/v3 Compose places at the top level alongside `services:`.
+# A file containing only these (plus any `x-*` extension keys) is treated
+# as a structural fragment when `services:` is absent.
+_TOP_LEVEL_FRAGMENT_KEYS = frozenset(
+    {"version", "name", "volumes", "networks", "configs", "secrets", "include"}
+)
+
+# Keys that, when present in a top-level mapping value, identify that
+# value as a service definition. Drawn from the v1 Compose schema:
+# https://docs.docker.com/reference/compose-file/legacy-versions/. Used
+# only for v1 detection — v2/v3 files have a `services:` wrapper and
+# never reach this check.
+_V1_SERVICE_MARKERS = frozenset(
+    {
+        "image",
+        "build",
+        "command",
+        "entrypoint",
+        "ports",
+        "volumes",
+        "environment",
+        "env_file",
+        "depends_on",
+        "container_name",
+        "restart",
+        "links",
+        "expose",
+        "working_dir",
+        "user",
+        "cap_add",
+        "cap_drop",
+        "privileged",
+        "read_only",
+        "devices",
+        "security_opt",
+        "network_mode",
+        "networks",
+        "extends",
+    }
+)
+
+
+def _classify_missing_services(data: dict[str, Any]) -> ComposeError:
+    """Decide which error subtype to raise when `services:` is absent.
+
+    Returns either a fragment/v1 ComposeNotApplicableError (file parses
+    but the linter doesn't apply) or a plain ComposeError (file shape is
+    not recognisable as Compose at all). See ADR-013 for the heuristic.
+    """
+
+    def _is_meta(k: Any) -> bool:
+        if k == "__lines__":
+            return True
+        if not isinstance(k, str):
+            return False
+        return k in _TOP_LEVEL_FRAGMENT_KEYS or k.startswith("x-")
+
+    non_meta = [k for k in data if not _is_meta(k)]
+    if not non_meta:
+        return ComposeNotApplicableError(
+            "Skipped: file appears to be a Compose fragment "
+            "(no 'services:' key; only top-level structural keys present). "
+            "Fragments are typically merged via `extends:` or `-f` overlays "
+            "and have no services to lint on their own."
+        )
+    if all(
+        isinstance(data[k], dict)
+        and any(marker in data[k] for marker in _V1_SERVICE_MARKERS)
+        for k in non_meta
+    ):
+        return ComposeNotApplicableError(
+            "Skipped: file appears to be Compose v1 "
+            "(services declared at the top level, no 'services:' wrapper). "
+            "Docker retired Compose v1 in 2023; compose-lint targets v2/v3. "
+            "Migrate the file under a top-level `services:` key to enable linting."
+        )
+    return ComposeError("Not a valid Compose file: missing 'services' key")
+
+
 class LineLoader(yaml.SafeLoader):
     """YAML loader that captures line numbers for mapping keys and sequence items.
 
@@ -193,7 +284,7 @@ def _validate_compose(data: Any) -> dict[str, Any]:
         )
 
     if "services" not in data:
-        raise ComposeError("Not a valid Compose file: missing 'services' key")
+        raise _classify_missing_services(data)
 
     services = data["services"]
     if not isinstance(services, dict):
