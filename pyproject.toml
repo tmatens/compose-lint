@@ -64,6 +64,7 @@ dev = [
     # Self-reference so the ruff pin lives only in [lint]; no drift.
     "compose-lint[lint]",
     "check-jsonschema==0.37.1",
+    "mutmut==3.5.0",
     "mypy==1.20.1",
     "pytest==9.0.3",
     "types-pyyaml==6.0.12.20260408",
@@ -80,6 +81,21 @@ Changelog = "https://github.com/tmatens/compose-lint/blob/main/CHANGELOG.md"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.mutmut]
+# Mutate the security-critical surface only: rule predicates and the shared
+# image-reference helper. Formatters and the parser are excluded — formatter
+# output is covered by snapshot tests (mutation noise drowns the signal),
+# and YAML parser invariants are better tested with property-based tools
+# than mutation. Re-evaluate as engine/config logic stabilises.
+paths_to_mutate = [
+    "src/compose_lint/rules/",
+    "src/compose_lint/_image.py",
+]
+# Copy the rest of the package so the mutated rules can import from it.
+also_copy = [
+    "src/compose_lint/",
+]
 
 [tool.mypy]
 strict = true

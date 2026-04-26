@@ -38,13 +38,7 @@ def _is_wildcard_ip(value: str) -> bool:
     """Return True if the value publishes on all interfaces."""
     if not value:
         return True
-    if value in _WILDCARD_IPS:
-        return True
-    # Bracketed IPv6 form like "[::]" — already covered above, but also
-    # accept "[0.0.0.0]" defensively.
-    if value.startswith("[") and value.endswith("]"):
-        return value[1:-1] in {"::", "0.0.0.0", "*"}  # nosec B104
-    return False
+    return value in _WILDCARD_IPS
 
 
 @register_rule
