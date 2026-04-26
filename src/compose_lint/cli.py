@@ -169,6 +169,7 @@ def main(argv: list[str] | None = None) -> NoReturn:
     all_json: list[dict[str, object]] = []
     all_sarif: list[dict[str, object]] = []
     all_file_findings: list[tuple[list[Finding], str]] = []
+    parse_errors: list[tuple[str, str]] = []
     has_errors = False
     seen_services: set[str] = set()
 
@@ -176,18 +177,19 @@ def main(argv: list[str] | None = None) -> NoReturn:
         try:
             data, lines = load_compose(filepath)
         except FileNotFoundError:
-            print(f"Error: file not found: {filepath}", file=sys.stderr)
-            sys.exit(2)
+            msg = "file not found"
+            parse_errors.append((filepath, msg))
+            print(f"Error: {filepath}: {msg}", file=sys.stderr)
+            continue
         except ComposeNotApplicableError as e:
             # v1 / fragment file: not malformed, just outside what we lint.
             # Per ADR-013 this is exit 0 (skipped, not a parse error).
-            # Multi-file fail-fast for genuine ComposeError remains as-is
-            # pending #158.
             print(f"{filepath}: {e}", file=sys.stderr)
             continue
         except ComposeError as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(2)
+            parse_errors.append((filepath, str(e)))
+            print(f"Error: {filepath}: {e}", file=sys.stderr)
+            continue
 
         seen_services.update(data.get("services", {}).keys())
 
@@ -229,11 +231,13 @@ def main(argv: list[str] | None = None) -> NoReturn:
     if args.output_format == "text":
         if len(args.files) > 1:
             print()
-            print(format_aggregate_summary(all_file_findings))
-        print(format_verdict(all_file_findings, args.fail_on))
+            print(format_aggregate_summary(all_file_findings, len(parse_errors)))
+        print(format_verdict(all_file_findings, args.fail_on, len(parse_errors)))
     elif args.output_format == "json":
         print(json.dumps(all_json, indent=2))
     elif args.output_format == "sarif":
-        print(json.dumps(build_sarif_log(all_sarif), indent=2))
+        print(json.dumps(build_sarif_log(all_sarif, parse_errors), indent=2))
 
+    if parse_errors:
+        sys.exit(2)
     sys.exit(1 if has_errors else 0)

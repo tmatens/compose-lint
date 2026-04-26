@@ -148,6 +148,79 @@ class TestCLI:
         assert "--explain" in result.stderr
         assert "FILE" in result.stderr
 
+    def test_parse_error_does_not_block_subsequent_files(self, tmp_path: Path) -> None:
+        # Issue #158: a malformed file in argv must not silently mask
+        # findings on the parseable files that come after it.
+        bad = tmp_path / "bad.yml"
+        bad.write_text("services: [\n")
+        result = run_cli(
+            str(FIXTURES / "valid_basic.yml"),
+            str(bad),
+            str(FIXTURES / "insecure_privileged.yml"),
+        )
+        # CL-0002 (HIGH) from insecure_privileged must reach output.
+        assert "CL-0002" in result.stdout
+        # Parse error wins exit code.
+        assert result.returncode == 2
+        assert str(bad) in result.stderr
+
+    def test_parse_error_messages_include_filepath(self, tmp_path: Path) -> None:
+        bad = tmp_path / "broken.yml"
+        bad.write_text("services: [\n")
+        result = run_cli(str(bad))
+        assert result.returncode == 2
+        assert str(bad) in result.stderr
+
+    def test_missing_file_does_not_block_subsequent_files(self, tmp_path: Path) -> None:
+        result = run_cli(
+            "definitely-not-a-file.yml",
+            str(FIXTURES / "insecure_privileged.yml"),
+        )
+        assert result.returncode == 2
+        assert "definitely-not-a-file.yml" in result.stderr
+        assert "CL-0002" in result.stdout
+
+    def test_text_footer_reports_skipped_count(self, tmp_path: Path) -> None:
+        bad = tmp_path / "bad.yml"
+        bad.write_text("services: [\n")
+        result = run_cli(
+            str(FIXTURES / "valid_basic.yml"),
+            str(bad),
+        )
+        assert result.returncode == 2
+        assert "skipped" in result.stdout.lower()
+        assert "failed to parse" in result.stdout.lower()
+
+    def test_sarif_includes_parse_error_notifications(self, tmp_path: Path) -> None:
+        bad = tmp_path / "bad.yml"
+        bad.write_text("services: [\n")
+        result = run_cli(
+            "--format",
+            "sarif",
+            str(FIXTURES / "valid_basic.yml"),
+            str(bad),
+        )
+        assert result.returncode == 2
+        log = json.loads(result.stdout)
+        invocation = log["runs"][0]["invocations"][0]
+        assert invocation["executionSuccessful"] is False
+        notifications = invocation["toolExecutionNotifications"]
+        assert len(notifications) == 1
+        uri = notifications[0]["locations"][0]["physicalLocation"]["artifactLocation"][
+            "uri"
+        ]
+        assert uri == str(bad)
+
+    def test_sarif_clean_run_marks_execution_successful(self) -> None:
+        result = run_cli(
+            "--format",
+            "sarif",
+            str(FIXTURES / "valid_basic.yml"),
+        )
+        assert result.returncode == 0
+        log = json.loads(result.stdout)
+        assert log["runs"][0]["invocations"][0]["executionSuccessful"] is True
+
     def test_exclude_services_unknown_service_warns(self, tmp_path: Path) -> None:
         config = tmp_path / ".compose-lint.yml"
         config.write_text(

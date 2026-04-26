@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Multi-file invocations no longer fail-fast on the first parse error.
+  The CLI now records the failure, continues scanning the remaining
+  files, and exits 2 only after every input has been attempted. Per-file
+  error messages include the filepath; the text-mode aggregate footer
+  and verdict report how many files were skipped; SARIF output surfaces
+  parse failures via `runs[].invocations[].toolExecutionNotifications`
+  and sets `executionSuccessful: false`. A single-file invocation that
+  fails to parse still exits 2 with the same `Error:` line. (#158)
+
 ### Fixed
 
 - Findings on YAML sequence items (e.g. one entry in `ports:`,
