@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 from compose_lint.formatters.sarif import (
     build_sarif_log,
@@ -14,6 +17,7 @@ from compose_lint.formatters.sarif import (
 from compose_lint.models import Finding, Severity
 
 FIXTURES = Path(__file__).parent / "compose_files"
+SARIF_SCHEMA_PATH = Path(__file__).parent / "fixtures" / "sarif-schema-2.1.0.json"
 
 
 def _sample_finding() -> Finding:
@@ -45,12 +49,10 @@ class TestFormatFindings:
         assert loc["artifactLocation"]["uri"] == "docker-compose.yml"
         assert loc["region"]["startLine"] == 5
 
-    def test_fix_included_when_present(self) -> None:
+    def test_fix_surfaced_in_properties(self) -> None:
         results = format_findings([_sample_finding()], "docker-compose.yml")
-        assert "fixes" in results[0]
-        assert results[0]["fixes"][0]["description"]["text"] == (
-            "Use a Docker socket proxy."
-        )
+        assert "fixes" not in results[0]
+        assert results[0]["properties"]["fix"] == "Use a Docker socket proxy."
 
     def test_no_fix_when_absent(self) -> None:
         finding = Finding(
@@ -62,6 +64,7 @@ class TestFormatFindings:
         )
         results = format_findings([finding], "test.yml")
         assert "fixes" not in results[0]
+        assert "properties" not in results[0]
 
     def test_line_defaults_to_1_when_none(self) -> None:
         finding = Finding(
@@ -203,3 +206,49 @@ class TestSarifCLI:
             for r in results
         }
         assert len(files) >= 2
+
+
+class TestSarifSchemaCompliance:
+    """Validate emitted SARIF against the canonical OASIS 2.1.0 schema."""
+
+    def _validate(self, log: dict[str, object], tmp_path: Path) -> None:
+        if shutil.which("check-jsonschema") is None:
+            pytest.skip("check-jsonschema not installed")
+        out = tmp_path / "out.sarif.json"
+        out.write_text(json.dumps(log))
+        result = subprocess.run(
+            [
+                "check-jsonschema",
+                "--schemafile",
+                str(SARIF_SCHEMA_PATH),
+                str(out),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"SARIF schema validation failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_log_with_fix_validates(self, tmp_path: Path) -> None:
+        results = format_findings([_sample_finding()], "test.yml")
+        log = build_sarif_log(results)
+        self._validate(log, tmp_path)
+
+    def test_log_without_fix_validates(self, tmp_path: Path) -> None:
+        finding = Finding(
+            rule_id="CL-0001",
+            severity=Severity.HIGH,
+            service="web",
+            message="no-fix finding",
+            line=2,
+        )
+        log = build_sarif_log(format_findings([finding], "test.yml"))
+        self._validate(log, tmp_path)
+
+    def test_log_with_parse_errors_validates(self, tmp_path: Path) -> None:
+        log = build_sarif_log(
+            format_findings([_sample_finding()], "test.yml"),
+            parse_errors=[("broken.yml", "could not parse")],
+        )
+        self._validate(log, tmp_path)
