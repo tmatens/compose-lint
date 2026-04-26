@@ -91,7 +91,7 @@ class SensitiveMountRule(BaseRule):
         if not isinstance(volumes, list):
             return
 
-        for volume in volumes:
+        for i, volume in enumerate(volumes):
             # Short syntax: /host/path:/container/path[:mode]
             host_path = _extract_host_path(volume)
             if host_path is None and isinstance(volume, dict):
@@ -132,7 +132,8 @@ class SensitiveMountRule(BaseRule):
                 severity=severity,
                 service=service_name,
                 message=message,
-                line=lines.get(f"services.{service_name}.volumes"),
+                line=lines.get(f"services.{service_name}.volumes[{i}]")
+                or lines.get(f"services.{service_name}.volumes"),
                 fix=(
                     f"Remove the bind mount for {host_path}. If the container "
                     "needs specific files, copy them into the image at build time "

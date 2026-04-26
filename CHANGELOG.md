@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Findings on YAML sequence items (e.g. one entry in `ports:`,
+  `volumes:`, `cap_add:`, `devices:`, `security_opt:`) now report the
+  line of the offending item, not the line of the parent mapping key.
+  Previously every finding on a sequence item attributed to the parent
+  key — three unbound ports all showed the `ports:` line, sensitive
+  mounts pointed at `volumes:` instead of the mount itself. The parser
+  now records per-item line numbers in `LineLoader` (sidecar keyed on
+  `id(list)` on the loader instance, kept off the list itself to avoid
+  changing list semantics), and `_collect_lines` emits `...[N]`
+  entries. CL-0009, CL-0011, CL-0013, CL-0016, and CL-0017 were
+  updated to consult the per-item entry with parent-key fallback;
+  CL-0001 and CL-0005 already used this pattern and now resolve
+  correctly. Fixes #157.
+
 ## [0.5.2] - 2026-04-25
 
 ### Fixed

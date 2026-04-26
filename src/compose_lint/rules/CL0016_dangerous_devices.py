@@ -62,7 +62,7 @@ class DangerousDevicesRule(BaseRule):
         if not isinstance(devices, list):
             return
 
-        for device in devices:
+        for i, device in enumerate(devices):
             host_device = _extract_host_device(device)
             if host_device is None:
                 continue
@@ -77,7 +77,8 @@ class DangerousDevicesRule(BaseRule):
                             f"Service exposes dangerous host device "
                             f"'{host_device}' ({description})."
                         ),
-                        line=lines.get(f"services.{service_name}.devices"),
+                        line=lines.get(f"services.{service_name}.devices[{i}]")
+                        or lines.get(f"services.{service_name}.devices"),
                         fix=(
                             f"Remove '{host_device}' from devices. Direct host "
                             "device access bypasses container isolation entirely."

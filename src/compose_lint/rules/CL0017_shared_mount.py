@@ -42,11 +42,11 @@ class SharedMountRule(BaseRule):
         if not isinstance(volumes, list):
             return
 
-        for volume in volumes:
+        for i, volume in enumerate(volumes):
             if self._is_shared_short_syntax(volume) or self._is_shared_long_syntax(
                 volume
             ):
-                yield self._make_finding(service_name, lines, str(volume))
+                yield self._make_finding(service_name, lines, str(volume), i)
 
     def _is_shared_short_syntax(self, volume: Any) -> bool:
         """Check for :shared suffix in short-syntax volume strings."""
@@ -71,7 +71,7 @@ class SharedMountRule(BaseRule):
         return isinstance(propagation, str) and propagation.lower() == "shared"
 
     def _make_finding(
-        self, service_name: str, lines: dict[str, int], volume_str: str
+        self, service_name: str, lines: dict[str, int], volume_str: str, index: int
     ) -> Finding:
         return Finding(
             rule_id="CL-0017",
@@ -81,7 +81,8 @@ class SharedMountRule(BaseRule):
                 "Service uses shared mount propagation. Mounts created inside "
                 "the container will appear on the host and vice versa."
             ),
-            line=lines.get(f"services.{service_name}.volumes"),
+            line=lines.get(f"services.{service_name}.volumes[{index}]")
+            or lines.get(f"services.{service_name}.volumes"),
             fix=(
                 "Remove ':shared' from the volume mount or change "
                 "bind.propagation to 'rprivate' (the default):\n"
