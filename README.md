@@ -9,9 +9,11 @@
 [![OpenSSF Baseline 2](https://www.bestpractices.dev/projects/12472/baseline)](https://www.bestpractices.dev/projects/12472)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12472/badge)](https://www.bestpractices.dev/projects/12472)
 
-A security-focused linter for Docker Compose files. Catches dangerous misconfigurations before they reach production.
+A security-focused linter for `docker-compose.yml` and `compose.yaml`. Catches dangerous misconfigurations before they reach production.
 
-compose-lint targets the same niche [Hadolint](https://github.com/hadolint/hadolint) occupies for Dockerfiles: zero-config, opinionated, fast, and grounded in [OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html) and [CIS](https://www.cisecurity.org/benchmark/docker) standards.
+In a scan of 1,405 public `docker-compose.yml` files on GitHub, **45% had at least one HIGH or CRITICAL security finding** — most commonly ports bound to all interfaces (43%), images deployed without a pinned digest (33%), or container capabilities never restricted (78%). compose-lint catches these in CI before they ship.
+
+Use it if you ship Compose to production, run a homelab with exposed services, or want a fast pre-merge gate on IaC. Same niche [Hadolint](https://github.com/hadolint/hadolint) occupies for Dockerfiles and [dclint](https://github.com/zavoloklom/docker-compose-linter) occupies for Compose schema and structure: zero-config, opinionated, fast, and grounded in [OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html) and [CIS](https://www.cisecurity.org/benchmark/docker) standards.
 
 ## Example Output
 
@@ -83,7 +85,7 @@ pip install compose-lint
 docker run --rm -v "$(pwd):/src" composelint/compose-lint
 ```
 
-Distroless [Python](https://github.com/GoogleContainerTools/distroless) base, multi-arch (`linux/amd64` + `linux/arm64`), nonroot entrypoint, no shell or package manager at runtime. Every release ships SLSA build provenance, Sigstore attestations, and an [OpenVEX](https://openvex.dev/) document declaring known pip CVEs `not_affected` (justification: `vulnerable_code_not_present`) — pip code is stripped from the runtime venv and only `.dist-info` metadata is retained for SCA scanner attribution. See [ADR-009](https://github.com/tmatens/compose-lint/blob/main/docs/adr/009-runtime-base-image.md) for the full security posture.
+The Docker image is distroless, multi-arch, and runs nonroot — see [Security posture](#security-posture) below for SLSA, Sigstore, and OpenVEX details.
 
 ## Quick Start
 
@@ -97,6 +99,12 @@ Or pass files explicitly:
 
 ```bash
 compose-lint docker-compose.yml docker-compose.prod.yml
+```
+
+Don't recognize a rule ID in the output? `--explain` prints the full rule doc — what it catches, why it matters, the fix, and the OWASP/CIS reference — without leaving the terminal:
+
+```bash
+compose-lint --explain CL-0005
 ```
 
 Docker equivalent:
@@ -191,7 +199,7 @@ compose-lint --fail-on critical docker-compose.yml  # only critical
 
 ### GitHub Actions
 
-The easiest path — runs compose-lint and uploads findings to GitHub Code Scanning:
+The easiest path — runs compose-lint and uploads findings to GitHub Code Scanning. Pinned to immutable SHAs for reproducible CI; [Renovate](https://docs.renovatebot.com/) keeps the pins current:
 
 ```yaml
 # .github/workflows/lint.yml
@@ -202,8 +210,8 @@ jobs:
   compose-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: tmatens/compose-lint@v0.5.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: tmatens/compose-lint@93e1c0dea75f123171f00d29f3d238080fbb6d04 # v0.5.2
         with:
           sarif-file: results.sarif
 ```
@@ -247,6 +255,18 @@ repos:
 | **Checkov** | No — no Compose support | Broad IaC (Terraform, K8s, ...) | No |
 
 If you need broad IaC coverage across Terraform, Kubernetes, and more, KICS covers Docker Compose and is worth evaluating. If you want a lightweight, focused tool with zero config and actionable fix guidance for Compose files specifically, this is it.
+
+**Not in scope**: compose-lint does not validate Compose schema, scan images for CVEs, lint Dockerfiles, or rewrite files. Pair it with [dclint](https://github.com/zavoloklom/docker-compose-linter) for schema/structure, [Hadolint](https://github.com/hadolint/hadolint) for Dockerfiles, and [Trivy](https://github.com/aquasecurity/trivy) for image CVEs.
+
+## Security posture
+
+compose-lint is built to be safe to depend on:
+
+- **Runtime image**: [distroless Python](https://github.com/GoogleContainerTools/distroless) on Debian, multi-arch (`linux/amd64` + `linux/arm64`), nonroot UID 65532, no shell or package manager at runtime. See [ADR-009](https://github.com/tmatens/compose-lint/blob/main/docs/adr/009-runtime-base-image.md).
+- **Supply chain**: every release ships SLSA build provenance and Sigstore attestations. Published to PyPI via Trusted Publishers (OIDC) — no manual `twine upload`, no long-lived API tokens.
+- **Vulnerability transparency**: each release ships an [OpenVEX](https://openvex.dev/) document declaring known pip CVEs `not_affected` with justification `vulnerable_code_not_present` — pip code is stripped from the runtime venv and only `.dist-info` metadata is retained for SCA scanner attribution.
+- **External audit**: tracked on [OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/tmatens/compose-lint) and [OpenSSF Best Practices Baseline 2](https://www.bestpractices.dev/projects/12472); CodeQL, Docker Scout, and ClusterFuzzLite run on every PR.
+- **Reporting vulnerabilities**: see [SECURITY.md](https://github.com/tmatens/compose-lint/blob/main/.github/SECURITY.md).
 
 ## Contributing
 
