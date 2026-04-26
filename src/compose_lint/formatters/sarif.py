@@ -95,11 +95,7 @@ def format_findings(
         }
 
         if f.fix:
-            result["fixes"] = [
-                {
-                    "description": {"text": f.fix},
-                },
-            ]
+            result["properties"] = {"fix": f.fix}
 
         if f.suppressed:
             result["suppressions"] = [
