@@ -79,23 +79,26 @@ rules:
 running `compose-lint docker-compose.yml` produces:
 
 ```
-compose-lint 0.3.7
+compose-lint 0.5.2
 files: docker-compose.yml  ·  config: .compose-lint.yml  ·  fail-on: high
 
-docker-compose.yml:8  SUPPRESSED  CL-0001  Docker socket mounted via '/var/run/docker.sock:/var/run/docker.sock'. This gives the container full control over the Docker daemon.
-  service: traefik
-  reason: SEC-1234 approved — socket proxy planned for 2026-Q3
+docker-compose.yml
 
-docker-compose.yml:10  HIGH      CL-0005  Port '8080:80' is bound to all interfaces. Docker bypasses host firewalls (UFW/firewalld), potentially exposing this port to the public internet.
-  service: traefik
-  fix: Bind to localhost: 127.0.0.1:8080:80
-       If public access is needed, use a reverse proxy with TLS.
-  ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5a---be-careful-when-mapping-container-ports-to-the-host-with-firewalls-like-ufw
+  service: traefik  (line 2)
+       8  SUPPRESSED  CL-0001  Docker socket mounted via '/var/run/docker.sock:/var/run/docker.sock'. This gives the container full control over the Docker daemon.
+          reason: SEC-1234 approved — socket proxy planned for 2026-Q3
+      10  HIGH        CL-0005  Port '8080:80' is bound to all interfaces. Docker bypasses host firewalls (UFW/firewalld), potentially exposing this port to the public internet.
+          10 │       - "8080:80"
+             │          ^^^^^^^
+          fix: Bind to localhost: 127.0.0.1:8080:80
+               If public access is needed, use a reverse proxy with TLS.
+          ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5a---be-careful-when-mapping-container-ports-to-the-host-with-firewalls-like-ufw
+
 docker-compose.yml: 1 high  ·  1 suppressed (not counted)
 ✗ FAIL  ·  1 finding at or above high
 ```
 
-Exit code is `1` (one finding at or above the default `--fail-on high` threshold). Suppressed findings are shown for auditability but do not count toward the threshold.
+Exit code is `1` (one finding at or above the default `--fail-on high` threshold). Suppressed findings are shown for auditability but do not count toward the threshold. Findings are grouped by service; the fix block and reference URL print only once per rule id per file — pass `-v` / `--verbose` to repeat them on every finding.
 
 ## Rules
 

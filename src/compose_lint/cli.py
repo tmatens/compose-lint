@@ -99,6 +99,17 @@ def _build_parser() -> argparse.ArgumentParser:
         help="hide suppressed findings from output",
     )
     parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        default=False,
+        help=(
+            "in text mode, repeat the fix block and reference URL for every "
+            "finding instead of only the first occurrence per (file, rule). "
+            "No effect on JSON or SARIF output."
+        ),
+    )
+    parser.add_argument(
         "--explain",
         metavar="CL-XXXX",
         help=(
@@ -205,7 +216,7 @@ def main(argv: list[str] | None = None) -> NoReturn:
             findings = [f for f in findings if not f.suppressed]
 
         if args.output_format == "text":
-            output = format_text(findings, filepath)
+            output = format_text(findings, filepath, verbose=args.verbose)
             if output:
                 print(output)
             print(format_summary(findings, filepath))
