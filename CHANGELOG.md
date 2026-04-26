@@ -7,8 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `-v` / `--verbose` flag for the text formatter. Default text output now
+  prints the fix block and reference URL only on the first occurrence of
+  each rule id within a file; subsequent occurrences carry
+  `(see fix above)` instead. `-v` restores today's per-finding fix
+  repetition for IDE tooling or local fix-it-now workflows. JSON and
+  SARIF output are unaffected. (#156)
+
 ### Changed
 
+- Text formatter groups findings by service under a per-file header.
+  Presence rules (e.g. CL-0001, CL-0002, CL-0005, CL-0019) render a
+  one-line source excerpt under the finding so the offending value is
+  visible inline. Pure-absence rules (CL-0003/4/6/7) skip the excerpt —
+  the violation is the absence — and rely on the fix block to show the
+  remediation. (#156)
+- `docs/severity.md` now distinguishes "absence" rules (fire when a
+  hardening directive is missing — high real-world hit rate) from
+  "explicit-disable" rules (fire only when a service opts into a
+  dangerous configuration — deliberately low hit rate by design). A
+  zero-hit run on an explicit-disable rule is expected, not a bug. (#159)
 - Multi-file invocations no longer fail-fast on the first parse error.
   The CLI now records the failure, continues scanning the remaining
   files, and exits 2 only after every input has been attempted. Per-file

@@ -148,6 +148,34 @@ class TestCLI:
         assert "--explain" in result.stderr
         assert "FILE" in result.stderr
 
+    def test_text_default_dedupes_fix_blocks_per_rule(self) -> None:
+        # Issue #156: in default text mode the fix block should print only on
+        # the first occurrence of each rule id within a file. Subsequent
+        # occurrences carry "(see fix above)" instead of repeating the block.
+        result = run_cli(str(FIXTURES / "mixed.yml"))
+        assert result.returncode == 1
+        # mixed.yml fires CL-0003 on multiple services; the prose fix line
+        # should appear exactly once.
+        assert result.stdout.count("- no-new-privileges:true") == 1
+        assert "(see fix above)" in result.stdout
+
+    def test_text_verbose_repeats_fix_blocks(self) -> None:
+        # Issue #156: -v / --verbose restores per-finding fix repetition for
+        # IDE tooling and local fix-it-now workflows.
+        default_result = run_cli(str(FIXTURES / "mixed.yml"))
+        verbose_result = run_cli("-v", str(FIXTURES / "mixed.yml"))
+        assert verbose_result.returncode == default_result.returncode
+        assert verbose_result.stdout.count("- no-new-privileges:true") > 1
+        assert "(see fix above)" not in verbose_result.stdout
+
+    def test_text_groups_findings_by_service(self) -> None:
+        # Issue #156: text output is grouped under per-service blocks rather
+        # than as a flat list. Each service in mixed.yml should have a
+        # `service: <name>` header preceding its findings.
+        result = run_cli(str(FIXTURES / "mixed.yml"))
+        for service in ("traefik", "web", "db"):
+            assert f"service: {service}" in result.stdout
+
     def test_parse_error_does_not_block_subsequent_files(self, tmp_path: Path) -> None:
         # Issue #158: a malformed file in argv must not silently mask
         # findings on the parseable files that come after it.
