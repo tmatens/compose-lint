@@ -131,6 +131,7 @@ def format_summary(
 
 def format_aggregate_summary(
     file_findings: list[tuple[list[Finding], str]],
+    parse_error_count: int = 0,
 ) -> str:
     """Format a combined summary line across all scanned files (multi-file runs)."""
     total_files = len(file_findings)
@@ -149,28 +150,38 @@ def format_aggregate_summary(
     sep = _colorize("·", _DIM)
 
     if total_issues == 0 and suppressed_total == 0:
-        return f"{files_label}  {sep}  {_colorize('no issues found', _GREEN)}"
+        result = f"{files_label}  {sep}  {_colorize('no issues found', _GREEN)}"
+    else:
+        parts = []
+        for sev in (Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW):
+            count = by_severity.get(sev.value, 0)
+            if count:
+                parts.append(_colorize(f"{count} {sev.value}", _COLORS[sev]))
 
-    parts = []
-    for sev in (Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW):
-        count = by_severity.get(sev.value, 0)
-        if count:
-            parts.append(_colorize(f"{count} {sev.value}", _COLORS[sev]))
+        issue_word = "issue" if total_issues == 1 else "issues"
+        breakdown = f" ({', '.join(parts)})" if parts else ""
+        result = f"{files_label}  {sep}  {total_issues} {issue_word}{breakdown}"
+        if suppressed_total:
+            supp_text = f"{suppressed_total} suppressed (not counted)"
+            result += f"  {sep}  {_colorize(supp_text, _SUPPRESSED_COLOR)}"
 
-    issue_word = "issue" if total_issues == 1 else "issues"
-    breakdown = f" ({', '.join(parts)})" if parts else ""
-    result = f"{files_label}  {sep}  {total_issues} {issue_word}{breakdown}"
-    if suppressed_total:
-        supp_text = f"{suppressed_total} suppressed (not counted)"
-        result += f"  {sep}  {_colorize(supp_text, _SUPPRESSED_COLOR)}"
+    if parse_error_count:
+        file_word = "file" if parse_error_count == 1 else "files"
+        skip_text = f"{parse_error_count} {file_word} skipped (parse errors)"
+        result += f"  {sep}  {_colorize(skip_text, _COLORS[Severity.HIGH])}"
     return result
 
 
 def format_verdict(
     file_findings: list[tuple[list[Finding], str]],
     fail_on: Severity,
+    parse_error_count: int = 0,
 ) -> str:
-    """Return a pass/fail verdict line relative to the --fail-on threshold."""
+    """Return a pass/fail verdict line relative to the --fail-on threshold.
+
+    A non-zero parse_error_count forces the verdict to FAIL even when no
+    finding crosses the threshold — partial scans must not look clean.
+    """
     failing = sum(
         1
         for findings, _ in file_findings
@@ -179,11 +190,17 @@ def format_verdict(
     )
 
     sep = _colorize("·", _DIM)
-    if failing == 0:
+    fail_label = _colorize("✗ FAIL", _COLORS[Severity.HIGH])
+
+    parts: list[str] = []
+    if failing:
+        word = "finding" if failing == 1 else "findings"
+        parts.append(f"{failing} {word} at or above {fail_on.value}")
+    if parse_error_count:
+        file_word = "file" if parse_error_count == 1 else "files"
+        parts.append(f"{parse_error_count} {file_word} failed to parse")
+
+    if not parts:
         return f"{_colorize('✓ PASS', _GREEN)}  {sep}  threshold: {fail_on.value}"
 
-    word = "finding" if failing == 1 else "findings"
-    return (
-        f"{_colorize('✗ FAIL', _COLORS[Severity.HIGH])}  {sep}  "
-        f"{failing} {word} at or above {fail_on.value}"
-    )
+    return f"{fail_label}  {sep}  {f'  {sep}  '.join(parts)}"

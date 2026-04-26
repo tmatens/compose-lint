@@ -117,9 +117,34 @@ def format_findings(
 
 def build_sarif_log(
     all_results: list[dict[str, Any]],
+    parse_errors: list[tuple[str, str]] | None = None,
 ) -> dict[str, Any]:
-    """Build a complete SARIF log object."""
+    """Build a complete SARIF log object.
+
+    parse_errors entries (filepath, message) become invocation
+    toolExecutionNotifications so SARIF consumers (GitHub code scanning)
+    can report files that were skipped during the run.
+    """
     rules, _ = _build_rules()
+
+    invocation: dict[str, Any] = {
+        "executionSuccessful": not parse_errors,
+    }
+    if parse_errors:
+        invocation["toolExecutionNotifications"] = [
+            {
+                "level": "error",
+                "message": {"text": message},
+                "locations": [
+                    {
+                        "physicalLocation": {
+                            "artifactLocation": {"uri": filepath},
+                        },
+                    },
+                ],
+            }
+            for filepath, message in parse_errors
+        ]
 
     return {
         "$schema": SARIF_SCHEMA,
@@ -134,6 +159,7 @@ def build_sarif_log(
                         "rules": rules,
                     },
                 },
+                "invocations": [invocation],
                 "results": all_results,
             },
         ],
