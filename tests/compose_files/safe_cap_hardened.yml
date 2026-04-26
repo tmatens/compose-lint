@@ -1,0 +1,18 @@
+services:
+  drop_all_add_safe:
+    image: nginx:1.27-alpine
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+  drop_all_lower_add_safe:
+    image: nginx:1.27-alpine
+    cap_drop:
+      - all
+    cap_add:
+      - chown
+      - net_bind_service
+  drop_all_no_add:
+    image: nginx:1.27-alpine
+    cap_drop:
+      - ALL

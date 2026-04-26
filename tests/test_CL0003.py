@@ -53,6 +53,25 @@ class TestNoNewPrivilegesRule:
         )
         assert len(findings) == 0
 
+    def test_safe_short_form_no_findings(self) -> None:
+        data, lines = load_compose(FIXTURES / "safe_no_new_priv_short.yml")
+        findings = list(
+            self.rule.check("short_form", data["services"]["short_form"], data, lines)
+        )
+        assert len(findings) == 0
+
+    def test_safe_short_form_with_others_no_findings(self) -> None:
+        data, lines = load_compose(FIXTURES / "safe_no_new_priv_short.yml")
+        findings = list(
+            self.rule.check(
+                "short_form_with_others",
+                data["services"]["short_form_with_others"],
+                data,
+                lines,
+            )
+        )
+        assert len(findings) == 0
+
     def test_has_fix_guidance(self) -> None:
         findings = list(self.rule.check("app", {"image": "nginx"}, {}, {}))
         assert findings[0].fix is not None

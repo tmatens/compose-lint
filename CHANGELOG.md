@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Negative-coverage fixtures (`tests/compose_files/safe_*.yml`) asserting that
+  hardened-but-unusual Compose patterns do not trigger false positives:
+  `cap_drop: [ALL]` + targeted `cap_add` for CL-0006/CL-0011, the short-form
+  `no-new-privileges` security option for CL-0003, `CMD-SHELL` healthchecks
+  for CL-0015, and named-volume mounts for CL-0017. (#174)
+
 ## [0.6.0] - 2026-04-26
 
 ### Added

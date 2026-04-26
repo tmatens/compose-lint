@@ -73,3 +73,27 @@ class TestCapDropRule:
         assert meta.id == "CL-0006"
         assert meta.severity.value == "medium"
         assert len(meta.references) > 0
+
+    def test_safe_drop_all_add_safe_no_findings(self) -> None:
+        data, lines = load_compose(FIXTURES / "safe_cap_hardened.yml")
+        findings = list(
+            self.rule.check(
+                "drop_all_add_safe",
+                data["services"]["drop_all_add_safe"],
+                data,
+                lines,
+            )
+        )
+        assert len(findings) == 0
+
+    def test_safe_drop_all_lower_add_safe_no_findings(self) -> None:
+        data, lines = load_compose(FIXTURES / "safe_cap_hardened.yml")
+        findings = list(
+            self.rule.check(
+                "drop_all_lower_add_safe",
+                data["services"]["drop_all_lower_add_safe"],
+                data,
+                lines,
+            )
+        )
+        assert len(findings) == 0

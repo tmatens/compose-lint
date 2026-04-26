@@ -1,0 +1,15 @@
+services:
+  cmd_shell:
+    image: nginx:1.27-alpine
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+  cmd_shell_string:
+    image: nginx:1.27-alpine
+    healthcheck:
+      test: curl -f http://localhost/ || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3

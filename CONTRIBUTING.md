@@ -72,7 +72,12 @@ pytest                          # Tests
 4. Implement `check(service_name, service_config, global_config, lines)`
    yielding `Finding` objects
 5. Add test file `tests/test_CL{NNNN}.py` with **both** positive (triggers) and
-   negative (clean) cases
+   negative (clean) cases. Negative cases must include at least one
+   *hardened-but-unusual* configuration the rule must not flag (e.g. the
+   short-form security_opt, CMD-SHELL healthcheck, named-volume mount,
+   digest-pinned image without a tag — whichever pattern is adjacent to the
+   rule's trigger and easy to misread). These can live in the rule's mixed
+   fixture or in a dedicated `tests/compose_files/safe_*.yml`.
 6. Add fixture YAML files in `tests/compose_files/`
 7. Add rule documentation in `docs/rules/CL-{NNNN}.md`
 8. Fix guidance must be specific and actionable — show the exact YAML change

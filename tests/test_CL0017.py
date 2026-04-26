@@ -65,3 +65,17 @@ class TestSharedMountRule:
         meta = self.rule.metadata
         assert meta.id == "CL-0017"
         assert meta.severity.value == "medium"
+
+    def test_safe_named_short_no_findings(self) -> None:
+        data, lines = load_compose(FIXTURES / "safe_named_volume_propagation.yml")
+        findings = list(
+            self.rule.check("named_short", data["services"]["named_short"], data, lines)
+        )
+        assert len(findings) == 0
+
+    def test_safe_named_long_no_findings(self) -> None:
+        data, lines = load_compose(FIXTURES / "safe_named_volume_propagation.yml")
+        findings = list(
+            self.rule.check("named_long", data["services"]["named_long"], data, lines)
+        )
+        assert len(findings) == 0
