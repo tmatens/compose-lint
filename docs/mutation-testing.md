@@ -36,22 +36,34 @@ At the time mutation testing was first introduced (compose-lint 0.6.0):
 - First run: **79 mutants, 53 killed (67%)**
 - After dead-branch removal and a loader test:
   **65 mutants, 54 killed (83%)**, 11 surviving
+- After triage of the 11 survivors (issue #178):
+  **53 mutants, 51 killed (96%)**, 2 surviving
 
-The 14-mutant drop and 6 extra kills came from:
+The drops and extra kills came from:
 
 - Deleting a dead defensive branch in `CL-0005 _is_wildcard_ip`
   (8 mutants no longer generated)
 - Adding `tests/test_rule_loader.py` to exercise `_load_rules`
   discovery (6 mutants killed)
+- Replacing `s.split(sep, 1)[0]` with `s.partition(sep)[0]` in
+  `_image.split_image_ref` and `CL-0018 _is_root_user` — same
+  behavior, idiom mutmut does not generate the same equivalent
+  mutants for (6 mutants no longer generated)
+- Removing the dead post-rstrip branch in `CL-0013 _is_sensitive`
+  and routing the literal-root case through the existing rstrip
+  path; trailing-slash fixture added to lock down normalisation
+  (5 mutants killed or no longer generated)
 
-The 11 remaining survivors fall into two buckets:
+The 2 remaining survivors are genuinely equivalent for our input space:
 
-- **Equivalent mutants** (6): `split(":", 1)` ≡ `split(":")`,
-  `split(":", 1)` ≡ `rsplit(":", 1)` for the valid Docker user/image
-  syntaxes our tests use. Semantically identical for our input space —
-  no test on legal input will distinguish them.
-- **Trailing-slash dead branches** in `CL-0013 _is_sensitive` (5):
-  minor cleanup opportunity in the path-normalisation logic.
+- `compose_lint.rules._image.x_split_image_ref__mutmut_5`:
+  `partition("@") → rpartition("@")`. Equivalent because OCI image
+  refs contain at most one `@` (digest separator); both partitions
+  yield the same first element.
+- `compose_lint.rules.CL0013_sensitive_mount.x__is_sensitive__mutmut_4`:
+  `rstrip("/") → rstrip("XX/XX")`. `rstrip` takes a set of chars; the
+  set `{X, /}` strips the same trailing `/` from every path we test
+  against, since no sensitive Docker host path ends in a literal `X`.
 
 ## When to run
 

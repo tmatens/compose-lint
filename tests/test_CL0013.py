@@ -90,6 +90,12 @@ class TestSensitiveMountRule:
         assert len(findings) == 1
         assert "/root/.ssh" in findings[0].message
 
+    def test_detects_etc_trailing_slash(self) -> None:
+        findings = self._check("mounts_etc_trailing_slash")
+        assert len(findings) == 1
+        assert "/etc" in findings[0].message
+        assert findings[0].severity == Severity.HIGH
+
     def test_safe_volume_no_findings(self) -> None:
         findings = self._check("safe_volume")
         assert len(findings) == 0

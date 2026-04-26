@@ -24,7 +24,7 @@ def split_image_ref(image: str) -> tuple[str, str | None]:
         localhost:5000/foo@sha256:...  -> ("localhost:5000/foo", None)
     """
     if "@" in image:
-        image = image.split("@", 1)[0]
+        image = image.partition("@")[0]
     if ":" not in image:
         return image, None
     name, _, candidate = image.rpartition(":")
