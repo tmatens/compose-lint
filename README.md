@@ -13,48 +13,6 @@ A security-focused linter for Docker Compose files. Catches dangerous misconfigu
 
 compose-lint targets the same niche [Hadolint](https://github.com/hadolint/hadolint) occupies for Dockerfiles: zero-config, opinionated, fast, and grounded in [OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html) and [CIS](https://www.cisecurity.org/benchmark/docker) standards.
 
-## Installation
-
-**pip**
-
-```bash
-pip install compose-lint
-```
-
-**Docker** — [composelint/compose-lint](https://hub.docker.com/r/composelint/compose-lint)
-
-```bash
-docker run --rm -v "$(pwd):/src" composelint/compose-lint
-```
-
-Distroless [Python](https://github.com/GoogleContainerTools/distroless) base, multi-arch (`linux/amd64` + `linux/arm64`), nonroot entrypoint, no shell or package manager at runtime. Every release ships SLSA build provenance, Sigstore attestations, and an [OpenVEX](https://openvex.dev/) document declaring known pip CVEs `not_affected` (justification: `vulnerable_code_not_present`) — pip code is stripped from the runtime venv and only `.dist-info` metadata is retained for SCA scanner attribution. See [ADR-009](https://github.com/tmatens/compose-lint/blob/main/docs/adr/009-runtime-base-image.md) for the full security posture.
-
-## Quick Start
-
-Run without arguments to auto-detect `compose.yml`, `compose.yaml`, `docker-compose.yml`, or `docker-compose.yaml` in the current directory:
-
-```bash
-compose-lint
-```
-
-Or pass files explicitly:
-
-```bash
-compose-lint docker-compose.yml docker-compose.prod.yml
-```
-
-Docker equivalent:
-
-```bash
-docker run --rm -v "$(pwd):/src" composelint/compose-lint docker-compose.prod.yml
-```
-
-### Compose compatibility
-
-compose-lint targets the [Compose Specification](https://github.com/compose-spec/compose-spec) used by Compose v2 and v3. Compose v1 files (services declared at the top level) are skipped with a stderr note rather than failing the run — Docker [retired Compose v1 in 2023](https://www.docker.com/blog/new-docker-compose-v2-and-v1-deprecation/). Structural fragments (files containing only `volumes:` / `networks:` / `configs:` / `secrets:` / `x-*` keys, typically merged via `-f overlay.yml`) are skipped for the same reason. Genuinely unrecognised shapes still exit 2.
-
-Python 3.10+ is required for the pip install path; the Docker image is self-contained.
-
 ## Example Output
 
 Given this `docker-compose.yml`:
@@ -111,6 +69,48 @@ docker-compose.yml: 2 high  ·  1 suppressed (not counted)
 
 Exit code is `1` (two findings at or above the default `--fail-on high` threshold). Suppressed findings are shown for auditability but do not count toward the threshold. Findings are grouped by service; the fix block and reference URL print only once per rule id per file — pass `-v` / `--verbose` to repeat them on every finding.
 
+## Installation
+
+**pip**
+
+```bash
+pip install compose-lint
+```
+
+**Docker** — [composelint/compose-lint](https://hub.docker.com/r/composelint/compose-lint)
+
+```bash
+docker run --rm -v "$(pwd):/src" composelint/compose-lint
+```
+
+Distroless [Python](https://github.com/GoogleContainerTools/distroless) base, multi-arch (`linux/amd64` + `linux/arm64`), nonroot entrypoint, no shell or package manager at runtime. Every release ships SLSA build provenance, Sigstore attestations, and an [OpenVEX](https://openvex.dev/) document declaring known pip CVEs `not_affected` (justification: `vulnerable_code_not_present`) — pip code is stripped from the runtime venv and only `.dist-info` metadata is retained for SCA scanner attribution. See [ADR-009](https://github.com/tmatens/compose-lint/blob/main/docs/adr/009-runtime-base-image.md) for the full security posture.
+
+## Quick Start
+
+Run without arguments to auto-detect `compose.yml`, `compose.yaml`, `docker-compose.yml`, or `docker-compose.yaml` in the current directory:
+
+```bash
+compose-lint
+```
+
+Or pass files explicitly:
+
+```bash
+compose-lint docker-compose.yml docker-compose.prod.yml
+```
+
+Docker equivalent:
+
+```bash
+docker run --rm -v "$(pwd):/src" composelint/compose-lint docker-compose.prod.yml
+```
+
+### Compose compatibility
+
+compose-lint targets the [Compose Specification](https://github.com/compose-spec/compose-spec) used by Compose v2 and v3. Compose v1 files (services declared at the top level) are skipped with a stderr note rather than failing the run — Docker [retired Compose v1 in 2023](https://www.docker.com/blog/new-docker-compose-v2-and-v1-deprecation/). Structural fragments (files containing only `volumes:` / `networks:` / `configs:` / `secrets:` / `x-*` keys, typically merged via `-f overlay.yml`) are skipped for the same reason. Genuinely unrecognised shapes still exit 2.
+
+Python 3.10+ is required for the pip install path; the Docker image is self-contained.
+
 ## Rules
 
 | ID | Severity | Description | OWASP | CIS |
@@ -141,55 +141,23 @@ Findings are rated **LOW**, **MEDIUM**, **HIGH**, or **CRITICAL** based on explo
 
 ## Configuration
 
-Create `.compose-lint.yml` to disable rules or adjust severity:
+Create `.compose-lint.yml` to disable rules, exclude specific services, or adjust severity:
 
 ```yaml
 rules:
   CL-0001:
     enabled: false
+    reason: "SEC-1234 — approved 2026-07-01"
   CL-0003:
-    enabled: false
-    reason: "SEC-1234 — Approved by J. Smith, expires 2026-07-01"
+    exclude_services:
+      minecraft: "entrypoint switches users via su-exec"
   CL-0005:
     severity: medium
 ```
 
-Disabled rules still run — findings appear as **SUPPRESSED** without affecting the exit code. The `reason` field is surfaced in all output formats:
+Disabled and excluded findings still appear marked **SUPPRESSED** with the `reason` flowing to JSON's `suppression_reason` and SARIF's `justification` (recognized by GitHub Code Scanning) — they do not affect exit code. Pass `--skip-suppressed` to hide them.
 
-- **Text**: shown after the `SUPPRESSED` label
-- **JSON**: `suppression_reason` field
-- **SARIF**: `suppressions[].justification` (recognized by GitHub Code Scanning)
-
-To hide suppressed findings from output:
-
-```bash
-compose-lint --skip-suppressed docker-compose.yml
-```
-
-### Per-service rule exclusions
-
-When a rule is valid for some services but architecturally incompatible with
-others (e.g. CL-0003 `no-new-privileges` and an image whose entrypoint
-switches users), use `exclude_services` to suppress it for just the
-affected services while keeping it active elsewhere:
-
-```yaml
-rules:
-  CL-0003:
-    exclude_services:
-      minecraft: "entrypoint switches users via su-exec"
-      backup: "forks as different user"
-  CL-0007:
-    exclude_services:
-      - legacy-worker   # list form when no reason is needed
-```
-
-Excluded services still produce findings marked **SUPPRESSED** with the
-per-service reason flowing to `suppression_reason` / SARIF `justification`,
-same as a global disable. Service names are matched exactly; unknown names
-produce a stderr warning but do not error (Compose files are edited
-independently of config). Global `enabled: false` takes precedence over
-per-service exclusions.
+See [docs/configuration.md](https://github.com/tmatens/compose-lint/blob/main/docs/configuration.md) for per-service exclusion semantics, precedence rules, and the full output-format mapping.
 
 ## CLI Reference
 
