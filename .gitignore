@@ -48,6 +48,10 @@ htmlcov/
 # Ruff
 .ruff_cache/
 
+# Mutation testing (mutmut working dir)
+mutants/
+.mutmut-stats/
+
 # Environment / secrets
 .env
 .env.*

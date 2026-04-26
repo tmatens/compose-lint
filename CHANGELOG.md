@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Mutation testing via `mutmut` configured in `pyproject.toml` against
+  `src/compose_lint/rules/` and `src/compose_lint/_image.py`. Baseline
+  documented in `docs/mutation-testing.md`. New `tests/test_rule_loader.py`
+  exercises rule auto-discovery so loader-logic mutants are caught. (#172)
 - Corpus regression snapshot at `tests/corpus_snapshot.json.gz` plus
   `scripts/snapshot.py` (`generate` / `diff` / `verify` subcommands) that
   digests compose-lint output across a real-world Compose corpus into a
@@ -22,6 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `cap_drop: [ALL]` + targeted `cap_add` for CL-0006/CL-0011, the short-form
   `no-new-privileges` security option for CL-0003, `CMD-SHELL` healthchecks
   for CL-0015, and named-volume mounts for CL-0017. (#174)
+
+### Changed
+
+- `CL-0005 _is_wildcard_ip` no longer carries an unreachable defensive
+  branch for `[0.0.0.0]` / `[*]` — Docker doesn't accept those forms and
+  no test exercised them. `[::]` continues to match via the wildcard set.
+  (#172)
 
 ## [0.6.0] - 2026-04-26
 
