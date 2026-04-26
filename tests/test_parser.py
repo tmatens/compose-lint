@@ -59,6 +59,20 @@ class TestLoadCompose:
         assert web["restart"] == "unless-stopped"
         assert web["image"] == "nginx:1.27-alpine"
 
+    def test_sequence_merge_keys(self) -> None:
+        # Compose accepts the YAML sequence-merge form `<<: [*a, *b]` to
+        # combine multiple anchored mappings into one service. Real-world
+        # corpus files use this (e.g. CVAT) — this fixture asserts both
+        # anchored mappings are merged in and that line attribution still
+        # falls inside the service block.
+        data, lines = load_compose(FIXTURES / "valid_anchors_seq_merge.yml")
+        web = data["services"]["web"]
+        assert web["restart"] == "unless-stopped"
+        assert web["read_only"] is True
+        assert web["security_opt"] == ["no-new-privileges:true"]
+        assert web["image"] == "nginx:1.27-alpine"
+        assert lines["services.web"] > lines["services"]
+
     def test_v2_with_version_key(self) -> None:
         data, _lines = load_compose(FIXTURES / "valid_v2.yml")
         assert "services" in data
