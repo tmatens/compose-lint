@@ -1,0 +1,18 @@
+x-base: &base
+  restart: unless-stopped
+
+x-secure: &secure
+  security_opt:
+    - no-new-privileges:true
+  read_only: true
+
+x-extension-fragment:
+  irrelevant: data
+
+services:
+  web:
+    <<: [*base, *secure]
+    image: nginx:1.27-alpine
+  worker:
+    <<: [*base, *secure]
+    image: python:3.12-slim
