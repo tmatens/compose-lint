@@ -187,6 +187,30 @@ All changes to `main` go through a PR — including maintainer changes.
 - **Update documentation** if you change behavior. Rule changes need
   `docs/rules/CL-XXXX.md`; CLI changes need `README.md`; version-visible
   changes need a CHANGELOG entry.
+- **Regenerate the corpus snapshot** if your change touches rule predicates,
+  severity, or finding line attribution. Run the corpus locally (see "Corpus
+  snapshot" below), then `python scripts/snapshot.py generate` and commit the
+  updated `tests/corpus_snapshot.json.gz` alongside the rule change. Reviewers
+  will see the diff in the PR.
+
+## Corpus snapshot
+
+`tests/corpus_snapshot.json.gz` locks compose-lint's output across a corpus
+of real-world Compose files so unintended rule drift is visible in PR diffs.
+
+- Generate a corpus locally with the helper scripts at
+  `~/.cache/compose-lint-corpus/scripts/` (out of tree by design — see
+  `LICENSE-corpus.md`). Set `COMPOSE_LINT_BIN` to your in-repo binary.
+- After a rule change, regenerate via
+  `python scripts/snapshot.py generate` and commit the updated
+  `tests/corpus_snapshot.json.gz`. Verify a clean run with
+  `python scripts/snapshot.py verify`.
+- The schema test (`tests/test_corpus_snapshot_schema.py`) runs in CI on
+  every PR and rejects schema changes that would carry third-party content
+  into the snapshot. Don't widen the schema beyond rule_id, service, and
+  line without revisiting `LICENSE-corpus.md`.
+- Don't commit `index.jsonl` or any compose file from the corpus —
+  those are third-party content and live only in your local cache.
 
 ## Reporting bugs
 
