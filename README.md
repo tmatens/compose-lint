@@ -11,9 +11,9 @@
 
 A security-focused linter for `docker-compose.yml` and `compose.yaml`. Catches dangerous misconfigurations before they reach production.
 
-In a scan of 1,405 public `docker-compose.yml` files on GitHub, **45% had at least one HIGH or CRITICAL security finding** — most commonly ports bound to all interfaces (43%), images deployed without a pinned digest (33%), or container capabilities never restricted (78%). compose-lint catches these in CI before they ship.
+In a scan of 1,405 public `docker-compose.yml` files on GitHub, **78% had at least one security finding** (45% HIGH or CRITICAL) — virtually all of those skip basic capability restrictions, 33% deploy images without a pinned digest, and 43% bind ports to all interfaces. compose-lint catches these in CI before they ship.
 
-Use it if you ship Compose to production, run a homelab with exposed services, or want a fast pre-merge gate on IaC. Same niche [Hadolint](https://github.com/hadolint/hadolint) occupies for Dockerfiles and [dclint](https://github.com/zavoloklom/docker-compose-linter) occupies for Compose schema and structure: zero-config, opinionated, fast, and grounded in [OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html) and [CIS](https://www.cisecurity.org/benchmark/docker) standards.
+Use it if you ship Compose to production, to ensure defense in depth in a homelab, or want a fast pre-merge gate on IaC. Same niche [Hadolint](https://github.com/hadolint/hadolint) occupies for Dockerfiles and [dclint](https://github.com/zavoloklom/docker-compose-linter) occupies for Compose schema and structure: zero-config, opinionated, fast, and grounded in [OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html) and [CIS](https://www.cisecurity.org/benchmark/docker) standards.
 
 ## Example Output
 
