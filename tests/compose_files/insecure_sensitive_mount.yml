@@ -52,6 +52,10 @@ services:
     image: nginx:1.27-alpine
     volumes:
       - /root/.ssh:/keys:ro
+  mounts_etc_trailing_slash:
+    image: nginx:1.27-alpine
+    volumes:
+      - /etc/:/host-etc
   safe_volume:
     image: nginx:1.27-alpine
     volumes:

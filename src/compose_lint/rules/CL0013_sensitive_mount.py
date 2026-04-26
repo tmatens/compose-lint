@@ -49,10 +49,8 @@ def _is_sensitive(host_path: str) -> str | None:
 
     Returns "/" for a literal root mount — the most sensitive path possible.
     """
-    if host_path == "/":
-        return "/"
     normalized = host_path.rstrip("/")
-    if normalized == "":
+    if not normalized:
         return "/"
     for sensitive in _SENSITIVE_PATHS:
         if normalized == sensitive or normalized.startswith(sensitive + "/"):

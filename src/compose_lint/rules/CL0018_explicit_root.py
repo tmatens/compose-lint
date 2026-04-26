@@ -28,7 +28,7 @@ def _is_root_user(user_str: str) -> bool:
     forms (root, 0, root:root, 0:0) all collapse to "is the user portion
     root?".
     """
-    user_part = user_str.split(":", 1)[0]
+    user_part = user_str.partition(":")[0]
     return user_part in _ROOT_USER_PARTS
 
 
