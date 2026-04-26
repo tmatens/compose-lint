@@ -165,3 +165,37 @@ class TestDeepNestingTraversal:
         # Same stripped dict returned for both aliases.
         assert stripped["services"]["web"] is stripped["services"]["api"]
         assert "__lines__" not in stripped["services"]["web"]
+
+    def test_collect_lines_bounds_chained_alias_blowup(self) -> None:
+        # Regression for issue #154: ClusterFuzzLite found a sub-1KB Compose
+        # file where chained YAML aliases fanned out _collect_lines into
+        # O(branching^depth) traversal, growing memory past 3GB and OOMing
+        # the linter. Without the id() memoization the parsed graph below
+        # expands to >11M path entries (~1.4GB); with it, work stays linear
+        # in the number of unique nodes.
+        import time
+
+        import yaml
+
+        from compose_lint.parser import LineLoader
+
+        content = """services:
+  s: {image: foo}
+a: &a {x: 1}
+b: &b {p: *a, q: *a, r: *a, s: *a, t: *a, u: *a, v: *a, w: *a, x: *a}
+c: &c {p: *b, q: *b, r: *b, s: *b, t: *b, u: *b, v: *b, w: *b, x: *b}
+d: &d {p: *c, q: *c, r: *c, s: *c, t: *c, u: *c, v: *c, w: *c, x: *c}
+e: &e {p: *d, q: *d, r: *d, s: *d, t: *d, u: *d, v: *d, w: *d, x: *d}
+f: &f {p: *e, q: *e, r: *e, s: *e, t: *e, u: *e, v: *e, w: *e, x: *e}
+g: &g {p: *f, q: *f, r: *f, s: *f, t: *f, u: *f, v: *f, w: *f, x: *f}
+h: {p: *g, q: *g, r: *g, s: *g, t: *g, u: *g, v: *g, w: *g, x: *g}
+"""
+        raw = yaml.load(content, Loader=LineLoader)  # noqa: S506
+        start = time.perf_counter()
+        result = _collect_lines(raw)
+        elapsed = time.perf_counter() - start
+        # Pre-fix: ~35s and >11M entries on a typical CI runner.
+        assert elapsed < 1.0
+        assert len(result) < 1000
+        # The legitimate `services.s.image` lookup still resolves.
+        assert "services.s" in result

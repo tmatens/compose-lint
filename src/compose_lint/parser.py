@@ -111,13 +111,24 @@ def _collect_lines(data: Any, prefix: str = "") -> dict[str, int]:
     """Collect line numbers into a flat dot-notation map.
 
     Iterative traversal with an explicit work stack so pathologically-
-    nested YAML can't exhaust the interpreter's recursion limit.
+    nested YAML can't exhaust the interpreter's recursion limit. The
+    visited set keyed by id() collapses YAML anchor-shared subtrees so
+    chained aliases can't fan out into O(branching^depth) work — each
+    unique container is walked once under the first prefix that reaches
+    it. Recorded line numbers come from the container's own __lines__
+    map, which is identical no matter which alias path arrived first, so
+    rule lookups against any reachable path still resolve correctly for
+    keys directly on that container.
     """
     lines: dict[str, int] = {}
+    visited: set[int] = set()
     stack: list[tuple[Any, str]] = [(data, prefix)]
     while stack:
         current, current_prefix = stack.pop()
         if isinstance(current, dict):
+            if id(current) in visited:
+                continue
+            visited.add(id(current))
             line_map = current.get("__lines__", {})
             for key, value in current.items():
                 if key == "__lines__":
@@ -127,6 +138,9 @@ def _collect_lines(data: Any, prefix: str = "") -> dict[str, int]:
                     lines[full_key] = line_map[key]
                 stack.append((value, full_key))
         elif isinstance(current, list):
+            if id(current) in visited:
+                continue
+            visited.add(id(current))
             for i, item in enumerate(current):
                 stack.append((item, f"{current_prefix}[{i}]"))
     return lines
