@@ -37,6 +37,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parse failures via `runs[].invocations[].toolExecutionNotifications`
   and sets `executionSuccessful: false`. A single-file invocation that
   fails to parse still exits 2 with the same `Error:` line. (#158)
+- Compose v1 files (services declared at the top level) and structural
+  fragments (files with only `volumes:` / `networks:` / `configs:` /
+  `secrets:` / `x-*` keys) are now skipped with exit 0 and a per-file
+  stderr note rather than hard-failing the whole invocation. The v1
+  format was retired by Docker in 2023; fragments are typically merged
+  with `-f overlay.yml` and not meaningful to lint in isolation.
+  Genuinely unrecognised shapes still exit 2. Combined with the
+  multi-file change above, `compose-lint **/*.yml` over a monorepo no
+  longer dies on the first v1 file or overlay it encounters. See
+  [ADR-013](docs/adr/013-missing-services-key.md). (#163)
+- SARIF `result.fixes[]` removed in favor of `result.properties.fix`.
+  SARIF 2.1.0 § 3.55 requires `artifactChanges` on every fix object,
+  and compose-lint's `Finding.fix` is human-readable prose, not a
+  machine-applicable patch — emitting `fixes[]` without `artifactChanges`
+  produced documents that strict validators (`check-jsonschema`
+  against the canonical OASIS schema) rejected. Lenient consumers
+  reading `result.fixes[0].description.text` should switch to
+  `result.properties.fix`. GitHub Code Scanning, Sonar, and other
+  major consumers tolerated the missing field but the document was
+  schema-invalid. (#168, fixes #166)
 
 ### Fixed
 
@@ -53,6 +73,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   updated to consult the per-item entry with parent-key fallback;
   CL-0001 and CL-0005 already used this pattern and now resolve
   correctly. Fixes #157.
+- `_collect_lines` no longer fans out `O(branching^depth)` across YAML
+  alias graphs. Chained anchors (`b: {p: *a, q: *a, ...}; c: {p: *b,
+  ...}; ...`) previously revisited the same container along every alias
+  path; ClusterFuzzLite hit this with a sub-4KB input that grew RSS
+  past 3 GB and OOMed the linter. Mirrors the `id()`-keyed visited-set
+  pattern already in `_strip_lines`. The same input now completes in
+  &lt;1 ms / 13 MB. (#161, fixes #154)
 
 ## [0.5.2] - 2026-04-25
 

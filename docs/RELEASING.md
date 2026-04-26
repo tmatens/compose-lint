@@ -158,12 +158,16 @@ version number.
 
 ## Bump the version
 
-compose-lint declares the version in **three** places that must stay
+compose-lint declares the version in **four** places that must stay
 in sync. Missing any one of them is a release-blocker — check all
-three before opening the bump PR.
+four before opening the bump PR.
 
 - [ ] `pyproject.toml` — `version = "X.Y.Z"` under `[project]`
 - [ ] `src/compose_lint/__init__.py` — `__version__ = "X.Y.Z"`
+- [ ] `README.md` — two `v0.X.Y` references in the GitHub Action
+      and pre-commit usage examples. Both need bumping each release;
+      otherwise the snippets users copy-paste land on a stale tag.
+      Verify with `grep -n 'v0\.[0-9]' README.md`.
 - [ ] `.github/workflows/marketplace-smoke.yml` — two
       `uses: tmatens/compose-lint@<sha> # vX.Y.Z` lines. Update both
       the full commit SHA and the trailing `# vX.Y.Z` comment. Get

@@ -27,7 +27,7 @@ pip install compose-lint
 docker run --rm -v "$(pwd):/src" composelint/compose-lint
 ```
 
-The image runs on [Google's distroless Python](https://github.com/GoogleContainerTools/distroless) (Debian 13, Python 3.13): no shell, no package manager, no `apt`, no `pip` at runtime. The entrypoint runs as nonroot (UID 65532). Only the Python interpreter, PyYAML, and `compose_lint` itself live in the final image — the `pip` package code and CLI binaries are stripped from the venv after the build stage, but pip's `dist-info` metadata is intentionally retained so SCA scanners (Docker Scout, Trivy, Grype, pip-audit) can still identify pip and report CVEs against it. Each release also ships an [OpenVEX](https://openvex.dev/) document (`compose-lint.openvex.json`) that marks known pip CVEs as `not_affected` with justification `vulnerable_code_not_present`, so scanners configured with `--vex` render them honestly as non-exploitable rather than hiding them. The VEX is also attached to the container image manifest as a cosign in-toto attestation (predicate type `openvex`), so scanners that discover attestations on pull (Docker Scout; Trivy and Grype with attestation-aware modes) apply it automatically without needing a flag. Multi-arch (linux/amd64 + linux/arm64), SHA-pinned base images bumped by Renovate, SLSA build provenance and Sigstore attestations published with every release. See [ADR-009](https://github.com/tmatens/compose-lint/blob/main/docs/adr/009-runtime-base-image.md).
+Distroless [Python](https://github.com/GoogleContainerTools/distroless) base, multi-arch (`linux/amd64` + `linux/arm64`), nonroot entrypoint, no shell or package manager at runtime. Every release ships SLSA build provenance, Sigstore attestations, and an [OpenVEX](https://openvex.dev/) document declaring known pip CVEs `not_affected` (justification: `vulnerable_code_not_present`) — pip code is stripped from the runtime venv and only `.dist-info` metadata is retained for SCA scanner attribution. See [ADR-009](https://github.com/tmatens/compose-lint/blob/main/docs/adr/009-runtime-base-image.md) for the full security posture.
 
 ## Quick Start
 
@@ -48,6 +48,12 @@ Docker equivalent:
 ```bash
 docker run --rm -v "$(pwd):/src" composelint/compose-lint docker-compose.prod.yml
 ```
+
+### Compose compatibility
+
+compose-lint targets the [Compose Specification](https://github.com/compose-spec/compose-spec) used by Compose v2 and v3. Compose v1 files (services declared at the top level) are skipped with a stderr note rather than failing the run — Docker [retired Compose v1 in 2023](https://www.docker.com/blog/new-docker-compose-v2-and-v1-deprecation/). Structural fragments (files containing only `volumes:` / `networks:` / `configs:` / `secrets:` / `x-*` keys, typically merged via `-f overlay.yml`) are skipped for the same reason. Genuinely unrecognised shapes still exit 2.
+
+Python 3.10+ is required for the pip install path; the Docker image is self-contained.
 
 ## Example Output
 
@@ -84,21 +90,26 @@ files: docker-compose.yml  ·  config: .compose-lint.yml  ·  fail-on: high
 
 docker-compose.yml
 
-  service: traefik  (line 2)
-       8  SUPPRESSED  CL-0001  Docker socket mounted via '/var/run/docker.sock:/var/run/docker.sock'. This gives the container full control over the Docker daemon.
+  service: traefik  (line 9)
+       9  SUPPRESSED  CL-0001  Docker socket mounted via '/var/run/docker.sock:/var/run/docker.sock'. This gives the container full control over the Docker daemon.
           reason: SEC-1234 approved — socket proxy planned for 2026-Q3
-      10  HIGH        CL-0005  Port '8080:80' is bound to all interfaces. Docker bypasses host firewalls (UFW/firewalld), potentially exposing this port to the public internet.
-          10 │       - "8080:80"
+       9  HIGH      CL-0013  Service mounts sensitive host path '/var/run/docker.sock' (under /var/run). This exposes host system files to the container.
+          9 │       - /var/run/docker.sock:/var/run/docker.sock
+            │         ^^^^^^^^^^^^^^^^^^^^
+          fix: Remove the bind mount for /var/run/docker.sock. If the container needs specific files, copy them into the image at build time or use a named volume with only the required data.
+          ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8---set-filesystem-and-volumes-to-read-only
+      11  HIGH      CL-0005  Port '8080:80' is bound to all interfaces. Docker bypasses host firewalls (UFW/firewalld), potentially exposing this port to the public internet.
+          11 │       - "8080:80"
              │          ^^^^^^^
           fix: Bind to localhost: 127.0.0.1:8080:80
                If public access is needed, use a reverse proxy with TLS.
           ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5a---be-careful-when-mapping-container-ports-to-the-host-with-firewalls-like-ufw
 
-docker-compose.yml: 1 high  ·  1 suppressed (not counted)
-✗ FAIL  ·  1 finding at or above high
+docker-compose.yml: 2 high  ·  1 suppressed (not counted)
+✗ FAIL  ·  2 findings at or above high
 ```
 
-Exit code is `1` (one finding at or above the default `--fail-on high` threshold). Suppressed findings are shown for auditability but do not count toward the threshold. Findings are grouped by service; the fix block and reference URL print only once per rule id per file — pass `-v` / `--verbose` to repeat them on every finding.
+Exit code is `1` (two findings at or above the default `--fail-on high` threshold). Suppressed findings are shown for auditability but do not count toward the threshold. Findings are grouped by service; the fix block and reference URL print only once per rule id per file — pass `-v` / `--verbose` to repeat them on every finding.
 
 ## Rules
 
@@ -224,7 +235,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: tmatens/compose-lint@v0.3.7
+      - uses: tmatens/compose-lint@v0.5.2
         with:
           sarif-file: results.sarif
 ```
@@ -251,7 +262,7 @@ compose-lint --format sarif docker-compose.yml > results.sarif
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/tmatens/compose-lint
-    rev: v0.3.7
+    rev: v0.5.2
     hooks:
       - id: compose-lint
 ```
