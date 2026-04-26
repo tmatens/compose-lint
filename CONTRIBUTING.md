@@ -6,7 +6,7 @@ contributions is clarity and authoritative grounding rather than breadth.
 ## Before you start
 
 - **Bug reports and feature requests**: open an issue using one of the templates.
-- **Security vulnerabilities**: do *not* open a public issue. See [SECURITY.md](SECURITY.md).
+- **Security vulnerabilities**: do *not* open a public issue. See [SECURITY.md](.github/SECURITY.md).
 - **New rule proposals**: use the "Rule proposal" issue template. Every rule must
   be grounded in an authoritative source (OWASP Docker Security Cheat Sheet, CIS
   Docker Benchmark, or Docker official documentation). Opinion-only rules are
@@ -24,7 +24,7 @@ scope.
   releases, security response.
 
 Maintainers review and merge PRs, triage issues within 14 days, respond to
-security reports within 7 days per [SECURITY.md](SECURITY.md), and cut
+security reports within 7 days per [SECURITY.md](.github/SECURITY.md), and cut
 releases per [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Development setup
@@ -223,5 +223,5 @@ Use the bug report issue template. Include:
 
 ## Code of conduct
 
-This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). By
+This project follows the [Contributor Covenant](.github/CODE_OF_CONDUCT.md). By
 participating you agree to uphold it.
