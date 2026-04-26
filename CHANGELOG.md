@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Corpus regression snapshot at `tests/corpus_snapshot.json.gz` plus
+  `scripts/snapshot.py` (`generate` / `diff` / `verify` subcommands) that
+  digests compose-lint output across a real-world Compose corpus into a
+  `(rule_id, service, line)` fingerprint per file. A CI-gated schema test
+  prevents the digest from accidentally carrying third-party content; an
+  opt-in pytest entry (`COMPOSE_LINT_CORPUS=<cache-root>`) verifies the
+  snapshot against the latest local run. See `LICENSE-corpus.md` for the
+  licensing posture and `CONTRIBUTING.md` for the regen workflow. (#173)
 - Negative-coverage fixtures (`tests/compose_files/safe_*.yml`) asserting that
   hardened-but-unusual Compose patterns do not trigger false positives:
   `cap_drop: [ALL]` + targeted `cap_add` for CL-0006/CL-0011, the short-form
