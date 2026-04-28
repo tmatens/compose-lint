@@ -36,6 +36,10 @@ What can the attacker reach if the misconfiguration is exploited?
 | **Requires chaining** | HIGH | HIGH | MEDIUM |
 | **Hardening gap** | HIGH | MEDIUM | LOW |
 
+## CIS Docker Benchmark version
+
+CIS reference numbers in rule docs are pinned to **CIS Docker Benchmark v1.6.0** unless otherwise noted. Numbers shift between benchmark versions; if a citation looks wrong against your benchmark copy, check the version first.
+
 ## Current rule assignments
 
 | Rule | Exploitability | Impact | Severity |
@@ -46,12 +50,23 @@ What can the attacker reach if the misconfiguration is exploited?
 | CL-0008 (Host network) | Exposed | Host | HIGH |
 | CL-0009 (Security profile disabled) | Requires chaining | Cross-container | HIGH |
 | CL-0010 (Host namespace) | Exposed | Cross-container | HIGH |
+| CL-0011 (Dangerous capabilities added — `ALL`) | Direct | Host | CRITICAL |
+| CL-0011 (Dangerous capabilities added — others) | Requires chaining | Host | HIGH |
+| CL-0013 (Sensitive host path mounted — `/`) | Direct | Host | CRITICAL |
+| CL-0013 (Sensitive host path mounted — others) | Exposed | Host | HIGH |
+| CL-0016 (Dangerous host device exposed) | Exposed | Host | HIGH |
 | CL-0003 (No-new-privileges) | Requires chaining | Single container | MEDIUM |
 | CL-0004 (Image not pinned) | Supply chain* | Host | MEDIUM |
 | CL-0006 (No capability restrictions) | Hardening gap | Single container | MEDIUM |
 | CL-0007 (Read-only filesystem) | Hardening gap | Single container | MEDIUM |
+| CL-0012 (PIDs cgroup limit disabled) | Requires chaining | Cross-container | MEDIUM |
+| CL-0014 (Logging driver disabled) | Hardening gap | Cross-container | MEDIUM |
+| CL-0017 (Shared mount propagation) | Requires chaining | Single container | MEDIUM |
+| CL-0018 (Explicit root user) | Hardening gap | Single container | MEDIUM |
+| CL-0019 (Image tag without digest) | Supply chain* | Host | MEDIUM |
+| CL-0015 (Healthcheck disabled) | Hardening gap | Single container | LOW |
 
-*CL-0004 is a supply chain risk that doesn't fit the runtime exploitation model cleanly. It is scored MEDIUM based on the combination of an unlikely-but-uncontrollable attack vector (upstream registry compromise) and a host-level blast radius.
+*CL-0004 and CL-0019 are supply chain risks that don't fit the runtime exploitation model cleanly. They are scored MEDIUM based on the combination of an unlikely-but-uncontrollable attack vector (upstream registry compromise) and a host-level blast radius. CL-0019 is the stronger guarantee of the two; CL-0004 catches the obvious mutable-tag cases.
 
 ## Rule categories
 

@@ -38,7 +38,7 @@ _NAMESPACE_CHECKS: list[tuple[str, str, str, str]] = [
     (
         "uts",
         "host",
-        "CIS Docker Benchmark 5.21 — Do not share the host's UTS namespace",
+        "CIS Docker Benchmark 5.20 — Do not share the host's UTS namespace",
         "UTS namespace. The container can change the host's hostname.",
     ),
 ]
@@ -61,7 +61,7 @@ class HostNamespaceRule(BaseRule):
             severity=Severity.HIGH,
             references=[
                 OWASP_REF,
-                "CIS Docker Benchmark 5.8, 5.10, 5.15, 5.21",
+                "CIS Docker Benchmark 5.8, 5.10, 5.15, 5.20",
             ],
         )
 

@@ -10,7 +10,10 @@ from compose_lint.rules import BaseRule, register_rule
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-CIS_REF = "CIS Docker Benchmark 5.20 — Do not share the host's mount propagation"
+CIS_REF = (
+    "CIS Docker Benchmark 5.19 — Ensure that mount propagation mode is not set "
+    "to shared"
+)
 
 
 @register_rule
