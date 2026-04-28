@@ -10,7 +10,8 @@ from compose_lint.rules import BaseRule, register_rule
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-CIS_REF = "CIS Docker Benchmark 5.x — Ensure container logging is configured"
+DOCKER_REF = "https://docs.docker.com/engine/logging/configure/"
+OWASP_REF = "https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html"
 
 
 @register_rule
@@ -27,7 +28,7 @@ class LoggingDisabledRule(BaseRule):
                 "collection, making incident response and forensics impossible."
             ),
             severity=Severity.MEDIUM,
-            references=[CIS_REF],
+            references=[DOCKER_REF, OWASP_REF],
         )
 
     def check(
@@ -62,5 +63,5 @@ class LoggingDisabledRule(BaseRule):
                     "      max-size: 10m\n"
                     "      max-file: '3'"
                 ),
-                references=[CIS_REF],
+                references=[DOCKER_REF, OWASP_REF],
             )

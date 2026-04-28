@@ -22,6 +22,15 @@ _DANGEROUS_DEVICE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^/dev/sd[a-z]"), "/dev/sd* — SCSI/SATA block device"),
     (re.compile(r"^/dev/nvme"), "/dev/nvme* — NVMe block device"),
     (re.compile(r"^/dev/disk/"), "/dev/disk/* — block device symlinks"),
+    (
+        re.compile(r"^/dev/loop"),
+        "/dev/loop* — loop device (mount arbitrary disk images)",
+    ),
+    (re.compile(r"^/dev/dm-"), "/dev/dm-* — device mapper block device"),
+    (re.compile(r"^/dev/mapper/"), "/dev/mapper/* — device mapper symlink"),
+    (re.compile(r"^/dev/zfs$"), "/dev/zfs — ZFS pool control device"),
+    (re.compile(r"^/dev/rbd"), "/dev/rbd* — Ceph RBD block device"),
+    (re.compile(r"^/dev/raw"), "/dev/raw* — raw character device"),
 ]
 
 

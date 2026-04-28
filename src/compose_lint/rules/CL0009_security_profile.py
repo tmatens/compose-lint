@@ -18,7 +18,12 @@ OWASP_REF = (
 
 CIS_SECCOMP_REF = "CIS Docker Benchmark 5.21 — Do not disable default seccomp profile"
 CIS_APPARMOR_REF = (
-    "CIS Docker Benchmark 5.2 — Verify SELinux/AppArmor profile is enabled"
+    "CIS Docker Benchmark 5.1 — Ensure that, if applicable, an AppArmor profile "
+    "is enabled"
+)
+CIS_SELINUX_REF = (
+    "CIS Docker Benchmark 5.2 — Ensure that, if applicable, SELinux security "
+    "options are set"
 )
 
 _DISABLED_PROFILES = {
@@ -55,7 +60,7 @@ class SecurityProfileRule(BaseRule):
                 "that limit what a compromised container can do."
             ),
             severity=Severity.HIGH,
-            references=[OWASP_REF, CIS_SECCOMP_REF, CIS_APPARMOR_REF],
+            references=[OWASP_REF, CIS_SECCOMP_REF, CIS_APPARMOR_REF, CIS_SELINUX_REF],
         )
 
     def check(
@@ -91,5 +96,10 @@ class SecurityProfileRule(BaseRule):
                     f"Remove '{opt_str}' from security_opt. The host applies "
                     f"a default {profile_name} policy automatically."
                 ),
-                references=[OWASP_REF, CIS_SECCOMP_REF, CIS_APPARMOR_REF],
+                references=[
+                    OWASP_REF,
+                    CIS_SECCOMP_REF,
+                    CIS_APPARMOR_REF,
+                    CIS_SELINUX_REF,
+                ],
             )

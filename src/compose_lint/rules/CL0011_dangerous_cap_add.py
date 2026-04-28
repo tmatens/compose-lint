@@ -16,7 +16,9 @@ OWASP_REF = (
     "specific-capabilities-needed-by-a-container"
 )
 
-CIS_REF = "CIS Docker Benchmark 5.5 — Do not mount sensitive host system directories"
+CIS_REF = (
+    "CIS Docker Benchmark 5.3 — Restrict Linux kernel capabilities within containers"
+)
 
 DANGEROUS_CAPS: dict[str, str] = {
     "ALL": (

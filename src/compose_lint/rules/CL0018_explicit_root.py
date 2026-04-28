@@ -15,7 +15,7 @@ OWASP_REF = (
     "Docker_Security_Cheat_Sheet.html#rule-7---do-not-use-root-user"
 )
 
-CIS_REF = "CIS Docker Benchmark 5.x — Do not run containers as root"
+DOCKER_REF = "https://docs.docker.com/engine/security/userns-remap/"
 
 _ROOT_USER_PARTS = {"root", "0"}
 
@@ -47,7 +47,7 @@ class ExplicitRootRule(BaseRule):
                 "UID 0."
             ),
             severity=Severity.MEDIUM,
-            references=[OWASP_REF, CIS_REF],
+            references=[OWASP_REF, DOCKER_REF],
         )
 
     def check(
@@ -78,5 +78,5 @@ class ExplicitRootRule(BaseRule):
                     "instruction, or set a non-root user:\n"
                     "  user: 1000:1000"
                 ),
-                references=[OWASP_REF, CIS_REF],
+                references=[OWASP_REF, DOCKER_REF],
             )

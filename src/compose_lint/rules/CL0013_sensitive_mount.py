@@ -24,8 +24,12 @@ _SENSITIVE_PATHS = (
     "/sys",
     "/boot",
     "/root",
+    "/dev",
     "/var/lib/docker",
+    "/var/lib/kubelet",
     "/var/run",
+    "/run/containerd",
+    "/run/systemd",
     "/home",
 )
 
@@ -69,10 +73,11 @@ class SensitiveMountRule(BaseRule):
             name="Sensitive host path mounted",
             description=(
                 "Mounting sensitive host directories like /etc, /proc, /sys, "
-                "/boot, /root, /var/lib/docker, /var/run, or /home into a "
-                "container exposes host configuration, kernel interfaces, and "
-                "credentials. Mounting the entire host root filesystem is a "
-                "one-line container escape."
+                "/boot, /dev, /root, /var/lib/docker, /var/lib/kubelet, "
+                "/var/run, /run/containerd, /run/systemd, or /home into a "
+                "container exposes host configuration, kernel interfaces, "
+                "container-runtime state, and credentials. Mounting the "
+                "entire host root filesystem is a one-line container escape."
             ),
             severity=Severity.HIGH,
             references=[OWASP_REF, CIS_REF],

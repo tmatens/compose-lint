@@ -23,8 +23,9 @@ class PidsLimitRule(BaseRule):
             id="CL-0012",
             name="PIDs cgroup limit disabled",
             description=(
-                "Setting pids_limit to 0 or -1 removes the process count limit, "
-                "allowing a container to fork-bomb the host."
+                "Setting pids_limit to a non-positive integer (0, -1, or any "
+                "negative value) removes the process count limit, allowing a "
+                "container to fork-bomb the host."
             ),
             severity=Severity.MEDIUM,
             references=[CIS_REF],
