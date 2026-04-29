@@ -50,6 +50,8 @@ CIS reference numbers in rule docs are pinned to **CIS Docker Benchmark v1.6.0**
 | CL-0008 (Host network) | Exposed | Host | HIGH |
 | CL-0009 (Security profile disabled) | Requires chaining | Cross-container | HIGH |
 | CL-0010 (Host namespace) | Exposed | Cross-container | HIGH |
+| CL-0020 (Credential-shaped env key with literal value) | Exposed | Cross-container | HIGH |
+| CL-0021 (Credential embedded in connection-string env value) | Exposed | Cross-container | HIGH |
 | CL-0011 (Dangerous capabilities added — `ALL`) | Direct | Host | CRITICAL |
 | CL-0011 (Dangerous capabilities added — others) | Requires chaining | Host | HIGH |
 | CL-0013 (Sensitive host path mounted — `/`) | Direct | Host | CRITICAL |

@@ -142,6 +142,8 @@ Python 3.10+ is required for the pip install path; the Docker image is self-cont
 | [CL-0017](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0017.md) | MEDIUM | Shared mount propagation | — | 5.20 |
 | [CL-0018](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0018.md) | MEDIUM | Explicit root user | [Rule #7](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-7---do-not-run-containers-with-a-root-user) | 5.x |
 | [CL-0019](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0019.md) | MEDIUM | Image tag without digest | [Rule #13](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-13---enhance-supply-chain-security) | 5.27 |
+| [CL-0020](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0020.md) | HIGH | Credential-shaped env key with literal value | [Rule #11](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-11---use-secret-management-tools) | 5.x |
+| [CL-0021](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0021.md) | HIGH | Credential embedded in connection-string env value | [Rule #11](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-11---use-secret-management-tools) | 5.x |
 
 ## Severity Levels
 

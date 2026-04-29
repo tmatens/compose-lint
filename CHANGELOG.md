@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- New rule **CL-0020** — credential-shaped env keys with literal values.
+  Flags `environment:` entries whose key matches a credential convention
+  (`PASSWORD`, `TOKEN`, `SECRET`, `API_KEY`, `ACCESS_KEY`, `PRIVATE_KEY`,
+  `CREDENTIAL`, plus suffix-anchored `_PASS`, `_PWD`, `PASSWD`, `_SALT`,
+  `_DSN`) and whose value is a non-empty literal string. Exempts the
+  `*_FILE` secrets-mount convention, `ALLOW_EMPTY_*` / `RANDOM_*`
+  boolean toggles, and bool/numeric values. Skips `${VAR}` substitutions.
+  Severity HIGH. Fires on 17.9% of real-world Compose files in the
+  corpus. See [docs/rules/CL-0020.md](docs/rules/CL-0020.md). (#190)
+- New rule **CL-0021** — credentials embedded in connection-string env
+  values. Flags `environment:` values containing a literal
+  `scheme://user:password@host` userinfo regardless of the key name.
+  Skips when either userinfo half is a `${VAR}` substitution. Catches
+  inline credentials in `DATABASE_URL`, `MONGO_URL`,
+  `AIRFLOW__DATABASE__SQL_ALCHEMY_CONN`, etc. — the largest detection
+  class CL-0020's key-pattern matching misses. Severity HIGH. See
+  [docs/rules/CL-0021.md](docs/rules/CL-0021.md). (#193)
 - Mutation testing via `mutmut` configured in `pyproject.toml` against
   `src/compose_lint/rules/` and `src/compose_lint/_image.py`. Baseline
   documented in `docs/mutation-testing.md`. New `tests/test_rule_loader.py`
