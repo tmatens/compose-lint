@@ -1,0 +1,68 @@
+services:
+  postgres_url_literal:
+    image: app:1.0
+    environment:
+      DATABASE_URL: postgresql://postgres:hunter2@db:5432/app
+  mongo_url_literal:
+    image: app:1.0
+    environment:
+      MONGO_URL: mongodb://root:example@mongo:27017/
+  redis_url_literal:
+    image: app:1.0
+    environment:
+      REDIS_URL: redis://default:redispw@redis:6379/0
+  airflow_sqlalchemy_conn:
+    image: apache/airflow:2.9.0
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+  innocuous_key_with_inline_creds:
+    image: app:1.0
+    environment:
+      SOMETHING_ELSE: scheme://user:pw@host/path
+  list_form_inline_creds:
+    image: app:1.0
+    environment:
+      - DATABASE_URL=postgresql://app:literalpw@db/app
+  multiple_inline_creds:
+    image: app:1.0
+    environment:
+      DB_A: postgres://a:pwA@h1/x
+      DB_B: postgres://b:pwB@h2/y
+  skip_user_var_password_var:
+    image: app:1.0
+    environment:
+      DATABASE_URL: postgres://${USER}:${PASSWORD}@db/app
+  skip_user_literal_password_var:
+    image: app:1.0
+    environment:
+      DATABASE_URL: postgres://app:${DB_PASSWORD}@db/app
+  skip_user_var_password_literal:
+    image: app:1.0
+    environment:
+      DATABASE_URL: postgres://${USER}:literalpw@db/app
+  skip_no_password:
+    image: app:1.0
+    environment:
+      DATABASE_URL: postgres://app@db/app
+  skip_empty_password:
+    image: app:1.0
+    environment:
+      DATABASE_URL: postgres://app:@db/app
+  skip_no_userinfo:
+    image: app:1.0
+    environment:
+      DATABASE_URL: postgres://db:5432/app
+  skip_pure_var_value:
+    image: app:1.0
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+  skip_empty_value:
+    image: app:1.0
+    environment:
+      DATABASE_URL: ""
+  skip_no_environment:
+    image: app:1.0
+  list_form_skipped_when_var:
+    image: app:1.0
+    environment:
+      - DATABASE_URL=postgres://app:${PW}@db/app
