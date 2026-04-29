@@ -63,6 +63,14 @@ class TestIntegration:
         result = run_cli(str(FIXTURES / "valid_basic.yml"))
         assert result.returncode == 0
 
+    def test_self_hosted_fixture_lints_clean_at_low_threshold(self) -> None:
+        # The hardened compose-lint-runs-compose-lint configuration in the
+        # README must produce zero findings across every rule. Asserting
+        # at --fail-on low makes any new rule that fires on it a release
+        # blocker — i.e. compose-lint must always be able to dogfood.
+        result = run_cli("--fail-on", "low", str(FIXTURES / "safe_self_hosted.yml"))
+        assert result.returncode == 0, result.stdout + result.stderr
+
     def test_medium_only_exits_zero_by_default(self) -> None:
         """Medium findings alone should not cause exit 1 with default --fail-on high."""
         result = run_cli(str(FIXTURES / "warnings_only.yml"))

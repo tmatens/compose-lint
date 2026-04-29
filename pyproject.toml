@@ -5,18 +5,31 @@ build-backend = "hatchling.build"
 [project]
 name = "compose-lint"
 version = "0.6.0"
-description = "A security-focused linter for Docker Compose files"
+description = "Static-analysis linter for Docker Compose files. Finds insecure container configuration with OWASP/CIS-grounded rules; emits SARIF for GitHub Code Scanning."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [{ name = "Todd Matens" }]
-keywords = ["docker", "docker-compose", "security", "linter", "devops", "devsecops"]
+keywords = [
+    "docker",
+    "docker-compose",
+    "compose",
+    "security",
+    "linter",
+    "static-analysis",
+    "iac-security",
+    "sarif",
+    "owasp",
+    "cis-benchmark",
+    "devsecops",
+]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -25,6 +38,7 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Topic :: Security",
     "Topic :: Software Development :: Quality Assurance",
+    "Topic :: System :: Systems Administration",
 ]
 dependencies = [
     "pyyaml>=6.0.2,<7",
@@ -75,6 +89,7 @@ compose-lint = "compose_lint.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/tmatens/compose-lint"
+Source = "https://github.com/tmatens/compose-lint"
 Documentation = "https://github.com/tmatens/compose-lint/tree/main/docs"
 Issues = "https://github.com/tmatens/compose-lint/issues"
 Changelog = "https://github.com/tmatens/compose-lint/blob/main/CHANGELOG.md"

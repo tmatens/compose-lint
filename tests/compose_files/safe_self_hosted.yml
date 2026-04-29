@@ -1,0 +1,17 @@
+services:
+  compose-lint:
+    image: composelint/compose-lint:0.6.0@sha256:a1234567890abcdef
+    user: "65532:65532"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    network_mode: none
+    volumes:
+      - type: bind
+        source: .
+        target: /src
+        read_only: true
+    command: ["docker-compose.yml"]

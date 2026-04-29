@@ -164,10 +164,15 @@ four before opening the bump PR.
 
 - [ ] `pyproject.toml` — `version = "X.Y.Z"` under `[project]`
 - [ ] `src/compose_lint/__init__.py` — `__version__ = "X.Y.Z"`
-- [ ] `README.md` — two `v0.X.Y` references in the GitHub Action
-      and pre-commit usage examples. Both need bumping each release;
-      otherwise the snippets users copy-paste land on a stale tag.
-      Verify with `grep -n 'v0\.[0-9]' README.md`.
+- [ ] `README.md` — version references in copy-paste integration
+      snippets. All need bumping each release; otherwise users land
+      on a stale version. Three forms exist:
+      - `tmatens/compose-lint@<sha> # v0.X.Y` (GitHub Action snippet)
+      - `rev: v0.X.Y` (pre-commit snippet)
+      - `compose-lint==0.X.Y` (Forgejo Actions snippet — pip pin)
+
+      Verify all three with:
+      `grep -nE 'v0\.[0-9]+\.[0-9]+|compose-lint==0\.[0-9]+\.[0-9]+' README.md`.
 - [ ] `.github/workflows/marketplace-smoke.yml` — two
       `uses: tmatens/compose-lint@<sha> # vX.Y.Z` lines. Update both
       the full commit SHA and the trailing `# vX.Y.Z` comment. Get
