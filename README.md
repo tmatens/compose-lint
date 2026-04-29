@@ -9,67 +9,18 @@
 [![OpenSSF Baseline 2](https://www.bestpractices.dev/projects/12472/baseline)](https://www.bestpractices.dev/projects/12472)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12472/badge)](https://www.bestpractices.dev/projects/12472)
 
-A security-focused linter for `docker-compose.yml` and `compose.yaml`. Catches dangerous misconfigurations before they reach production.
+Static-analysis linter for `docker-compose.yml` and `compose.yaml` that catches dangerous misconfigurations before they reach production — privileged containers, unpinned images, host-network sharing, sensitive bind mounts, hard-coded credentials, and more.
 
 In a scan of 1,405 public `docker-compose.yml` files on GitHub, **78% had at least one security finding** (45% HIGH or CRITICAL) — virtually all of those skip basic capability restrictions, 33% deploy images without a pinned digest, and 43% bind ports to all interfaces. compose-lint catches these in CI before they ship.
 
-Use it if you ship Compose to production, to ensure defense in depth in a homelab, or want a fast pre-merge gate on IaC. Fits the same niche as [Hadolint, the Dockerfile linter](https://github.com/hadolint/hadolint) and [dclint, the Compose schema linter](https://github.com/zavoloklom/docker-compose-linter): zero-config, opinionated, fast, and grounded in the [OWASP Docker Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html) and [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker).
+**What it catches:**
 
-## Example Output
+- Privilege flaws — `privileged: true`, missing `cap_drop`, `no-new-privileges` not set, root user, host namespace sharing
+- Network exposure — wildcard port binds, `network_mode: host`
+- Supply-chain — unpinned images, missing digest pins
+- Filesystem and credential leaks — Docker socket mounts, sensitive host paths, plaintext credentials in `environment:`
 
-Given this `docker-compose.yml`:
-
-```yaml
-services:
-  traefik:
-    image: traefik:v3.0@sha256:aaaabbbbccccddddeeeeffff00001111222233334444555566667777888899990
-    read_only: true
-    cap_drop: [ALL]
-    security_opt:
-      - no-new-privileges:true
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    ports:
-      - "8080:80"
-```
-
-and this `.compose-lint.yml` (suppressing CL-0001 for `traefik` with a tracked reason):
-
-```yaml
-rules:
-  CL-0001:
-    exclude_services:
-      traefik: "SEC-1234 approved — socket proxy planned for 2026-Q3"
-```
-
-running `compose-lint docker-compose.yml` produces:
-
-```
-compose-lint 0.5.2
-files: docker-compose.yml  ·  config: .compose-lint.yml  ·  fail-on: high
-
-docker-compose.yml
-
-  service: traefik  (line 9)
-       9  SUPPRESSED  CL-0001  Docker socket mounted via '/var/run/docker.sock:/var/run/docker.sock'. This gives the container full control over the Docker daemon.
-          reason: SEC-1234 approved — socket proxy planned for 2026-Q3
-       9  HIGH      CL-0013  Service mounts sensitive host path '/var/run/docker.sock' (under /var/run). This exposes host system files to the container.
-          9 │       - /var/run/docker.sock:/var/run/docker.sock
-            │         ^^^^^^^^^^^^^^^^^^^^
-          fix: Remove the bind mount for /var/run/docker.sock. If the container needs specific files, copy them into the image at build time or use a named volume with only the required data.
-          ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8---set-filesystem-and-volumes-to-read-only
-      11  HIGH      CL-0005  Port '8080:80' is bound to all interfaces. Docker bypasses host firewalls (UFW/firewalld), potentially exposing this port to the public internet.
-          11 │       - "8080:80"
-             │          ^^^^^^^
-          fix: Bind to localhost: 127.0.0.1:8080:80
-               If public access is needed, use a reverse proxy with TLS.
-          ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5a---be-careful-when-mapping-container-ports-to-the-host-with-firewalls-like-ufw
-
-docker-compose.yml: 2 high  ·  1 suppressed (not counted)
-✗ FAIL  ·  2 findings at or above high
-```
-
-Exit code is `1` (two findings at or above the default `--fail-on high` threshold). Suppressed findings are shown for auditability but do not count toward the threshold. Findings are grouped by service; the fix block and reference URL print only once per rule id per file — pass `-v` / `--verbose` to repeat them on every finding.
+Use it if you ship Compose to production, want defense in depth in a homelab, or want a fast pre-merge gate on infrastructure-as-code. Fits the same niche as [Hadolint, the Dockerfile linter](https://github.com/hadolint/hadolint) and [dclint, the Compose schema linter](https://github.com/zavoloklom/docker-compose-linter): zero-config, opinionated, fast, and grounded in the [OWASP Docker Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html) and [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker).
 
 ## Installation
 
@@ -86,6 +37,35 @@ docker run --rm -v "$(pwd):/src" composelint/compose-lint
 ```
 
 The Docker image is distroless, multi-arch, and runs nonroot — see [Security posture](#security-posture) below for SLSA, Sigstore, and OpenVEX details.
+
+### Running with full hardening
+
+The image is safe-by-default (distroless, nonroot, read-only attack surface) so the simple form above is fine for most use. If you want to dogfood compose-lint's own rules against the container that runs it, the fully-hardened invocation is:
+
+```bash
+docker run --rm \
+  --read-only \
+  --cap-drop ALL \
+  --security-opt no-new-privileges:true \
+  --network none \
+  --user 65532:65532 \
+  --pids-limit 256 \
+  -v "$(pwd):/src:ro" \
+  composelint/compose-lint@sha256:<digest>
+```
+
+| Flag | Rule satisfied |
+|---|---|
+| `--security-opt no-new-privileges:true` | CL-0003 |
+| `@sha256:<digest>` | CL-0004, CL-0019 |
+| `--cap-drop ALL` | CL-0006 |
+| `--read-only` | CL-0007 |
+| `--pids-limit 256` | CL-0012 (defense-in-depth; rule fires only on `0`/`-1`) |
+| `--user 65532:65532` | CL-0018 (matches the image's existing default) |
+
+`--network none` and `:ro` on the bind mount are extra hardening — compose-lint never reaches the network and only reads its inputs.
+
+A Compose-form equivalent that lints clean across every rule lives in [`tests/compose_files/safe_self_hosted.yml`](https://github.com/tmatens/compose-lint/blob/main/tests/compose_files/safe_self_hosted.yml).
 
 ## Quick Start
 
@@ -118,6 +98,61 @@ docker run --rm -v "$(pwd):/src" composelint/compose-lint docker-compose.prod.ym
 compose-lint targets the [Compose Specification](https://github.com/compose-spec/compose-spec) used by Compose v2 and v3. Compose v1 files (services declared at the top level) are skipped with a stderr note rather than failing the run — Docker [retired Compose v1 in 2023](https://www.docker.com/blog/new-docker-compose-v2-and-v1-deprecation/). Structural fragments (files containing only `volumes:` / `networks:` / `configs:` / `secrets:` / `x-*` keys, typically merged via `-f overlay.yml`) are skipped for the same reason. Genuinely unrecognised shapes still exit 2.
 
 Python 3.10+ is required for the pip install path; the Docker image is self-contained.
+
+## Example Output
+
+Given this `docker-compose.yml`:
+
+```yaml
+services:
+  traefik:
+    image: traefik:v3.0@sha256:aaaabbbbccccddddeeeeffff00001111222233334444555566667777888899990
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8080:80"
+```
+
+and this `.compose-lint.yml` (suppressing CL-0001 for `traefik` with a tracked reason):
+
+```yaml
+rules:
+  CL-0001:
+    exclude_services:
+      traefik: "SEC-1234 approved — socket proxy planned for 2026-Q3"
+```
+
+running `compose-lint docker-compose.yml` produces:
+
+```
+files: docker-compose.yml  ·  config: .compose-lint.yml  ·  fail-on: high
+
+docker-compose.yml
+
+  service: traefik  (line 9)
+       9  SUPPRESSED  CL-0001  Docker socket mounted via '/var/run/docker.sock:/var/run/docker.sock'. This gives the container full control over the Docker daemon.
+          reason: SEC-1234 approved — socket proxy planned for 2026-Q3
+       9  HIGH      CL-0013  Service mounts sensitive host path '/var/run/docker.sock' (under /var/run). This exposes host system files to the container.
+          9 │       - /var/run/docker.sock:/var/run/docker.sock
+            │         ^^^^^^^^^^^^^^^^^^^^
+          fix: Remove the bind mount for /var/run/docker.sock. If the container needs specific files, copy them into the image at build time or use a named volume with only the required data.
+          ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8---set-filesystem-and-volumes-to-read-only
+      11  HIGH      CL-0005  Port '8080:80' is bound to all interfaces. Docker bypasses host firewalls (UFW/firewalld), potentially exposing this port to the public internet.
+          11 │       - "8080:80"
+             │          ^^^^^^^
+          fix: Bind to localhost: 127.0.0.1:8080:80
+               If public access is needed, use a reverse proxy with TLS.
+          ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5a---be-careful-when-mapping-container-ports-to-the-host-with-firewalls-like-ufw
+
+docker-compose.yml: 2 high  ·  1 suppressed (not counted)
+✗ FAIL  ·  2 findings at or above high
+```
+
+Exit code is `1` (two findings at or above the default `--fail-on high` threshold). Suppressed findings are shown for auditability but do not count toward the threshold. Findings are grouped by service; the fix block and reference URL print only once per rule id per file — pass `-v` / `--verbose` to repeat them on every finding.
 
 ## Rules
 
@@ -227,6 +262,34 @@ Or install from PyPI directly:
       - run: pip install compose-lint
       - run: compose-lint docker-compose.yml
 ```
+
+### Forgejo Actions
+
+Forgejo Actions runs GitHub-Actions-compatible workflows via `act_runner`, with two practical differences: cross-instance action refs need full URLs (`https://code.forgejo.org/...`), and most default runner configs don't support `container:` jobs — so install via `apt` + `pip` rather than a Python base image:
+
+```yaml
+# .forgejo/workflows/validate.yml
+name: Validate
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  compose-lint:
+    runs-on: docker
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@v4
+      - name: Install compose-lint
+        run: |
+          apt-get update -qq
+          apt-get install -yqq --no-install-recommends python3-pip
+          pip3 install --break-system-packages --no-cache-dir compose-lint==0.6.0
+      - name: Run compose-lint
+        run: compose-lint --fail-on high
+```
+
+Forgejo has no SARIF UI today — `--format sarif` still produces a valid document, but there's no security-tab equivalent to render it. Verified on Forgejo 11.0.12, April 2026.
 
 ### SARIF output
 
