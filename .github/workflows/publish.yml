@@ -307,35 +307,64 @@ jobs:
           platforms: ${{ matrix.platform }}
           load: true
           tags: composelint/compose-lint:test
-      - name: Test — version output matches tag
+      # Every docker-smoke step uses the fully-hardened flag set documented
+      # in README.md ("Running with full hardening"). If a user copy-pastes
+      # that recipe and it breaks, this matrix fails the release gate. Keep
+      # these flags in sync with README.md — both should change together.
+      - name: Test — version output matches tag (hardened)
         run: |
           expected="compose-lint ${GITHUB_REF_NAME#v}"
-          actual="$(docker run --rm composelint/compose-lint:test --version)"
+          actual="$(docker run --rm \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --network none \
+            --user 65532:65532 \
+            --pids-limit 256 \
+            composelint/compose-lint:test --version)"
           echo "Expected: ${expected}"
           echo "Actual:   ${actual}"
           if [ "${actual}" != "${expected}" ]; then
             echo "::error::Version mismatch: image reports '${actual}', expected '${expected}'"
             exit 1
           fi
-      - name: Test — clean fixture exits 0
+      - name: Test — clean fixture exits 0 (hardened)
         run: |
           docker run --rm \
-            -v "${PWD}/tests/smoke/clean.yml":/src/docker-compose.yml \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --network none \
+            --user 65532:65532 \
+            --pids-limit 256 \
+            -v "${PWD}/tests/smoke/clean.yml:/src/docker-compose.yml:ro" \
             composelint/compose-lint:test
-      - name: Test — insecure fixture exits 1
+      - name: Test — insecure fixture exits 1 (hardened)
         run: |
           exit_code=0
           docker run --rm \
-            -v "${PWD}/tests/smoke/insecure.yml":/src/docker-compose.yml \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --network none \
+            --user 65532:65532 \
+            --pids-limit 256 \
+            -v "${PWD}/tests/smoke/insecure.yml:/src/docker-compose.yml:ro" \
             composelint/compose-lint:test || exit_code=$?
           if [ "${exit_code}" -ne 1 ]; then
             echo "::error::Expected exit code 1, got ${exit_code}"
             exit 1
           fi
-      - name: Test — SARIF output is valid JSON
+      - name: Test — SARIF output is valid JSON (hardened)
         run: |
           docker run --rm \
-            -v "${PWD}/tests/smoke/sarif-shape.yml":/src/docker-compose.yml \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --network none \
+            --user 65532:65532 \
+            --pids-limit 256 \
+            -v "${PWD}/tests/smoke/sarif-shape.yml:/src/docker-compose.yml:ro" \
             composelint/compose-lint:test --format sarif --fail-on critical \
             | python3 -c "import sys, json; json.load(sys.stdin); print('Valid SARIF JSON')"
       - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
