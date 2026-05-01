@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "compose-lint"
-version = "0.6.0"
+version = "0.7.0"
 description = "Static-analysis linter for Docker Compose files. Finds insecure container configuration with OWASP/CIS-grounded rules; emits SARIF for GitHub Code Scanning."
 readme = "README.md"
 license = "MIT"
