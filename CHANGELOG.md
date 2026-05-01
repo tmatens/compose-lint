@@ -50,6 +50,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   branch for `[0.0.0.0]` / `[*]` — Docker doesn't accept those forms and
   no test exercised them. `[::]` continues to match via the wildcard set.
   (#172)
+- Release docker-smoke jobs (`publish.yml`, `publish-channel.yml`) now
+  exercise the image with the full hardening flag set documented in the
+  README (`--read-only`, `--cap-drop ALL`, `--security-opt
+  no-new-privileges:true`, `--network none`, `--user 65532:65532`,
+  `--pids-limit 256`, plus `:ro` on bind mounts). A copy-paste regression
+  in the documented recipe will now fail the release gate. (#196)
 
 ## [0.6.0] - 2026-04-26
 
