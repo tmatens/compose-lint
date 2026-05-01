@@ -249,7 +249,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: tmatens/compose-lint@93e1c0dea75f123171f00d29f3d238080fbb6d04 # v0.5.2
+      - uses: tmatens/compose-lint@23da963b2ee586592eb1afe34b5a3b620e52966d # v0.7.0
         with:
           sarif-file: results.sarif
 ```
