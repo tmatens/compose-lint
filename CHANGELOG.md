@@ -50,6 +50,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   branch for `[0.0.0.0]` / `[*]` — Docker doesn't accept those forms and
   no test exercised them. `[::]` continues to match via the wildcard set.
   (#172)
+- README "Running with full hardening" snippet now uses
+  `composelint/compose-lint:0.6.0` instead of the
+  `composelint/compose-lint@sha256:<digest>` placeholder, so the recipe
+  is copy-paste runnable. A new note points users at Docker Hub or
+  `docker buildx imagetools inspect` if they want to substitute a digest
+  pin for full CL-0004 / CL-0019 satisfaction. The new tag form is
+  tracked as a fourth version sync point in `docs/RELEASING.md`.
 
 ## [0.6.0] - 2026-04-26
 
