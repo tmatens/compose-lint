@@ -51,7 +51,7 @@ docker run --rm \
   --user 65532:65532 \
   --pids-limit 256 \
   -v "$(pwd):/src:ro" \
-  composelint/compose-lint:0.6.0
+  composelint/compose-lint:0.7.0
 ```
 
 | Flag | Rule satisfied |
@@ -64,7 +64,7 @@ docker run --rm \
 
 `--network none` and `:ro` on the bind mount are extra hardening — compose-lint never reaches the network and only reads its inputs.
 
-For full supply-chain reproducibility (and to satisfy CL-0004 / CL-0019), replace the `:0.6.0` tag with a digest pin: `composelint/compose-lint@sha256:<digest>`. Get the current digest from [Docker Hub](https://hub.docker.com/r/composelint/compose-lint/tags) or with `docker buildx imagetools inspect composelint/compose-lint:0.6.0 --format '{{json .Manifest}}' | jq -r '.digest'`.
+For full supply-chain reproducibility (and to satisfy CL-0004 / CL-0019), replace the `:0.7.0` tag with a digest pin: `composelint/compose-lint@sha256:<digest>`. Get the current digest from [Docker Hub](https://hub.docker.com/r/composelint/compose-lint/tags) or with `docker buildx imagetools inspect composelint/compose-lint:0.7.0 --format '{{json .Manifest}}' | jq -r '.digest'`.
 
 A Compose-form equivalent that lints clean across every rule lives in [`tests/compose_files/safe_self_hosted.yml`](https://github.com/tmatens/compose-lint/blob/main/tests/compose_files/safe_self_hosted.yml).
 
@@ -285,7 +285,7 @@ jobs:
         run: |
           apt-get update -qq
           apt-get install -yqq --no-install-recommends python3-pip
-          pip3 install --break-system-packages --no-cache-dir compose-lint==0.6.0
+          pip3 install --break-system-packages --no-cache-dir compose-lint==0.7.0
       - name: Run compose-lint
         run: compose-lint --fail-on high
 ```
@@ -304,7 +304,7 @@ compose-lint --format sarif docker-compose.yml > results.sarif
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/tmatens/compose-lint
-    rev: v0.5.2
+    rev: v0.7.0
     hooks:
       - id: compose-lint
 ```
