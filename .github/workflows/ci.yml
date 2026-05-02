@@ -118,7 +118,21 @@ jobs:
         run: |
           pip install --require-hashes -r requirements-dev.lock
           pip install --no-deps -e .
-      - run: pytest --cov=compose_lint --cov-report=term-missing --cov-fail-under=80
+      - name: Enable subprocess coverage
+        # test_cli.py and test_integration.py invoke `python -m compose_lint`
+        # as a subprocess. The standard pattern for measuring child-process
+        # coverage is a site-packages .pth file that calls
+        # `coverage.process_startup()` on every interpreter init, gated by
+        # `COVERAGE_PROCESS_START`. Combined with `parallel = true` in
+        # pyproject.toml, pytest-cov merges the per-process data files
+        # automatically before reporting.
+        run: |
+          site=$(python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
+          echo "import coverage; coverage.process_startup()" > "${site}/coverage_subprocess.pth"
+      - name: Run tests with coverage
+        env:
+          COVERAGE_PROCESS_START: ${{ github.workspace }}/pyproject.toml
+        run: pytest --cov=compose_lint --cov-report=term-missing --cov-fail-under=80
 
   security:
     name: Security scan (bandit + pip-audit)

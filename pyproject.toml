@@ -107,6 +107,13 @@ testpaths = ["tests"]
 [tool.coverage.run]
 source = ["compose_lint"]
 branch = false  # statement coverage — what OpenSSF Silver `test_statement_coverage80` measures.
+# CLI and integration tests invoke `python -m compose_lint` as a subprocess.
+# `parallel = true` lets each subprocess write to its own .coverage.* data
+# file; `coverage combine` (pytest-cov runs it) merges them. Pair with the
+# `.pth` shim and `COVERAGE_PROCESS_START=pyproject.toml` env var that the
+# `coverage` CI job sets up — without those, child processes are unmeasured
+# and statement coverage caps near 72% (cli.py + formatters/text.py).
+parallel = true
 
 [tool.coverage.report]
 fail_under = 80
