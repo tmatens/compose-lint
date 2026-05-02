@@ -1,5 +1,10 @@
 # Security Policy
 
+For what compose-lint will and will not protect you against, see
+[docs/SECURITY-EXPECTATIONS.md](../docs/SECURITY-EXPECTATIONS.md). For
+the full assurance case (threat model, trust boundaries, mitigations),
+see [docs/ASSURANCE.md](../docs/ASSURANCE.md).
+
 ## Supported Versions
 
 compose-lint follows semantic versioning. Only the latest minor release

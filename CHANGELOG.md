@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `GOVERNANCE.md`, `MAINTAINERS.md`, `docs/ASSURANCE.md`,
+  `docs/SECURITY-EXPECTATIONS.md`, and `docs/CONTINUITY.md` documenting
+  the project's governance model, single-page assurance case (threat
+  model, trust boundaries, mitigations), user-facing security promises,
+  and continuity-of-access plan. Closes the OpenSSF Silver
+  `governance`, `roles_responsibilities`, `documentation_security`,
+  `assurance_case`, and `access_continuity` criteria.
+- Statement coverage gate at >=80% (new `coverage` CI job; thresholds
+  configured in `pyproject.toml [tool.coverage.report]` and duplicated
+  at the workflow level). Closes the OpenSSF Silver
+  `test_statement_coverage80` criterion.
+
+### Security
+
+- Release tags must now cryptographically verify against
+  `.github/allowed_signers` before any publish step runs. The new third
+  check in `publish.yml`'s `verify-tag` job runs `git verify-tag` with
+  the maintainer's authorized SSH signing key; an attacker who pushed
+  a tag from a stolen GitHub credential can no longer trigger a
+  release. Closes the OpenSSF Silver `version_tags_signed` criterion.
+
 ## [0.7.0] - 2026-05-01
 
 ### Added
