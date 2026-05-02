@@ -1,0 +1,25 @@
+# SSH allowed-signers file for verifying compose-lint release tags.
+#
+# Format: <principal> [namespaces=...] <key-type> <base64-key> [comment]
+# See `man ssh-keygen` SSH ALLOWED-SIGNERS FILE FORMAT for the full spec.
+#
+# `namespaces="git"` scopes the key to git-context signatures so it cannot
+# be reused for arbitrary SSH signing if leaked.
+#
+# This file is consumed by the `verify-tag` job in .github/workflows/publish.yml,
+# which runs `git verify-tag` against every release tag before any publish step.
+# Adding a key here grants release-signing authority — treat changes like a
+# maintainer promotion (see GOVERNANCE.md §"Adding a maintainer").
+#
+# To add or rotate a key:
+#   1. Add a line below with the new public key.
+#   2. Open a PR titled "Add release signing key for <name>" or "Rotate release signing key".
+#   3. After merge, sign the next release tag with the new key. publish.yml
+#      will refuse to publish if it cannot verify against this file.
+#
+# Removing a key revokes release-signing authority and is a maintainer-removal
+# action (see GOVERNANCE.md §"Removing a maintainer").
+
+# Todd Matens — release signing key (used to sign vX.Y.Z annotated tags
+# from v0.3.7 onward). Verified against tag v0.7.0 (commit 23da963).
+tmatens@gmail.com namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINz74LQz7YwG5+9fSmqshOfarZt53sBYgFMTGMKJoBY+

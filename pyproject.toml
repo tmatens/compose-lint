@@ -81,6 +81,9 @@ dev = [
     "mutmut==3.5.0",
     "mypy==1.20.1",
     "pytest==9.0.3",
+    # Statement coverage gate (>=80%) is enforced by the `coverage` CI job.
+    # Threshold lives in [tool.coverage.report] below.
+    "pytest-cov==7.1.0",
     "types-pyyaml==6.0.12.20260408",
 ]
 
@@ -96,6 +99,31 @@ Changelog = "https://github.com/tmatens/compose-lint/blob/main/CHANGELOG.md"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# Statement coverage configuration. Measurement is opt-in for local runs
+# (`pytest --cov`) so the default `pytest` invocation stays fast; the
+# `coverage` job in ci.yml always runs with `--cov` and enforces the
+# threshold defined in [tool.coverage.report].
+[tool.coverage.run]
+source = ["compose_lint"]
+branch = false  # statement coverage — what OpenSSF Silver `test_statement_coverage80` measures.
+# CLI and integration tests invoke `python -m compose_lint` as a subprocess.
+# `parallel = true` lets each subprocess write to its own .coverage.* data
+# file; `coverage combine` (pytest-cov runs it) merges them. Pair with the
+# `.pth` shim and `COVERAGE_PROCESS_START=pyproject.toml` env var that the
+# `coverage` CI job sets up — without those, child processes are unmeasured
+# and statement coverage caps near 72% (cli.py + formatters/text.py).
+parallel = true
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_covered = false
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "pragma: no cover",
+]
 
 [tool.mutmut]
 # Mutate the security-critical surface only: rule predicates and the shared
