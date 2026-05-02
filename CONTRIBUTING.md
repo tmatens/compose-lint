@@ -50,6 +50,14 @@ mypy src/                       # Type checking (strict mode)
 pytest                          # Tests
 ```
 
+Statement coverage must stay >= 80% on `main`. The CI `coverage` job
+enforces this; check locally before pushing a change that touches a lot
+of code:
+
+```bash
+pytest --cov=compose_lint --cov-report=term-missing --cov-fail-under=80
+```
+
 ## Code standards
 
 - **Python 3.10+** required. Don't use syntax or stdlib features added after
