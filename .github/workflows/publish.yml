@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Gate every publish path on two lightweight tag checks:
+  # Gate every publish path on three tag checks:
   #   1. The ref is an annotated tag (not a lightweight tag). Release tags
   #      are created with `git tag -s`, which is always annotated; a
   #      lightweight tag here means something/someone pushed a malformed
@@ -28,9 +28,12 @@ jobs:
   #      rogue tag pointed at an arbitrary commit (outside main's merge
   #      history) would still trigger publish.yml and ship whatever tree
   #      that commit has.
-  #
-  # Full SSH-signature verification would require committing the
-  # maintainer's allowed-signers file; that's a follow-up.
+  #   3. The tag's SSH signature verifies against
+  #      `.github/allowed_signers`. This is the cryptographic root of the
+  #      Sigstore provenance chain — without it, an attacker who pushed
+  #      a tag from a stolen GitHub credential could trigger a release
+  #      from a commit they control. Adding/rotating signing keys is a
+  #      maintainer action documented in GOVERNANCE.md.
   verify-tag:
     runs-on: ubuntu-24.04
     timeout-minutes: 3
@@ -56,6 +59,24 @@ jobs:
             exit 1
           fi
           echo "Tag ${TAG} is annotated and reachable from origin/main (commit ${tag_commit})."
+      - name: Verify SSH signature against allowed_signers
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          # `git verify-tag` exits non-zero on any signature problem
+          # (missing, malformed, signed by an unknown key, signed by a
+          # key not authorized for the "git" namespace). The
+          # allowedSignersFile must be an absolute path.
+          allowed="${GITHUB_WORKSPACE}/.github/allowed_signers"
+          if [ ! -s "${allowed}" ]; then
+            echo "::error::${allowed} is missing or empty — cannot verify tag signature"
+            exit 1
+          fi
+          if ! git -c "gpg.ssh.allowedSignersFile=${allowed}" tag -v "${TAG}"; then
+            echo "::error::${TAG} signature did not verify against .github/allowed_signers"
+            echo "::error::If a maintainer's key was rotated, update .github/allowed_signers in a PR before tagging."
+            exit 1
+          fi
 
   build:
     needs: verify-tag
