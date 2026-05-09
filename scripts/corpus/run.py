@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -44,6 +45,46 @@ SEVERITY_WEIGHT = {"critical": 8, "high": 4, "medium": 2, "low": 1}
 
 def _fmt_weights() -> str:
     return ", ".join(f"{k}={v}" for k, v in SEVERITY_WEIGHT.items())
+
+
+# Order matters: first matching pattern wins. Tested against
+# runs/20260503T034026Z (178 parse errors, 15 distinct first-line
+# fingerprints) — these patterns cover every observed class.
+_PARSE_ERROR_CLASSES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("missing-services-key",   re.compile(r"missing 'services' key")),
+    ("services-not-mapping",   re.compile(r"'services' must be a mapping")),
+    ("service-not-mapping",    re.compile(r"service '[^']+' must be a mapping")),
+    ("empty-file",             re.compile(r"file is empty")),
+    ("top-level-not-mapping",  re.compile(r"expected a YAML mapping at the top level")),
+    ("invalid-yaml",           re.compile(r"Invalid YAML:")),
+)
+
+
+def classify_parse_error(stderr: str | None) -> str:
+    """Bucket a compose-lint exit-2 stderr into a stable class label.
+
+    Class labels are stable across runs so the State of Compose report
+    can quote them. Anything unmatched falls into `other` so a new
+    failure mode is visible rather than silently merged with a known one.
+    """
+    if not stderr:
+        return "other"
+    first = stderr.splitlines()[0]
+    for label, pat in _PARSE_ERROR_CLASSES:
+        if pat.search(first):
+            return label
+    return "other"
+
+
+_PARSE_CLASS_ORDER = (
+    "missing-services-key",
+    "services-not-mapping",
+    "service-not-mapping",
+    "top-level-not-mapping",
+    "empty-file",
+    "invalid-yaml",
+    "other",
+)
 
 
 def lint_one(path_str: str) -> dict:
@@ -189,6 +230,28 @@ def summarize(run_dir: Path, results: list[dict], index: dict[str, dict], starte
     else:
         lines.append("_No findings._")
 
+    if parse_errors:
+        parse_class_counts: Counter[str] = Counter(
+            classify_parse_error(r.get("stderr")) for r in parse_errors
+        )
+        lines += [
+            "",
+            "## Parse-error classes",
+            "",
+            (
+                "Every exit-2 result bucketed by stderr class. Treat the"
+                + " parse-error population as a finding (the report cites it),"
+                + " not a discard."
+            ),
+            "",
+            "| Class | Count |",
+            "| --- | ---: |",
+        ]
+        for cls in _PARSE_CLASS_ORDER:
+            n = parse_class_counts.get(cls, 0)
+            if n:
+                lines.append(f"| `{cls}` | {n} |")
+
     lines += ["", "## Parse errors (sample of first 10)", ""]
     for r in parse_errors[:10]:
         meta = index.get(r["content_hash"], {})
@@ -255,6 +318,7 @@ def summarize_tiers(run_dir: Path, results: list[dict], index: dict[str, dict]) 
         "clean": 0, "with_findings": 0, "findings": 0,
         "rules": Counter(), "severity": Counter(),
         "files_per_rule": Counter(),  # rule_id -> distinct files in this tier
+        "parse_classes": Counter(),  # exit-2 stderr class -> count in this tier
     })
     rule_severity: dict[str, str] = {}
 
@@ -264,6 +328,7 @@ def summarize_tiers(run_dir: Path, results: list[dict], index: dict[str, dict]) 
         b["total"] += 1
         if r.get("error") == "usage_or_parse":
             b["parse_errors"] += 1
+            b["parse_classes"][classify_parse_error(r.get("stderr"))] += 1
             continue
         if r.get("error") == "timeout":
             b["timeouts"] += 1
@@ -315,6 +380,31 @@ def summarize_tiers(run_dir: Path, results: list[dict], index: dict[str, dict]) 
         s = by_tier[tier]["severity"]
         lines.append(f"| `{tier}` | {s.get('critical',0)} | {s.get('high',0)} | "
                      f"{s.get('medium',0)} | {s.get('low',0)} |")
+
+    if any(by_tier[t]["parse_errors"] for t in by_tier):
+        present_classes = [
+            cls for cls in _PARSE_CLASS_ORDER
+            if any(by_tier[t]["parse_classes"].get(cls, 0) for t in by_tier)
+        ]
+        lines += [
+            "",
+            "## Parse-error classes per tier",
+            "",
+            (
+                "Each row is one tier; columns are parse-error classes plus the"
+                + " tier's parse-error rate (parse-errors / total). The report"
+                + " cites these as a finding — see `docs/state-of-compose.md`"
+                + " methodology."
+            ),
+            "",
+            "| tier | " + " | ".join(present_classes) + " | rate |",
+            "| --- | " + " | ".join(["---:"] * len(present_classes)) + " | ---: |",
+        ]
+        for tier in sorted(by_tier):
+            b = by_tier[tier]
+            cells = [str(b["parse_classes"].get(cls, 0)) for cls in present_classes]
+            rate = b["parse_errors"] / b["total"] if b["total"] else 0
+            lines.append(f"| `{tier}` | " + " | ".join(cells) + f" | {rate:.1%} |")
 
     lines += [
         "",
