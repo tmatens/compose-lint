@@ -25,9 +25,29 @@ If you only edited the curated lists, skip the fetches: `retier.py` then `make_t
 - `canonical` — official upstream examples (what people copy from READMEs)
 - `popular` — high-star repos with compose files (production-adjacent code)
 - `selfhosted` — app-store / template-registry repos (home-lab threat model)
-- `longtail` — random GH code-search corpus (what the median wild file looks like)
+- `longtail` — stratified GH code-search corpus (what the median wild file looks like)
 
 `retier.py` must run after fetches: the downloader keys on `blob_sha` first-write-wins, so a curated app-store template swept up earlier by `fetch_popular` would otherwise stay tagged `popular`.
+
+## Longtail sampling methodology
+
+`fetch.py` is **not random sampling** — GitHub's code-search API has no random-document primitive. It is a **stratified sweep** designed to broaden coverage past the search engine's per-query result cap:
+
+- **120 queries** = 6 anchor terms × 4 filenames × 5 size buckets
+  - **Anchors**: `services:`, `image:`, `volumes:`, `restart:`, `ports:`, `depends_on:` (every real Compose file contains at least one)
+  - **Filenames**: `docker-compose.yml`, `docker-compose.yaml`, `compose.yml`, `compose.yaml`
+  - **Size buckets** (KB): `<2`, `2..5`, `5..15`, `15..50`, `>50`
+- **Per-query cap**: 200 hits (`--limit 200` to `gh search code`). GitHub's hard ceiling per query is ~1000 results; 200 is fast and the stratification picks up the rest.
+- **Dedup**: `(repo, path, sha)` at search time, then `content_hash` (SHA256 of bytes) at download time so identical files in different repos collapse to one corpus entry.
+
+### Known biases (for the report's "limitations" section)
+
+- **GitHub-search ranking bias.** Results are ranked by the search engine, so files in higher-relevance repos surface first. The size-bucket stratification mitigates this for content shape but not for repo popularity.
+- **Single-source.** GitHub only — no GitLab, Codeberg, Docker Hub README snippets, or package-manager fragments.
+- **Filename-pinned.** Compose files saved under non-standard names (`stack.yml`, `web.compose.yml`, etc.) are missed.
+- **Public-only.** Private and enterprise-internal repos are out of scope.
+
+This is **descriptive sampling for prevalence estimation**, not random sampling for statistical inference. The State of Compose report frames findings accordingly.
 
 ## Requirements
 
