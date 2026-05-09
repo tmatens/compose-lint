@@ -23,7 +23,7 @@ RUNS = Path.home() / ".cache" / "compose-lint-corpus" / "runs"
 
 def resolve_run(arg: str) -> Path:
     if arg == "latest":
-        runs = sorted(RUNS.iterdir(), key=lambda p: p.name)
+        runs = sorted((p for p in RUNS.iterdir() if p.is_dir()), key=lambda p: p.name)
         if not runs:
             sys.exit("no runs found")
         return runs[-1]
