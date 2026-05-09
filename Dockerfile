@@ -9,7 +9,7 @@
 # stages without shebang rewriting. Both digests are bumped by Renovate.
 
 # --- build stage: produce wheel, install into a venv ---
-FROM debian:trixie-slim@sha256:cedb1ef40439206b673ee8b33a46a03a0c9fa90bf3732f54704f99cb061d2c5a AS build
+FROM debian:trixie-slim@sha256:109e2c65005bf160609e4ba6acf7783752f8502ad218e298253428690b9eaa4b AS build
 # apt versions intentionally unpinned: the base image digest above is
 # immutable, apt verifies package signatures, and Renovate has no
 # datasource for Debian apt. Pinning would bitrot when Debian purges
