@@ -35,6 +35,16 @@ PER_FILE_TIMEOUT = 30
 WORKERS = int(os.environ.get("LINT_WORKERS", "8"))
 GLOBAL_TIMEOUT_SECS = int(os.environ.get("LINT_TIMEOUT", "1500"))  # 25 min
 
+# Severity weights for impact column. Doubling per step keeps a single
+# CRITICAL finding visible against a flood of MEDIUMs while still letting
+# very common HIGHs surface. Documented in the State of Compose report's
+# methodology section so readers can re-rank with a different curve.
+SEVERITY_WEIGHT = {"critical": 8, "high": 4, "medium": 2, "low": 1}
+
+
+def _fmt_weights() -> str:
+    return ", ".join(f"{k}={v}" for k, v in SEVERITY_WEIGHT.items())
+
 
 def lint_one(path_str: str) -> dict:
     path = Path(path_str)
@@ -89,6 +99,7 @@ def summarize(run_dir: Path, results: list[dict], index: dict[str, dict], starte
     linted = [r for r in results if r.get("lint") is not None]
 
     rule_counts: Counter[str] = Counter()
+    rule_severity: dict[str, str] = {}
     severity_counts: Counter[str] = Counter()
     rule_examples: dict[str, list[tuple[str, str, int]]] = defaultdict(list)  # rule_id -> [(repo, path, line)]
     findings_per_file: list[int] = []
@@ -105,8 +116,13 @@ def summarize(run_dir: Path, results: list[dict], index: dict[str, dict], starte
             files_clean += 1
         for f in findings:
             rid = f.get("rule_id", "?")
+            sev = (f.get("severity") or "?").lower()
             rule_counts[rid] += 1
-            severity_counts[(f.get("severity") or "?").lower()] += 1
+            severity_counts[sev] += 1
+            # First-seen severity per rule. Rules have a fixed severity
+            # in compose-lint, so any finding suffices.
+            if rid not in rule_severity:
+                rule_severity[rid] = sev
             if len(rule_examples[rid]) < 3:
                 meta = index.get(r["content_hash"], {})
                 rule_examples[rid].append((
@@ -143,10 +159,16 @@ def summarize(run_dir: Path, results: list[dict], index: dict[str, dict], starte
     ]
     for sev in ("critical", "high", "medium", "low"):
         lines.append(f"- {sev}: {severity_counts.get(sev, 0)}")
-    lines += ["", "## Rule hit counts (descending)", ""]
+    lines += [
+        "",
+        "## Rule hit counts (descending)",
+        "",
+        f"`Impact` = severity weight × files-affected. Weights: {_fmt_weights()}.",
+        "",
+    ]
     if rule_counts:
-        lines.append("| Rule | Hits | Files | Example |")
-        lines.append("| --- | ---: | ---: | --- |")
+        lines.append("| Rule | Severity | Hits | Files | Impact | Example |")
+        lines.append("| --- | --- | ---: | ---: | ---: | --- |")
         # files-affected per rule
         files_per_rule: Counter[str] = Counter()
         for r in linted:
@@ -159,9 +181,11 @@ def summarize(run_dir: Path, results: list[dict], index: dict[str, dict], starte
                     files_per_rule[rid] += 1
                     seen.add(rid)
         for rid, n in rule_counts.most_common():
+            sev = rule_severity.get(rid, "?")
+            impact = SEVERITY_WEIGHT.get(sev, 0) * files_per_rule[rid]
             ex = rule_examples.get(rid, [])
             ex_str = ", ".join(f"{repo}#{path}:{line}" for repo, path, line in ex[:1])
-            lines.append(f"| `{rid}` | {n} | {files_per_rule[rid]} | {ex_str} |")
+            lines.append(f"| `{rid}` | {sev} | {n} | {files_per_rule[rid]} | {impact} | {ex_str} |")
     else:
         lines.append("_No findings._")
 
@@ -230,7 +254,9 @@ def summarize_tiers(run_dir: Path, results: list[dict], index: dict[str, dict]) 
         "total": 0, "parsed": 0, "parse_errors": 0, "timeouts": 0,
         "clean": 0, "with_findings": 0, "findings": 0,
         "rules": Counter(), "severity": Counter(),
+        "files_per_rule": Counter(),  # rule_id -> distinct files in this tier
     })
+    rule_severity: dict[str, str] = {}
 
     for r in results:
         tier = index.get(r["content_hash"], {}).get("tier", "unknown")
@@ -251,10 +277,18 @@ def summarize_tiers(run_dir: Path, results: list[dict], index: dict[str, dict]) 
             b["with_findings"] += 1
         else:
             b["clean"] += 1
+        seen_in_file: set[str] = set()
         for f in findings:
+            rid = f.get("rule_id", "?")
+            sev = (f.get("severity") or "?").lower()
             b["findings"] += 1
-            b["rules"][f.get("rule_id", "?")] += 1
-            b["severity"][(f.get("severity") or "?").lower()] += 1
+            b["rules"][rid] += 1
+            b["severity"][sev] += 1
+            if rid not in rule_severity:
+                rule_severity[rid] = sev
+            if rid not in seen_in_file:
+                b["files_per_rule"][rid] += 1
+                seen_in_file.add(rid)
 
     lines = [
         f"# compose-lint per-tier summary — {run_dir.name}",
@@ -282,14 +316,25 @@ def summarize_tiers(run_dir: Path, results: list[dict], index: dict[str, dict]) 
         lines.append(f"| `{tier}` | {s.get('critical',0)} | {s.get('high',0)} | "
                      f"{s.get('medium',0)} | {s.get('low',0)} |")
 
-    lines += ["", "## Top 10 rules per tier", ""]
+    lines += [
+        "",
+        "## Top 10 rules per tier",
+        "",
+        f"`Impact` = severity weight × files-affected (within this tier). Weights: {_fmt_weights()}.",
+        "",
+    ]
     for tier in sorted(by_tier):
         rules = by_tier[tier]["rules"]
         if not rules:
             continue
-        lines += [f"### `{tier}`", "", "| Rule | Hits |", "| --- | ---: |"]
+        files_per_rule = by_tier[tier]["files_per_rule"]
+        lines += [f"### `{tier}`", "",
+                  "| Rule | Severity | Hits | Files | Impact |",
+                  "| --- | --- | ---: | ---: | ---: |"]
         for rid, n in rules.most_common(10):
-            lines.append(f"| `{rid}` | {n} |")
+            sev = rule_severity.get(rid, "?")
+            impact = SEVERITY_WEIGHT.get(sev, 0) * files_per_rule[rid]
+            lines.append(f"| `{rid}` | {sev} | {n} | {files_per_rule[rid]} | {impact} |")
         lines.append("")
 
     (run_dir / "tier_summary.md").write_text("\n".join(lines))
