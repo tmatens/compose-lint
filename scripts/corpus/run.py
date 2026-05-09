@@ -63,14 +63,13 @@ _PARSE_ERROR_CLASSES: tuple[tuple[str, re.Pattern[str]], ...] = (
 def classify_parse_error(stderr: str | None) -> str:
     """Bucket a compose-lint exit-2 stderr into a stable class label.
 
-    The report's methodology section treats the parse-error population as
-    a finding (28% of longtail files in the v1 corpus snapshot), so the
-    classes need to be stable across runs. Anything unmatched falls into
-    `other` so a new failure mode is visible rather than silently merged.
+    Class labels are stable across runs so the State of Compose report
+    can quote them. Anything unmatched falls into `other` so a new
+    failure mode is visible rather than silently merged with a known one.
     """
     if not stderr:
         return "other"
-    first = stderr.splitlines()[0] if stderr else ""
+    first = stderr.splitlines()[0]
     for label, pat in _PARSE_ERROR_CLASSES:
         if pat.search(first):
             return label
@@ -239,9 +238,11 @@ def summarize(run_dir: Path, results: list[dict], index: dict[str, dict], starte
             "",
             "## Parse-error classes",
             "",
-            "Every exit-2 result bucketed by stderr class. Treat the"
-            " parse-error population as a finding (the report cites it),"
-            " not a discard.",
+            (
+                "Every exit-2 result bucketed by stderr class. Treat the"
+                + " parse-error population as a finding (the report cites it),"
+                + " not a discard."
+            ),
             "",
             "| Class | Count |",
             "| --- | ---: |",
@@ -316,8 +317,8 @@ def summarize_tiers(run_dir: Path, results: list[dict], index: dict[str, dict]) 
         "total": 0, "parsed": 0, "parse_errors": 0, "timeouts": 0,
         "clean": 0, "with_findings": 0, "findings": 0,
         "rules": Counter(), "severity": Counter(),
-        "files_per_rule": Counter(),     # rule_id -> distinct files in this tier
-        "parse_classes": Counter(),      # class label -> count in this tier
+        "files_per_rule": Counter(),  # rule_id -> distinct files in this tier
+        "parse_classes": Counter(),  # exit-2 stderr class -> count in this tier
     })
     rule_severity: dict[str, str] = {}
 
@@ -389,9 +390,12 @@ def summarize_tiers(run_dir: Path, results: list[dict], index: dict[str, dict]) 
             "",
             "## Parse-error classes per tier",
             "",
-            "Each row is one tier; columns are parse-error classes plus the"
-            " tier's parse-error rate (parse-errors / total). The report cites"
-            " these as a finding — see `docs/state-of-compose.md` methodology.",
+            (
+                "Each row is one tier; columns are parse-error classes plus the"
+                + " tier's parse-error rate (parse-errors / total). The report"
+                + " cites these as a finding — see `docs/state-of-compose.md`"
+                + " methodology."
+            ),
             "",
             "| tier | " + " | ".join(present_classes) + " | rate |",
             "| --- | " + " | ".join(["---:"] * len(present_classes)) + " | ---: |",
