@@ -11,6 +11,9 @@
     "enabled": true,
     "schedule": ["before 4am on monday"]
   },
+  "pip-compile": {
+    "managerFilePatterns": ["/(^|/)requirements[\\w-]*\\.lock$/"]
+  },
   "packageRules": [
     {
       "description": "GitHub Actions: SHA-pin every uses: with version comment (CLAUDE.md).",
@@ -19,8 +22,8 @@
       "groupName": "github-actions"
     },
     {
-      "description": "Python runtime + dev deps batched into one PR.",
-      "matchManagers": ["pep621", "pip_requirements"],
+      "description": "Python runtime + dev deps batched into one PR. pip-compile tracks the uv-generated requirements*.lock files: their .lock extension is matched by no pip-family manager by default, leaving transitive pins (e.g. urllib3) invisible to Renovate and weekly lockFileMaintenance a no-op for these files.",
+      "matchManagers": ["pep621", "pip_requirements", "pip-compile"],
       "groupName": "python"
     },
     {
@@ -38,7 +41,7 @@
     },
     {
       "description": "Automerge low-risk routine updates once CI is green. Patch-level Python dep bumps, pinned-digest refreshes for GitHub Actions, and lockFileMaintenance go in without human review. Docker base images stay manual because the OCI manifest-list vs per-arch digest check (see MEMORY.md) is not mechanically verified in CI.",
-      "matchManagers": ["pep621", "pip_requirements", "github-actions"],
+      "matchManagers": ["pep621", "pip_requirements", "pip-compile", "github-actions"],
       "matchUpdateTypes": ["patch", "pin", "digest", "lockFileMaintenance"],
       "automerge": true,
       "automergeType": "pr",
