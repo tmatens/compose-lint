@@ -3,8 +3,8 @@
   "@id": "https://github.com/tmatens/compose-lint/.vex/compose-lint.openvex.json",
   "author": "Todd Matens <tmatens@gmail.com>",
   "role": "Project Maintainer",
-  "timestamp": "2026-04-25T00:00:00Z",
-  "version": 3,
+  "timestamp": "2026-05-15T00:00:00Z",
+  "version": 4,
   "tooling": "hand-authored",
   "statements": [
     {
@@ -16,13 +16,13 @@
         {
           "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint",
           "subcomponents": [
-            { "@id": "pkg:pypi/pip@25.1.1" }
+            { "@id": "pkg:pypi/pip" }
           ]
         },
         {
           "@id": "pkg:docker/composelint/compose-lint",
           "subcomponents": [
-            { "@id": "pkg:pypi/pip@25.1.1" }
+            { "@id": "pkg:pypi/pip" }
           ]
         }
       ],
@@ -39,13 +39,13 @@
         {
           "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint",
           "subcomponents": [
-            { "@id": "pkg:pypi/pip@25.1.1" }
+            { "@id": "pkg:pypi/pip" }
           ]
         },
         {
           "@id": "pkg:docker/composelint/compose-lint",
           "subcomponents": [
-            { "@id": "pkg:pypi/pip@25.1.1" }
+            { "@id": "pkg:pypi/pip" }
           ]
         }
       ],
@@ -62,19 +62,42 @@
         {
           "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint",
           "subcomponents": [
-            { "@id": "pkg:pypi/pip@25.1.1" }
+            { "@id": "pkg:pypi/pip" }
           ]
         },
         {
           "@id": "pkg:docker/composelint/compose-lint",
           "subcomponents": [
-            { "@id": "pkg:pypi/pip@25.1.1" }
+            { "@id": "pkg:pypi/pip" }
           ]
         }
       ],
       "status": "not_affected",
       "justification": "vulnerable_code_not_present",
       "impact_statement": "Same mitigation as CVE-2025-8869 and CVE-2026-1703: the pip archive-handling code lives in /venv/lib/python3.13/site-packages/pip/ which is removed at container build time. Only the .dist-info metadata directory is retained for SCA scanner identification; the executable code paths exercised by this CVE are physically absent from the runtime image. The distroless runtime (no shell, nonroot entrypoint /venv/bin/compose-lint) makes pip both absent and unreachable."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-6357",
+        "description": "pip inclusion of functionality from untrusted control sphere"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint",
+          "subcomponents": [
+            { "@id": "pkg:pypi/pip" }
+          ]
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint",
+          "subcomponents": [
+            { "@id": "pkg:pypi/pip" }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Same mitigation as CVE-2025-8869, CVE-2026-1703 and CVE-2026-3219: the affected pip code in /venv/lib/python3.13/site-packages/pip/ is removed during the container build stage; only the .dist-info metadata directory is retained for SCA scanner identification. At runtime `import pip` raises ModuleNotFoundError and no pip binary is present. The distroless runtime (no shell, no package manager, nonroot entrypoint /venv/bin/compose-lint) makes the vulnerable code both physically absent from the image and unreachable by execution path."
     }
   ]
 }
