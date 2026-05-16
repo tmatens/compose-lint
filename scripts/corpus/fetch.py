@@ -130,8 +130,11 @@ def main() -> int:
             for line in f:
                 try:
                     blob_seen.add(json.loads(line)["blob_sha"])
-                except Exception:
-                    pass
+                except (json.JSONDecodeError, KeyError):
+                    # Skip a truncated or malformed index line (e.g. a
+                    # partial final record from an interrupted append);
+                    # it just won't dedupe that blob.
+                    continue
 
     todo = [v for k, v in candidates.items() if k[2] not in blob_seen]
     print(f"new to download: {len(todo)}", file=sys.stderr)
