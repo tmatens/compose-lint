@@ -37,6 +37,7 @@ RUN python3 -m venv /build-venv \
     && /build-venv/bin/pip install --no-cache-dir --require-hashes -r requirements-build.lock \
     && /build-venv/bin/python -m build --wheel --outdir /dist \
     && python3 -m venv /venv \
+    && /venv/bin/pip install --no-cache-dir --upgrade pip \
     && /venv/bin/pip install --no-cache-dir --require-hashes -r requirements.lock \
     && /venv/bin/pip install --no-cache-dir --no-deps /dist/*.whl \
     && rm -rf /venv/lib/python3.13/site-packages/pip \
@@ -51,7 +52,12 @@ RUN python3 -m venv /build-venv \
 # and nothing imports pip. We deliberately keep pip's .dist-info in
 # site-packages so SCA scanners can still identify pip and report CVEs
 # against it — deleting the metadata to make the image look vuln-free
-# would be scanner evasion, not remediation. Python 3.13 venvs do not
+# would be scanner evasion, not remediation. The venv-seeded pip is
+# upgraded to the latest release before stripping (the sanctioned
+# always-latest pip bootstrap exception, see AGENTS.md), so the retained
+# .dist-info reports a patched version: genuine remediation, not
+# evasion. The OpenVEX document still backstops any residual or
+# not-yet-fixed pip CVE (e.g. CVE-2026-3219). Python 3.13 venvs do not
 # ship setuptools or wheel by default, so pip is the only ambient
 # package to remove.
 
