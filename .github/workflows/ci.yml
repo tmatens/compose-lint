@@ -169,7 +169,16 @@ jobs:
         # --skip-editable skips compose-lint itself (it isn't on PyPI
         # for the local install path); PyYAML and any future runtime
         # deps are still scanned.
-        run: pip-audit --skip-editable
+        #
+        # --ignore-vuln PYSEC-2025-183: disputed advisory against pyjwt
+        # claiming "weak encryption". The pyjwt maintainers dispute it
+        # because the encryption key length is chosen by the application
+        # consuming the library, not the library itself. There is no
+        # fix version. pyjwt is a transitive dev/publish dependency
+        # (via sigstore/tuf/twine) and not part of the runtime image.
+        # Remove this ignore if the OSV record is withdrawn or a fix
+        # release is published.
+        run: pip-audit --skip-editable --ignore-vuln PYSEC-2025-183
 
   # Fails the PR if `pyproject.toml` and `src/compose_lint/__init__.py`
   # disagree about the project version. The two strings drifted silently
