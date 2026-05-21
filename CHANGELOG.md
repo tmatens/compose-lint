@@ -15,11 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model, trust boundaries, mitigations), user-facing security promises,
   and continuity-of-access plan. Closes the OpenSSF Silver
   `governance`, `roles_responsibilities`, `documentation_security`,
-  `assurance_case`, and `access_continuity` criteria.
+  `assurance_case`, and `access_continuity` criteria. (#202)
 - Statement coverage gate at >=80% (new `coverage` CI job; thresholds
   configured in `pyproject.toml [tool.coverage.report]` and duplicated
   at the workflow level). Closes the OpenSSF Silver
-  `test_statement_coverage80` criterion.
+  `test_statement_coverage80` criterion. (#202)
+- `docs/state-of-compose.md` canonical landing page for the forthcoming
+  State of Compose security report. README and corpus tooling already
+  reference this path. (#210)
+
+### Changed
+
+- Corpus pipeline scripts (`fetch`, `retier`, `enrich`, `run`, and the
+  per-tier fetchers) now live in-repo under `scripts/corpus/` so the
+  State of Compose numbers are reproducible from a clean checkout. The
+  corpus cache stays at `~/.cache/compose-lint-corpus/` and remains
+  outside git — the repo never accumulates third-party Compose files.
+  (#206)
+- Corpus pipeline now classifies parse-error stderr into stable buckets
+  (`missing-services-key`, `services-not-mapping`, `service-not-mapping`,
+  `top-level-not-mapping`, `empty-file`, `invalid-yaml`, `other`) and
+  emits a per-tier × class matrix alongside the existing rule tables.
+  `scripts/corpus/README.md` documents the longtail sampling design and
+  its four known biases (GH-search ranking, single-source, filename-
+  pinned, public-only). (#209)
 
 ### Security
 
@@ -29,6 +48,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the maintainer's authorized SSH signing key; an attacker who pushed
   a tag from a stolen GitHub credential can no longer trigger a
   release. Closes the OpenSSF Silver `version_tags_signed` criterion.
+  (#202)
+- Dropped `--ignore-vuln CVE-2026-3219` from CI `pip-audit`. pip 26.1.1
+  fixes both CVE-2026-3219 and CVE-2026-6357; `pip-audit --skip-editable`
+  against the regenerated `requirements-dev.lock` reports no known
+  vulnerabilities. pip is dev-only here (transitive of `pip-audit`) and
+  is stripped from the runtime container image; the OpenVEX statements
+  for the published image are unaffected. (#208)
+- Dockerfile build stage now upgrades the venv-seeded pip to the latest
+  release before stripping pip's code from the runtime image. The
+  retained `.dist-info` metadata now reports a patched version, so
+  Docker Scout reports genuine remediation (not just `not_affected`)
+  for CVE-2025-8869, CVE-2026-1703, and CVE-2026-6357. CVE-2026-3219
+  has no upstream fix and stays VEX-covered. (#217)
+- OpenVEX document (v4) adds a fourth `not_affected` statement covering
+  CVE-2026-6357 with the same `vulnerable_code_not_present`
+  justification used for the other pip CVEs, and drops the `@25.1.1`
+  pin from every pip subcomponent PURL. The mitigation is
+  version-independent — pip's executable code is removed at build time
+  regardless of which pip the build seeds — so the statements continue
+  matching after the bundled-pip upgrade in #217. (#216)
+- urllib3 bumped to 2.7.0 in `requirements-dev.lock` for CVE-2026-44431
+  and CVE-2026-44432. urllib3 is a transitive dev/publish dependency
+  only (via `id`, `requests`, `tuf`, `twine`); the runtime package
+  depends only on PyYAML, so published-package users are unaffected.
+  (#214)
 
 ## [0.7.0] - 2026-05-01
 
