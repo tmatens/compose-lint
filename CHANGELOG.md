@@ -73,6 +73,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only (via `id`, `requests`, `tuf`, `twine`); the runtime package
   depends only on PyYAML, so published-package users are unaffected.
   (#214)
+- idna bumped to 3.15 in `requirements-dev.lock` for CVE-2026-45409,
+  and `pip-audit` now ignores the disputed `PYSEC-2025-183` advisory
+  against pyjwt 2.12.1 (the pyjwt maintainers dispute it because JWT
+  signing key length is chosen by the consuming application, not the
+  library; no fix version exists). Both packages are dev/publish
+  transitives; the runtime image is unaffected. (#224)
 
 ## [0.7.0] - 2026-05-01
 
