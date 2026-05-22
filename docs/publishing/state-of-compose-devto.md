@@ -105,6 +105,8 @@ One more chart, because the severity mix surprises people:
 
 Nearly four out of five findings are MEDIUM — because the hardening-triple misses from Finding 1 fire on almost every file and they're MEDIUM by design. CRITICAL findings (a mounted Docker socket, `cap_add: ALL`, a bind-mounted `/`) are rare but real: a mounted Docker socket — full host takeover — shows up on **6.4%** of parsed files, and **8%** in the popular tier.
 
+And **LOW is basically empty by construction** — only one of compose-lint's 21 rules is LOW (an *explicitly disabled* healthcheck), because the linter's whole scope is security misconfiguration, where the floor is MEDIUM. So read "0.0% LOW" as a fact about the tool, not a clean bill of health.
+
 ## So why are all the flags off by default?
 
 Because Docker optimizes for "it runs on the first try." A writable filesystem, a full

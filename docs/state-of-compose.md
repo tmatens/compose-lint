@@ -66,6 +66,8 @@ Severity distribution across the 64,767 findings:
 
 The MEDIUM-heavy distribution is a property of compose-lint's rule design: the three most common hardening misses (read-only root FS, capability restrictions, no-new-privileges) are MEDIUM and they fire on nearly every file in the corpus. CRITICAL findings are rarer — they require something acutely dangerous like a Docker socket mount — but they appear on 6.4% of parsed files (399 of 6,266).
 
+**Why LOW is almost empty.** The 23 LOW findings (0.0%) are not a sign that compose files get the small things right — they are an artifact of the rule set. Of compose-lint's 21 rules, exactly one is LOW: [CL-0015](rules/CL-0015.md) (healthcheck disabled), and it fires only when a file *explicitly* opts out of healthchecks with `test: ["NONE"]` — a deliberate, uncommon act, not a default omission. The severity floor is otherwise MEDIUM by design, because the tool's scope is security misconfiguration rather than style or hygiene nits. Read "0.0% LOW" as a statement about what compose-lint chooses to flag, not as a clean bill of health.
+
 ## Per-tier breakdown
 
 Tier-level rates differ enough that aggregate "X% of compose files have finding Y" numbers can mislead. A vendor example, a self-hosted app-store template, and a random GitHub file have different authorship, different intent, and different review pressure.
