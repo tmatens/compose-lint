@@ -24,6 +24,7 @@ as its canonical URL so the two don't compete for search ranking.
 - [`state-of-compose-hashnode.md`](state-of-compose-hashnode.md) — Hashnode publish
   settings; reuses the dev.to body verbatim (single-sourced to avoid drift).
 - `assets/*.png` — raster copies of the report charts, for the blog posts.
+- `assets/cover.png` — the dev.to / Hashnode cover banner (data-driven from the run).
 
 ## Canonical-URL strategy
 
@@ -44,7 +45,8 @@ no manual upload needed once they're on `main`.
 
 ```bash
 pip install -e '.[corpus]'
-python scripts/corpus/charts.py <run-id> --png   # -> docs/publishing/assets/
+python scripts/corpus/charts.py <run-id> --png     # chart PNGs -> docs/publishing/assets/
+python scripts/corpus/charts.py <run-id> --cover   # cover.png  -> docs/publishing/assets/
 ```
 
 Same data path as the report's SVGs (`run.aggregate_tiers`), so the PNGs can't disagree

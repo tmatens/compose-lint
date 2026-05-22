@@ -13,13 +13,17 @@ Charts produced:
   severity-distribution.svg Findings by severity (share of all findings).
   parse-error-rate.svg      Parse-error rate, per tier.
 
+With `--cover`, instead emits a blog cover banner (`cover.png`) into
+`docs/publishing/assets/`.
+
 matplotlib is an optional dependency: `pip install -e '.[corpus]'`. It never
 enters the runtime wheel (PyYAML-only per CLAUDE.md).
 
 Usage:
   python3 scripts/corpus/charts.py latest          # SVGs -> docs/assets/
   python3 scripts/corpus/charts.py 20260503T034026Z
-  python3 scripts/corpus/charts.py 20260503T034026Z --png  # PNGs -> docs/publishing/assets/
+  python3 scripts/corpus/charts.py 20260503T034026Z --png    # PNGs -> docs/publishing/assets/
+  python3 scripts/corpus/charts.py 20260503T034026Z --cover  # cover.png -> docs/publishing/assets/
 
 SVG is the default (vector, embedded in the report). `--png` emits raster
 copies for blog uploads, since dev.to / Hashnode don't reliably render
@@ -249,16 +253,57 @@ def chart_parse_error_rate(by_tier: dict[str, dict], run_dir: Path) -> tuple[plt
     return fig, "parse-error-rate"
 
 
+def chart_cover(by_tier: dict[str, dict], run_dir: Path) -> tuple[plt.Figure, str]:
+    """Blog cover banner (~1000x420). Dark theme, data-driven from the run.
+
+    Title + the per-tier finding-rate bars, so the cover refreshes with the
+    numbers like every other figure. Highlights the highest-rate tier.
+    """
+    bg, fg, mute, blue, hi = "#0f172a", "#e2e8f0", "#94a3b8", "#3b82f6", "#60a5fa"
+    tiers = [t for t in TIER_ORDER if t in by_tier]
+    pct = [100 * by_tier[t]["with_findings"] / by_tier[t]["parsed"] for t in tiers]
+    total = sum(b["total"] for b in by_tier.values())
+
+    fig = plt.figure(figsize=(10, 4.2))
+    fig.patch.set_facecolor(bg)
+    fig.text(0.055, 0.88, "State of Docker\nCompose Security", fontsize=26,
+             fontweight="bold", color=fg, va="top", linespacing=1.12)
+    fig.text(0.055, 0.50, f"An empirical scan of {total:,} public Compose files",
+             fontsize=13.5, color=mute, va="top")
+    fig.text(0.055, 0.36, "Every tier ships security findings,\neven the official vendor examples.",
+             fontsize=14, color=fg, va="top", linespacing=1.4)
+    fig.text(0.055, 0.085, "compose-lint   ·   OWASP / CIS-grounded   ·   MIT",
+             fontsize=10.5, color=mute, va="bottom")
+
+    ax = fig.add_axes((0.60, 0.16, 0.33, 0.56))
+    ax.set_facecolor(bg)
+    ypos = list(range(len(tiers)))[::-1]
+    top = max(pct) if pct else -1
+    ax.barh(ypos, pct, height=0.58, color=[hi if p == top else blue for p in pct])
+    for yi, t, p in zip(ypos, tiers, pct):
+        ax.text(-3, yi, t, ha="right", va="center", color=fg, fontsize=10.5)
+        ax.text(p + 2.5, yi, f"{p:.0f}%", ha="left", va="center", color=fg,
+                fontsize=10.5, fontweight="bold")
+    ax.set_xlim(0, 126)
+    ax.set_ylim(-0.6, len(tiers) + 0.15)
+    ax.axis("off")
+    ax.text(-3, len(tiers) - 0.25, "files with ≥1 finding, by tier", color=mute,
+            fontsize=9.5, va="bottom", ha="left")
+    return fig, "cover"
+
+
 def _save(fig: plt.Figure, name: str, fmt: str, out_dir: Path, dpi: int) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"{name}.{fmt}"
-    fig.savefig(out, format=fmt, dpi=dpi)
+    # facecolor=fig's own so the dark cover keeps its background, not white.
+    fig.savefig(out, format=fmt, dpi=dpi, facecolor=fig.get_facecolor())
     plt.close(fig)
     return out
 
 
 def main(argv: list[str]) -> int:
     png = "--png" in argv[1:]
+    cover = "--cover" in argv[1:]
     positional = [a for a in argv[1:] if not a.startswith("-")]
     if len(positional) != 1:
         sys.exit(__doc__)
@@ -267,13 +312,21 @@ def main(argv: list[str]) -> int:
     if not results_path.exists():
         sys.exit(f"no results.jsonl in {run_dir}")
 
-    # SVG (vector) for the report; PNG (raster, 2x dpi) for blog uploads —
-    # dev.to / Hashnode don't reliably render raw-GitHub SVGs.
-    fmt, out_dir, dpi = ("png", PNG_ASSETS, 192) if png else ("svg", ASSETS, 100)
-
     _style()
     results = [json.loads(line) for line in results_path.open()]
     by_tier, rule_severity = aggregate_tiers(results, load_index())
+
+    if cover:
+        # Blog cover banner only -> PNG in docs/publishing/assets/.
+        fig, name = chart_cover(by_tier, run_dir)
+        out = _save(fig, name, "png", PNG_ASSETS, 200)
+        print(f"wrote {out.relative_to(REPO_ROOT)} ({out.stat().st_size} bytes)",
+              file=sys.stderr)
+        return 0
+
+    # SVG (vector) for the report; PNG (raster, 2x dpi) for blog uploads —
+    # dev.to / Hashnode don't reliably render raw-GitHub SVGs.
+    fmt, out_dir, dpi = ("png", PNG_ASSETS, 192) if png else ("svg", ASSETS, 100)
 
     figures = [
         chart_findings_by_tier(by_tier, run_dir),
