@@ -127,6 +127,17 @@ container starts and your app works. Every hardening control is **opt-in**, and 
 means knowing it exists, knowing your app still works without the capability or the write
 access, and adding three or four lines per service.
 
+And "knowing it exists" is the hard part. There's no single "secure Compose baseline" to
+copy — the controls are scattered across the Compose spec, the Docker run reference, the
+[OWASP Docker Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html),
+and the CIS Docker Benchmark. You have to already know that `no-new-privileges` is a
+setting, that `cap_drop: [ALL]` should come *before* a targeted `cap_add`, that
+`read_only: true` usually needs a `tmpfs` for the paths your app writes to. Most people
+writing a Compose file aren't container-security specialists — they just want their stack
+up. Expecting everyone to internalize that surface is how you get a 91% finding rate. A
+linter inverts the problem: instead of memorizing the whole surface, you fix the one line
+it flags, with a citation for *why*.
+
 That's a real cost, and it compounds: the examples never opt in, so the next person copies
 the unhardened shape, ships it, and becomes the next example. The corpus is what that loop
 looks like at scale. Nothing here is exotic — it's the accumulated weight of a sensible
