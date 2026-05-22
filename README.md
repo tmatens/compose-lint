@@ -11,7 +11,7 @@
 
 Static-analysis linter for `docker-compose.yml` and `compose.yaml` that catches dangerous misconfigurations before they reach production — privileged containers, unpinned images, host-network sharing, sensitive bind mounts, hard-coded credentials, and more.
 
-In a scan of 1,405 public `docker-compose.yml` files on GitHub, **78% had at least one security finding** (45% HIGH or CRITICAL) — virtually all of those skip basic capability restrictions, 33% deploy images without a pinned digest, and 43% bind ports to all interfaces. compose-lint catches these in CI before they ship.
+In a scan of 6,444 public Docker Compose files on GitHub, **91% of those that parse had at least one security finding** (68% HIGH or CRITICAL) — nearly all skip basic capability restrictions, 52% run images without a pinned digest, and 58% bind ports to all interfaces. compose-lint catches these in CI before they ship. **[Read the full *State of Docker Compose Security* report →](docs/state-of-compose.md)**
 
 **What it catches:**
 

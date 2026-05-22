@@ -1,8 +1,8 @@
 # State of Docker Compose Security
 
-> **Status: draft in progress.** This is the canonical doc for the State of Docker Compose Security report. Tracking issue: [#186](https://github.com/tmatens/compose-lint/issues/186).
+> This is the canonical, citable version of the State of Docker Compose Security report. Tracking issue: [#186](https://github.com/tmatens/compose-lint/issues/186).
 >
-> Pinned to **compose-lint 0.7.0** and corpus run **`20260503T034026Z`** (6,444 files, 2026-05-03). Quarterly refreshes will bump both with a one-line delta callout.
+> Pinned to **compose-lint 0.7.0** and corpus run **`20260503T034026Z`** (6,444 files, 2026-05-03). Quarterly refreshes bump both with a one-line delta callout.
 
 The first published empirical study of security misconfigurations in real-world Docker Compose files at corpus scale.
 
@@ -28,7 +28,7 @@ The corpus is divided into four tiers, each with a distinct threat-model framing
 | `canonical` | 327 | Official upstream examples (awesome-compose, bitnami, docker/compose, grafana, vaultwarden, …). *Do the examples people copy-paste ship insecure defaults?* |
 | `popular` | 3,977 | High-star (≥50) GitHub repos with a Compose file pushed in the last two years. *What does production-adjacent code look like?* |
 | `selfhosted` | 588 | Curated app-store / template-registry repos (CasaOS-AppStore, runtipi-appstore, Compose-Examples, dockge, …). Distinct threat model from `popular`: home-LAN deployments, not cloud. |
-| `longtail` | 1,552 | Stratified GitHub-code-search sweep across anchor terms × filenames × size buckets. *What does the median compose file in the wild look like?* |
+| `longtail` | 1,552 | Stratified GitHub-code-search sweep across anchor terms × filenames × size buckets — the low-visibility mass of ordinary repos (a homelab, a tutorial follow-along, a half-finished side project), as opposed to the curated, high-attention head the other three tiers represent. The name is the "long tail" of GitHub *by repo attention*, not a distribution tail in the statistical sense. *What does the median compose file in the wild look like?* |
 
 The longtail sweep is **not random sampling.** GitHub's code-search API has no random-document primitive, so `fetch.py` runs 6 anchors × 4 filenames × 5 size buckets = 120 stratified queries × up to 200 hits each, deduped on `(repo, path, sha)` then on content hash. The exact query design and inherited biases are documented in [`scripts/corpus/README.md`](../scripts/corpus/README.md#longtail-sampling-methodology).
 
@@ -104,7 +104,7 @@ Ten rules account for >95% of all findings. They cluster into three groups: hard
 
 ![Horizontal bar chart of the ten most common rules by share of parsed files affected, coloured by severity: CL-0006 No capability restrictions 91%, CL-0007 Filesystem not read-only 91%, CL-0003 Privilege escalation not blocked 90%, CL-0005 Ports bound to all interfaces 58%, CL-0019 Image tag without digest 52%, CL-0004 Image not pinned to version 46%, CL-0020 Credential-shaped env key 20%, CL-0013 Sensitive host path mounted 10%, CL-0001 Docker socket mounted 6%, CL-0011 Dangerous capabilities added 4%.](assets/top-findings.svg)
 
-### Hardening defaults (the long tail of MEDIUM findings)
+### Hardening defaults (the bulk of MEDIUM findings)
 
 These three rules fire on roughly 90% of every parsed file in the corpus:
 
