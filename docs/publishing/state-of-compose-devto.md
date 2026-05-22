@@ -1,7 +1,7 @@
 ---
 title: "I scanned 6,444 public Docker Compose files. 91% of the ones that parse had a security finding."
 published: false
-description: An empirical look at how real-world docker-compose.yml files are configured — and why even vendor copy-paste examples ship insecure defaults.
+description: What real-world docker-compose.yml files actually look like, and why even the examples people copy ship insecure defaults.
 tags: docker, security, devops, opensource
 canonical_url:
 ---
@@ -11,40 +11,40 @@ canonical_url:
 > Before publishing: set `published: true`, leave `canonical_url` blank so dev.to is
 > the SEO-original, and (optionally) add a cover image. See `docs/publishing/README.md`.
 
-I pointed [compose-lint](https://github.com/tmatens/compose-lint) — a security linter for Docker Compose files — at the wild: **6,444 public `docker-compose.yml` and `compose.yaml` files from GitHub**. (More on why I built it in a second.)
+I pointed [compose-lint](https://github.com/tmatens/compose-lint), a security linter for Docker Compose files, at **6,444 public `docker-compose.yml` and `compose.yaml` files from GitHub**. (More on why I built it below.)
 
-The headline:
+Three numbers stood out:
 
 - **91%** of the files that parse have at least one security finding.
 - **68%** have at least one **HIGH or CRITICAL** finding.
-- The same three issues sit at the top of *every* category of file — including the official, copy-paste-me vendor examples.
+- The same three issues top *every* category I looked at, including the official vendor examples people are told to copy.
 
-This isn't a "gotcha" about careless developers. It's a story about **defaults**: Docker Compose ships with none of the hardening flags on, almost nobody turns them on, and the examples people learn from don't either.
+I don't read this as developers being careless. It's about defaults. Docker Compose ships with the hardening switched off, almost nobody turns it on, and the examples people learn from don't either.
 
 ## Why this exists
 
-By day I lead a team of security engineers at a large financial institution. Compose doesn't really come up there — production runs on Kubernetes and ECS, each with a mature shelf of security tooling. But at home, in my lab, Compose is exactly the right tool: quick, low-ceremony, and just enough to stand up a stack on a weekend.
+By day I lead a team of security engineers at a large financial institution, where Compose barely comes up. Production runs on Kubernetes and ECS, both with mature security tooling around them. At home in my lab, though, Compose is the right tool: quick, low-ceremony, enough to stand up a stack on a Saturday.
 
-What nagged at me was the asymmetry. Kubernetes and Terraform have a deep bench of security scanners — Checkov, Trivy, kube-bench, Kubescape. Compose is a second-class citizen in most of them, and the Compose-native tools mostly solve adjacent problems: [Hadolint](https://github.com/hadolint/hadolint) lints your Dockerfiles, not your Compose file; [dclint](https://github.com/zavoloklom/docker-compose-linter) checks Compose structure and style, not its security posture.
+What bugged me was the asymmetry. Kubernetes and Terraform have a deep bench of scanners: Checkov, Trivy, kube-bench, Kubescape. Compose is an afterthought in most of them. The Compose-specific tools I found solved adjacent problems instead. [Hadolint](https://github.com/hadolint/hadolint) lints Dockerfiles, not Compose files. [dclint](https://github.com/zavoloklom/docker-compose-linter) checks Compose structure and style, not security.
 
-What I wanted was dead simple: a zero-config, OWASP/CIS-grounded security linter I could drop into CI and point at my own stacks. So I built compose-lint, then got curious whether the things I kept fixing in my own files showed up everywhere else.
+What I wanted was simple: a zero-config, OWASP/CIS-grounded linter I could drop into CI and run against my own stacks. So I wrote one. Then I got curious whether the stuff I kept fixing in my own files showed up everywhere else.
 
-They do. This report is that "everywhere" — and I'm sharing the tool in case it's useful to anyone building the same way.
+It does. That's what this writeup is about, and I'm putting the tool out there in case it's useful to anyone who builds the way I do.
 
 > *Personal project; the views here are my own, not my employer's.*
 
-Here's what the corpus says.
+Here's what I found.
 
 ## How the corpus is built
 
-I split the files into four tiers, because "X% of compose files do Y" is misleading when a Bitnami reference example and someone's half-finished homelab get averaged together:
+I split the files into four tiers. A single "X% of Compose files do Y" number is misleading when it averages a polished Bitnami example against someone's half-finished homelab:
 
 - **`canonical`** (327 files) — official upstream examples: awesome-compose, Bitnami, Grafana, Vaultwarden. *The stuff READMEs tell you to copy-paste.*
 - **`popular`** (3,977) — repos with ≥50 stars and a recent Compose file. *Production-adjacent code.*
 - **`selfhosted`** (588) — app-store / template registries: CasaOS, runtipi, Dockge. *Home-LAN threat model.*
 - **`longtail`** (1,552) — a stratified sweep of GitHub code search. *The median file in the wild.*
 
-Every file is linted with the same rule set (compose-lint 0.7.0), each rule grounded in the [OWASP Docker Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html) or the CIS Docker Benchmark. The full methodology — including what this study deliberately does **not** claim — is in the [canonical report](https://github.com/tmatens/compose-lint/blob/main/docs/state-of-compose.md).
+Every file goes through the same rule set (compose-lint 0.7.0), and every rule is grounded in the [OWASP Docker Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html) or the CIS Docker Benchmark. The full methodology, including what the study deliberately doesn't claim, is in the [canonical report](https://github.com/tmatens/compose-lint/blob/main/docs/state-of-compose.md).
 
 ## Finding 1: nobody flips the hardening flags
 
@@ -56,7 +56,7 @@ Three findings fire on roughly **90% of every file in the corpus**:
 - **No capability restrictions** (`cap_drop: [ALL]` missing) — 91%
 - **Privilege escalation not blocked** (`no-new-privileges` missing) — 90%
 
-These are MEDIUM, not CRITICAL, because each is a *missing* defense-in-depth control rather than an active misuse. But that's exactly why they're interesting: the Compose hardening triple is essentially **never set**.
+They're rated MEDIUM, not CRITICAL, because each one is a missing control rather than active misuse. That's also what makes them interesting. The Compose hardening triple is almost never set.
 
 The fix takes about 30 seconds per service:
 
@@ -70,33 +70,33 @@ services:
       - no-new-privileges:true     # CL-0003
 ```
 
-Add a `tmpfs:` for the paths your app actually writes to, and you've closed the three most common findings in the corpus.
+Add a `tmpfs:` for whatever paths your app writes to and you've cleared the three most common findings in the corpus.
 
-**"Aren't these just optional flags, not real vulnerabilities?"** Mostly, yes — and it's worth saying plainly: the bulk of that 91% is *missing* defense-in-depth, not an active breach. But these aren't my stylistic preferences. `read_only`, `cap_drop: [ALL]`, and `no-new-privileges` are named controls in the [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker) and the OWASP Docker Security Cheat Sheet. "A finding" means a file diverges from that published baseline — no more, no less.
+**"Aren't these just optional flags, not real vulnerabilities?"** Mostly, yeah. The bulk of that 91% is missing defense-in-depth, not an active breach, and I'd rather say that up front than bury it. But these aren't my personal preferences about tidy YAML. `read_only`, `cap_drop: [ALL]`, and `no-new-privileges` are all named controls in the [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker) and the OWASP Docker Security Cheat Sheet. A finding means the file diverges from that published baseline.
 
 ## Finding 2: even copy-paste vendor examples aren't clean
 
-You'd expect the official examples — the ones whose entire job is to be copied — to be the hardened ones. They're the *cleanest* tier, and they're still at **83%**:
+You'd expect the official examples to be the hardened ones. Being copied is their entire job. They're the cleanest tier in the corpus, and they still come in at **83%**:
 
 ![Share of files with at least one finding by tier: canonical 82.8%, popular 95.2%, selfhosted 100%, longtail 78.3%](https://raw.githubusercontent.com/tmatens/compose-lint/main/docs/publishing/assets/findings-by-tier.png)
 
 A few things jump out:
 
-- **Self-hosted app-store templates: 100%.** Every single one trips at least one rule. They optimize for "works on your LAN in one click," which means exposed ports, root users, and big host mounts.
+- **Self-hosted app-store templates: 100%.** Every single one trips at least one rule. They're built for "works on your LAN in one click," which in practice means exposed ports, root users, and big host mounts.
 - **Popular repos aren't better than the long tail.** Stars don't buy hardening discipline.
-- **Canonical examples are config *demos*, not hardening *exemplars*** — and people copy them verbatim into production.
+- **Canonical examples are config demos, not hardening exemplars.** People copy them into production anyway.
 
-That last point is the whole reason this gap exists. The examples teach the unhardened shape, and the unhardened shape propagates.
+That last point is most of the story. The examples teach the unhardened shape, and the shape propagates.
 
-One fair caveat, especially for the homelab crowd: threat model matters. A single-user box behind a firewall and a VPN has a different risk calculus than an internet-exposed service, and a finding is something to *decide about*, not an emergency. Start with what actually bites — a mounted Docker socket is full host takeover regardless of intent — and treat the MEDIUM hardening backlog as gradual cleanup. That's why the CI gate defaults to `fail-on: high`.
+A fair caveat here, especially if you're running a homelab: threat model matters. A single-user box behind a firewall and Tailscale is a different risk calculus than something exposed to the internet, and a finding is usually something to decide about rather than an emergency. Start with what actually bites. A mounted Docker socket is full host takeover whether or not you meant to expose it, so fix those first and treat the MEDIUM pile as gradual cleanup. It's why the CI gate defaults to `fail-on: high`.
 
 ## Finding 3: ~10% of ordinary files don't even parse
 
-Here's the one I didn't expect. In the long-tail tier, **9.6%** of files don't parse as a valid Compose file at all — versus well under 1% everywhere else:
+This is the one I didn't expect. In the long-tail tier, **9.6%** of files don't parse as a valid Compose file at all, against well under 1% everywhere else:
 
 ![Parse-error rate by tier: canonical 0.6%, popular 0.7%, selfhosted 0.0%, longtail 9.6%](https://raw.githubusercontent.com/tmatens/compose-lint/main/docs/publishing/assets/parse-error-rate.png)
 
-And it's almost never broken YAML. It's **shape errors** — people writing `services` as a dictionary of strings:
+And it's almost never broken YAML. It's shape errors: people writing `services` as a dictionary of strings.
 
 ```yaml
 # What a lot of people write (does not parse):
@@ -109,7 +109,7 @@ services:
     image: nginx:1.27
 ```
 
-A file that doesn't parse with a real Compose engine was never deployed by one. So these are documentation snippets, tutorial follow-alongs, and first attempts — none of which are getting linted before they ship. The parse-error rate is itself a signal about where unreviewed config lives.
+A file that doesn't parse with a real Compose engine was never deployed by one. So these are docs snippets, tutorial follow-alongs, half-finished first drafts. None of them are getting linted before they ship, and the parse-error rate is really a map of where unreviewed config piles up.
 
 (If you're wondering: "long tail" here means the low-visibility mass of ordinary repos, not a statistical distribution tail.)
 
@@ -119,43 +119,27 @@ One more chart, because the severity mix surprises people:
 
 ![Findings by severity: MEDIUM 78.5%, HIGH 20.3%, CRITICAL 1.1%, LOW 0.0%](https://raw.githubusercontent.com/tmatens/compose-lint/main/docs/publishing/assets/severity-distribution.png)
 
-Nearly four out of five findings are MEDIUM — because the hardening-triple misses from Finding 1 fire on almost every file and they're MEDIUM by design. CRITICAL findings (a mounted Docker socket, `cap_add: ALL`, a bind-mounted `/`) are rare but real: a mounted Docker socket — full host takeover — shows up on **6.4%** of parsed files, and **8%** in the popular tier.
+Nearly four out of five findings are MEDIUM. That's the hardening-triple misses from Finding 1, which hit almost every file and are MEDIUM by design. CRITICAL findings are rarer but real: a mounted Docker socket, `cap_add: ALL`, a bind-mounted `/`. The Docker socket one alone, which is full host takeover, shows up on **6.4%** of parsed files and **8%** in the popular tier.
 
-And **LOW is basically empty by construction** — only one of compose-lint's 21 rules is LOW (an *explicitly disabled* healthcheck), because the linter's whole scope is security misconfiguration, where the floor is MEDIUM. So read "0.0% LOW" as a fact about the tool, not a clean bill of health.
+LOW is almost empty, and that's by construction. Only one of compose-lint's 21 rules is LOW (a healthcheck someone explicitly turned off), because the tool's whole scope is security misconfiguration, where the floor is MEDIUM. So read "0.0% LOW" as a fact about the tool, not as the small stuff being fine.
 
 ## So why are all the flags off by default?
 
-Because Docker optimizes for "it runs on the first try." A writable filesystem, a full
-capability set, and unrestricted privilege escalation are the path of least surprise — your
-container starts and your app works. Every hardening control is **opt-in**, and opting in
-means knowing it exists, knowing your app still works without the capability or the write
-access, and adding three or four lines per service.
+Because Docker optimizes for "it runs the first time." A writable filesystem, the full capability set, privilege escalation left on: that's the path of least surprise. Your container starts, your app works. Hardening is opt-in, and opting in means knowing the control exists, confirming your app still works without that capability or that write access, and adding a few lines per service.
 
-And "knowing it exists" is the hard part. There's no single "secure Compose baseline" to
-copy — the controls are scattered across the Compose spec, the Docker run reference, the
-[OWASP Docker Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html),
-and the CIS Docker Benchmark. You have to already know that `no-new-privileges` is a
-setting, that `cap_drop: [ALL]` should come *before* a targeted `cap_add`, that
-`read_only: true` usually needs a `tmpfs` for the paths your app writes to. Most people
-writing a Compose file aren't container-security specialists — they just want their stack
-up. Expecting everyone to internalize that surface is how you get a 91% finding rate. A
-linter inverts the problem: instead of memorizing the whole surface, you fix the one line
-it flags, with a citation for *why*.
+And "knowing it exists" is the hard part. There's no single secure-Compose baseline to copy from. The controls are scattered across the Compose spec, the Docker run reference, the [OWASP Docker Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html), and the CIS benchmark. You'd have to already know that `no-new-privileges` is a thing, that `cap_drop: [ALL]` goes before a targeted `cap_add`, that `read_only: true` usually needs a `tmpfs` for whatever your app writes. Most people writing a Compose file aren't container-security specialists. They want their stack up. Expecting everyone to carry that whole surface in their head is how you end up with a 91% finding rate. A linter flips it around: you don't memorize anything, you fix the line it points at and read why.
 
-That's a real cost, and it compounds: the examples never opt in, so the next person copies
-the unhardened shape, ships it, and becomes the next example. The corpus is what that loop
-looks like at scale. Nothing here is exotic — it's the accumulated weight of a sensible
-default that nobody revisits.
+And it compounds. The examples never opt in, so the next person copies the unhardened shape, ships it, and becomes the next example someone copies. The corpus is that loop at scale. None of it is exotic. It's the accumulated weight of a sensible default that nobody goes back to revisit.
 
 ## What this is *not*
 
-I want to be precise about the framing, because it's easy to over-claim:
+A few things I'm explicitly not claiming, because it's easy to over-read this:
 
-- It measures **misconfiguration prevalence**, not exploitation. A finding is divergence from hardening guidance, not proof anything was breached.
-- It's **descriptive sampling**, not statistical inference — no p-values, no population estimates.
+- It measures how common misconfigurations are, not whether they were exploited. A finding is divergence from guidance, not evidence of a breach.
+- It's descriptive sampling, not statistical inference. No p-values, no population estimates.
 - It's **GitHub-only and public-only.** Private and enterprise Compose may look different.
 
-The full ["what this study does not claim"](https://github.com/tmatens/compose-lint/blob/main/docs/state-of-compose.md#what-this-study-does-not-claim) section spells out every boundary.
+The [full "what this study does not claim"](https://github.com/tmatens/compose-lint/blob/main/docs/state-of-compose.md#what-this-study-does-not-claim) section in the report lays out every boundary.
 
 ## Try it on your own files
 
@@ -186,15 +170,10 @@ jobs:
           fail-on: high
 ```
 
-`fail-on: high` (the default) fails only on HIGH/CRITICAL, so you can adopt it without
-drowning in the MEDIUM backlog on day one and tighten later. There's also a pre-commit
-hook, JSON and SARIF output (SARIF feeds GitHub Code Scanning), and
-`compose-lint --explain CL-0007` to print any rule's rationale and fix.
+`fail-on: high` (the default) fails only on HIGH/CRITICAL, so you can adopt it without drowning in the MEDIUM backlog on day one, then tighten later. There's also a pre-commit hook, JSON and SARIF output (SARIF feeds GitHub Code Scanning), and `compose-lint --explain CL-0007` to print any rule's rationale and fix.
 
-For what it's worth on a tool you'd wire into CI: every rule cites OWASP, CIS, or Docker
-docs, the image is distroless and nonroot, and releases ship SLSA provenance and Sigstore
-attestations — details in the [repo](https://github.com/tmatens/compose-lint).
+For what it's worth on a tool you'd wire into CI: every rule cites OWASP, CIS, or Docker docs, the image is distroless and nonroot, and releases ship SLSA provenance and Sigstore attestations. Details are in the [repo](https://github.com/tmatens/compose-lint).
 
-📊 **Read the full report** — every table, the complete methodology, per-rule breakdowns, and reproducibility steps: **[State of Docker Compose Security](https://github.com/tmatens/compose-lint/blob/main/docs/state-of-compose.md)**
+📊 **The full report** has every table, the complete methodology, the per-rule breakdowns, and steps to reproduce it: **[State of Docker Compose Security](https://github.com/tmatens/compose-lint/blob/main/docs/state-of-compose.md)**
 
-If you maintain a popular Compose example, I'd genuinely love a PR or an issue — hardening the examples people copy is the highest-leverage fix there is.
+If you maintain a popular Compose example, I'd genuinely love a PR or an issue. Hardening the examples people copy is the highest-leverage fix there is.
