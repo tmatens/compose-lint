@@ -10,7 +10,7 @@ are the publish settings below.
 
 | Setting | Value |
 | --- | --- |
-| **Title** | I scanned 6,444 public Docker Compose files. 91% had a security finding. |
+| **Title** | 9 in 10 Docker Compose files skip the basic security flags |
 | **Subtitle** | An empirical look at how real-world Compose files are configured — and why even vendor copy-paste examples ship insecure defaults. |
 | **Canonical URL** | **The published dev.to post URL** (set under *Settings → Canonical URL*). This is mandatory — it points search authority at dev.to and stops Hashnode competing with it. |
 | **Tags** | docker, security, devops, opensource |

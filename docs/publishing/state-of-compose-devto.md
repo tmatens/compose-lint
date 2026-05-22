@@ -1,5 +1,5 @@
 ---
-title: "I scanned 6,444 public Docker Compose files. 91% of the ones that parse had a security finding."
+title: "9 in 10 Docker Compose files skip the basic security flags"
 published: false
 description: What real-world docker-compose.yml files actually look like, and why even the examples people copy ship insecure defaults.
 tags: docker, security, devops, opensource
