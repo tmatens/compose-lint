@@ -167,11 +167,10 @@ Longtail's parse-error tail isn't malformed YAML. It's people writing `services`
 
 ## Related work
 
-Three pieces of prior work are the closest neighbors to this report. None of them publish a Compose-specific corpus security study, which is why the framing here is "first published empirical study" — but the framing is only credible if these are acknowledged.
+Two pieces of prior work are the closest neighbors to this report. Neither publishes a Compose-specific corpus security study, which is why the framing here is "first published empirical study" — but the framing is only credible if they are acknowledged.
 
 - **Ibrahim, Truong, Wadia, Zhang & Wahsheh (EMSE 27(1), 2021).** *A study of how Docker Compose is used to compose multi-component systems.* [Springer link.](https://link.springer.com/article/10.1007/s10664-021-10025-1) The closest existing corpus study of Docker Compose. Examines composition patterns and architectural shape, not security misconfigurations. This report's tier model is partly informed by their findings on heterogeneity between hobbyist and production Compose usage.
 - **Liu, Wang, Tao & Lu (ESORICS 2020).** *A large-scale empirical study of Docker container security.* [Paper PDF.](https://www-users.cse.umn.edu/~kjlu/papers/docker.pdf) A Docker Hub image corpus security study. They flag `docker-compose.yml` as an underexplored attack surface. This report is a direct response to that gap.
-- **ComposeAudit** ([github.com/kriskimmerle/composeaudit](https://github.com/kriskimmerle/composeaudit)). The closest peer tool — also focused on Compose security misconfigurations. No published corpus findings; this report is the first published empirical study using either compose-lint or ComposeAudit's rule sets.
 
 ## What this study does NOT claim
 
