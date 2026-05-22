@@ -256,13 +256,21 @@ def chart_parse_error_rate(by_tier: dict[str, dict], run_dir: Path) -> tuple[plt
 def chart_cover(by_tier: dict[str, dict], run_dir: Path) -> tuple[plt.Figure, str]:
     """Blog cover banner (~1000x420). Dark theme, data-driven from the run.
 
-    Title + the per-tier finding-rate bars, so the cover refreshes with the
-    numbers like every other figure. Highlights the highest-rate tier.
+    Shows the "hardening triple" — the three ~90% controls the report leads
+    with — so the cover reinforces the headline. Plain-language labels so it
+    reads with no methodology, and it refreshes with the numbers.
     """
-    bg, fg, mute, blue, hi = "#0f172a", "#e2e8f0", "#94a3b8", "#3b82f6", "#60a5fa"
-    tiers = [t for t in TIER_ORDER if t in by_tier]
-    pct = [100 * by_tier[t]["with_findings"] / by_tier[t]["parsed"] for t in tiers]
+    bg, fg, mute, blue = "#0f172a", "#e2e8f0", "#94a3b8", "#3b82f6"
+    triple = [
+        ("CL-0007", "read-only filesystem"),
+        ("CL-0006", "drop capabilities"),
+        ("CL-0003", "no-new-privileges"),
+    ]
+    parsed = sum(b["parsed"] for b in by_tier.values())
     total = sum(b["total"] for b in by_tier.values())
+    files_per_rule: Counter[str] = Counter()
+    for b in by_tier.values():
+        files_per_rule.update(b["files_per_rule"])
 
     fig = plt.figure(figsize=(10, 4.2))
     fig.patch.set_facecolor(bg)
@@ -270,25 +278,27 @@ def chart_cover(by_tier: dict[str, dict], run_dir: Path) -> tuple[plt.Figure, st
              fontweight="bold", color=fg, va="top", linespacing=1.12)
     fig.text(0.055, 0.50, f"An empirical scan of {total:,} public Compose files",
              fontsize=13.5, color=mute, va="top")
-    fig.text(0.055, 0.36, "Every tier ships security findings,\neven the official vendor examples.",
+    fig.text(0.055, 0.36, "9 in 10 files skip all three of the\nbasic hardening flags.",
              fontsize=14, color=fg, va="top", linespacing=1.4)
     fig.text(0.055, 0.085, "compose-lint   ·   OWASP / CIS-grounded   ·   MIT",
              fontsize=10.5, color=mute, va="bottom")
 
-    ax = fig.add_axes((0.60, 0.16, 0.33, 0.56))
+    # One labelled bar per flag. Label sits above its bar so the full name fits.
+    ax = fig.add_axes((0.56, 0.13, 0.40, 0.66))
     ax.set_facecolor(bg)
-    ypos = list(range(len(tiers)))[::-1]
-    top = max(pct) if pct else -1
-    ax.barh(ypos, pct, height=0.58, color=[hi if p == top else blue for p in pct])
-    for yi, t, p in zip(ypos, tiers, pct):
-        ax.text(-3, yi, t, ha="right", va="center", color=fg, fontsize=10.5)
-        ax.text(p + 2.5, yi, f"{p:.0f}%", ha="left", va="center", color=fg,
-                fontsize=10.5, fontweight="bold")
-    ax.set_xlim(0, 126)
-    ax.set_ylim(-0.6, len(tiers) + 0.15)
+    n = len(triple)
+    for i, (rid, label) in enumerate(triple):
+        p = 100 * files_per_rule.get(rid, 0) / parsed if parsed else 0
+        y = n - 1 - i
+        ax.barh(y, p, height=0.34, color=blue)
+        ax.text(0, y + 0.30, label, ha="left", va="bottom", color=fg, fontsize=11)
+        ax.text(p + 2, y, f"{p:.0f}%", ha="left", va="center", color=fg,
+                fontsize=11, fontweight="bold")
+    ax.set_xlim(0, 116)
+    ax.set_ylim(-0.5, n + 0.35)
     ax.axis("off")
-    ax.text(-3, len(tiers) - 0.25, "files with ≥1 finding, by tier", color=mute,
-            fontsize=9.5, va="bottom", ha="left")
+    ax.text(0, n - 0.05, "missing, % of files", color=mute, fontsize=9.5,
+            va="bottom", ha="left")
     return fig, "cover"
 
 
