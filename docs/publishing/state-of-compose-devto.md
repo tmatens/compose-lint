@@ -19,7 +19,7 @@ Three numbers stood out:
 - **68%** have at least one **HIGH or CRITICAL** finding.
 - The same three issues top *every* category I looked at, including the official vendor examples people are told to copy.
 
-I don't read this as developers being careless. It's about defaults. Docker Compose ships with the hardening switched off, almost nobody turns it on, and the examples people learn from don't either.
+I don't read this as engineers being careless. It's about defaults. Docker Compose ships with the hardening switched off, almost nobody turns it on, and the examples people learn from don't either.
 
 ## Why this exists
 
@@ -72,7 +72,7 @@ services:
 
 Add a `tmpfs:` for whatever paths your app writes to and you've cleared the three most common findings in the corpus.
 
-**"Aren't these just optional config choices, not real vulnerabilities?"** Mostly fair, and it's worth being exact about what a "finding" is here. The linter isn't claiming anything was exploited. It's flagging that a file leaves a recommended hardening control unset. Whether that matters is a judgment call that belongs to the org or the developer, based on their context and risk tolerance. What the linter takes off your plate is the "did I even know this control existed?" part. `read_only`, `cap_drop: [ALL]`, and `no-new-privileges` aren't my preferences about tidy YAML; they're named controls in the [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker) and the OWASP Docker Security Cheat Sheet. A finding means the config diverges from that published baseline. Closing the gap or accepting it is your call.
+**"Aren't these just optional config choices, not real vulnerabilities?"** Mostly fair, and it's worth being exact about what a "finding" is here. The linter isn't claiming anything was exploited. It's flagging that a file leaves a recommended hardening control unset. Whether that matters is a judgment call that belongs to the org or the engineer, based on their context and risk tolerance. What the linter takes off your plate is the "did I even know this control existed?" part. `read_only`, `cap_drop: [ALL]`, and `no-new-privileges` aren't my preferences about tidy YAML; they're named controls in the [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker) and the OWASP Docker Security Cheat Sheet. A finding means the config diverges from that published baseline. Closing the gap or accepting it is your call.
 
 ## Finding 2: even copy-paste vendor examples aren't clean
 
