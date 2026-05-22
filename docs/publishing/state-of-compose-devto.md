@@ -25,9 +25,9 @@ This isn't a "gotcha" about careless developers. It's a story about **defaults**
 
 By day I lead a team of security engineers at a large financial institution. Compose doesn't really come up there — production runs on Kubernetes and ECS, each with a mature shelf of security tooling. But at home, in my lab, Compose is exactly the right tool: quick, low-ceremony, and just enough to stand up a stack on a weekend.
 
-What nagged at me was the asymmetry. Kubernetes and Terraform have a deep bench of security scanners — Checkov, Trivy, kube-bench, Kubescape. Compose is a second-class citizen in most of them, and the Compose-native tools mostly solve adjacent problems: [Hadolint](https://github.com/hadolint/hadolint) lints your Dockerfiles, not your Compose file; [dclint](https://github.com/zavoloklom/docker-compose-linter) checks Compose structure and style, not security posture. [ComposeAudit](https://github.com/kriskimmerle/composeaudit) is the closest security-focused peer — but I couldn't find published data on how common these misconfigurations actually are in the wild.
+What nagged at me was the asymmetry. Kubernetes and Terraform have a deep bench of security scanners — Checkov, Trivy, kube-bench, Kubescape. Compose is a second-class citizen in most of them, and the Compose-native tools mostly solve adjacent problems: [Hadolint](https://github.com/hadolint/hadolint) lints your Dockerfiles, not your Compose file; [dclint](https://github.com/zavoloklom/docker-compose-linter) checks Compose structure and style, not its security posture.
 
-What I wanted was dead simple: a zero-config, OWASP/CIS-grounded linter I could drop into CI and point at my own stacks. So I built compose-lint, then got curious whether the things I kept fixing in my own files showed up everywhere else.
+What I wanted was dead simple: a zero-config, OWASP/CIS-grounded security linter I could drop into CI and point at my own stacks. So I built compose-lint, then got curious whether the things I kept fixing in my own files showed up everywhere else.
 
 They do. This report is that "everywhere" — and I'm sharing the tool in case it's useful to anyone building the same way.
 
