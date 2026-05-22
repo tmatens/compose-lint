@@ -62,6 +62,8 @@ Severity distribution across the 64,767 findings:
 | MEDIUM | 50,867 | 78.5% |
 | LOW | 23 | 0.0% |
 
+![Stacked bar of findings by severity across all 64,767 findings: MEDIUM 78.5% (50,867), HIGH 20.3% (13,147), CRITICAL 1.1% (730), LOW 0.0% (23).](assets/severity-distribution.svg)
+
 The MEDIUM-heavy distribution is a property of compose-lint's rule design: the three most common hardening misses (read-only root FS, capability restrictions, no-new-privileges) are MEDIUM and they fire on nearly every file in the corpus. CRITICAL findings are rarer — they require something acutely dangerous like a Docker socket mount — but they appear on 6.4% of parsed files (399 of 6,266).
 
 ## Per-tier breakdown
@@ -76,6 +78,8 @@ Tier-level rates differ enough that aggregate "X% of compose files have finding 
 | `popular` | 3,977 | 3,950 | 3,760 | 190 | 95.2% | 11.33 |
 | `selfhosted` | 588 | 588 | 588 | 0 | **100.0%** | 7.53 |
 | `longtail` | 1,552 | 1,403 | 1,099 | 304 | 78.3% | 9.25 |
+
+![Bar chart of the share of parsed files with at least one finding, by tier: canonical 82.8%, popular 95.2%, selfhosted 100.0%, longtail 78.3%.](assets/findings-by-tier.svg)
 
 Notable observations:
 
@@ -97,6 +101,8 @@ CRITICAL findings are concentrated in `popular` (586 of 730, 80% of all CRITICAL
 ## Top findings
 
 Ten rules account for >95% of all findings. They cluster into three groups: hardening defaults that nobody flips, supply-chain shortcuts, and acute privilege grants.
+
+![Horizontal bar chart of the ten most common rules by share of parsed files affected, coloured by severity: CL-0006 No capability restrictions 91%, CL-0007 Filesystem not read-only 91%, CL-0003 Privilege escalation not blocked 90%, CL-0005 Ports bound to all interfaces 58%, CL-0019 Image tag without digest 52%, CL-0004 Image not pinned to version 46%, CL-0020 Credential-shaped env key 20%, CL-0013 Sensitive host path mounted 10%, CL-0001 Docker socket mounted 6%, CL-0011 Dangerous capabilities added 4%.](assets/top-findings.svg)
 
 ### Hardening defaults (the long tail of MEDIUM findings)
 
@@ -152,6 +158,8 @@ The per-tier rate is the load-bearing number:
 | `popular` | 0.7% | top-level-not-mapping |
 | `selfhosted` | 0.0% | — |
 | `longtail` | **9.6%** | shape errors (49% + 32%) |
+
+![Bar chart of parse-error rate by tier: canonical 0.6%, popular 0.7%, selfhosted 0.0%, longtail 9.6%.](assets/parse-error-rate.svg)
 
 Longtail's parse-error tail isn't malformed YAML. It's people writing `services` as a string-valued mapping, the way a `package.json` `dependencies` block works. A reader skimming a Compose tutorial sees `nginx: image: nginx:1.25` and writes `nginx: nginx:1.25` instead. The parse error here is itself a security-relevant finding: a Compose file that doesn't parse with a real Compose engine isn't deployed by that engine, so these files are documentation, copy-paste fragments, or first-attempts — none of which are getting linted before they ship.
 
@@ -209,8 +217,12 @@ python scripts/corpus/enrich_metadata.py
 
 # Lint the corpus and write summary.md + tier_summary.md
 python scripts/corpus/run.py
+
+# Re-render the charts in this report (matplotlib is a maintainer-only extra)
+pip install -e '.[corpus]'
+python scripts/corpus/charts.py latest
 ```
 
-The output lands in `~/.cache/compose-lint-corpus/runs/<UTC-timestamp>/`. The `summary.md` and `tier_summary.md` files there are the source artifacts every table in this report is built from.
+The output lands in `~/.cache/compose-lint-corpus/runs/<UTC-timestamp>/`. The `summary.md` and `tier_summary.md` files there are the source artifacts every table in this report is built from; `charts.py` reads the same per-tier aggregation, so the figures in `docs/assets/` can never disagree with the tables.
 
 GitHub's code-search ranking is stochastic enough that a second run will not produce a byte-identical corpus, but the headline rates (per-tier finding rate, top-rule ranking, parse-error class distribution) are stable across runs at this corpus size. Quarterly refresh PRs will land both the new run's numbers and a delta callout against the previous version.

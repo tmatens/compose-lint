@@ -74,6 +74,14 @@ publish = [
 container = [
     "build==1.4.3",
 ]
+# Chart generation for the State of Compose report (scripts/corpus/charts.py).
+# Manual maintainer task run at report-refresh time, not a CI job — so this
+# group is deliberately absent from every requirements*.lock (see the regen
+# commands in CLAUDE.md). matplotlib never reaches the runtime wheel, which
+# stays at PyYAML-only per CLAUDE.md.
+corpus = [
+    "matplotlib==3.10.9",
+]
 dev = [
     # Self-reference so the ruff pin lives only in [lint]; no drift.
     "compose-lint[lint]",
