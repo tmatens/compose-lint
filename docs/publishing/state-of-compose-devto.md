@@ -1,5 +1,5 @@
 ---
-title: "I scanned 6,444 public Docker Compose files. 91% had a security finding."
+title: "I scanned 6,444 public Docker Compose files. 91% of the ones that parse had a security finding."
 published: false
 description: An empirical look at how real-world docker-compose.yml files are configured — and why even vendor copy-paste examples ship insecure defaults.
 tags: docker, security, devops, opensource
@@ -70,7 +70,9 @@ services:
       - no-new-privileges:true     # CL-0003
 ```
 
-Add a `tmpfs:` for the paths your app actually writes to, and you've closed the three most common findings on the internet.
+Add a `tmpfs:` for the paths your app actually writes to, and you've closed the three most common findings in the corpus.
+
+**"Aren't these just optional flags, not real vulnerabilities?"** Mostly, yes — and it's worth saying plainly: the bulk of that 91% is *missing* defense-in-depth, not an active breach. But these aren't my stylistic preferences. `read_only`, `cap_drop: [ALL]`, and `no-new-privileges` are named controls in the [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker) and the OWASP Docker Security Cheat Sheet. "A finding" means a file diverges from that published baseline — no more, no less.
 
 ## Finding 2: even copy-paste vendor examples aren't clean
 
@@ -85,6 +87,8 @@ A few things jump out:
 - **Canonical examples are config *demos*, not hardening *exemplars*** — and people copy them verbatim into production.
 
 That last point is the whole reason this gap exists. The examples teach the unhardened shape, and the unhardened shape propagates.
+
+One fair caveat, especially for the homelab crowd: threat model matters. A single-user box behind a firewall and a VPN has a different risk calculus than an internet-exposed service, and a finding is something to *decide about*, not an emergency. Start with what actually bites — a mounted Docker socket is full host takeover regardless of intent — and treat the MEDIUM hardening backlog as gradual cleanup. That's why the CI gate defaults to `fail-on: high`.
 
 ## Finding 3: ~10% of ordinary files don't even parse
 
@@ -178,7 +182,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: tmatens/compose-lint@v0.7.0
         with:
-          pattern: "**/docker-compose*.yml"
+          pattern: "**/*compose*.y*ml"   # docker-compose.yml, compose.yaml, …
           fail-on: high
 ```
 
