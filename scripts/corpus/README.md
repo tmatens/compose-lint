@@ -20,6 +20,17 @@ python scripts/corpus/run.py                # lint everything → runs/<ts>/
 
 If you only edited the curated lists, skip the fetches: `retier.py` then `make_tier_summary.py` regenerates per-tier numbers without re-linting.
 
+## Charts
+
+`charts.py` renders the report's SVGs into `docs/assets/` from a finished run. It reads the same `results.jsonl` + `index.jsonl` via `run.aggregate_tiers`, so the charts can never disagree with `tier_summary.md`.
+
+```bash
+pip install -e '.[corpus]'                   # one-time: pulls in matplotlib
+python scripts/corpus/charts.py latest       # or a specific runs/<ts>
+```
+
+Commit the regenerated `docs/assets/*.svg` alongside the report when the pinned run changes. matplotlib is a maintainer-only extra — it is deliberately absent from every `requirements*.lock` and never reaches the runtime wheel (PyYAML-only).
+
 ## Tiers
 
 - `canonical` — official upstream examples (what people copy from READMEs)

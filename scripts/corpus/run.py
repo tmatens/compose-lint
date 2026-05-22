@@ -306,12 +306,16 @@ def summarize(run_dir: Path, results: list[dict], index: dict[str, dict], starte
     (run_dir / "summary.md").write_text("\n".join(lines))
 
 
-def summarize_tiers(run_dir: Path, results: list[dict], index: dict[str, dict]) -> None:
-    """Write tier_summary.md: per-tier counts, severity dist, top rules.
+def aggregate_tiers(
+    results: list[dict], index: dict[str, dict]
+) -> tuple[dict[str, dict], dict[str, str]]:
+    """Group results by tier and return (by_tier, rule_severity).
 
-    Joins results.jsonl entries to index entries by content_hash and groups
-    by `tier`. Untagged entries fall into 'unknown' so missing index rows
-    are visible rather than silently dropped.
+    Single source of truth for every per-tier number. Both the
+    `tier_summary.md` writer and `charts.py` consume this so the rendered
+    table and the rendered chart can never disagree. Joins results to index
+    entries by content_hash; untagged entries fall into 'unknown' so missing
+    index rows are visible rather than silently dropped.
     """
     by_tier: dict[str, dict] = defaultdict(lambda: {
         "total": 0, "parsed": 0, "parse_errors": 0, "timeouts": 0,
@@ -354,6 +358,17 @@ def summarize_tiers(run_dir: Path, results: list[dict], index: dict[str, dict]) 
             if rid not in seen_in_file:
                 b["files_per_rule"][rid] += 1
                 seen_in_file.add(rid)
+
+    return by_tier, rule_severity
+
+
+def summarize_tiers(run_dir: Path, results: list[dict], index: dict[str, dict]) -> None:
+    """Write tier_summary.md: per-tier counts, severity dist, top rules.
+
+    Aggregation is delegated to `aggregate_tiers` so this writer and
+    `charts.py` share one source of truth.
+    """
+    by_tier, rule_severity = aggregate_tiers(results, index)
 
     lines = [
         f"# compose-lint per-tier summary — {run_dir.name}",
