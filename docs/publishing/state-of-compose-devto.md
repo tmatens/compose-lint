@@ -11,7 +11,7 @@ canonical_url:
 > Before publishing: set `published: true`, leave `canonical_url` blank so dev.to is
 > the SEO-original, and (optionally) add a cover image. See `docs/publishing/README.md`.
 
-I built [compose-lint](https://github.com/tmatens/compose-lint), a security linter for Docker Compose files, and then pointed it at the wild: **6,444 public `docker-compose.yml` and `compose.yaml` files from GitHub**.
+I pointed [compose-lint](https://github.com/tmatens/compose-lint) — a security linter for Docker Compose files — at the wild: **6,444 public `docker-compose.yml` and `compose.yaml` files from GitHub**. (More on why I built it in a second.)
 
 The headline:
 
@@ -20,6 +20,16 @@ The headline:
 - The same three issues sit at the top of *every* category of file — including the official, copy-paste-me vendor examples.
 
 This isn't a "gotcha" about careless developers. It's a story about **defaults**: Docker Compose ships with none of the hardening flags on, almost nobody turns them on, and the examples people learn from don't either.
+
+## Why this exists
+
+By day I lead a team of security engineers at Capital One. Compose doesn't really come up there — production runs on Kubernetes and ECS, each with a mature shelf of security tooling. But at home, in my lab, Compose is exactly the right tool: quick, low-ceremony, and just enough to stand up a stack on a weekend.
+
+What nagged at me was the asymmetry. For Kubernetes IaC there's a whole ecosystem of scanners; for Compose — where so many hobbyists and homelabbers actually live — there wasn't much checking whether your `docker-compose.yml` was a security footgun. So I built compose-lint, mostly to harden my own stacks, then got curious whether the things I kept fixing in my own files showed up everywhere else.
+
+They do. This report is that "everywhere" — and I'm sharing the tool in case it's useful to anyone building the same way.
+
+> *Personal project; the views here are my own, not my employer's.*
 
 Here's what the corpus says.
 
