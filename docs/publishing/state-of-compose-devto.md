@@ -23,7 +23,7 @@ This isn't a "gotcha" about careless developers. It's a story about **defaults**
 
 ## Why this exists
 
-By day I lead a team of security engineers at Capital One. Compose doesn't really come up there — production runs on Kubernetes and ECS, each with a mature shelf of security tooling. But at home, in my lab, Compose is exactly the right tool: quick, low-ceremony, and just enough to stand up a stack on a weekend.
+By day I lead a team of security engineers at a large financial institution. Compose doesn't really come up there — production runs on Kubernetes and ECS, each with a mature shelf of security tooling. But at home, in my lab, Compose is exactly the right tool: quick, low-ceremony, and just enough to stand up a stack on a weekend.
 
 What nagged at me was the asymmetry. For Kubernetes IaC there's a whole ecosystem of scanners; for Compose — where so many hobbyists and homelabbers actually live — there wasn't much checking whether your `docker-compose.yml` was a security footgun. So I built compose-lint, mostly to harden my own stacks, then got curious whether the things I kept fixing in my own files showed up everywhere else.
 
