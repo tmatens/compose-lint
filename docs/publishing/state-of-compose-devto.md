@@ -11,7 +11,7 @@ canonical_url:
 > Before publishing: set `published: true`, leave `canonical_url` blank so dev.to is
 > the SEO-original, and (optionally) add a cover image. See `docs/publishing/README.md`.
 
-I pointed [compose-lint](https://github.com/tmatens/compose-lint), a security linter for Docker Compose files, at **6,444 public `docker-compose.yml` and `compose.yaml` files from GitHub**. (More on why I built it below.)
+I created [compose-lint](https://github.com/tmatens/compose-lint), a security linter for Docker Compose files, and pointed it at **6,444 public `docker-compose.yml` and `compose.yaml` files from GitHub**. (More on why below.)
 
 Three numbers stood out:
 
@@ -174,6 +174,6 @@ jobs:
 
 For what it's worth on a tool you'd wire into CI: every rule cites OWASP, CIS, or Docker docs, the image is distroless and nonroot, and releases ship SLSA provenance and Sigstore attestations. Details are in the [repo](https://github.com/tmatens/compose-lint).
 
-📊 **The full report** has every table, the complete methodology, the per-rule breakdowns, and steps to reproduce it: **[State of Docker Compose Security](https://github.com/tmatens/compose-lint/blob/main/docs/state-of-compose.md)**
+**The full report** has every table, the complete methodology, the per-rule breakdowns, and steps to reproduce it: **[State of Docker Compose Security](https://github.com/tmatens/compose-lint/blob/main/docs/state-of-compose.md)**
 
 If you maintain a popular Compose example, I'd genuinely love a PR or an issue. Hardening the examples people copy is the highest-leverage fix there is.
