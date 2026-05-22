@@ -155,20 +155,17 @@ The full ["what this study does not claim"](https://github.com/tmatens/compose-l
 
 ## Try it on your own files
 
-compose-lint is MIT-licensed, zero-config, and has PyYAML as its only runtime dependency:
+compose-lint is MIT-licensed, zero-config, and depends only on PyYAML. A few ways to run it:
 
 ```bash
-pipx install compose-lint
-compose-lint docker-compose.yml
-```
+# one-off, locally
+pipx install compose-lint && compose-lint docker-compose.yml
 
-Or via Docker:
-
-```bash
+# or the published image (distroless, nonroot)
 docker run --rm -v "$(pwd):/src" composelint/compose-lint
 ```
 
-It emits SARIF for GitHub Code Scanning, so you can gate PRs on it. A minimal CI gate:
+In CI, there's a GitHub Action:
 
 ```yaml
 # .github/workflows/compose-lint.yml
@@ -179,12 +176,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: pipx install compose-lint
-      - run: compose-lint --fail-on high docker-compose.yml
+      - uses: tmatens/compose-lint@v0.7.0
+        with:
+          pattern: "**/docker-compose*.yml"
+          fail-on: high
 ```
 
-`--fail-on high` fails the build only on HIGH/CRITICAL, so you can adopt it without
-drowning in the MEDIUM hardening backlog on day one, then tighten the threshold over time.
+`fail-on: high` (the default) fails only on HIGH/CRITICAL, so you can adopt it without
+drowning in the MEDIUM backlog on day one and tighten later. There's also a pre-commit
+hook, JSON and SARIF output (SARIF feeds GitHub Code Scanning), and
+`compose-lint --explain CL-0007` to print any rule's rationale and fix.
+
+For what it's worth on a tool you'd wire into CI: every rule cites OWASP, CIS, or Docker
+docs, the image is distroless and nonroot, and releases ship SLSA provenance and Sigstore
+attestations — details in the [repo](https://github.com/tmatens/compose-lint).
 
 📊 **Read the full report** — every table, the complete methodology, per-rule breakdowns, and reproducibility steps: **[State of Docker Compose Security](https://github.com/tmatens/compose-lint/blob/main/docs/state-of-compose.md)**
 
