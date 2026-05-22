@@ -72,7 +72,7 @@ services:
 
 Add a `tmpfs:` for whatever paths your app writes to and you've cleared the three most common findings in the corpus.
 
-**"Aren't these just optional flags, not real vulnerabilities?"** Mostly, yeah. The bulk of that 91% is missing defense-in-depth, not an active breach, and I'd rather say that up front than bury it. But these aren't my personal preferences about tidy YAML. `read_only`, `cap_drop: [ALL]`, and `no-new-privileges` are all named controls in the [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker) and the OWASP Docker Security Cheat Sheet. A finding means the file diverges from that published baseline.
+**"Aren't these just optional config choices, not real vulnerabilities?"** Mostly fair, and it's worth being exact about what a "finding" is here. The linter isn't claiming anything was exploited. It's flagging that a file leaves a recommended hardening control unset. Whether that matters is a judgment call that belongs to the org or the developer, based on their context and risk tolerance. What the linter takes off your plate is the "did I even know this control existed?" part. `read_only`, `cap_drop: [ALL]`, and `no-new-privileges` aren't my preferences about tidy YAML; they're named controls in the [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker) and the OWASP Docker Security Cheat Sheet. A finding means the config diverges from that published baseline. Closing the gap or accepting it is your call.
 
 ## Finding 2: even copy-paste vendor examples aren't clean
 
@@ -135,7 +135,7 @@ And it compounds. The examples never opt in, so the next person copies the unhar
 
 A few things I'm explicitly not claiming, because it's easy to over-read this:
 
-- It measures how common misconfigurations are, not whether they were exploited. A finding is divergence from guidance, not evidence of a breach.
+- It measures how common misconfigurations are, not whether they were exploited. A finding is divergence from hardening guidance, nothing more.
 - It's descriptive sampling, not statistical inference. No p-values, no population estimates.
 - It's **GitHub-only and public-only.** Private and enterprise Compose may look different.
 
