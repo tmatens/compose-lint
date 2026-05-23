@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -16,12 +17,27 @@ _COLORS = {
 }
 _SUPPRESSED_COLOR = "\033[90m"  # Gray
 _GREEN = "\033[32m"  # Green for pass / no issues
+_ERROR_COLOR = "\033[35m"  # Magenta — parse/usage error (exit 2), distinct from FAIL
 _RESET = "\033[0m"
 _BOLD = "\033[1m"
 _DIM = "\033[2m"
 
 # All active severity labels are padded to this width so finding columns align.
 _SEV_WIDTH = max(len(s.value) for s in Severity)  # len("critical") == 8
+
+# Rule ids are always CL-XXXX; pad the column header to match the finding rows.
+_RULE_WIDTH = len("CL-XXXX")
+
+# Render order for findings inside a service: highest severity first, then by
+# line. The rank is derived from Severity's own ordering so it never drifts
+# from the enum. JSON/SARIF keep the engine's line-only order — severity-first
+# is a presentation choice that only applies to the grouped text view.
+_SEV_ORDER = {sev: rank for rank, sev in enumerate(sorted(Severity, reverse=True))}
+
+
+def _finding_sort_key(f: Finding) -> tuple[int, int]:
+    return (_SEV_ORDER[f.severity], f.line if f.line is not None else 10**9)
+
 
 # Rules whose finding identifies a specific config value the user wrote, so a
 # one-line source excerpt is rendered under the finding to show the offending
@@ -51,9 +67,25 @@ _PRESENCE_RULES = frozenset(
 _QUOTED = re.compile(r"'([^']+)'")
 
 
+def _color_enabled() -> bool:
+    """Decide whether to emit ANSI color, honoring the de-facto env standards.
+
+    ``NO_COLOR`` (set to any non-empty value) disables color even on a TTY and
+    wins over everything, per https://no-color.org. ``FORCE_COLOR`` (set and
+    not ``0``) forces color even through a pipe — useful for pagers and CI logs
+    that render ANSI. Otherwise color follows whether stdout is a terminal.
+    """
+    if os.environ.get("NO_COLOR"):
+        return False
+    force = os.environ.get("FORCE_COLOR")
+    if force and force != "0":
+        return True
+    return sys.stdout.isatty()
+
+
 def _colorize(text: str, code: str) -> str:
-    """Wrap text in ANSI color codes if stdout is a terminal."""
-    if not sys.stdout.isatty():
+    """Wrap text in ANSI color codes when color is enabled (see _color_enabled)."""
+    if not _color_enabled():
         return text
     return f"{code}{text}{_RESET}"
 
@@ -82,14 +114,21 @@ def _read_source_lines(filepath: str) -> list[str] | None:
         return None
 
 
-def _excerpt(line_num: int, source_lines: list[str], message: str) -> list[str]:
-    """Render a one-line source excerpt, optionally with a caret.
+def _excerpt(
+    line_num: int,
+    source_lines: list[str],
+    message: str,
+    severity: Severity,
+) -> list[str]:
+    """Render a one-line source excerpt, optionally with an underline.
 
-    Returns 1 or 2 already-colorized strings. The caret is rendered only when
-    the message contains a single-quoted substring that also appears in the
-    source line — a heuristic that hits cleanly on rules whose message names
-    the offending value (e.g. CL-0019 'postgres:9.6.9-alpine'), and falls
-    back to the bare line otherwise.
+    Returns 1 or 2 already-colorized strings. The underline is a box-drawing
+    rule (─) tinted with the finding's own ``severity`` color, so the marker
+    reads as a deliberate pointer rather than a red error squiggle. It is
+    rendered only when the message contains a single-quoted substring that
+    also appears in the source line — a heuristic that hits cleanly on rules
+    whose message names the offending value (e.g. CL-0019
+    'postgres:9.6.9-alpine'), and falls back to the bare line otherwise.
     """
     if line_num < 1 or line_num > len(source_lines):
         return []
@@ -104,8 +143,9 @@ def _excerpt(line_num: int, source_lines: list[str], message: str) -> list[str]:
         needle = match.group(1)
         col = raw.find(needle)
         if col >= 0:
-            caret = " " * col + "^" * len(needle)
-            out.append(f"{pad} {bar} {_colorize(caret, _COLORS[Severity.HIGH])}")
+            underline = " " * col + "─" * len(needle)
+            color = _COLORS.get(severity, "")
+            out.append(f"{pad} {bar} {_colorize(underline, color)}")
     return out
 
 
@@ -118,18 +158,22 @@ def format_findings(
     filepath: str,
     *,
     verbose: bool = False,
+    quiet: bool = False,
 ) -> str:
     """Format findings as human-readable colored text grouped by file and service.
 
     The fix block and reference URL are printed only on the first occurrence
     of each rule id within a file; subsequent occurrences get a brief
     `(see fix above)` marker. ``verbose=True`` restores per-finding fix
-    repetition for IDE tooling or local fix-it-now workflows.
+    repetition for IDE tooling or local fix-it-now workflows. ``quiet=True``
+    does the opposite — one line per finding, dropping the fix block,
+    reference URL, source excerpt, and suppression reason — for CI and repeat
+    users. The two are mutually exclusive at the CLI layer.
     """
     if not findings:
         return ""
 
-    source_lines = _read_source_lines(filepath)
+    source_lines = None if quiet else _read_source_lines(filepath)
 
     by_service: dict[str, list[Finding]] = {}
     for f in findings:
@@ -149,8 +193,16 @@ def format_findings(
         svc_line = next((f.line for f in group if f.line is not None), None)
         header_suffix = f"  ({_colorize('line', _DIM)} {svc_line})" if svc_line else ""
         out.append(f"  {_colorize('service:', _DIM)} {service}{header_suffix}")
+        out.append(
+            _colorize(
+                f"    {'line'.rjust(4)}  "
+                f"{'severity'.ljust(_SEV_WIDTH)}  "
+                f"{'rule'.ljust(_RULE_WIDTH)}  message",
+                _DIM,
+            )
+        )
 
-        for f in group:
+        for f in sorted(group, key=_finding_sort_key):
             if f.suppressed:
                 reason = f.suppression_reason or "disabled in .compose-lint.yml"
                 line_label = str(f.line) if f.line else "?"
@@ -160,7 +212,8 @@ def format_findings(
                     f"{_colorize(f.rule_id, _DIM)}  "
                     f"{_colorize(f.message, _SUPPRESSED_COLOR)}"
                 )
-                out.append(f"          {_colorize('reason:', _DIM)} {reason}")
+                if not quiet:
+                    out.append(f"          {_colorize('reason:', _DIM)} {reason}")
                 continue
 
             severity_label = f.severity.value.upper().ljust(_SEV_WIDTH)
@@ -168,9 +221,9 @@ def format_findings(
             line_label = str(f.line) if f.line else "?"
 
             already_shown = f.rule_id in seen_rules
-            show_fix = verbose or not already_shown
+            show_fix = not quiet and (verbose or not already_shown)
             suffix = ""
-            if already_shown and not verbose and (f.fix or f.references):
+            if not quiet and already_shown and not verbose and (f.fix or f.references):
                 suffix = f"   {_colorize('(see fix above)', _DIM)}"
 
             out.append(
@@ -185,7 +238,9 @@ def format_findings(
                 and f.rule_id in _PRESENCE_RULES
                 and f.line is not None
             ):
-                for excerpt_line in _excerpt(f.line, source_lines, f.message):
+                for excerpt_line in _excerpt(
+                    f.line, source_lines, f.message, f.severity
+                ):
                     out.append(f"          {excerpt_line}")
 
             if show_fix and f.fix:
@@ -260,7 +315,8 @@ def format_aggregate_summary(
                 by_severity[f.severity.value] = by_severity.get(f.severity.value, 0) + 1
 
     total_issues = sum(by_severity.values())
-    files_label = _colorize(f"{total_files} files scanned", _BOLD)
+    file_word = "file" if total_files == 1 else "files"
+    files_label = _colorize(f"{total_files} {file_word} scanned", _BOLD)
     sep = _colorize("·", _DIM)
 
     skipped_suffix = ""
@@ -288,15 +344,40 @@ def format_aggregate_summary(
     return result
 
 
+def _severity_breakdown(
+    file_findings: list[tuple[list[Finding], str]],
+) -> list[str]:
+    """Colored ``N severity`` parts for all non-suppressed findings, high to low.
+
+    Matches the house style of the per-file and aggregate summaries so the
+    verdict reads consistently with the lines above it.
+    """
+    by_severity: dict[Severity, int] = {}
+    for findings, _ in file_findings:
+        for f in findings:
+            if not f.suppressed:
+                by_severity[f.severity] = by_severity.get(f.severity, 0) + 1
+
+    parts = []
+    for sev in (Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW):
+        count = by_severity.get(sev, 0)
+        if count:
+            parts.append(_colorize(f"{count} {sev.value}", _COLORS[sev]))
+    return parts
+
+
 def format_verdict(
     file_findings: list[tuple[list[Finding], str]],
     fail_on: Severity,
     parse_error_count: int = 0,
 ) -> str:
-    """Return a pass/fail verdict line relative to the --fail-on threshold.
+    """Return the verdict line, matching the CLI's three exit-code outcomes.
 
-    A non-zero ``parse_error_count`` always forces a FAIL verdict, since the
-    CLI exits 2 in that case regardless of finding severity.
+    A non-zero ``parse_error_count`` (exit 2) yields a distinct ``⚠ ERROR``
+    verdict, kept separate from the ``✗ FAIL`` (exit 1) threshold breach so a
+    reader can tell a broken-input problem from an insecure-config one. A
+    passing run that still has sub-threshold findings names them, so the
+    ``✓ PASS`` line does not read as "nothing found".
     """
     failing = sum(
         1
@@ -308,22 +389,21 @@ def format_verdict(
     sep = _colorize("·", _DIM)
 
     if parse_error_count:
-        skipped_word = "file" if parse_error_count == 1 else "files"
-        skipped_text = f"{parse_error_count} {skipped_word} skipped (failed to parse)"
+        file_word = "file" if parse_error_count == 1 else "files"
+        parsed_text = f"{parse_error_count} {file_word} could not be parsed"
+        error_label = _colorize("⚠ ERROR", _ERROR_COLOR)
+        result = f"{error_label}  {sep}  {_colorize(parsed_text, _ERROR_COLOR)}"
         if failing:
             word = "finding" if failing == 1 else "findings"
-            return (
-                f"{_colorize('✗ FAIL', _COLORS[Severity.HIGH])}  {sep}  "
-                f"{failing} {word} at or above {fail_on.value}"
-                f"  {sep}  {_colorize(skipped_text, _COLORS[Severity.HIGH])}"
-            )
-        return (
-            f"{_colorize('✗ FAIL', _COLORS[Severity.HIGH])}  {sep}  "
-            f"{_colorize(skipped_text, _COLORS[Severity.HIGH])}"
-        )
+            result += f"  {sep}  {failing} {word} at or above {fail_on.value}"
+        return result
 
     if failing == 0:
-        return f"{_colorize('✓ PASS', _GREEN)}  {sep}  threshold: {fail_on.value}"
+        verdict = f"{_colorize('✓ PASS', _GREEN)}  {sep}  threshold: {fail_on.value}"
+        below = _severity_breakdown(file_findings)
+        if below:
+            verdict += f"  {sep}  below: {', '.join(below)}"
+        return verdict
 
     word = "finding" if failing == 1 else "findings"
     return (

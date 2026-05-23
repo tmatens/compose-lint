@@ -85,6 +85,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--fail-on",
         type=_severity_type,
         default=Severity.HIGH,
+        metavar="{" + ",".join(s.value for s in Severity) + "}",
         help="minimum severity to trigger exit 1 (default: high)",
     )
     parser.add_argument(
@@ -98,7 +99,8 @@ def _build_parser() -> argparse.ArgumentParser:
         default=False,
         help="hide suppressed findings from output",
     )
-    parser.add_argument(
+    verbosity = parser.add_mutually_exclusive_group()
+    verbosity.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -107,6 +109,17 @@ def _build_parser() -> argparse.ArgumentParser:
             "in text mode, repeat the fix block and reference URL for every "
             "finding instead of only the first occurrence per (file, rule). "
             "No effect on JSON or SARIF output."
+        ),
+    )
+    verbosity.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        default=False,
+        help=(
+            "in text mode, print one line per finding (no fix block, "
+            "reference URL, or source excerpt). Useful for CI and repeat "
+            "users. No effect on JSON or SARIF output."
         ),
     )
     parser.add_argument(
@@ -166,7 +179,9 @@ def main(argv: list[str] | None = None) -> NoReturn:
             )
             sys.exit(2)
 
-    # Print branded header in text mode before scanning begins.
+    # Print branded header in text mode before scanning begins. flush=True here
+    # (and on the per-file text prints below) keeps block-buffered stdout from
+    # landing after unbuffered stderr when both are captured together (2>&1).
     if args.output_format == "text":
         print(
             format_header(
@@ -174,7 +189,8 @@ def main(argv: list[str] | None = None) -> NoReturn:
                 str(config_path) if config_path else None,
                 args.fail_on,
                 __version__,
-            )
+            ),
+            flush=True,
         )
 
     all_json: list[dict[str, object]] = []
@@ -216,10 +232,12 @@ def main(argv: list[str] | None = None) -> NoReturn:
             findings = [f for f in findings if not f.suppressed]
 
         if args.output_format == "text":
-            output = format_text(findings, filepath, verbose=args.verbose)
+            output = format_text(
+                findings, filepath, verbose=args.verbose, quiet=args.quiet
+            )
             if output:
-                print(output)
-            print(format_summary(findings, filepath))
+                print(output, flush=True)
+            print(format_summary(findings, filepath), flush=True)
             all_file_findings.append((findings, filepath))
         elif args.output_format == "sarif":
             all_sarif.extend(format_sarif(findings, filepath))

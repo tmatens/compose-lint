@@ -30,6 +30,39 @@ class TestCLI:
 
         assert __version__ in result.stdout
 
+    def test_fail_on_help_lists_severity_choices(self) -> None:
+        result = run_cli("--help")
+        assert result.returncode == 0
+        # The metavar should advertise the valid values, not a bare FAIL_ON.
+        assert "--fail-on {low,medium,high,critical}" in result.stdout
+        assert "FAIL_ON" not in result.stdout
+
+    def test_verbose_and_quiet_are_mutually_exclusive(self) -> None:
+        result = run_cli("-v", "-q", str(FIXTURES / "insecure_socket.yml"))
+        assert result.returncode == 2
+        assert "not allowed with" in result.stderr.lower()
+
+    def test_quiet_omits_fix_blocks(self) -> None:
+        result = run_cli("-q", str(FIXTURES / "insecure_socket.yml"))
+        assert "CL-0001" in result.stdout
+        assert "fix:" not in result.stdout
+        assert "ref:" not in result.stdout
+
+    def test_header_precedes_error_in_combined_output(self, tmp_path: Path) -> None:
+        # With stdout+stderr merged (as CI captures them), the buffered header
+        # must not land after the unbuffered error line.
+        bad = tmp_path / "bad.yml"
+        bad.write_text("services: [\n")
+        result = subprocess.run(
+            [sys.executable, "-m", "compose_lint", str(bad)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        combined = result.stdout
+        assert "compose-lint" in combined and "Error:" in combined
+        assert combined.index("compose-lint") < combined.index("Error:")
+
     def test_no_args_no_compose_file(self) -> None:
         result = run_cli()
         assert result.returncode == 2
