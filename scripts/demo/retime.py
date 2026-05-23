@@ -34,17 +34,21 @@ HOLD_LINT = 5500  # read the findings
 HOLD_FINAL = 6500  # read the rule docs on the last frame
 
 # Thresholds as a fraction of total pixels.
-EPS = 0.0005  # below this a frame is "the same" (cursor blink / noise)
-BIG = 0.08  # above this an incoming change is a content "reveal"
+EPS = 0.00004  # below this a frame is "the same" (well under one typed character)
+BIG = 0.04  # above this an incoming change is a content "reveal" (sparse terminal
+# text reveals only ~6% of pixels, so this sits well below that but far above the
+# ~0.03% of a typed character)
 
 
 def changed_fraction(a: Image.Image, b: Image.Image, total: int) -> float:
-    """Fraction of pixels that differ between two RGB frames."""
-    # Flatten any channel difference to luminance, then count nonzero pixels via
-    # the C-level histogram (bucket 0 = unchanged pixels).
-    mask = ImageChops.difference(a, b).convert("L")
-    unchanged = mask.histogram()[0]
-    return (total - unchanged) / total
+    """Fraction of pixels that meaningfully differ between two RGB frames.
+
+    A per-pixel luminance threshold ignores faint antialiasing noise, so a
+    single typed character still registers regardless of font size.
+    """
+    diff = ImageChops.difference(a, b).convert("L")
+    mask = diff.point(lambda p: 255 if p > 40 else 0)
+    return mask.histogram()[255] / total
 
 
 def main() -> int:
