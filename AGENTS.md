@@ -31,7 +31,7 @@ Disables still produce suppressed findings. `reason` flows to `suppression_reaso
 
 ## Quality checks
 
-`ruff check`, `ruff format --check`, `mypy src/` (strict), `pytest`. All four must pass. CI test matrix: Python 3.10–3.14 on ubuntu-latest.
+`ruff check`, `ruff format --check`, `mypy src/` (strict), `pytest`. All four must pass. CI test matrix: Python 3.10–3.14 on ubuntu-24.04.
 
 ## Adding a rule
 
