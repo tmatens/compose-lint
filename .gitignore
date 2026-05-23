@@ -63,3 +63,6 @@ Thumbs.db
 
 # Build isolation
 *.spec
+
+# Raw VHS render; the committed demo asset is docs/assets/demo.gif
+scripts/demo/demo.gif
