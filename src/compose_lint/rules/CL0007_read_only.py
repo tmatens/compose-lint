@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint.fix import (
+    first_child_indent,
+    is_anchored_or_merged,
+)
 from compose_lint.models import Finding, RuleMetadata, Severity, TextEdit
 from compose_lint.rules import BaseRule, register_rule
 
@@ -103,32 +107,12 @@ class ReadOnlyFilesystemRule(BaseRule):
         if not 1 <= key_line <= len(source_lines):
             return None
 
-        key_body = source_lines[key_line - 1].rstrip("\n")
-        service_indent = len(key_body) - len(key_body.lstrip(" "))
-        colon = key_body.find(":")
-        if colon == -1:
-            return None
-        trailing = key_body[colon + 1 :].strip()
-        # An inline value, flow mapping ({), anchor (&) or alias (*) after the
-        # colon means there is no block body to insert a child into.
-        if trailing and not trailing.startswith("#"):
+        # Refuse inline/flow/anchored/merge-key services: no plain block body to
+        # insert a child into, or an ambiguous edit target (ADR-014).
+        if is_anchored_or_merged(source_lines, key_line):
             return None
 
-        # Walk the service block to find the child indentation and reject
-        # merge-key services (ambiguous edit target, ADR-014 refusal policy).
-        child_indent: int | None = None
-        for raw in source_lines[key_line:]:
-            body = raw.rstrip("\n")
-            if body.strip() == "":
-                continue
-            indent = len(body) - len(body.lstrip(" "))
-            if indent <= service_indent:
-                break
-            if child_indent is None:
-                child_indent = indent
-            if indent == child_indent and body.strip().startswith("<<"):
-                return None
-
+        child_indent = first_child_indent(source_lines, key_line)
         if child_indent is None:
             return None
 
