@@ -68,3 +68,22 @@ class Finding:
     references: list[str] = field(default_factory=list)
     suppressed: bool = False
     suppression_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class TextEdit:
+    """A single text replacement produced by a rule's fixer (see ADR-014).
+
+    Positions are 1-indexed and the region ``[start, end)`` is half-open,
+    following the SARIF region convention. A zero-width region
+    (``start == end``) is a pure insertion; an empty ``replacement`` is a pure
+    deletion. ``caveat``, when set, names a runtime-behavior change the edit
+    introduces and is surfaced in the dry-run diff and SARIF output.
+    """
+
+    start_line: int
+    start_col: int
+    end_line: int
+    end_col: int
+    replacement: str
+    caveat: str | None = None

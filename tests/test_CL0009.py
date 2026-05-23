@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+from compose_lint.fix import apply_edits
 from compose_lint.parser import load_compose
 from compose_lint.rules.CL0009_security_profile import SecurityProfileRule
+
+if TYPE_CHECKING:
+    from compose_lint.models import TextEdit
 
 FIXTURES = Path(__file__).parent / "compose_files"
 
@@ -162,3 +167,128 @@ class TestSecurityProfileRule:
             )
         )
         assert len(findings) == 0
+
+
+class TestSecurityProfileFix:
+    """Tests for the CL-0009 deletion fix (ADR-014)."""
+
+    def setup_method(self) -> None:
+        self.rule = SecurityProfileRule()
+
+    def _fix(
+        self, tmp_path: Path, content: str, service: str = "web"
+    ) -> list[TextEdit] | None:
+        path = tmp_path / "docker-compose.yml"
+        path.write_text(content)
+        data, lines = load_compose(path)
+        findings = list(
+            self.rule.check(service, data["services"][service], data, lines)
+        )
+        assert findings, "expected CL-0009 to fire"
+        return self.rule.fix(findings[0], data, lines, content)
+
+    def test_collapses_block_when_sole_entry(self, tmp_path: Path) -> None:
+        content = (
+            "services:\n"
+            "  web:\n"
+            "    image: nginx\n"
+            "    security_opt:\n"
+            "      - seccomp:unconfined\n"
+        )
+        edits = self._fix(tmp_path, content)
+        assert edits is not None
+        # The now-empty security_opt block is dropped whole, not left as `[]`.
+        assert apply_edits(content, edits) == ("services:\n  web:\n    image: nginx\n")
+
+    def test_removes_only_offending_item_when_legit_remains(
+        self, tmp_path: Path
+    ) -> None:
+        content = (
+            "services:\n"
+            "  web:\n"
+            "    image: nginx\n"
+            "    security_opt:\n"
+            "      - seccomp:unconfined\n"
+            "      - no-new-privileges:true\n"
+        )
+        edits = self._fix(tmp_path, content)
+        assert edits is not None
+        result = apply_edits(content, edits)
+        assert "seccomp:unconfined" not in result
+        assert "no-new-privileges:true" in result
+        assert "security_opt:" in result
+
+    def test_refuses_when_all_entries_offending_but_many(self, tmp_path: Path) -> None:
+        # Collapsing this correctly needs the two per-finding fixers to
+        # coordinate, which they can't — refuse rather than empty the block.
+        content = (
+            "services:\n"
+            "  web:\n"
+            "    image: nginx\n"
+            "    security_opt:\n"
+            "      - seccomp:unconfined\n"
+            "      - apparmor:unconfined\n"
+        )
+        assert self._fix(tmp_path, content) is None
+
+    def test_edit_carries_caveat(self, tmp_path: Path) -> None:
+        content = "services:\n  web:\n    security_opt:\n      - seccomp:unconfined\n"
+        edits = self._fix(tmp_path, content)
+        assert edits is not None
+        assert edits[0].caveat is not None
+        assert "seccomp" in edits[0].caveat.lower()
+
+    def test_fix_resolves_finding_and_is_idempotent(self, tmp_path: Path) -> None:
+        content = (
+            "services:\n"
+            "  web:\n"
+            "    image: nginx\n"
+            "    security_opt:\n"
+            "      - seccomp:unconfined\n"
+        )
+        edits = self._fix(tmp_path, content)
+        assert edits is not None
+        fixed = tmp_path / "fixed.yml"
+        fixed.write_text(apply_edits(content, edits))
+        data, lines = load_compose(fixed)
+        assert "security_opt" not in data["services"]["web"]
+        findings = list(self.rule.check("web", data["services"]["web"], data, lines))
+        assert findings == []
+
+    def test_preserves_comments_and_siblings(self, tmp_path: Path) -> None:
+        content = (
+            "services:\n"
+            "  web:  # frontend\n"
+            "    image: nginx  # pinned\n"
+            "    security_opt:\n"
+            "      - seccomp:unconfined\n"
+            "      - no-new-privileges:true  # keep\n"
+        )
+        edits = self._fix(tmp_path, content)
+        assert edits is not None
+        result = apply_edits(content, edits)
+        assert "# frontend" in result
+        assert "# pinned" in result
+        assert "# keep" in result
+
+    def test_refuses_flow_style_list(self, tmp_path: Path) -> None:
+        content = "services:\n  web:\n    security_opt: [seccomp:unconfined]\n"
+        assert self._fix(tmp_path, content) is None
+
+    def test_refuses_anchored_service(self, tmp_path: Path) -> None:
+        content = (
+            "services:\n  web: &websvc\n    security_opt:\n      - seccomp:unconfined\n"
+        )
+        assert self._fix(tmp_path, content) is None
+
+    def test_refuses_merge_key_service(self, tmp_path: Path) -> None:
+        content = (
+            "x-base: &base\n"
+            "  image: nginx\n"
+            "services:\n"
+            "  web:\n"
+            "    <<: *base\n"
+            "    security_opt:\n"
+            "      - seccomp:unconfined\n"
+        )
+        assert self._fix(tmp_path, content) is None

@@ -1,0 +1,169 @@
+"""Tests for the fix edit engine (ADR-014)."""
+
+from __future__ import annotations
+
+import pytest
+
+from compose_lint.fix import (
+    OverlappingEditError,
+    apply_edits,
+    block_span,
+    delete_lines,
+    first_child_indent,
+    has_merge_key_child,
+    is_anchored_or_merged,
+    line_indent,
+    opens_block_body,
+)
+from compose_lint.models import TextEdit
+
+
+def test_no_edits_returns_text_unchanged() -> None:
+    text = "services:\n  web:\n    image: nginx\n"
+    assert apply_edits(text, []) == text
+
+
+def test_pure_insertion() -> None:
+    text = "a: 1\nb: 2\n"
+    # Zero-width region at the start of line 3 (just past the final newline).
+    edit = TextEdit(3, 1, 3, 1, "c: 3\n")
+    assert apply_edits(text, [edit]) == "a: 1\nb: 2\nc: 3\n"
+
+
+def test_pure_deletion_removes_whole_line() -> None:
+    text = "a: 1\nbad: x\nb: 2\n"
+    # Delete line 2 by replacing [line2:col1, line3:col1) with nothing.
+    edit = TextEdit(2, 1, 3, 1, "")
+    assert apply_edits(text, [edit]) == "a: 1\nb: 2\n"
+
+
+def test_in_scalar_replacement() -> None:
+    text = "ports:\n  - 0.0.0.0:8080:80\n"
+    # Replace the seven characters "0.0.0.0" (cols 5-11) on line 2.
+    edit = TextEdit(2, 5, 2, 12, "127.0.0.1")
+    assert apply_edits(text, [edit]) == "ports:\n  - 127.0.0.1:8080:80\n"
+
+
+def test_multiple_non_overlapping_edits() -> None:
+    text = "a: 1\nb: 2\n"
+    edits = [
+        TextEdit(2, 1, 2, 1, "x\n"),
+        TextEdit(3, 1, 3, 1, "y\n"),
+    ]
+    # Order of the input list must not matter; result is deterministic.
+    assert apply_edits(text, edits) == "a: 1\nx\nb: 2\ny\n"
+    assert apply_edits(text, list(reversed(edits))) == "a: 1\nx\nb: 2\ny\n"
+
+
+def test_adjacent_edits_are_allowed() -> None:
+    text = "abcdef\n"
+    edits = [
+        TextEdit(1, 1, 1, 3, "AB"),  # replaces "ab"
+        TextEdit(1, 3, 1, 5, "CD"),  # replaces "cd", begins where the prior ends
+    ]
+    assert apply_edits(text, edits) == "ABCDef\n"
+
+
+def test_overlapping_edits_raise() -> None:
+    text = "abcdef\n"
+    edits = [
+        TextEdit(1, 1, 1, 4, "X"),  # covers cols 1-3
+        TextEdit(1, 2, 1, 5, "Y"),  # starts inside the first region
+    ]
+    with pytest.raises(OverlappingEditError):
+        apply_edits(text, edits)
+
+
+def test_caveat_field_is_preserved() -> None:
+    edit = TextEdit(1, 1, 1, 1, "read_only: true\n", caveat="breaks writers")
+    assert edit.caveat == "breaks writers"
+    # A caveat does not change how the edit is applied.
+    assert apply_edits("x: 1\n", [edit]) == "read_only: true\nx: 1\n"
+
+
+# --- Text-shaping helpers -------------------------------------------------
+
+
+def test_line_indent_counts_leading_spaces() -> None:
+    assert line_indent("foo: 1\n") == 0
+    assert line_indent("    foo: 1\n") == 4
+    assert line_indent("  - item\n") == 2
+    assert line_indent("\n") == 0
+
+
+def test_opens_block_body_true_for_bare_key_or_comment() -> None:
+    assert opens_block_body("web:\n")
+    assert opens_block_body("  web:  # frontend\n")
+
+
+def test_opens_block_body_false_for_inline_flow_anchor_alias() -> None:
+    assert not opens_block_body("web: nginx\n")  # inline value
+    assert not opens_block_body("web: {image: nginx}\n")  # flow mapping
+    assert not opens_block_body("web: &anchor\n")  # anchor
+    assert not opens_block_body("web: *alias\n")  # alias
+    assert not opens_block_body("just text\n")  # no colon
+
+
+def test_first_child_indent() -> None:
+    lines = ["web:\n", "  image: nginx\n", "  ports:\n", "    - 80\n"]
+    assert first_child_indent(lines, 1) == 2
+    # No deeper line after the key -> no children.
+    assert first_child_indent(["web:\n", "db:\n"], 1) is None
+    # Blank lines are skipped when locating the first child.
+    assert first_child_indent(["web:\n", "\n", "    image: x\n"], 1) == 4
+
+
+def test_has_merge_key_child() -> None:
+    merged = ["web:\n", "  <<: *base\n", "  image: nginx\n"]
+    assert has_merge_key_child(merged, 1)
+    plain = ["web:\n", "  image: nginx\n"]
+    assert not has_merge_key_child(plain, 1)
+
+
+def test_is_anchored_or_merged() -> None:
+    assert is_anchored_or_merged(["web: &a\n", "  image: x\n"], 1)  # anchor
+    assert is_anchored_or_merged(["web:\n", "  <<: *base\n"], 1)  # merge key
+    assert not is_anchored_or_merged(["web:\n", "  image: x\n"], 1)  # plain block
+
+
+def test_block_span_covers_key_and_children() -> None:
+    lines = [
+        "services:\n",  # 1
+        "  web:\n",  # 2
+        "    image: nginx\n",  # 3
+        "    logging:\n",  # 4
+        "      driver: none\n",  # 5
+        "  db:\n",  # 6
+    ]
+    # The web block runs from line 2 through its last child (line 5).
+    assert block_span(lines, 2) == (2, 5)
+    # The logging sub-block is lines 4-5.
+    assert block_span(lines, 4) == (4, 5)
+
+
+def test_block_span_excludes_trailing_blank_lines() -> None:
+    lines = ["web:\n", "  image: x\n", "\n", "db:\n"]
+    assert block_span(lines, 1) == (1, 2)
+
+
+def test_delete_lines_removes_whole_lines() -> None:
+    text = "a: 1\nbad: x\nb: 2\n"
+    lines = text.splitlines(keepends=True)
+    assert apply_edits(text, [delete_lines(lines, 2, 2)]) == "a: 1\nb: 2\n"
+
+
+def test_delete_lines_spans_multiple_lines() -> None:
+    text = "keep: 1\nlogging:\n  driver: none\nkeep2: 2\n"
+    lines = text.splitlines(keepends=True)
+    assert apply_edits(text, [delete_lines(lines, 2, 3)]) == "keep: 1\nkeep2: 2\n"
+
+
+def test_delete_lines_final_line_without_trailing_newline() -> None:
+    text = "a: 1\nb: 2"  # no trailing newline on the last line
+    lines = text.splitlines(keepends=True)
+    assert apply_edits(text, [delete_lines(lines, 2, 2)]) == "a: 1\n"
+
+
+def test_delete_lines_carries_caveat() -> None:
+    lines = ["a: 1\n", "b: 2\n"]
+    assert delete_lines(lines, 1, 1, caveat="note").caveat == "note"

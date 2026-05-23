@@ -4,11 +4,20 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from compose_lint.models import Finding, RuleMetadata, Severity
+from compose_lint.fix import (
+    first_child_indent,
+    is_anchored_or_merged,
+)
+from compose_lint.models import Finding, RuleMetadata, Severity, TextEdit
 from compose_lint.rules import BaseRule, register_rule
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+_CAVEAT = (
+    "read_only: true breaks the container if it writes to its root filesystem; "
+    "declare writable paths via tmpfs/volumes first."
+)
 
 OWASP_REF = (
     "https://cheatsheetseries.owasp.org/cheatsheets/"
@@ -64,3 +73,56 @@ class ReadOnlyFilesystemRule(BaseRule):
                 ),
                 references=[OWASP_REF, CIS_REF],
             )
+
+    def fix(
+        self,
+        finding: Finding,
+        data: dict[str, Any],
+        lines: dict[str, int],
+        text: str,
+    ) -> list[TextEdit] | None:
+        """Insert ``read_only: true`` as the first child of the service.
+
+        Refuses (returns ``None``) when the service is flow-style, anchored or
+        aliased, uses a merge key, has no determinable child indentation, or
+        already declares ``read_only`` (the explicit-value case is deferred).
+        The edit carries a caveat because making the rootfs read-only changes
+        runtime behavior (ADR-014).
+        """
+        service = finding.service
+        services = data.get("services")
+        if not isinstance(services, dict):
+            return None
+        service_config = services.get(service)
+        if not isinstance(service_config, dict):
+            return None
+        # read_only present but not True is a modify, not an insert; deferred.
+        if "read_only" in service_config:
+            return None
+
+        key_line = lines.get(f"services.{service}")
+        if key_line is None:
+            return None
+        source_lines = text.splitlines(keepends=True)
+        if not 1 <= key_line <= len(source_lines):
+            return None
+
+        # Refuse inline/flow/anchored/merge-key services: no plain block body to
+        # insert a child into, or an ambiguous edit target (ADR-014).
+        if is_anchored_or_merged(source_lines, key_line):
+            return None
+
+        child_indent = first_child_indent(source_lines, key_line)
+        if child_indent is None:
+            return None
+
+        return [
+            TextEdit(
+                start_line=key_line + 1,
+                start_col=1,
+                end_line=key_line + 1,
+                end_col=1,
+                replacement=f"{' ' * child_indent}read_only: true\n",
+                caveat=_CAVEAT,
+            )
+        ]
