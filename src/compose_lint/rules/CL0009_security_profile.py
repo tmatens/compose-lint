@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from compose_lint.fix import (
-    block_span,
+    DISABLED_SECURITY_PROFILES,
     delete_lines,
     is_anchored_or_merged,
     opens_block_body,
@@ -39,12 +39,6 @@ CIS_SELINUX_REF = (
     "CIS Docker Benchmark 5.2 — Ensure that, if applicable, SELinux security "
     "options are set"
 )
-
-_DISABLED_PROFILES = {
-    "seccomp:unconfined",
-    "apparmor:unconfined",
-    "label:disable",
-}
 
 _PROFILE_DISPLAY_NAME = {
     "seccomp": "seccomp",
@@ -90,7 +84,7 @@ class SecurityProfileRule(BaseRule):
 
         for i, opt in enumerate(security_opt):
             opt_str = str(opt).strip().lower()
-            if opt_str not in _DISABLED_PROFILES:
+            if opt_str not in DISABLED_SECURITY_PROFILES:
                 continue
             profile_key = opt_str.split(":", 1)[0]
             profile_name = _PROFILE_DISPLAY_NAME[profile_key]
@@ -127,15 +121,17 @@ class SecurityProfileRule(BaseRule):
     ) -> list[TextEdit] | None:
         """Delete the unconfined ``security_opt`` entry the finding flags.
 
-        Removes just the offending list item when a legitimate entry remains,
-        or drops the whole ``security_opt:`` block when the offending entry is
-        the sole one (never leaving ``security_opt:`` empty). Refuses (returns
-        ``None``) for anchored/merged services, flow-style lists, and the
-        ambiguous case where every entry is offending but more than one exists —
-        collapsing that correctly would need the per-finding fixers to
-        coordinate, which they can't (ADR-014 refusal policy). The edit carries
-        a caveat because re-applying the default profile changes runtime
-        behavior.
+        Removes just the offending list item when a legitimate entry survives,
+        so the list stays non-empty. Refuses (returns ``None``) for
+        anchored/merged services, flow-style lists, and — crucially — when
+        *every* entry is a profile-disable (``legit_remaining == 0``). In that
+        case the block would have to be emptied, but CL-0003 fires on the same
+        service (no ``no-new-privileges``) and would recreate ``security_opt``
+        on the next pass, so collapsing here is non-idempotent; the idempotent
+        end state (replace the disables with ``no-new-privileges``) needs a merge
+        the per-finding fixers can't perform. Both rules step aside and leave the
+        block for the user (ADR-014: refuse, never guess). The edit carries a
+        caveat because re-applying the default profile changes runtime behavior.
         """
         service = finding.service
         services = data.get("services")
@@ -165,7 +161,9 @@ class SecurityProfileRule(BaseRule):
             return None
 
         disabled = sum(
-            1 for opt in security_opt if str(opt).strip().lower() in _DISABLED_PROFILES
+            1
+            for opt in security_opt
+            if str(opt).strip().lower() in DISABLED_SECURITY_PROFILES
         )
         legit_remaining = len(security_opt) - disabled
 
@@ -175,8 +173,7 @@ class SecurityProfileRule(BaseRule):
             if not source_lines[item_line - 1].lstrip().startswith("- "):
                 return None
             return [delete_lines(source_lines, item_line, item_line, caveat=_CAVEAT)]
-        if len(security_opt) == 1:
-            # Sole entry is the offending one: drop the whole block.
-            first, last = block_span(source_lines, so_line)
-            return [delete_lines(source_lines, first, last, caveat=_CAVEAT)]
+        # legit_remaining == 0: emptying the block would leave CL-0003 to
+        # recreate it next pass (non-idempotent), and the right end state needs a
+        # cross-rule merge. Refuse and leave it for manual remediation.
         return None

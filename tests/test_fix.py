@@ -14,6 +14,7 @@ from compose_lint.fix import (
     collect_edits,
     delete_lines,
     first_child_indent,
+    has_anchor_child,
     has_merge_key_child,
     is_anchored_or_merged,
     line_indent,
@@ -132,6 +133,17 @@ def test_first_child_indent() -> None:
     assert first_child_indent(["web:\n", "\n", "    image: x\n"], 1) == 4
 
 
+def test_first_child_indent_compact_sequence() -> None:
+    # A block sequence value may sit at its key's own indent (compact style);
+    # those `- item` lines are still children.
+    compact = ["security_opt:\n", "- seccomp:unconfined\n"]
+    assert first_child_indent(compact, 1) == 0
+    indented_compact = ["  security_opt:\n", "  - seccomp:unconfined\n"]
+    assert first_child_indent(indented_compact, 1) == 2
+    # A same-indent non-item line is a sibling, not a child.
+    assert first_child_indent(["a:\n", "b:\n"], 1) is None
+
+
 def test_has_merge_key_child() -> None:
     merged = ["web:\n", "  <<: *base\n", "  image: nginx\n"]
     assert has_merge_key_child(merged, 1)
@@ -139,9 +151,22 @@ def test_has_merge_key_child() -> None:
     assert not has_merge_key_child(plain, 1)
 
 
+def test_has_anchor_child() -> None:
+    # Anchor carried on the line after the key (anchors the whole mapping).
+    anchored = ["web:\n", "    &websvc\n", "    image: nginx\n"]
+    assert has_anchor_child(anchored, 1)
+    aliased = ["web:\n", "    *base\n"]
+    assert has_anchor_child(aliased, 1)
+    # Inline `key: &a value` starts with the key, not `&`, so it is not flagged.
+    assert not has_anchor_child(["web:\n", "    image: &img nginx\n"], 1)
+
+
 def test_is_anchored_or_merged() -> None:
-    assert is_anchored_or_merged(["web: &a\n", "  image: x\n"], 1)  # anchor
+    assert is_anchored_or_merged(["web: &a\n", "  image: x\n"], 1)  # inline anchor
     assert is_anchored_or_merged(["web:\n", "  <<: *base\n"], 1)  # merge key
+    assert is_anchored_or_merged(
+        ["web:\n", "  &websvc\n", "  image: x\n"], 1
+    )  # anchor child
     assert not is_anchored_or_merged(["web:\n", "  image: x\n"], 1)  # plain block
 
 
@@ -163,6 +188,31 @@ def test_block_span_covers_key_and_children() -> None:
 def test_block_span_excludes_trailing_blank_lines() -> None:
     lines = ["web:\n", "  image: x\n", "\n", "db:\n"]
     assert block_span(lines, 1) == (1, 2)
+
+
+def test_block_span_compact_sequence() -> None:
+    # Compact block sequence: items share the key's indent. The span must cover
+    # the key and its items, ending at the next sibling key.
+    lines = [
+        "  web:\n",  # 1
+        "    image: nginx\n",  # 2
+        "    security_opt:\n",  # 3  (4-space indent)
+        "    - seccomp:unconfined\n",  # 4  (compact item at 4-space indent)
+        "    - apparmor:unconfined\n",  # 5
+        "    environment:\n",  # 6  (sibling key ends the sequence)
+    ]
+    assert block_span(lines, 3) == (3, 5)
+
+
+def test_block_span_compact_sequence_with_nested_item() -> None:
+    # Long-syntax item under a compact sequence keeps its deeper continuation.
+    lines = [
+        "    ports:\n",  # 1
+        "    - target: 80\n",  # 2  compact item
+        "      published: 80\n",  # 3  deeper continuation of the item
+        "    other:\n",  # 4  sibling key
+    ]
+    assert block_span(lines, 1) == (1, 3)
 
 
 def test_delete_lines_removes_whole_lines() -> None:
@@ -238,11 +288,12 @@ def test_collect_edits_skips_suppressed(tmp_path: Path) -> None:
     assert "CL-0007" not in {f.rule_id for f in result.fixed}
 
 
-def test_collect_edits_refuses_append_into_collapsing_block(tmp_path: Path) -> None:
-    # security_opt's sole entry is seccomp:unconfined: CL-0009 collapses the
-    # whole block while CL-0003 wants to append no-new-privileges to it. The two
-    # edits touch at the deletion boundary, so both must be refused (left manual)
-    # rather than produce an orphaned list entry.
+def test_collect_edits_refuses_all_disabled_security_opt(tmp_path: Path) -> None:
+    # security_opt's sole entry is seccomp:unconfined (all entries disabled).
+    # Auto-fixing this needs the two per-finding fixers to coordinate (remove the
+    # disable AND add no-new-privileges) which they can't, so both step aside:
+    # CL-0003 declines to append a survivor and CL-0009 declines to empty the
+    # block. Both are left manual rather than producing a non-idempotent result.
     findings, data, lines, text = _findings_for(
         tmp_path,
         "services:\n"
@@ -280,6 +331,41 @@ def test_collect_edits_removes_one_item_keeps_others(tmp_path: Path) -> None:
     assert "seccomp:unconfined" not in patched
     assert "label:type:svirt_apache" in patched
     assert "no-new-privileges:true" in patched
+
+
+def test_collect_edits_appends_to_compact_security_opt(tmp_path: Path) -> None:
+    # Compact block sequence (items at the key's indent): CL-0003 must append a
+    # compact item and the result must re-parse and clear CL-0003.
+    findings, data, lines, text = _findings_for(
+        tmp_path,
+        "services:\n"
+        "  web:\n"
+        "    image: nginx:1.27\n"
+        "    security_opt:\n"
+        "    - label:type:svirt_apache_t\n",
+    )
+    result = collect_edits(findings, data, lines, text, only={"CL-0003"})
+    assert "CL-0003" in {f.rule_id for f in result.fixed}
+    patched = apply_edits(text, result.edits)
+    re_path = tmp_path / "patched.yml"
+    re_path.write_text(patched, encoding="utf-8")
+    re_data, re_lines = load_compose(re_path)
+    assert re_data["services"]["web"]["security_opt"] == [
+        "label:type:svirt_apache_t",
+        "no-new-privileges:true",
+    ]
+
+
+def test_collect_edits_refuses_bare_anchor_service(tmp_path: Path) -> None:
+    # A service anchored by a lone `&anchor` first child: inserting a first child
+    # before it would re-anchor the wrong node, so the fixers refuse.
+    findings, data, lines, text = _findings_for(
+        tmp_path,
+        "services:\n  web:\n    &websvc\n    image: nginx:1.27\n",
+    )
+    result = collect_edits(findings, data, lines, text, only={"CL-0003", "CL-0007"})
+    assert result.edits == []
+    assert {"CL-0003", "CL-0007"} <= {f.rule_id for f in result.manual}
 
 
 def test_collect_edits_caveats_dedup_and_carry_rule_id(tmp_path: Path) -> None:

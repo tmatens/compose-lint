@@ -202,6 +202,25 @@ class TestNoNewPrivilegesFix:
         )
         assert self._fix(tmp_path, content) is None
 
+    def test_refuses_all_disabled_security_opt(self, tmp_path: Path) -> None:
+        # Every entry is a profile-disable CL-0009 will remove. Appending a
+        # survivor now would let a second pass delete those entries (CL-0009 then
+        # sees a legit entry) — non-idempotent. Refuse; the block is left as-is.
+        content = (
+            "services:\n"
+            "  web:\n"
+            "    security_opt:\n"
+            "      - seccomp:unconfined\n"
+            "      - apparmor:unconfined\n"
+        )
+        assert self._fix(tmp_path, content) is None
+
+    def test_anchor_child_service_refused(self, tmp_path: Path) -> None:
+        # Service anchored by a lone `&anchor` first child: inserting before it
+        # would re-anchor the wrong node.
+        content = "services:\n  web:\n    &websvc\n    image: nginx\n"
+        assert self._fix(tmp_path, content) is None
+
     def test_refuses_anchored_service(self, tmp_path: Path) -> None:
         content = "services:\n  web: &websvc\n    image: nginx\n"
         assert self._fix(tmp_path, content) is None

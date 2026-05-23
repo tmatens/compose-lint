@@ -23,6 +23,16 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 
+# security_opt directives that disable a default platform profile — CL-0009's
+# territory. Shared here so CL-0003 can decline to append into a block whose
+# entries are *all* profile-disables: CL-0009 will act on those, and appending a
+# survivor first would let a second `fix` pass delete them (breaking idempotency,
+# ADR-014). Values are matched against `str(opt).strip().lower()`.
+DISABLED_SECURITY_PROFILES = frozenset(
+    {"seccomp:unconfined", "apparmor:unconfined", "label:disable"}
+)
+
+
 class OverlappingEditError(ValueError):
     """Raised when two edits target overlapping regions of the same file."""
 
@@ -116,23 +126,34 @@ def opens_block_body(line: str) -> bool:
     return not trailing or trailing.startswith("#")
 
 
+def _is_seq_item(line: str) -> bool:
+    """Return whether ``line`` is a block-sequence entry (``-`` or ``- ...``)."""
+    stripped = line.lstrip()
+    return stripped == "-" or stripped.startswith("- ")
+
+
 def first_child_indent(source_lines: list[str], key_line: int) -> int | None:
     """Return the indentation of the first child line under ``key_line``.
 
     Walks forward from the line after ``key_line`` to the first non-blank line.
-    Returns its indent if it is deeper than ``key_line`` (a child), otherwise
-    ``None`` — meaning the block has no children (the next content is a sibling
-    or dedent). Blank lines are skipped; comment lines count as content, mirror-
-    ing the original CL-0007 behavior.
+    Returns its indent if it is a child, otherwise ``None`` — meaning the block
+    has no children (the next content is a sibling or dedent). A line is a child
+    when it is indented deeper than ``key_line`` *or* it sits at ``key_line``'s
+    own indent and is a block-sequence item (``- ...``): YAML lets a sequence
+    value share its key's indentation (the "compact" style), and those items are
+    still children of the key. Blank lines are skipped; comment lines count as
+    content, mirroring the original CL-0007 behavior.
     """
     key_indent = line_indent(source_lines[key_line - 1])
     for raw in source_lines[key_line:]:
         if raw.strip() == "":
             continue
         indent = line_indent(raw)
-        if indent <= key_indent:
-            return None
-        return indent
+        if indent > key_indent:
+            return indent
+        if indent == key_indent and _is_seq_item(raw):
+            return indent
+        return None
     return None
 
 
@@ -159,34 +180,78 @@ def has_merge_key_child(source_lines: list[str], key_line: int) -> bool:
     return False
 
 
+def has_anchor_child(source_lines: list[str], key_line: int) -> bool:
+    """Return whether the block under ``key_line`` has a bare anchor/alias child.
+
+    A mapping can carry its anchor on the line *after* the key (``svc:`` then a
+    lone ``&svc`` as the first child) rather than inline. That anchors the whole
+    mapping, so inserting a new first child before it would re-anchor the wrong
+    node and break the file — the fixer must refuse (ADR-014). Detects a direct
+    child line that is a lone anchor (``&name``) or alias (``*name``); inline
+    forms like ``key: &a value`` start with the key, not ``&``/``*``, and are
+    not flagged. Only direct children (lines at the first child indent) count.
+    """
+    key_indent = line_indent(source_lines[key_line - 1])
+    child_indent: int | None = None
+    for raw in source_lines[key_line:]:
+        if raw.strip() == "":
+            continue
+        indent = line_indent(raw)
+        if indent <= key_indent:
+            break
+        if child_indent is None:
+            child_indent = indent
+        if indent == child_indent:
+            stripped = raw.strip()
+            if stripped.startswith("&") or stripped.startswith("*"):
+                return True
+    return False
+
+
 def is_anchored_or_merged(source_lines: list[str], key_line: int) -> bool:
     """Return whether the block at ``key_line`` is one a fixer must refuse.
 
     True when the key carries an inline value / flow collection / anchor / alias
-    instead of a plain block body, or when the block inherits via a merge key.
-    Combines :func:`opens_block_body` and :func:`has_merge_key_child` into the
-    single guard deletion and insertion fixers share.
+    instead of a plain block body, when the block inherits via a merge key, or
+    when it is anchored by a lone ``&anchor`` child line. Combines
+    :func:`opens_block_body`, :func:`has_merge_key_child`, and
+    :func:`has_anchor_child` into the single guard deletion and insertion fixers
+    share.
     """
-    return not opens_block_body(source_lines[key_line - 1]) or has_merge_key_child(
-        source_lines, key_line
+    return (
+        not opens_block_body(source_lines[key_line - 1])
+        or has_merge_key_child(source_lines, key_line)
+        or has_anchor_child(source_lines, key_line)
     )
 
 
 def block_span(source_lines: list[str], key_line: int) -> tuple[int, int]:
     """Return the inclusive 1-indexed ``(first, last)`` line span of a block.
 
-    The span covers ``key_line`` and every following line indented deeper than
-    it. Blank lines interior to the block are included; a trailing run of blank
-    lines after the last child is excluded. Used to delete a block whole.
+    The span covers ``key_line`` and every following child line. Lines indented
+    deeper than ``key_line`` are children. When the block is a *compact*
+    sequence — its first child is a ``- ...`` item at ``key_line``'s own indent
+    (YAML lets a sequence value share its key's indentation) — sibling items at
+    that same indent are also children; the block then ends at the first line
+    that dedents or is a same-indent non-item (a sibling mapping key). Blank
+    lines interior to the block are included; a trailing run of blank lines
+    after the last child is excluded. Used to delete a block whole.
     """
     key_indent = line_indent(source_lines[key_line - 1])
+    compact = first_child_indent(source_lines, key_line) == key_indent
     last = key_line
     for idx in range(key_line, len(source_lines)):
-        if source_lines[idx].strip() == "":
+        line = source_lines[idx]
+        if line.strip() == "":
             continue
-        if line_indent(source_lines[idx]) <= key_indent:
-            break
-        last = idx + 1
+        indent = line_indent(line)
+        if indent > key_indent:
+            last = idx + 1
+            continue
+        if compact and indent == key_indent and _is_seq_item(line):
+            last = idx + 1
+            continue
+        break
     return key_line, last
 
 
