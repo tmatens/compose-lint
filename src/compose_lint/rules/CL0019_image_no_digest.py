@@ -16,8 +16,6 @@ OWASP_REF = (
     "Docker_Security_Cheat_Sheet.html#rule-13---enhance-supply-chain-security"
 )
 
-CIS_REF = "CIS Docker Benchmark 5.27 — Ensure container images are up to date"
-
 # Tags that CL-0004 already handles — we skip them to avoid overlap
 _MUTABLE_TAGS = {"latest", "stable", "edge", "nightly", "dev", "test"}
 
@@ -37,7 +35,7 @@ class ImageNoDigestRule(BaseRule):
                 "same image."
             ),
             severity=Severity.MEDIUM,
-            references=[OWASP_REF, CIS_REF],
+            references=[OWASP_REF],
         )
 
     def check(
@@ -81,5 +79,5 @@ class ImageNoDigestRule(BaseRule):
                 f"Add a digest pin: image: {image}@sha256:<digest>\n"
                 "Use Dependabot or Renovate to keep digests current."
             ),
-            references=[OWASP_REF, CIS_REF],
+            references=[OWASP_REF],
         )
