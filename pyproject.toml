@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "compose-lint"
 version = "0.8.0"
-description = "Static-analysis linter for Docker Compose files. Finds insecure container configuration with OWASP/CIS-grounded rules; emits SARIF for GitHub Code Scanning."
+description = "Security-focused linter for Docker Compose files. Catches dangerous misconfigurations before they reach production — grounded in OWASP and the CIS Docker Benchmark; emits SARIF for GitHub Code Scanning."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -13,7 +13,6 @@ authors = [{ name = "Todd Matens" }]
 keywords = [
     "docker",
     "docker-compose",
-    "compose",
     "security",
     "linter",
     "static-analysis",

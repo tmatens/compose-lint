@@ -1,15 +1,16 @@
 # compose-lint
 
+**Security-focused linter for Docker Compose files.** Catches dangerous misconfigurations before they reach production. Grounded in OWASP and the CIS Docker Benchmark.
+
 [![CI](https://github.com/tmatens/compose-lint/actions/workflows/ci.yml/badge.svg)](https://github.com/tmatens/compose-lint/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/compose-lint)](https://pypi.org/project/compose-lint/)
 [![Docker](https://img.shields.io/badge/docker-composelint%2Fcompose--lint-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/composelint/compose-lint)
 [![Python](https://img.shields.io/pypi/pyversions/compose-lint)](https://pypi.org/project/compose-lint/)
 [![License](https://img.shields.io/github/license/tmatens/compose-lint)](https://github.com/tmatens/compose-lint/blob/main/LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/tmatens/compose-lint/badge)](https://scorecard.dev/viewer/?uri=github.com/tmatens/compose-lint)
-[![OpenSSF Baseline 2](https://www.bestpractices.dev/projects/12472/baseline)](https://www.bestpractices.dev/projects/12472)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12472/badge)](https://www.bestpractices.dev/projects/12472)
 
-Static-analysis linter for `docker-compose.yml` and `compose.yaml` that catches dangerous misconfigurations before they reach production — privileged containers, unpinned images, host-network sharing, sensitive bind mounts, hard-coded credentials, and more.
+Static-analysis checks for `docker-compose.yml` and `compose.yaml`, covering privileged containers, unpinned images, host-network sharing, sensitive bind mounts, hard-coded credentials, and more.
 
 In a scan of 6,444 public Docker Compose files on GitHub, **91% of those that parse had at least one security finding** (68% HIGH or CRITICAL) — nearly all skip basic capability restrictions, 52% run images without a pinned digest, and 58% bind ports to all interfaces. compose-lint catches these in CI before they ship. **[Read the full *State of Docker Compose Security* report →](docs/state-of-compose.md)**
 
@@ -43,33 +44,7 @@ The Docker image is distroless, multi-arch, and runs nonroot — see [Security p
 
 ### Running with full hardening
 
-The image is safe-by-default (distroless, nonroot, read-only attack surface) so the simple form above is fine for most use. If you want to dogfood compose-lint's own rules against the container that runs it, the fully-hardened invocation is:
-
-```bash
-docker run --rm \
-  --read-only \
-  --cap-drop ALL \
-  --security-opt no-new-privileges:true \
-  --network none \
-  --user 65532:65532 \
-  --pids-limit 256 \
-  -v "$(pwd):/src:ro" \
-  composelint/compose-lint:0.7.0
-```
-
-| Flag | Rule satisfied |
-|---|---|
-| `--security-opt no-new-privileges:true` | CL-0003 |
-| `--cap-drop ALL` | CL-0006 |
-| `--read-only` | CL-0007 |
-| `--pids-limit 256` | CL-0012 (defense-in-depth; rule fires only on `0`/`-1`) |
-| `--user 65532:65532` | CL-0018 (matches the image's existing default) |
-
-`--network none` and `:ro` on the bind mount are extra hardening — compose-lint never reaches the network and only reads its inputs.
-
-For full supply-chain reproducibility (and to satisfy CL-0004 / CL-0019), replace the `:0.7.0` tag with a digest pin: `composelint/compose-lint@sha256:<digest>`. Get the current digest from [Docker Hub](https://hub.docker.com/r/composelint/compose-lint/tags) or with `docker buildx imagetools inspect composelint/compose-lint:0.7.0 --format '{{json .Manifest}}' | jq -r '.digest'`.
-
-A Compose-form equivalent that lints clean across every rule lives in [`tests/compose_files/safe_self_hosted.yml`](https://github.com/tmatens/compose-lint/blob/main/tests/compose_files/safe_self_hosted.yml).
+Want to dogfood compose-lint's own rules against the container that runs it? See [docs/hardening.md](https://github.com/tmatens/compose-lint/blob/main/docs/hardening.md) for the fully-hardened `docker run` invocation, the flag-to-rule mapping, and digest-pinning instructions.
 
 ## Quick Start
 
@@ -159,6 +134,21 @@ docker-compose.yml: 2 high  ·  1 suppressed (not counted)
 
 Exit code is `1` (two findings at or above the default `--fail-on high` threshold). Suppressed findings are shown for auditability but do not count toward the threshold. Findings are grouped by service and ordered highest-severity first within each service; the fix block and reference URL print only once per rule id per file — pass `-v` / `--verbose` to repeat them on every finding, or `-q` / `--quiet` for one compact line per finding.
 
+## How it compares
+
+| Tool | Compose security rules | Scope | Zero config |
+|------|----------------------|-------|-------------|
+| **compose-lint** | Yes | Docker Compose | Yes |
+| **KICS** | Yes | Broad IaC (Terraform, K8s, Compose, ...) | No |
+| **Hadolint** | No — Dockerfile only | Dockerfile | Yes |
+| **dclint** | Yes — schema/structure only | Docker Compose | Yes |
+| **Trivy** | No — image/CVE + IaC misconfig scanning, no dedicated Compose ruleset | Dockerfiles, images, IaC | Yes |
+| **Checkov** | No — no dedicated Compose ruleset | Broad IaC (Terraform, K8s, ...) | No |
+
+If you need broad IaC coverage across Terraform, Kubernetes, and more, KICS covers Docker Compose and is worth evaluating. If you want a lightweight, focused tool with zero config and actionable fix guidance for Compose files specifically, this is it.
+
+**Not in scope**: compose-lint does not validate Compose schema, scan images for CVEs, lint Dockerfiles, or rewrite files. Pair it with [dclint](https://github.com/zavoloklom/docker-compose-linter) for schema/structure, [Hadolint](https://github.com/hadolint/hadolint) for Dockerfiles, and [Trivy](https://github.com/aquasecurity/trivy) for image CVEs.
+
 ## Rules
 
 | ID | Severity | Description | OWASP | CIS |
@@ -176,14 +166,14 @@ Exit code is `1` (two findings at or above the default `--fail-on high` threshol
 | [CL-0011](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0011.md) | HIGH | Dangerous capabilities added | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3---limit-capabilities-grant-only-specific-capabilities-needed-by-a-container) | 5.5 |
 | [CL-0012](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0012.md) | MEDIUM | PIDs cgroup limit disabled | — | 5.29 |
 | [CL-0013](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0013.md) | HIGH | Sensitive host path mounted | [Rule #8](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8---set-filesystem-and-volumes-to-read-only) | 5.5 |
-| [CL-0014](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0014.md) | MEDIUM | Logging driver disabled | — | 5.x |
+| [CL-0014](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0014.md) | MEDIUM | Logging driver disabled | — | — |
 | [CL-0015](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0015.md) | LOW | Healthcheck disabled | — | 4.6, 5.27 |
 | [CL-0016](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0016.md) | HIGH | Dangerous host device exposed | — | 5.18 |
 | [CL-0017](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0017.md) | MEDIUM | Shared mount propagation | — | 5.20 |
-| [CL-0018](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0018.md) | MEDIUM | Explicit root user | [Rule #7](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-7---do-not-run-containers-with-a-root-user) | 5.x |
+| [CL-0018](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0018.md) | MEDIUM | Explicit root user | [Rule #7](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-7---do-not-run-containers-with-a-root-user) | — |
 | [CL-0019](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0019.md) | MEDIUM | Image tag without digest | [Rule #13](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-13---enhance-supply-chain-security) | 5.27 |
-| [CL-0020](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0020.md) | HIGH | Credential-shaped env key with literal value | [Rule #11](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-11---use-secret-management-tools) | 5.x |
-| [CL-0021](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0021.md) | HIGH | Credential embedded in connection-string env value | [Rule #11](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-11---use-secret-management-tools) | 5.x |
+| [CL-0020](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0020.md) | HIGH | Credential-shaped env key with literal value | [Rule #11](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-11---use-secret-management-tools) | — |
+| [CL-0021](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0021.md) | HIGH | Credential embedded in connection-string env value | [Rule #11](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-11---use-secret-management-tools) | — |
 
 ## Severity Levels
 
@@ -260,7 +250,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: tmatens/compose-lint@23da963b2ee586592eb1afe34b5a3b620e52966d # v0.7.0
+      - uses: tmatens/compose-lint@94c3389d42a8a8e5239df90010f0921c84956cb6 # v0.8.0
         with:
           sarif-file: results.sarif
 ```
@@ -296,7 +286,7 @@ jobs:
         run: |
           apt-get update -qq
           apt-get install -yqq --no-install-recommends python3-pip
-          pip3 install --break-system-packages --no-cache-dir compose-lint==0.7.0
+          pip3 install --break-system-packages --no-cache-dir compose-lint==0.8.0
       - name: Run compose-lint
         run: compose-lint --fail-on high
 ```
@@ -315,25 +305,10 @@ compose-lint --format sarif docker-compose.yml > results.sarif
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/tmatens/compose-lint
-    rev: v0.7.0
+    rev: v0.8.0
     hooks:
       - id: compose-lint
 ```
-
-## How it compares
-
-| Tool | Compose security rules | Scope | Zero config |
-|------|----------------------|-------|-------------|
-| **compose-lint** | Yes | Docker Compose | Yes |
-| **KICS** | Yes | Broad IaC (Terraform, K8s, Compose, ...) | No |
-| **Hadolint** | No — Dockerfile only | Dockerfile | Yes |
-| **dclint** | Yes — schema/structure only | Docker Compose | Yes |
-| **Trivy** | No — Dockerfile + image scanning | Dockerfiles, images, repos | Yes |
-| **Checkov** | No — no Compose support | Broad IaC (Terraform, K8s, ...) | No |
-
-If you need broad IaC coverage across Terraform, Kubernetes, and more, KICS covers Docker Compose and is worth evaluating. If you want a lightweight, focused tool with zero config and actionable fix guidance for Compose files specifically, this is it.
-
-**Not in scope**: compose-lint does not validate Compose schema, scan images for CVEs, lint Dockerfiles, or rewrite files. Pair it with [dclint](https://github.com/zavoloklom/docker-compose-linter) for schema/structure, [Hadolint](https://github.com/hadolint/hadolint) for Dockerfiles, and [Trivy](https://github.com/aquasecurity/trivy) for image CVEs.
 
 ## Security posture
 
