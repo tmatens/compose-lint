@@ -361,7 +361,14 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             print(format_summary(findings, filepath), flush=True)
             all_file_findings.append((findings, filepath))
         elif args.output_format == "sarif":
-            all_sarif.extend(format_sarif(findings, filepath))
+            # Structured SARIF fixes ride on the experimental fix engine, so they
+            # stay gated until the feature is promoted (ADR-014). Without the gate
+            # the output keeps the prose `properties.fix` only.
+            fixes = None
+            if _experimental_enabled():
+                text = Path(filepath).read_text(encoding="utf-8")
+                fixes = collect_edits(findings, data, lines, text).fixed_edits
+            all_sarif.extend(format_sarif(findings, filepath, fixes=fixes))
         else:
             all_json.extend(format_json(findings, filepath))
 

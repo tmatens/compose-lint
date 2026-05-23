@@ -289,12 +289,16 @@ class FixResult:
     findings dropped because their edit conflicted with another's. ``caveats``
     holds the deduplicated ``(rule_id, caveat)`` pairs for the behavior-changing
     edits among ``edits``, in first-seen order, for the dry-run banner.
+    ``fixed_edits`` pairs each accepted finding with its own edits, in the same
+    order as ``fixed``; the flattened ``edits`` loses that grouping, which
+    per-finding consumers (SARIF ``artifactChanges``) need.
     """
 
     edits: list[TextEdit] = field(default_factory=list)
     fixed: list[Finding] = field(default_factory=list)
     manual: list[Finding] = field(default_factory=list)
     caveats: list[tuple[str, str]] = field(default_factory=list)
+    fixed_edits: list[tuple[Finding, list[TextEdit]]] = field(default_factory=list)
 
 
 def _spans_conflict(a: tuple[int, int], b: tuple[int, int]) -> bool:
@@ -398,6 +402,7 @@ def collect_edits(
             continue
         result.fixed.append(finding)
         result.edits.extend(edits)
+        result.fixed_edits.append((finding, edits))
         for edit in edits:
             if edit.caveat and (finding.rule_id, edit.caveat) not in seen_caveats:
                 seen_caveats.add((finding.rule_id, edit.caveat))
