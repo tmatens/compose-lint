@@ -157,7 +157,7 @@ docker-compose.yml: 2 high  ·  1 suppressed (not counted)
 ✗ FAIL  ·  2 findings at or above high
 ```
 
-Exit code is `1` (two findings at or above the default `--fail-on high` threshold). Suppressed findings are shown for auditability but do not count toward the threshold. Findings are grouped by service; the fix block and reference URL print only once per rule id per file — pass `-v` / `--verbose` to repeat them on every finding.
+Exit code is `1` (two findings at or above the default `--fail-on high` threshold). Suppressed findings are shown for auditability but do not count toward the threshold. Findings are grouped by service and ordered highest-severity first within each service; the fix block and reference URL print only once per rule id per file — pass `-v` / `--verbose` to repeat them on every finding, or `-q` / `--quiet` for one compact line per finding.
 
 ## Rules
 
@@ -214,13 +214,20 @@ See [docs/configuration.md](https://github.com/tmatens/compose-lint/blob/main/do
 ```
 compose-lint [OPTIONS] [FILE ...]
 
-  --format {text,json,sarif}  Output format (default: text)
-  --fail-on SEVERITY          Minimum severity to trigger exit 1 (default: high)
-  --skip-suppressed           Hide suppressed findings from output
-  --config PATH               Path to config file (default: .compose-lint.yml)
-  --explain CL-XXXX           Print the full documentation for a single rule
-  --version                   Show version and exit
+  --format {text,json,sarif}   Output format (default: text)
+  --fail-on {low,medium,high,critical}
+                               Minimum severity to trigger exit 1 (default: high)
+  -v, --verbose                Repeat the fix block and reference on every finding (text mode)
+  -q, --quiet                  One line per finding — no fix, reference, or excerpt (text mode)
+  --skip-suppressed            Hide suppressed findings from output
+  --config PATH                Path to config file (default: .compose-lint.yml)
+  --explain CL-XXXX            Print the full documentation for a single rule
+  --version                    Show version and exit
 ```
+
+Color is on when stdout is a terminal. Set `NO_COLOR` to disable it (even on a
+terminal) or `FORCE_COLOR` to force it through a pipe — e.g. into `less -R` or a
+CI log that renders ANSI.
 
 ## Exit Codes
 
