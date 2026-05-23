@@ -8,10 +8,13 @@ Output demo.gif
 
 Require compose-lint
 
+# Wide terminal (~185 cols) so compose-lint's long finding/ref lines fit on one
+# line instead of hard-wrapping at the margin. compose-lint does not wrap to the
+# terminal width, so the terminal must be wide enough to hold whole lines.
 Set Shell bash
-Set FontSize 20
-Set Width 1180
-Set Height 760
+Set FontSize 14
+Set Width 1780
+Set Height 720
 Set Padding 20
 Set Theme "Dracula"
 Set TypingSpeed 45ms
@@ -26,10 +29,10 @@ Show
 
 Sleep 800ms
 
-# 1. Lint a small, ordinary-looking compose file. Six findings stream past,
-#    landing on the two HIGH ones: a plaintext password (CL-0020) and a
-#    port bound to every interface (CL-0005, with line carets), then the
-#    FAIL verdict.
+# 1. Lint a small, ordinary-looking compose file. Five findings stream past:
+#    an unpinned image (CL-0019) and missing hardening, landing on the HIGH
+#    one — a port bound to every interface (CL-0005, with line carets) — then
+#    the FAIL verdict.
 Type "compose-lint docker-compose.yml"
 Sleep 600ms
 Enter
