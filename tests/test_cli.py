@@ -30,6 +30,13 @@ class TestCLI:
 
         assert __version__ in result.stdout
 
+    def test_fail_on_help_lists_severity_choices(self) -> None:
+        result = run_cli("--help")
+        assert result.returncode == 0
+        # The metavar should advertise the valid values, not a bare FAIL_ON.
+        assert "--fail-on {low,medium,high,critical}" in result.stdout
+        assert "FAIL_ON" not in result.stdout
+
     def test_no_args_no_compose_file(self) -> None:
         result = run_cli()
         assert result.returncode == 2

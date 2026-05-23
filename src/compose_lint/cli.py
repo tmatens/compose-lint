@@ -85,6 +85,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--fail-on",
         type=_severity_type,
         default=Severity.HIGH,
+        metavar="{" + ",".join(s.value for s in Severity) + "}",
         help="minimum severity to trigger exit 1 (default: high)",
     )
     parser.add_argument(
