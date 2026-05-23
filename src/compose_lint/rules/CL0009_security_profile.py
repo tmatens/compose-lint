@@ -4,11 +4,25 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint.fix import (
+    block_span,
+    delete_lines,
+    is_anchored_or_merged,
+    opens_block_body,
+)
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+    from compose_lint.models import TextEdit
+
+_CAVEAT = (
+    "Removing the unconfined entry re-applies the default seccomp/AppArmor "
+    "profile; a workload that relies on a syscall the default profile blocks "
+    "may fail."
+)
 
 OWASP_REF = (
     "https://cheatsheetseries.owasp.org/cheatsheets/"
@@ -103,3 +117,66 @@ class SecurityProfileRule(BaseRule):
                     CIS_SELINUX_REF,
                 ],
             )
+
+    def fix(
+        self,
+        finding: Finding,
+        data: dict[str, Any],
+        lines: dict[str, int],
+        text: str,
+    ) -> list[TextEdit] | None:
+        """Delete the unconfined ``security_opt`` entry the finding flags.
+
+        Removes just the offending list item when a legitimate entry remains,
+        or drops the whole ``security_opt:`` block when the offending entry is
+        the sole one (never leaving ``security_opt:`` empty). Refuses (returns
+        ``None``) for anchored/merged services, flow-style lists, and the
+        ambiguous case where every entry is offending but more than one exists —
+        collapsing that correctly would need the per-finding fixers to
+        coordinate, which they can't (ADR-014 refusal policy). The edit carries
+        a caveat because re-applying the default profile changes runtime
+        behavior.
+        """
+        service = finding.service
+        services = data.get("services")
+        if not isinstance(services, dict):
+            return None
+        service_config = services.get(service)
+        if not isinstance(service_config, dict):
+            return None
+        security_opt = service_config.get("security_opt")
+        if not isinstance(security_opt, list) or not security_opt:
+            return None
+
+        item_line = finding.line
+        so_line = lines.get(f"services.{service}.security_opt")
+        service_line = lines.get(f"services.{service}")
+        if item_line is None or so_line is None or service_line is None:
+            return None
+
+        source_lines = text.splitlines(keepends=True)
+        n = len(source_lines)
+        if not (1 <= service_line <= n and 1 <= so_line <= n and 1 <= item_line <= n):
+            return None
+
+        if is_anchored_or_merged(source_lines, service_line):
+            return None
+        if not opens_block_body(source_lines[so_line - 1]):
+            return None
+
+        disabled = sum(
+            1 for opt in security_opt if str(opt).strip().lower() in _DISABLED_PROFILES
+        )
+        legit_remaining = len(security_opt) - disabled
+
+        if legit_remaining >= 1:
+            # A legitimate entry survives, so the list stays non-empty: remove
+            # only this item's line.
+            if not source_lines[item_line - 1].lstrip().startswith("- "):
+                return None
+            return [delete_lines(source_lines, item_line, item_line, caveat=_CAVEAT)]
+        if len(security_opt) == 1:
+            # Sole entry is the offending one: drop the whole block.
+            first, last = block_span(source_lines, so_line)
+            return [delete_lines(source_lines, first, last, caveat=_CAVEAT)]
+        return None
