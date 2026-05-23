@@ -35,14 +35,15 @@ class TestIntegration:
         result = run_cli("--format", "json", str(FIXTURES / "mixed.yml"))
         assert result.returncode == 1
         data = json.loads(result.stdout)
-        assert isinstance(data, list)
-        assert len(data) > 5
+        assert data["version"] == "1"
+        assert isinstance(data["findings"], list)
+        assert len(data["findings"]) > 5
 
-        rule_ids = {f["rule_id"] for f in data}
+        rule_ids = {f["rule_id"] for f in data["findings"]}
         assert "CL-0001" in rule_ids
         assert "CL-0002" in rule_ids
 
-        for finding in data:
+        for finding in data["findings"]:
             assert "file" in finding
             assert "rule_id" in finding
             assert "severity" in finding
@@ -97,7 +98,9 @@ class TestIntegration:
         result = run_cli("--format", "json", str(FIXTURES / "mixed.yml"))
         data = json.loads(result.stdout)
         db_port_findings = [
-            f for f in data if f["service"] == "db" and f["rule_id"] == "CL-0005"
+            f
+            for f in data["findings"]
+            if f["service"] == "db" and f["rule_id"] == "CL-0005"
         ]
         assert len(db_port_findings) == 0
 
@@ -116,7 +119,7 @@ class TestIntegration:
             "--format", "json", "--config", config, str(FIXTURES / "mixed.yml")
         )
         data = json.loads(result.stdout)
-        suppressed = [f for f in data if f.get("suppressed")]
+        suppressed = [f for f in data["findings"] if f.get("suppressed")]
         assert len(suppressed) > 0
         with_reason = [f for f in suppressed if f.get("suppression_reason")]
         assert any("SEC-1234" in f["suppression_reason"] for f in with_reason)
@@ -147,7 +150,7 @@ class TestIntegration:
             str(FIXTURES / "mixed.yml"),
         )
         data = json.loads(result.stdout)
-        suppressed = [f for f in data if f.get("suppressed")]
+        suppressed = [f for f in data["findings"] if f.get("suppressed")]
         assert len(suppressed) == 0
 
     def test_suppressed_findings_in_sarif(self) -> None:
@@ -170,5 +173,5 @@ class TestIntegration:
             str(FIXTURES / "valid_basic.yml"),
         )
         data = json.loads(result.stdout)
-        files = {f["file"] for f in data}
+        files = {f["file"] for f in data["findings"]}
         assert len(files) >= 1

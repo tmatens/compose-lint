@@ -49,3 +49,42 @@ Excluded services still produce **SUPPRESSED** findings, with the per-service re
 - **Exact-match** service names. Unknown names produce a stderr warning but do not error, since Compose files and config evolve independently.
 - **Global `enabled: false` wins** over per-service exclusions: if a rule is disabled globally, every service is suppressed regardless of `exclude_services`.
 - **No inline suppression syntax** — there is no `# compose-lint: disable` comment form. Suppressions are tracked in config so reviewers can audit them.
+
+## Output formats
+
+`--format` selects the output (`text` default, `json`, `sarif`). Text writes a human banner, per-file summary, and verdict; `json` and `sarif` emit only the machine document on stdout so redirects stay clean.
+
+### JSON
+
+JSON output is a versioned envelope (see [ADR-015](adr/015-machine-readable-output-contract.md)):
+
+```json
+{
+  "version": "1",
+  "tool": { "name": "compose-lint", "version": "0.8.0" },
+  "findings": [
+    {
+      "file": "docker-compose.yml",
+      "line": 5,
+      "rule_id": "CL-0001",
+      "severity": "critical",
+      "service": "proxy",
+      "message": "...",
+      "fix": "...",
+      "references": ["..."],
+      "suppressed": false
+    }
+  ],
+  "errors": [
+    { "file": "broken.yml", "message": "missing 'services' key" }
+  ]
+}
+```
+
+- `version` is the envelope schema version. New top-level fields are added without bumping it; a bump signals a breaking change.
+- `findings[]` carries one object per finding; `suppression_reason` is present only on suppressed findings.
+- `errors[]` lists files that failed to parse (exit 2). Files skipped as not-applicable (Compose v1 / fragments, [ADR-013](adr/013-missing-services-key.md)) are not errors and do not appear here.
+
+### SARIF
+
+`--format sarif` emits a SARIF 2.1.0 log for GitHub Code Scanning. Parse failures appear as `invocations[].toolExecutionNotifications`; suppressed findings use the native `suppressions[]` array with the reason in `justification`.
