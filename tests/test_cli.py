@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -16,6 +17,18 @@ def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
         [sys.executable, "-m", "compose_lint", *args],
         capture_output=True,
         text=True,
+    )
+
+
+def run_cli_env(
+    env_extra: dict[str, str], *args: str
+) -> subprocess.CompletedProcess[str]:
+    """Run the CLI with extra environment variables (e.g. the experimental gate)."""
+    return subprocess.run(
+        [sys.executable, "-m", "compose_lint", *args],
+        capture_output=True,
+        text=True,
+        env={**os.environ, **env_extra},
     )
 
 
@@ -322,3 +335,67 @@ class TestCLI:
         )
         assert "unknown service 'does-not-exist'" in result.stderr
         assert "CL-0003" in result.stderr
+
+
+_EXPERIMENTAL = {"COMPOSE_LINT_EXPERIMENTAL": "1"}
+_BARE_SERVICE = "services:\n  web:\n    image: nginx:1.27\n"
+
+
+class TestFixSubcommand:
+    """Tests for the hidden, experimental `fix` subcommand (ADR-014)."""
+
+    def test_dry_run_prints_diff_to_stdout(self, tmp_path: Path) -> None:
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(_BARE_SERVICE)
+        result = run_cli_env(_EXPERIMENTAL, "fix", str(f))
+        assert result.returncode == 0
+        # Diff (data) on stdout; warning + status (human) on stderr.
+        assert "+    read_only: true" in result.stdout
+        assert "⚠ behavior-changing · CL-0007" in result.stdout
+        assert "experimental" in result.stderr.lower()
+        # Dry-run writes nothing.
+        assert f.read_text() == _BARE_SERVICE
+
+    def test_apply_writes_file_and_emits_no_diff(self, tmp_path: Path) -> None:
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(_BARE_SERVICE)
+        result = run_cli_env(_EXPERIMENTAL, "fix", "--apply", str(f))
+        assert result.returncode == 0
+        assert result.stdout == ""
+        patched = f.read_text()
+        assert "read_only: true" in patched
+        assert "no-new-privileges:true" in patched
+
+    def test_only_restricts_to_named_rule(self, tmp_path: Path) -> None:
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(_BARE_SERVICE)
+        run_cli_env(_EXPERIMENTAL, "fix", "--apply", "--only", "CL-0007", str(f))
+        patched = f.read_text()
+        assert "read_only: true" in patched
+        assert "no-new-privileges" not in patched
+
+    def test_respects_config_suppression(self, tmp_path: Path) -> None:
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(_BARE_SERVICE)
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0007:\n    enabled: false\n")
+        run_cli_env(_EXPERIMENTAL, "fix", "--apply", "--config", str(config), str(f))
+        patched = f.read_text()
+        # CL-0007 suppressed => not fixed; CL-0003 still applied.
+        assert "read_only: true" not in patched
+        assert "no-new-privileges:true" in patched
+
+    def test_hidden_from_help_even_when_enabled(self) -> None:
+        result = run_cli_env(_EXPERIMENTAL, "--help")
+        assert result.returncode == 0
+        assert "fix" not in result.stdout
+
+    def test_unavailable_without_env_gate(self, tmp_path: Path) -> None:
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(_BARE_SERVICE)
+        # Without the gate, `fix` is not a subcommand: the shim routes it to
+        # `check` as a (missing) file, so no fix runs and no warning prints.
+        result = run_cli("fix", str(f))
+        assert result.returncode == 2
+        assert "experimental" not in result.stderr.lower()
+        assert f.read_text() == _BARE_SERVICE

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import NoReturn
@@ -12,6 +13,7 @@ from compose_lint import __version__
 from compose_lint.config import ConfigError, load_config
 from compose_lint.engine import filter_findings, run_rules
 from compose_lint.explain import UnknownRuleError, load_rule_doc
+from compose_lint.fix import apply_edits, collect_edits, render_file_diff
 from compose_lint.formatters.json import format_findings as format_json
 from compose_lint.formatters.sarif import build_sarif_log
 from compose_lint.formatters.sarif import format_findings as format_sarif
@@ -58,15 +60,40 @@ def _effective_config_path(explicit: str | None) -> Path | None:
     return p if p.exists() else None
 
 
-# Subcommands recognized by the argv shim. Bare `compose-lint <file>` is kept
-# working as an implicit `check` (ADR-011): when the first non-flag token is
-# not one of these, the shim prepends `check`.
-_SUBCOMMANDS = ("check",)
-
 # Flags handled by the top-level parser, not `check`. A flag-only invocation
 # carrying one of these (e.g. `compose-lint --version`) is left untouched so the
 # top-level parser sees it; any other flag-only invocation routes to `check`.
 _GLOBAL_FLAGS = frozenset({"-h", "--help", "--version"})
+
+# Stderr banner printed on every `fix` invocation (ADR-014, Part 5).
+_FIX_EXPERIMENTAL_WARNING = (
+    "warning: 'fix' is experimental and unstable; output and flags may change "
+    "without notice. Review the diff before --apply."
+)
+
+
+def _experimental_enabled() -> bool:
+    """Return whether the experimental `fix` subcommand is gated on.
+
+    Phase 1 of ADR-014 hides `fix` entirely unless ``COMPOSE_LINT_EXPERIMENTAL``
+    is set to ``1``, so it cannot be discovered or invoked by accident.
+    """
+    return os.environ.get("COMPOSE_LINT_EXPERIMENTAL") == "1"
+
+
+def _subcommands() -> set[str]:
+    """Return the subcommand names the argv shim should recognize.
+
+    Bare ``compose-lint <file>`` is kept working as an implicit ``check``
+    (ADR-011): when the first non-flag token is not one of these, the shim
+    prepends ``check``. ``fix`` is only recognized when experimental mode is on,
+    so without the env gate ``compose-lint fix ...`` falls through to ``check``
+    and fails as a missing file rather than exposing the hidden command.
+    """
+    commands = {"check"}
+    if _experimental_enabled():
+        commands.add("fix")
+    return commands
 
 
 def _add_check_subparser(
@@ -146,6 +173,46 @@ def _add_check_subparser(
     )
 
 
+def _add_fix_subparser(
+    subparsers: argparse._SubParsersAction,  # type: ignore[type-arg]
+) -> None:
+    """Register the hidden, experimental `fix` subcommand (ADR-014).
+
+    Omitting ``help=`` keeps it out of ``compose-lint --help``: argparse only
+    lists subparsers that were given a help string (passing
+    ``help=argparse.SUPPRESS`` instead renders a literal ``==SUPPRESS==`` row).
+    The caller also only registers it at all when experimental mode is enabled.
+    """
+    fix = subparsers.add_parser(
+        "fix",
+        description="Auto-remediate auto-fixable findings (experimental).",
+    )
+    fix.add_argument(
+        "files",
+        nargs="*",
+        metavar="FILE",
+        help="Docker Compose file(s) to fix (defaults to discovery, like check)",
+    )
+    fix.add_argument(
+        "--apply",
+        action="store_true",
+        default=False,
+        help="write fixes in place instead of printing a dry-run diff",
+    )
+    fix.add_argument(
+        "--only",
+        action="append",
+        metavar="CL-XXXX",
+        dest="only",
+        help="restrict fixes to the named rule(s); repeatable",
+    )
+    fix.add_argument(
+        "--config",
+        metavar="PATH",
+        help="path to .compose-lint.yml config file (suppressions are honored)",
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the top-level argument parser and its subcommands."""
     parser = argparse.ArgumentParser(
@@ -159,6 +226,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
     _add_check_subparser(subparsers)
+    if _experimental_enabled():
+        _add_fix_subparser(subparsers)
     return parser
 
 
@@ -175,7 +244,7 @@ def _normalize_argv(argv: list[str]) -> list[str]:
     if not argv:
         return ["check"]
     first_positional = next((tok for tok in argv if not tok.startswith("-")), None)
-    if first_positional in _SUBCOMMANDS:
+    if first_positional in _subcommands():
         return argv
     if first_positional is None and _GLOBAL_FLAGS.intersection(argv):
         return argv
@@ -187,6 +256,8 @@ def main(argv: list[str] | None = None) -> NoReturn:
     parser = _build_parser()
     raw = sys.argv[1:] if argv is None else argv
     args = parser.parse_args(_normalize_argv(raw))
+    if args.command == "fix":
+        _run_fix(args)
     _run_check(args)
 
 
@@ -319,3 +390,94 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     if parse_errors:
         sys.exit(2)
     sys.exit(1 if has_errors else 0)
+
+
+def _run_fix(args: argparse.Namespace) -> NoReturn:
+    """Run the experimental `fix` operation (ADR-014).
+
+    Dry-run by default: a unified diff of proposed edits goes to stdout and
+    status goes to stderr; nothing is written. ``--apply`` writes edits in
+    place. Suppressed/excluded findings (``.compose-lint.yml``) are never fixed.
+    Exit 0 on success, 2 on usage/parse error — findings are the input, not the
+    failure signal, so residual manual-only findings do not change the code.
+    """
+    print(_FIX_EXPERIMENTAL_WARNING, file=sys.stderr)
+
+    try:
+        disabled_rules, severity_overrides, excluded_services = load_config(args.config)
+    except ConfigError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(2)
+
+    if not args.files:
+        args.files = _discover_compose_files()
+        if not args.files:
+            print(
+                "Error: no Compose files found. Searched for: "
+                "compose.yml, compose.yaml, "
+                "docker-compose.yml, docker-compose.yaml",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
+    only = set(args.only) if args.only else None
+    had_parse_error = False
+
+    for filepath in args.files:
+        try:
+            data, lines = load_compose(filepath)
+        except FileNotFoundError:
+            print(f"Error: {filepath}: file not found", file=sys.stderr)
+            had_parse_error = True
+            continue
+        except ComposeNotApplicableError as e:
+            # v1 / fragment file: skipped, not an error (ADR-013).
+            print(f"{filepath}: {e}", file=sys.stderr)
+            continue
+        except ComposeError as e:
+            print(f"Error: {filepath}: {e}", file=sys.stderr)
+            had_parse_error = True
+            continue
+
+        text = Path(filepath).read_text(encoding="utf-8")
+        findings = run_rules(
+            data,
+            lines,
+            disabled_rules=disabled_rules,
+            severity_overrides=severity_overrides,
+            excluded_services=excluded_services,
+        )
+        result = collect_edits(findings, data, lines, text, only=only)
+
+        if not result.edits:
+            if result.manual:
+                print(
+                    f"{filepath}: nothing to auto-fix; "
+                    f"{len(result.manual)} finding(s) need manual review",
+                    file=sys.stderr,
+                )
+            else:
+                print(f"{filepath}: nothing to fix", file=sys.stderr)
+            continue
+
+        patched = apply_edits(text, result.edits)
+        if args.apply:
+            Path(filepath).write_text(patched, encoding="utf-8")
+            print(
+                f"{filepath}: applied {len(result.edits)} fix(es) across "
+                f"{len(result.fixed)} finding(s)",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                render_file_diff(filepath, text, patched, result.caveats),
+                end="",
+                flush=True,
+            )
+            print(
+                f"{filepath}: {len(result.edits)} fix(es) available; "
+                f"{len(result.manual)} finding(s) need manual review",
+                file=sys.stderr,
+            )
+
+    sys.exit(2 if had_parse_error else 0)
