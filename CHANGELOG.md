@@ -661,6 +661,17 @@ First public release.
   inputs through `env:` rather than direct `${{ }}` interpolation to prevent
   shell injection.
 
+[Unreleased]: https://github.com/tmatens/compose-lint/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/tmatens/compose-lint/compare/v0.7.1...v0.8.0
+[0.7.1]: https://github.com/tmatens/compose-lint/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/tmatens/compose-lint/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/tmatens/compose-lint/compare/v0.5.2...v0.6.0
+[0.5.2]: https://github.com/tmatens/compose-lint/compare/v0.5.1...v0.5.2
+[0.5.1]: https://github.com/tmatens/compose-lint/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/tmatens/compose-lint/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/tmatens/compose-lint/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/tmatens/compose-lint/compare/v0.3.7...v0.4.0
+[0.3.7]: https://github.com/tmatens/compose-lint/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/tmatens/compose-lint/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/tmatens/compose-lint/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/tmatens/compose-lint/compare/v0.3.3...v0.3.4
