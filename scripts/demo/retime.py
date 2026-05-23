@@ -27,11 +27,11 @@ import sys
 from PIL import Image, ImageChops
 
 # Durations (ms).
-LEAD = 700  # initial prompt before typing starts
+LEAD = 1000  # initial prompt before typing starts
 TYPE = 55  # per typing / scroll frame
-PAUSE_BEFORE_RUN = 900  # beat after a command is fully typed, before it runs
-HOLD_LINT = 5500  # read the findings
-HOLD_FINAL = 6500  # read the rule docs on the last frame
+PAUSE_BEFORE_RUN = 2500  # pause on the fully-typed command, before it runs
+HOLD_LINT = 8000  # read the findings
+HOLD_FINAL = 9000  # read the rule docs on the last frame
 
 # Thresholds as a fraction of total pixels.
 EPS = 0.00004  # below this a frame is "the same" (well under one typed character)
