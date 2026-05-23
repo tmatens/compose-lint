@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from compose_lint.models import Finding, RuleMetadata
+    from compose_lint.models import Finding, RuleMetadata, TextEdit
 
 _registry: list[type[BaseRule]] = []
 
@@ -38,6 +38,22 @@ class BaseRule(abc.ABC):
         Yields Finding objects for each issue detected.
         """
         ...
+
+    def fix(
+        self,
+        finding: Finding,
+        data: dict[str, Any],
+        lines: dict[str, int],
+        text: str,
+    ) -> list[TextEdit] | None:
+        """Return edits that remediate ``finding``, or ``None``.
+
+        ``None`` means the rule has no fixer or cannot safely fix this
+        occurrence in this file (see the refusal policy in ADR-014). Rules
+        that only report findings inherit this default and produce no edits.
+        Fixers must be idempotent and must leave a valid Compose file.
+        """
+        return None
 
 
 def register_rule(cls: type[BaseRule]) -> type[BaseRule]:
