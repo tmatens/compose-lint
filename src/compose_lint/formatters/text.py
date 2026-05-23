@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -66,9 +67,25 @@ _PRESENCE_RULES = frozenset(
 _QUOTED = re.compile(r"'([^']+)'")
 
 
+def _color_enabled() -> bool:
+    """Decide whether to emit ANSI color, honoring the de-facto env standards.
+
+    ``NO_COLOR`` (set to any non-empty value) disables color even on a TTY and
+    wins over everything, per https://no-color.org. ``FORCE_COLOR`` (set and
+    not ``0``) forces color even through a pipe — useful for pagers and CI logs
+    that render ANSI. Otherwise color follows whether stdout is a terminal.
+    """
+    if os.environ.get("NO_COLOR"):
+        return False
+    force = os.environ.get("FORCE_COLOR")
+    if force and force != "0":
+        return True
+    return sys.stdout.isatty()
+
+
 def _colorize(text: str, code: str) -> str:
-    """Wrap text in ANSI color codes if stdout is a terminal."""
-    if not sys.stdout.isatty():
+    """Wrap text in ANSI color codes when color is enabled (see _color_enabled)."""
+    if not _color_enabled():
         return text
     return f"{code}{text}{_RESET}"
 

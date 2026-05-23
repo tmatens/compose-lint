@@ -21,13 +21,29 @@ from compose_lint.models import Finding, Severity
 
 
 def _force_color(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make _colorize emit ANSI codes regardless of the test's real stdout."""
+    """Make _colorize emit ANSI codes regardless of the test's real stdout.
+
+    Also clears NO_COLOR/FORCE_COLOR so the color-on baseline is deterministic
+    no matter what the test runner's environment sets.
+    """
 
     class _Tty:
         def isatty(self) -> bool:
             return True
 
     monkeypatch.setattr(text.sys, "stdout", _Tty())
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+
+
+def _no_tty(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Force stdout to look like a non-terminal (e.g. a pipe)."""
+
+    class _NoTty:
+        def isatty(self) -> bool:
+            return False
+
+    monkeypatch.setattr(text.sys, "stdout", _NoTty())
 
 
 def _image_finding(severity: Severity) -> Finding:
@@ -154,3 +170,39 @@ def test_threshold_breach_still_fails() -> None:
     verdict = format_verdict(_bundle(*findings), Severity.HIGH)
     assert verdict.startswith("✗ FAIL")
     assert "1 finding at or above high" in verdict
+
+
+# --- color env handling (NO_COLOR / FORCE_COLOR) --------------------------
+
+_RED = _COLORS[Severity.HIGH]
+
+
+def test_no_color_disables_color_even_on_a_tty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _force_color(monkeypatch)  # stdout looks like a tty
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert text._colorize("x", _RED) == "x"
+
+
+def test_force_color_enables_color_through_a_pipe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _no_tty(monkeypatch)
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    assert text._colorize("x", _RED) == f"{_RED}x{_RESET}"
+
+
+def test_no_color_beats_force_color(monkeypatch: pytest.MonkeyPatch) -> None:
+    _force_color(monkeypatch)
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    assert text._colorize("x", _RED) == "x"
+
+
+def test_force_color_zero_does_not_force(monkeypatch: pytest.MonkeyPatch) -> None:
+    _no_tty(monkeypatch)
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("FORCE_COLOR", "0")
+    assert text._colorize("x", _RED) == "x"
