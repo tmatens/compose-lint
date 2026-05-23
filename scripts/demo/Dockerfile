@@ -17,4 +17,4 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && pip3 install --no-cache-dir --break-system-packages \
         "compose-lint==${COMPOSE_LINT_VERSION}" \
-        pillow  # retime.py re-times the rendered GIF (see render.sh)
+        pillow numpy  # retime.py re-times the rendered GIF (see render.sh)
