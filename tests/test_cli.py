@@ -31,11 +31,37 @@ class TestCLI:
         assert __version__ in result.stdout
 
     def test_fail_on_help_lists_severity_choices(self) -> None:
-        result = run_cli("--help")
+        # --fail-on belongs to the `check` subcommand now (ADR-011); its help
+        # surface is `check --help`, not the top-level help.
+        result = run_cli("check", "--help")
         assert result.returncode == 0
         # The metavar should advertise the valid values, not a bare FAIL_ON.
         assert "--fail-on {low,medium,high,critical}" in result.stdout
         assert "FAIL_ON" not in result.stdout
+
+    def test_top_level_help_lists_check_subcommand(self) -> None:
+        result = run_cli("--help")
+        assert result.returncode == 0
+        assert "check" in result.stdout
+
+    def test_explicit_check_subcommand_lints(self) -> None:
+        result = run_cli("check", str(FIXTURES / "insecure_privileged.yml"))
+        assert result.returncode == 1
+        assert "CL-0002" in result.stdout
+
+    def test_bare_invocation_still_lints(self) -> None:
+        # The argv shim must keep `compose-lint <file>` working as `check`.
+        bare = run_cli(str(FIXTURES / "insecure_privileged.yml"))
+        explicit = run_cli("check", str(FIXTURES / "insecure_privileged.yml"))
+        assert bare.returncode == explicit.returncode == 1
+        assert bare.stdout == explicit.stdout
+
+    def test_flag_only_invocation_routes_to_check(self) -> None:
+        # `compose-lint -q` (no file, no subcommand) must still reach check and
+        # fall through to compose-file discovery, not error at the top level.
+        result = run_cli("-q")
+        assert result.returncode == 2
+        assert "no compose files found" in result.stderr.lower()
 
     def test_verbose_and_quiet_are_mutually_exclusive(self) -> None:
         result = run_cli("-v", "-q", str(FIXTURES / "insecure_socket.yml"))
