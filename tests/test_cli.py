@@ -155,7 +155,9 @@ class TestCLI:
         result = run_cli("--format", "json", str(FIXTURES / "valid_basic.yml"))
         assert result.returncode == 0
         data = json.loads(result.stdout)
-        assert isinstance(data, list)
+        assert data["version"] == "1"
+        assert data["tool"]["name"] == "compose-lint"
+        assert isinstance(data["findings"], list)
 
     def test_invalid_severity(self) -> None:
         result = run_cli("--fail-on", "invalid", str(FIXTURES / "valid_basic.yml"))
@@ -185,7 +187,9 @@ class TestCLI:
         )
         assert result.returncode in (0, 1)
         data = json.loads(result.stdout)
-        by_service = {f["service"]: f for f in data if f["rule_id"] == "CL-0003"}
+        by_service = {
+            f["service"]: f for f in data["findings"] if f["rule_id"] == "CL-0003"
+        }
         assert by_service["missing"]["suppressed"] is True
         assert (
             by_service["missing"]["suppression_reason"] == "entrypoint switches users"
@@ -290,6 +294,37 @@ class TestCLI:
         assert result.returncode == 2
         assert "skipped" in result.stdout.lower()
         assert "failed to parse" in result.stdout.lower()
+
+    def test_json_envelope_clean_run(self) -> None:
+        result = run_cli(
+            "--fail-on",
+            "low",
+            "--format",
+            "json",
+            str(FIXTURES / "safe_self_hosted.yml"),
+        )
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        assert data["version"] == "1"
+        assert data["tool"]["name"] == "compose-lint"
+        assert data["tool"]["version"]
+        assert data["findings"] == []
+        assert data["errors"] == []
+
+    def test_json_errors_lists_parse_failures(self, tmp_path: Path) -> None:
+        bad = tmp_path / "bad.yml"
+        bad.write_text("services: [\n")
+        result = run_cli(
+            "--format",
+            "json",
+            str(FIXTURES / "valid_basic.yml"),
+            str(bad),
+        )
+        assert result.returncode == 2
+        data = json.loads(result.stdout)
+        assert len(data["errors"]) == 1
+        assert data["errors"][0]["file"] == str(bad)
+        assert data["errors"][0]["message"]
 
     def test_sarif_includes_parse_error_notifications(self, tmp_path: Path) -> None:
         bad = tmp_path / "bad.yml"

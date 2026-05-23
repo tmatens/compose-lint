@@ -14,6 +14,7 @@ from compose_lint.config import ConfigError, load_config
 from compose_lint.engine import filter_findings, run_rules
 from compose_lint.explain import UnknownRuleError, load_rule_doc
 from compose_lint.fix import apply_edits, collect_edits, render_file_diff
+from compose_lint.formatters.json import build_json_log
 from compose_lint.formatters.json import format_findings as format_json
 from compose_lint.formatters.sarif import build_sarif_log
 from compose_lint.formatters.sarif import format_findings as format_sarif
@@ -383,7 +384,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             print(format_aggregate_summary(all_file_findings, len(parse_errors)))
         print(format_verdict(all_file_findings, args.fail_on, len(parse_errors)))
     elif args.output_format == "json":
-        print(json.dumps(all_json, indent=2))
+        print(json.dumps(build_json_log(all_json, parse_errors), indent=2))
     elif args.output_format == "sarif":
         print(json.dumps(build_sarif_log(all_sarif, parse_errors), indent=2))
 
