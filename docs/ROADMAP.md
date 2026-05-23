@@ -1,6 +1,6 @@
 # Roadmap
 
-compose-lint v0.3.0 shipped 19 rules, PyPI distribution, SARIF/JSON/text output, pre-commit support, and a GitHub Action. v0.4.0 added per-service rule overrides. The product has a solid foundation; the next investments should make the tool more useful to the users already running it, not chase speculative distribution channels.
+As of v0.8.0, compose-lint ships 21 security rules, PyPI distribution, a published GitHub Action and Docker image, SARIF/JSON/text output, pre-commit support, per-service rule overrides, and `--explain`. The foundation is solid; the next milestone is the 1.0 stability commitment. Remaining investments make the tool more useful to the users already running it, not chase speculative distribution channels.
 
 ## Strategic framing
 
@@ -67,17 +67,17 @@ Turn findings into fixes. This is where the product's differentiation grows the 
 
 ---
 
-## Milestone 4 — VS Code Extension + GA (v1.0)
+## Milestone 4 — GA / 1.0
 
-The biggest reach multiplier. Compose authors spend most editing time in editors, not CI. Sequenced after `--fix` because the extension's value pops only once fixes are one-click.
+v1.0 is the **stability commitment**: the CLI surface, exit codes, configuration schema, and the JSON/SARIF output shapes come under SemVer. Breaking any of them after 1.0 requires a major version bump. The VS Code extension is explicitly *not* a 1.0 blocker — it's a reach multiplier that doesn't gate stability, and moves to Milestone 5.
 
-**Architecture:** the extension shells out to `compose-lint --format json` on save. No embedded Python runtime in the extension — this keeps it thin and ensures the user's installed version is always what runs.
+**GA criteria:**
+- **Stable, documented contract** — CLI flags, exit codes ([ADR-006](adr/006-exit-codes.md)), the `.compose-lint.yml` schema, and the JSON + SARIF output shapes are frozen and documented as the 1.0 surface. The JSON output gains a versioned envelope before the freeze, so run-level metadata (tool version, parse errors) can be added later without breaking consumers.
+- **`fix` resolved** — shipped as GA, or explicitly carved out as experimental with its own stability exemption, so the rest of the surface can stabilize independently ([ADR-014](adr/014-fix-remediation.md)).
+- **Grounding + severity audit complete** — every rule cites OWASP/CIS/Docker, and no severity change is pending that would alter a CI gate after the freeze.
+- **Documented upgrade/deprecation policy** — how rule additions, severity changes, and config changes are versioned post-1.0.
 
-- Underlines findings inline with diagnostic severity mapping
-- Hover tooltip shows the `fix:` and `ref:` fields
-- Command palette: `Compose Lint: Fix All Auto-fixable` (requires Milestone 3)
-
-**GA declaration:** v1.0 moves the PyPI classifier from `3 - Alpha` to `5 - Production/Stable`. Prerequisites: 19+ rules, `--fix` mode, VS Code extension, and a documented upgrade/deprecation policy.
+**At GA:** bump the PyPI classifier from `4 - Beta` to `5 - Production/Stable` in the version→1.0.0 commit, and publish a moving `v1` Action tag so users can pin `uses: tmatens/compose-lint@v1`.
 
 ---
 
@@ -87,6 +87,7 @@ Pursue based on user demand after v1.0.
 
 | Integration | Notes |
 |-------------|-------|
+| VS Code extension | Shells out to `compose-lint --format json` on save (no embedded Python). Inline diagnostics, hover shows `fix:`/`ref:`, `Fix All Auto-fixable` command. The biggest editor reach multiplier once `fix` lands. |
 | GitLab SAST template | SARIF upload to GitLab Security Dashboard |
 | Azure DevOps task | Published to VS Marketplace |
 | JetBrains plugin | Same shell-out pattern as VS Code |
@@ -127,6 +128,6 @@ Python 3.10 is scheduled to age out of the matrix when it reaches upstream EOL i
 | Rule Coverage (19 rules) | v0.3 | complete |
 | Per-service rule overrides | v0.4 | complete |
 | CL-0006 profiles + real-world examples + Homebrew tap | v0.4.x | in progress |
-| Remediation (`--explain`, `--fix`, SARIF fixes, shellcheck) | v0.5 | |
-| VS Code extension + GA | v1.0 | |
-| Ecosystem integrations, custom rules | v1.x | |
+| Remediation (`--explain`, `--fix`, SARIF fixes, shellcheck) | v0.5–0.8 | in progress |
+| GA / 1.0 — stable contract + `fix` + upgrade policy | v1.0 | next |
+| Ecosystem integrations (VS Code, custom rules) | v1.x | |
