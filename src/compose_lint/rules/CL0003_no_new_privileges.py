@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from compose_lint.fix import (
+    DISABLED_SECURITY_PROFILES,
     block_span,
     first_child_indent,
     is_anchored_or_merged,
@@ -142,6 +143,15 @@ class NoNewPrivilegesRule(BaseRule):
         ):
             # Already named (e.g. `no-new-privileges:false`): appending the true
             # form would duplicate the key. Leave it for the human.
+            return None
+        if security_opt and all(
+            str(opt).strip().lower() in DISABLED_SECURITY_PROFILES
+            for opt in security_opt
+        ):
+            # Every entry is a profile-disable CL-0009 will remove. If we append
+            # a survivor now, a second `fix` pass would let CL-0009 delete those
+            # entries one by one — non-idempotent (ADR-014). Refuse; the user (or
+            # CL-0009) clears the block first, then CL-0003 creates a fresh list.
             return None
 
         so_line = lines.get(f"services.{service}.security_opt")

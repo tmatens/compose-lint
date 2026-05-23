@@ -187,7 +187,12 @@ class TestSecurityProfileFix:
         assert findings, "expected CL-0009 to fire"
         return self.rule.fix(findings[0], data, lines, content)
 
-    def test_collapses_block_when_sole_entry(self, tmp_path: Path) -> None:
+    def test_refuses_sole_offending_entry(self, tmp_path: Path) -> None:
+        # A lone unconfined entry would empty the block. CL-0003 fires on the
+        # same service (no no-new-privileges) and would recreate security_opt on
+        # a second pass, so collapsing here is non-idempotent; the idempotent
+        # end state needs a cross-rule merge the per-finding fixers can't do.
+        # Refuse and leave it for manual remediation (ADR-014).
         content = (
             "services:\n"
             "  web:\n"
@@ -195,10 +200,7 @@ class TestSecurityProfileFix:
             "    security_opt:\n"
             "      - seccomp:unconfined\n"
         )
-        edits = self._fix(tmp_path, content)
-        assert edits is not None
-        # The now-empty security_opt block is dropped whole, not left as `[]`.
-        assert apply_edits(content, edits) == ("services:\n  web:\n    image: nginx\n")
+        assert self._fix(tmp_path, content) is None
 
     def test_removes_only_offending_item_when_legit_remains(
         self, tmp_path: Path
@@ -232,26 +234,32 @@ class TestSecurityProfileFix:
         assert self._fix(tmp_path, content) is None
 
     def test_edit_carries_caveat(self, tmp_path: Path) -> None:
-        content = "services:\n  web:\n    security_opt:\n      - seccomp:unconfined\n"
+        content = (
+            "services:\n  web:\n    security_opt:\n"
+            "      - seccomp:unconfined\n      - no-new-privileges:true\n"
+        )
         edits = self._fix(tmp_path, content)
         assert edits is not None
         assert edits[0].caveat is not None
         assert "seccomp" in edits[0].caveat.lower()
 
     def test_fix_resolves_finding_and_is_idempotent(self, tmp_path: Path) -> None:
+        # A legit entry survives, so CL-0009 removes only the offending item and
+        # the block stays non-empty.
         content = (
             "services:\n"
             "  web:\n"
             "    image: nginx\n"
             "    security_opt:\n"
             "      - seccomp:unconfined\n"
+            "      - no-new-privileges:true\n"
         )
         edits = self._fix(tmp_path, content)
         assert edits is not None
         fixed = tmp_path / "fixed.yml"
         fixed.write_text(apply_edits(content, edits))
         data, lines = load_compose(fixed)
-        assert "security_opt" not in data["services"]["web"]
+        assert data["services"]["web"]["security_opt"] == ["no-new-privileges:true"]
         findings = list(self.rule.check("web", data["services"]["web"], data, lines))
         assert findings == []
 
