@@ -6,12 +6,21 @@ formatting outside the touched span survive byte-for-byte. ADR-003 rules out a
 comment-preserving round-trip parser, so re-serialization is not an option.
 
 All destructive splicing lives in :func:`apply_edits` so the one operation that
-rewrites a user's file is in a single, auditable place.
+rewrites a user's file is in a single, auditable place. :func:`collect_edits`
+gathers the edits across all findings for a file, refusing any that conflict,
+and :func:`render_file_diff` turns the result into the dry-run unified diff.
 """
 
 from __future__ import annotations
 
-from compose_lint.models import TextEdit
+import difflib
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
+
+from compose_lint.models import Finding, TextEdit
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 class OverlappingEditError(ValueError):
@@ -200,3 +209,162 @@ def delete_lines(
     # `last` is the final line: end at its end (its newline, if any, included).
     end_col = len(source_lines[last - 1]) + 1
     return TextEdit(first, 1, last, end_col, "", caveat=caveat)
+
+
+# --- Edit collection across a file's findings -----------------------------
+
+
+@dataclass(frozen=True)
+class FixResult:
+    """The outcome of collecting fixers' edits for a single file.
+
+    ``edits`` are non-conflicting and ready to splice via :func:`apply_edits`.
+    ``fixed`` are the findings whose edits were accepted; ``manual`` are the
+    findings left for the user — report-only rules, per-occurrence refusals, and
+    findings dropped because their edit conflicted with another's. ``caveats``
+    holds the deduplicated ``(rule_id, caveat)`` pairs for the behavior-changing
+    edits among ``edits``, in first-seen order, for the dry-run banner.
+    """
+
+    edits: list[TextEdit] = field(default_factory=list)
+    fixed: list[Finding] = field(default_factory=list)
+    manual: list[Finding] = field(default_factory=list)
+    caveats: list[tuple[str, str]] = field(default_factory=list)
+
+
+def _spans_conflict(a: tuple[int, int], b: tuple[int, int]) -> bool:
+    """Return whether two ``(begin, end)`` offset spans conflict.
+
+    The danger cases, by edit shape:
+
+    - **Two pure insertions** (both zero-width) never conflict — even at the same
+      point they splice as independent, well-formed lines (e.g. CL-0007's
+      ``read_only`` and CL-0003's ``security_opt``, both inserted as a service's
+      first child). They are *not* refused.
+    - **An insertion touching a non-empty region's closed interval**
+      (``begin <= point <= end``) *is* a conflict. The motivating case: CL-0003
+      appends an entry at the line just after a ``security_opt`` block that
+      CL-0009 is collapsing whole — the insertion point equals the deletion's end
+      boundary, so applying both would orphan the appended entry beside the
+      removed parent key. :func:`apply_edits` uses half-open overlap and would
+      not catch this touch, so it is caught here (ADR-014: refuse, never guess).
+    - **Two non-empty regions** conflict on half-open overlap only; adjacency
+      (one ending exactly where the next begins) composes fine and is allowed,
+      matching :func:`apply_edits`.
+    """
+    a_empty = a[0] == a[1]
+    b_empty = b[0] == b[1]
+    if a_empty and b_empty:
+        return False
+    if a_empty or b_empty:
+        point, lo, hi = (a[0], b[0], b[1]) if a_empty else (b[0], a[0], a[1])
+        return lo <= point <= hi
+    return a[0] < b[1] and b[0] < a[1]
+
+
+def collect_edits(
+    findings: Iterable[Finding],
+    data: dict[str, Any],
+    lines: dict[str, int],
+    text: str,
+    *,
+    only: set[str] | None = None,
+) -> FixResult:
+    """Gather every fixer's edits for one file, refusing conflicts.
+
+    Each non-suppressed finding whose rule advertises a fixer is asked for its
+    edits. Suppressed/service-excluded findings are skipped (suppression is a
+    deliberate human decision; ADR-014). When ``only`` is given, findings whose
+    rule id is not in it are ignored entirely. Findings whose fixer returns
+    ``None`` (report-only or a per-occurrence refusal) go to ``manual``.
+
+    Edits are then checked for conflicts across findings: if any edit of one
+    finding conflicts with any edit of another (see :func:`_spans_conflict`),
+    *both* findings are refused and moved to ``manual`` rather than guessing a
+    merge. The surviving edits are returned ready to apply.
+    """
+    from compose_lint.rules import get_registered_rules
+
+    rules_by_id = {}
+    for rule_cls in get_registered_rules():
+        rule = rule_cls()
+        rules_by_id[rule.metadata.id] = rule
+
+    candidates: list[tuple[Finding, list[TextEdit]]] = []
+    manual: list[Finding] = []
+    for finding in findings:
+        if finding.suppressed:
+            continue
+        if only is not None and finding.rule_id not in only:
+            continue
+        matched = rules_by_id.get(finding.rule_id)
+        if matched is None:
+            continue
+        edits = matched.fix(finding, data, lines, text)
+        if edits:
+            candidates.append((finding, edits))
+        else:
+            manual.append(finding)
+
+    starts = _line_starts(text)
+
+    def spans_of(edits: list[TextEdit]) -> list[tuple[int, int]]:
+        return [
+            (
+                _offset(starts, edit.start_line, edit.start_col),
+                _offset(starts, edit.end_line, edit.end_col),
+            )
+            for edit in edits
+        ]
+
+    spanned = [(finding, edits, spans_of(edits)) for finding, edits in candidates]
+    refused: set[int] = set()
+    for i in range(len(spanned)):
+        for j in range(i + 1, len(spanned)):
+            if any(_spans_conflict(x, y) for x in spanned[i][2] for y in spanned[j][2]):
+                refused.add(i)
+                refused.add(j)
+
+    result = FixResult()
+    seen_caveats: set[tuple[str, str]] = set()
+    for index, (finding, edits, _spans) in enumerate(spanned):
+        if index in refused:
+            result.manual.append(finding)
+            continue
+        result.fixed.append(finding)
+        result.edits.extend(edits)
+        for edit in edits:
+            if edit.caveat and (finding.rule_id, edit.caveat) not in seen_caveats:
+                seen_caveats.add((finding.rule_id, edit.caveat))
+                result.caveats.append((finding.rule_id, edit.caveat))
+    result.manual.extend(manual)
+    return result
+
+
+def render_file_diff(
+    path: str,
+    original: str,
+    patched: str,
+    caveats: list[tuple[str, str]],
+) -> str:
+    """Render the dry-run output for one file: caveat banner + unified diff.
+
+    Returns ``""`` when ``original`` and ``patched`` are identical (no edits).
+    Behavior-changing fixes are announced above the diff with a
+    ``⚠ behavior-changing`` line per ADR-014 so a reader sees which edits could
+    alter runtime behavior before deciding to ``--apply``.
+    """
+    diff = "".join(
+        difflib.unified_diff(
+            original.splitlines(keepends=True),
+            patched.splitlines(keepends=True),
+            fromfile=path,
+            tofile=path,
+        )
+    )
+    if not diff:
+        return ""
+    banner = "".join(
+        f"⚠ behavior-changing · {rule_id}: {caveat}\n" for rule_id, caveat in caveats
+    )
+    return banner + diff

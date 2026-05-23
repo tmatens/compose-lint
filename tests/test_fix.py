@@ -2,20 +2,39 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
+from compose_lint.engine import run_rules
 from compose_lint.fix import (
     OverlappingEditError,
     apply_edits,
     block_span,
+    collect_edits,
     delete_lines,
     first_child_indent,
     has_merge_key_child,
     is_anchored_or_merged,
     line_indent,
     opens_block_body,
+    render_file_diff,
 )
 from compose_lint.models import TextEdit
+from compose_lint.parser import load_compose
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+
+def _findings_for(tmp_path: Path, source: str) -> tuple[list, dict, dict, str]:
+    """Parse ``source``, lint it, and return (findings, data, lines, text)."""
+    path = tmp_path / "docker-compose.yml"
+    path.write_text(source, encoding="utf-8")
+    data, lines = load_compose(path)
+    text = path.read_text(encoding="utf-8")
+    findings = run_rules(data, lines)
+    return findings, data, lines, text
 
 
 def test_no_edits_returns_text_unchanged() -> None:
@@ -167,3 +186,128 @@ def test_delete_lines_final_line_without_trailing_newline() -> None:
 def test_delete_lines_carries_caveat() -> None:
     lines = ["a: 1\n", "b: 2\n"]
     assert delete_lines(lines, 1, 1, caveat="note").caveat == "note"
+
+
+# --- collect_edits ---------------------------------------------------------
+
+
+def test_collect_edits_applies_safe_fixers(tmp_path: Path) -> None:
+    # A bare service triggers CL-0007 (insert read_only) and CL-0003 (create
+    # security_opt); both are first-child insertions at the same point and must
+    # both apply, producing valid YAML that re-lints clean for those rules.
+    findings, data, lines, text = _findings_for(
+        tmp_path,
+        "services:\n  web:\n    image: nginx:1.27\n",
+    )
+    result = collect_edits(findings, data, lines, text)
+    fixed_rules = {f.rule_id for f in result.fixed}
+    assert {"CL-0003", "CL-0007"} <= fixed_rules
+    patched = apply_edits(text, result.edits)
+    assert "read_only: true" in patched
+    assert "no-new-privileges:true" in patched
+    # Idempotent: the targeted rules no longer fire on the patched text, so a
+    # second collection produces no further edits.
+    re_path = tmp_path / "patched.yml"
+    re_path.write_text(patched, encoding="utf-8")
+    re_data, re_lines = load_compose(re_path)
+    re_findings = run_rules(re_data, re_lines)
+    assert {"CL-0003", "CL-0007"}.isdisjoint({f.rule_id for f in re_findings})
+    assert collect_edits(re_findings, re_data, re_lines, patched).edits == []
+
+
+def test_collect_edits_only_filters_by_rule(tmp_path: Path) -> None:
+    findings, data, lines, text = _findings_for(
+        tmp_path,
+        "services:\n  web:\n    image: nginx:1.27\n",
+    )
+    result = collect_edits(findings, data, lines, text, only={"CL-0007"})
+    assert {f.rule_id for f in result.fixed} == {"CL-0007"}
+    patched = apply_edits(text, result.edits)
+    assert "read_only: true" in patched
+    assert "no-new-privileges:true" not in patched
+
+
+def test_collect_edits_skips_suppressed(tmp_path: Path) -> None:
+    findings, data, lines, text = _findings_for(
+        tmp_path,
+        "services:\n  web:\n    image: nginx:1.27\n",
+    )
+    # Globally disable CL-0007 so its finding is suppressed, not removed.
+    suppressed = run_rules(data, lines, disabled_rules={"CL-0007": "by policy"})
+    result = collect_edits(suppressed, data, lines, text)
+    assert "CL-0007" not in {f.rule_id for f in result.fixed}
+
+
+def test_collect_edits_refuses_append_into_collapsing_block(tmp_path: Path) -> None:
+    # security_opt's sole entry is seccomp:unconfined: CL-0009 collapses the
+    # whole block while CL-0003 wants to append no-new-privileges to it. The two
+    # edits touch at the deletion boundary, so both must be refused (left manual)
+    # rather than produce an orphaned list entry.
+    findings, data, lines, text = _findings_for(
+        tmp_path,
+        "services:\n"
+        "  web:\n"
+        "    image: nginx:1.27\n"
+        "    security_opt:\n"
+        "      - seccomp:unconfined\n",
+    )
+    result = collect_edits(findings, data, lines, text, only={"CL-0003", "CL-0009"})
+    fixed_rules = {f.rule_id for f in result.fixed}
+    manual_rules = {f.rule_id for f in result.manual}
+    assert "CL-0003" not in fixed_rules
+    assert "CL-0009" not in fixed_rules
+    assert {"CL-0003", "CL-0009"} <= manual_rules
+    assert result.edits == []
+
+
+def test_collect_edits_removes_one_item_keeps_others(tmp_path: Path) -> None:
+    # Two security_opt entries with the offending one first: CL-0009 removes just
+    # that item line (the list survives) and CL-0003 appends after the last item.
+    # The edits are on different lines and both apply.
+    findings, data, lines, text = _findings_for(
+        tmp_path,
+        "services:\n"
+        "  web:\n"
+        "    image: nginx:1.27\n"
+        "    security_opt:\n"
+        "      - seccomp:unconfined\n"
+        "      - label:type:svirt_apache\n",
+    )
+    result = collect_edits(findings, data, lines, text, only={"CL-0003", "CL-0009"})
+    fixed_rules = {f.rule_id for f in result.fixed}
+    assert {"CL-0003", "CL-0009"} <= fixed_rules
+    patched = apply_edits(text, result.edits)
+    assert "seccomp:unconfined" not in patched
+    assert "label:type:svirt_apache" in patched
+    assert "no-new-privileges:true" in patched
+
+
+def test_collect_edits_caveats_dedup_and_carry_rule_id(tmp_path: Path) -> None:
+    findings, data, lines, text = _findings_for(
+        tmp_path,
+        "services:\n  web:\n    image: nginx:1.27\n",
+    )
+    result = collect_edits(findings, data, lines, text, only={"CL-0007"})
+    assert any(rule_id == "CL-0007" and caveat for rule_id, caveat in result.caveats)
+
+
+# --- render_file_diff ------------------------------------------------------
+
+
+def test_render_file_diff_includes_caveat_banner_and_diff() -> None:
+    original = "services:\n  web:\n    image: nginx:1.27\n"
+    patched = "services:\n  web:\n    read_only: true\n    image: nginx:1.27\n"
+    out = render_file_diff(
+        "docker-compose.yml",
+        original,
+        patched,
+        [("CL-0007", "rootfs becomes unwritable")],
+    )
+    assert "⚠ behavior-changing · CL-0007: rootfs becomes unwritable" in out
+    assert "+    read_only: true" in out
+    assert "--- docker-compose.yml" in out
+
+
+def test_render_file_diff_empty_when_unchanged() -> None:
+    text = "services:\n  web:\n    image: nginx:1.27\n"
+    assert render_file_diff("docker-compose.yml", text, text, []) == ""
