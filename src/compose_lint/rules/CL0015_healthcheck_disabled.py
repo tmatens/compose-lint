@@ -26,8 +26,8 @@ _CAVEAT = (
 CIS_REF_46 = (
     "CIS Docker Benchmark 4.6 — Add HEALTHCHECK instruction to container images"
 )
-CIS_REF_527 = (
-    "CIS Docker Benchmark 5.27 — Ensure container health is checked at runtime"
+CIS_REF_526 = (
+    "CIS Docker Benchmark 5.26 — Ensure that container health is checked at runtime"
 )
 
 
@@ -46,7 +46,7 @@ class HealthcheckDisabledRule(BaseRule):
                 "containers."
             ),
             severity=Severity.LOW,
-            references=[CIS_REF_46, CIS_REF_527],
+            references=[CIS_REF_46, CIS_REF_526],
         )
 
     def check(
@@ -84,7 +84,7 @@ class HealthcheckDisabledRule(BaseRule):
                     "    timeout: 10s\n"
                     "    retries: 3"
                 ),
-                references=[CIS_REF_46, CIS_REF_527],
+                references=[CIS_REF_46, CIS_REF_526],
             )
 
     def fix(
