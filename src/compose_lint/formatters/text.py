@@ -23,6 +23,20 @@ _DIM = "\033[2m"
 # All active severity labels are padded to this width so finding columns align.
 _SEV_WIDTH = max(len(s.value) for s in Severity)  # len("critical") == 8
 
+# Rule ids are always CL-XXXX; pad the column header to match the finding rows.
+_RULE_WIDTH = len("CL-XXXX")
+
+# Render order for findings inside a service: highest severity first, then by
+# line. The rank is derived from Severity's own ordering so it never drifts
+# from the enum. JSON/SARIF keep the engine's line-only order — severity-first
+# is a presentation choice that only applies to the grouped text view.
+_SEV_ORDER = {sev: rank for rank, sev in enumerate(sorted(Severity, reverse=True))}
+
+
+def _finding_sort_key(f: Finding) -> tuple[int, int]:
+    return (_SEV_ORDER[f.severity], f.line if f.line is not None else 10**9)
+
+
 # Rules whose finding identifies a specific config value the user wrote, so a
 # one-line source excerpt is rendered under the finding to show the offending
 # value inline. Pure-absence rules (CL-0003/4/6/7) have nothing to underline —
@@ -82,14 +96,21 @@ def _read_source_lines(filepath: str) -> list[str] | None:
         return None
 
 
-def _excerpt(line_num: int, source_lines: list[str], message: str) -> list[str]:
-    """Render a one-line source excerpt, optionally with a caret.
+def _excerpt(
+    line_num: int,
+    source_lines: list[str],
+    message: str,
+    severity: Severity,
+) -> list[str]:
+    """Render a one-line source excerpt, optionally with an underline.
 
-    Returns 1 or 2 already-colorized strings. The caret is rendered only when
-    the message contains a single-quoted substring that also appears in the
-    source line — a heuristic that hits cleanly on rules whose message names
-    the offending value (e.g. CL-0019 'postgres:9.6.9-alpine'), and falls
-    back to the bare line otherwise.
+    Returns 1 or 2 already-colorized strings. The underline is a box-drawing
+    rule (─) tinted with the finding's own ``severity`` color, so the marker
+    reads as a deliberate pointer rather than a red error squiggle. It is
+    rendered only when the message contains a single-quoted substring that
+    also appears in the source line — a heuristic that hits cleanly on rules
+    whose message names the offending value (e.g. CL-0019
+    'postgres:9.6.9-alpine'), and falls back to the bare line otherwise.
     """
     if line_num < 1 or line_num > len(source_lines):
         return []
@@ -104,8 +125,9 @@ def _excerpt(line_num: int, source_lines: list[str], message: str) -> list[str]:
         needle = match.group(1)
         col = raw.find(needle)
         if col >= 0:
-            caret = " " * col + "^" * len(needle)
-            out.append(f"{pad} {bar} {_colorize(caret, _COLORS[Severity.HIGH])}")
+            underline = " " * col + "─" * len(needle)
+            color = _COLORS.get(severity, "")
+            out.append(f"{pad} {bar} {_colorize(underline, color)}")
     return out
 
 
@@ -149,8 +171,16 @@ def format_findings(
         svc_line = next((f.line for f in group if f.line is not None), None)
         header_suffix = f"  ({_colorize('line', _DIM)} {svc_line})" if svc_line else ""
         out.append(f"  {_colorize('service:', _DIM)} {service}{header_suffix}")
+        out.append(
+            _colorize(
+                f"    {'line'.rjust(4)}  "
+                f"{'severity'.ljust(_SEV_WIDTH)}  "
+                f"{'rule'.ljust(_RULE_WIDTH)}  message",
+                _DIM,
+            )
+        )
 
-        for f in group:
+        for f in sorted(group, key=_finding_sort_key):
             if f.suppressed:
                 reason = f.suppression_reason or "disabled in .compose-lint.yml"
                 line_label = str(f.line) if f.line else "?"
@@ -185,7 +215,9 @@ def format_findings(
                 and f.rule_id in _PRESENCE_RULES
                 and f.line is not None
             ):
-                for excerpt_line in _excerpt(f.line, source_lines, f.message):
+                for excerpt_line in _excerpt(
+                    f.line, source_lines, f.message, f.severity
+                ):
                     out.append(f"          {excerpt_line}")
 
             if show_fix and f.fix:

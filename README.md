@@ -138,16 +138,17 @@ files: docker-compose.yml  ·  config: .compose-lint.yml  ·  fail-on: high
 docker-compose.yml
 
   service: traefik  (line 9)
+    line  severity  rule     message
        9  SUPPRESSED  CL-0001  Docker socket mounted via '/var/run/docker.sock:/var/run/docker.sock'. This gives the container full control over the Docker daemon.
           reason: SEC-1234 approved — socket proxy planned for 2026-Q3
        9  HIGH      CL-0013  Service mounts sensitive host path '/var/run/docker.sock' (under /var/run). This exposes host system files to the container.
           9 │       - /var/run/docker.sock:/var/run/docker.sock
-            │         ^^^^^^^^^^^^^^^^^^^^
+            │         ────────────────────
           fix: Remove the bind mount for /var/run/docker.sock. If the container needs specific files, copy them into the image at build time or use a named volume with only the required data.
           ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8---set-filesystem-and-volumes-to-read-only
       11  HIGH      CL-0005  Port '8080:80' is bound to all interfaces. Docker bypasses host firewalls (UFW/firewalld), potentially exposing this port to the public internet.
           11 │       - "8080:80"
-             │          ^^^^^^^
+             │          ───────
           fix: Bind to localhost: 127.0.0.1:8080:80
                If public access is needed, use a reverse proxy with TLS.
           ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5a---be-careful-when-mapping-container-ports-to-the-host-with-firewalls-like-ufw
