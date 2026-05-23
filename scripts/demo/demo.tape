@@ -10,7 +10,7 @@ Require compose-lint
 # A normal-width terminal at a large, legible font. `tput rmam` (below) turns
 # off line wrapping so compose-lint's long finding and reference lines clip at
 # the right edge instead of wrapping raggedly — the structured left side
-# (severity, rule id, message, carets, fix/ref) stays clean.
+# (severity, rule id, message, underline, fix/ref) stays clean.
 Set Shell bash
 Set FontSize 22
 Set Width 1500
@@ -34,9 +34,10 @@ Show
 
 Sleep 1s
 
-# 1. Lint a small, ordinary-looking compose file. Five findings, landing on the
-#    HIGH one — a port bound to every interface (CL-0005, with line carets) —
-#    then the FAIL verdict. Pause on the typed command, then on the output.
+# 1. Lint a small, mostly-hardened compose file. Two findings, severity-sorted
+#    so the HIGH one leads — a port bound to every interface (CL-0005, with a
+#    box-drawing underline) above a MEDIUM unpinned-image finding — then the
+#    FAIL verdict. Pause on the typed command, then on the output.
 Type "compose-lint docker-compose.yml"
 Sleep 1900ms
 Enter
