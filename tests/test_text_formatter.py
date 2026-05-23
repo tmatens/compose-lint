@@ -1,8 +1,9 @@
 """Tests for the text formatter's rendering details.
 
 These cover the source-excerpt underline (box-drawing, severity-colored), the
-per-service column header that labels the leading line-number column, and the
-severity-then-line ordering of findings within a service.
+per-service column header that labels the leading line-number column, the
+severity-then-line ordering of findings within a service, and the verdict line
+(PASS sub-threshold breakdown, distinct ERROR for parse failures).
 """
 
 from __future__ import annotations
@@ -10,7 +11,12 @@ from __future__ import annotations
 import pytest
 
 import compose_lint.formatters.text as text
-from compose_lint.formatters.text import _COLORS, _RESET, format_findings
+from compose_lint.formatters.text import (
+    _COLORS,
+    _RESET,
+    format_findings,
+    format_verdict,
+)
 from compose_lint.models import Finding, Severity
 
 
@@ -99,3 +105,52 @@ def test_column_header_labels_the_line_column(tmp_path) -> None:  # type: ignore
     assert "rule" in out
     header_line = next(ln for ln in out.splitlines() if ln.strip().startswith("line"))
     assert header_line.split() == ["line", "severity", "rule", "message"]
+
+
+# --- verdict line ---------------------------------------------------------
+
+
+def _bundle(*findings: Finding) -> list[tuple[list[Finding], str]]:
+    return [(list(findings), "compose.yml")]
+
+
+def test_pass_names_sub_threshold_findings() -> None:
+    findings = [
+        Finding("CL-0005", Severity.HIGH, "web", "h", line=1),
+        Finding("CL-0003", Severity.MEDIUM, "web", "m", line=2),
+        Finding("CL-0003", Severity.MEDIUM, "db", "m", line=3),
+    ]
+    verdict = format_verdict(_bundle(*findings), Severity.CRITICAL)
+    assert verdict.startswith("✓ PASS")
+    assert "threshold: critical" in verdict
+    assert "below:" in verdict
+    assert "1 high" in verdict
+    assert "2 medium" in verdict
+
+
+def test_clean_pass_has_no_breakdown() -> None:
+    verdict = format_verdict([], Severity.HIGH)
+    assert verdict == "✓ PASS  ·  threshold: high"
+    assert "below" not in verdict
+
+
+def test_parse_error_is_error_not_fail() -> None:
+    verdict = format_verdict([], Severity.HIGH, parse_error_count=1)
+    assert verdict.startswith("⚠ ERROR")
+    assert "could not be parsed" in verdict
+    assert "FAIL" not in verdict
+
+
+def test_parse_error_pluralizes_and_keeps_findings() -> None:
+    findings = [Finding("CL-0001", Severity.CRITICAL, "web", "c", line=1)]
+    verdict = format_verdict(_bundle(*findings), Severity.HIGH, parse_error_count=2)
+    assert verdict.startswith("⚠ ERROR")
+    assert "2 files could not be parsed" in verdict
+    assert "1 finding at or above high" in verdict
+
+
+def test_threshold_breach_still_fails() -> None:
+    findings = [Finding("CL-0001", Severity.CRITICAL, "web", "c", line=1)]
+    verdict = format_verdict(_bundle(*findings), Severity.HIGH)
+    assert verdict.startswith("✗ FAIL")
+    assert "1 finding at or above high" in verdict

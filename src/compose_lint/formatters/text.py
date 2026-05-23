@@ -16,6 +16,7 @@ _COLORS = {
 }
 _SUPPRESSED_COLOR = "\033[90m"  # Gray
 _GREEN = "\033[32m"  # Green for pass / no issues
+_ERROR_COLOR = "\033[35m"  # Magenta — parse/usage error (exit 2), distinct from FAIL
 _RESET = "\033[0m"
 _BOLD = "\033[1m"
 _DIM = "\033[2m"
@@ -320,15 +321,40 @@ def format_aggregate_summary(
     return result
 
 
+def _severity_breakdown(
+    file_findings: list[tuple[list[Finding], str]],
+) -> list[str]:
+    """Colored ``N severity`` parts for all non-suppressed findings, high to low.
+
+    Matches the house style of the per-file and aggregate summaries so the
+    verdict reads consistently with the lines above it.
+    """
+    by_severity: dict[Severity, int] = {}
+    for findings, _ in file_findings:
+        for f in findings:
+            if not f.suppressed:
+                by_severity[f.severity] = by_severity.get(f.severity, 0) + 1
+
+    parts = []
+    for sev in (Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW):
+        count = by_severity.get(sev, 0)
+        if count:
+            parts.append(_colorize(f"{count} {sev.value}", _COLORS[sev]))
+    return parts
+
+
 def format_verdict(
     file_findings: list[tuple[list[Finding], str]],
     fail_on: Severity,
     parse_error_count: int = 0,
 ) -> str:
-    """Return a pass/fail verdict line relative to the --fail-on threshold.
+    """Return the verdict line, matching the CLI's three exit-code outcomes.
 
-    A non-zero ``parse_error_count`` always forces a FAIL verdict, since the
-    CLI exits 2 in that case regardless of finding severity.
+    A non-zero ``parse_error_count`` (exit 2) yields a distinct ``⚠ ERROR``
+    verdict, kept separate from the ``✗ FAIL`` (exit 1) threshold breach so a
+    reader can tell a broken-input problem from an insecure-config one. A
+    passing run that still has sub-threshold findings names them, so the
+    ``✓ PASS`` line does not read as "nothing found".
     """
     failing = sum(
         1
@@ -340,22 +366,21 @@ def format_verdict(
     sep = _colorize("·", _DIM)
 
     if parse_error_count:
-        skipped_word = "file" if parse_error_count == 1 else "files"
-        skipped_text = f"{parse_error_count} {skipped_word} skipped (failed to parse)"
+        file_word = "file" if parse_error_count == 1 else "files"
+        parsed_text = f"{parse_error_count} {file_word} could not be parsed"
+        error_label = _colorize("⚠ ERROR", _ERROR_COLOR)
+        result = f"{error_label}  {sep}  {_colorize(parsed_text, _ERROR_COLOR)}"
         if failing:
             word = "finding" if failing == 1 else "findings"
-            return (
-                f"{_colorize('✗ FAIL', _COLORS[Severity.HIGH])}  {sep}  "
-                f"{failing} {word} at or above {fail_on.value}"
-                f"  {sep}  {_colorize(skipped_text, _COLORS[Severity.HIGH])}"
-            )
-        return (
-            f"{_colorize('✗ FAIL', _COLORS[Severity.HIGH])}  {sep}  "
-            f"{_colorize(skipped_text, _COLORS[Severity.HIGH])}"
-        )
+            result += f"  {sep}  {failing} {word} at or above {fail_on.value}"
+        return result
 
     if failing == 0:
-        return f"{_colorize('✓ PASS', _GREEN)}  {sep}  threshold: {fail_on.value}"
+        verdict = f"{_colorize('✓ PASS', _GREEN)}  {sep}  threshold: {fail_on.value}"
+        below = _severity_breakdown(file_findings)
+        if below:
+            verdict += f"  {sep}  below: {', '.join(below)}"
+        return verdict
 
     word = "finding" if failing == 1 else "findings"
     return (
