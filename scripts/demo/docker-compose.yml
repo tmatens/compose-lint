@@ -1,5 +1,10 @@
 services:
   db:
     image: postgres:16
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     ports:
       - "5432:5432"

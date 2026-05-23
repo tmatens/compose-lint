@@ -14,7 +14,7 @@ Static-analysis linter for `docker-compose.yml` and `compose.yaml` that catches 
 In a scan of 6,444 public Docker Compose files on GitHub, **91% of those that parse had at least one security finding** (68% HIGH or CRITICAL) — nearly all skip basic capability restrictions, 52% run images without a pinned digest, and 58% bind ports to all interfaces. compose-lint catches these in CI before they ship. **[Read the full *State of Docker Compose Security* report →](docs/state-of-compose.md)**
 
 <!-- Demo GIF. Regenerate with scripts/demo/ — see scripts/demo/README.md. -->
-![compose-lint scanning an ordinary five-line docker-compose.yml: five findings — an unpinned image (CL-0019) and missing hardening, landing on a HIGH port bound to all interfaces (CL-0005) with line carets, fix block, and reference URL — then `compose-lint --explain CL-0005` printing the offline rule docs.](https://raw.githubusercontent.com/tmatens/compose-lint/main/docs/assets/demo.gif)
+![compose-lint scanning a docker-compose.yml: two severity-sorted findings — a HIGH port bound to all interfaces (CL-0005) leading, with a box-drawing underline, fix block, and reference URL, above a MEDIUM unpinned image (CL-0019) — then the FAIL verdict, and `compose-lint --explain CL-0005` printing the offline rule docs.](https://raw.githubusercontent.com/tmatens/compose-lint/main/docs/assets/demo.gif)
 
 **What it catches:**
 
