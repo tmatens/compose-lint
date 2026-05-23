@@ -14,6 +14,7 @@ import compose_lint.formatters.text as text
 from compose_lint.formatters.text import (
     _COLORS,
     _RESET,
+    format_aggregate_summary,
     format_findings,
     format_verdict,
 )
@@ -206,3 +207,60 @@ def test_force_color_zero_does_not_force(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.setenv("FORCE_COLOR", "0")
     assert text._colorize("x", _RED) == "x"
+
+
+# --- quiet mode -----------------------------------------------------------
+
+
+def test_quiet_mode_is_one_line_per_finding(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    filepath = _write_compose(tmp_path)
+    finding = Finding(
+        "CL-0019",
+        Severity.MEDIUM,
+        "web",
+        "Image 'nginx:1.0' is pinned to a tag but not a digest.",
+        line=3,
+        fix="Add a digest pin.",
+        references=["https://example.test/ref"],
+    )
+    quiet = format_findings([finding], filepath, quiet=True)
+    full = format_findings([finding], filepath)
+
+    # The finding row survives; everything verbose does not.
+    assert "CL-0019" in quiet
+    assert "fix:" not in quiet
+    assert "ref:" not in quiet
+    assert "─" not in quiet  # no underline excerpt
+    assert "│" not in quiet  # no source-line gutter
+    # Sanity: full mode still renders all of them.
+    assert "fix:" in full and "ref:" in full and "─" in full
+
+
+def test_quiet_mode_drops_suppression_reason() -> None:
+    finding = Finding(
+        "CL-0001",
+        Severity.CRITICAL,
+        "web",
+        "socket mounted",
+        line=1,
+        suppressed=True,
+        suppression_reason="ticket-123 approved",
+    )
+    out = format_findings([finding], "compose.yml", quiet=True)
+    assert "SUPPRESSED" in out
+    assert "ticket-123" not in out
+    assert "reason:" not in out
+
+
+# --- aggregate summary pluralization --------------------------------------
+
+
+def test_aggregate_summary_singular_file() -> None:
+    out = format_aggregate_summary([([], "a.yml")])
+    assert "1 file scanned" in out
+    assert "1 files scanned" not in out
+
+
+def test_aggregate_summary_plural_files() -> None:
+    out = format_aggregate_summary([([], "a.yml"), ([], "b.yml")])
+    assert "2 files scanned" in out

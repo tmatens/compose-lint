@@ -158,18 +158,22 @@ def format_findings(
     filepath: str,
     *,
     verbose: bool = False,
+    quiet: bool = False,
 ) -> str:
     """Format findings as human-readable colored text grouped by file and service.
 
     The fix block and reference URL are printed only on the first occurrence
     of each rule id within a file; subsequent occurrences get a brief
     `(see fix above)` marker. ``verbose=True`` restores per-finding fix
-    repetition for IDE tooling or local fix-it-now workflows.
+    repetition for IDE tooling or local fix-it-now workflows. ``quiet=True``
+    does the opposite — one line per finding, dropping the fix block,
+    reference URL, source excerpt, and suppression reason — for CI and repeat
+    users. The two are mutually exclusive at the CLI layer.
     """
     if not findings:
         return ""
 
-    source_lines = _read_source_lines(filepath)
+    source_lines = None if quiet else _read_source_lines(filepath)
 
     by_service: dict[str, list[Finding]] = {}
     for f in findings:
@@ -208,7 +212,8 @@ def format_findings(
                     f"{_colorize(f.rule_id, _DIM)}  "
                     f"{_colorize(f.message, _SUPPRESSED_COLOR)}"
                 )
-                out.append(f"          {_colorize('reason:', _DIM)} {reason}")
+                if not quiet:
+                    out.append(f"          {_colorize('reason:', _DIM)} {reason}")
                 continue
 
             severity_label = f.severity.value.upper().ljust(_SEV_WIDTH)
@@ -216,9 +221,9 @@ def format_findings(
             line_label = str(f.line) if f.line else "?"
 
             already_shown = f.rule_id in seen_rules
-            show_fix = verbose or not already_shown
+            show_fix = not quiet and (verbose or not already_shown)
             suffix = ""
-            if already_shown and not verbose and (f.fix or f.references):
+            if not quiet and already_shown and not verbose and (f.fix or f.references):
                 suffix = f"   {_colorize('(see fix above)', _DIM)}"
 
             out.append(
@@ -310,7 +315,8 @@ def format_aggregate_summary(
                 by_severity[f.severity.value] = by_severity.get(f.severity.value, 0) + 1
 
     total_issues = sum(by_severity.values())
-    files_label = _colorize(f"{total_files} files scanned", _BOLD)
+    file_word = "file" if total_files == 1 else "files"
+    files_label = _colorize(f"{total_files} {file_word} scanned", _BOLD)
     sep = _colorize("·", _DIM)
 
     skipped_suffix = ""
