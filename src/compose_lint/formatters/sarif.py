@@ -9,7 +9,9 @@ from compose_lint.models import Severity
 from compose_lint.rules import get_registered_rules
 
 if TYPE_CHECKING:
-    from compose_lint.models import Finding
+    from collections.abc import Sequence
+
+    from compose_lint.models import Finding, TextEdit
 
 SARIF_SCHEMA = (
     "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/"
@@ -70,13 +72,65 @@ def _build_rules() -> tuple[list[dict[str, Any]], dict[str, int]]:
     return rules, index_map
 
 
+def _build_fix(edits: list[TextEdit], filepath: str) -> dict[str, Any]:
+    """Build one SARIF ``fix`` object from a finding's :class:`TextEdit`s.
+
+    Each edit becomes a ``replacement``: ``TextEdit``'s half-open, 1-indexed
+    ``[start, end)`` region maps directly onto SARIF's ``deletedRegion`` (whose
+    ``endColumn`` is likewise the column *after* the region), so no coordinate
+    translation is needed. A non-empty ``replacement`` supplies
+    ``insertedContent``; a pure deletion omits it. Any per-edit ``caveat``
+    becomes the fix's ``description`` so a SARIF consumer sees the
+    behavior-changing warning the dry-run diff shows.
+    """
+    replacements: list[dict[str, Any]] = []
+    caveats: list[str] = []
+    for edit in edits:
+        replacement: dict[str, Any] = {
+            "deletedRegion": {
+                "startLine": edit.start_line,
+                "startColumn": edit.start_col,
+                "endLine": edit.end_line,
+                "endColumn": edit.end_col,
+            },
+        }
+        if edit.replacement:
+            replacement["insertedContent"] = {"text": edit.replacement}
+        replacements.append(replacement)
+        if edit.caveat and edit.caveat not in caveats:
+            caveats.append(edit.caveat)
+
+    fix: dict[str, Any] = {
+        "artifactChanges": [
+            {
+                "artifactLocation": {"uri": filepath},
+                "replacements": replacements,
+            },
+        ],
+    }
+    if caveats:
+        fix["description"] = {"text": " ".join(caveats)}
+    return fix
+
+
 def format_findings(
     findings: list[Finding],
     filepath: str,
+    fixes: Sequence[tuple[Finding, list[TextEdit]]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Format findings as SARIF result objects."""
+    """Format findings as SARIF result objects.
+
+    When ``fixes`` is given (each entry pairs a finding with the edits a fixer
+    produced for it, e.g. ``FixResult.fixed_edits``), the matching result gains a
+    schema-valid ``fixes[]`` carrying the concrete ``artifactChanges``. Findings
+    without structured edits, and every finding when ``fixes`` is ``None``, keep
+    the human-readable ``properties.fix`` guidance string and nothing more. The
+    caller gates whether to pass ``fixes`` at all (experimental until the ``fix``
+    feature is promoted), so the default output shape is unchanged.
+    """
     rules, index_map = _build_rules()
     results: list[dict[str, Any]] = []
+    edits_by_finding = {id(finding): edits for finding, edits in (fixes or [])}
 
     for f in findings:
         result: dict[str, Any] = {
@@ -96,6 +150,10 @@ def format_findings(
 
         if f.fix:
             result["properties"] = {"fix": f.fix}
+
+        edits = edits_by_finding.get(id(f))
+        if edits:
+            result["fixes"] = [_build_fix(edits, filepath)]
 
         if f.suppressed:
             result["suppressions"] = [

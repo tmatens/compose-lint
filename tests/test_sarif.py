@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -14,7 +15,7 @@ from compose_lint.formatters.sarif import (
     build_sarif_log,
     format_findings,
 )
-from compose_lint.models import Finding, Severity
+from compose_lint.models import Finding, Severity, TextEdit
 
 FIXTURES = Path(__file__).parent / "compose_files"
 SARIF_SCHEMA_PATH = Path(__file__).parent / "fixtures" / "sarif-schema-2.1.0.json"
@@ -97,6 +98,81 @@ class TestFormatFindings:
             )
             results = format_findings([finding], "test.yml")
             assert results[0]["level"] == expected_level
+
+
+class TestStructuredFixes:
+    """Tests for SARIF ``fixes[].artifactChanges`` from the fix engine."""
+
+    def test_insertion_maps_to_replacement(self) -> None:
+        f = _sample_finding()
+        edit = TextEdit(3, 1, 3, 1, "    read_only: true\n")
+        results = format_findings([f], "docker-compose.yml", fixes=[(f, [edit])])
+        fixes = results[0]["fixes"]
+        assert len(fixes) == 1
+        change = fixes[0]["artifactChanges"][0]
+        assert change["artifactLocation"]["uri"] == "docker-compose.yml"
+        rep = change["replacements"][0]
+        assert rep["deletedRegion"] == {
+            "startLine": 3,
+            "startColumn": 1,
+            "endLine": 3,
+            "endColumn": 1,
+        }
+        assert rep["insertedContent"]["text"] == "    read_only: true\n"
+
+    def test_pure_deletion_omits_inserted_content(self) -> None:
+        f = _sample_finding()
+        edit = TextEdit(5, 1, 6, 1, "")
+        results = format_findings([f], "x.yml", fixes=[(f, [edit])])
+        rep = results[0]["fixes"][0]["artifactChanges"][0]["replacements"][0]
+        assert rep["deletedRegion"]["startLine"] == 5
+        assert "insertedContent" not in rep
+
+    def test_multiple_edits_become_multiple_replacements(self) -> None:
+        f = _sample_finding()
+        edits = [TextEdit(3, 1, 3, 1, "a\n"), TextEdit(7, 1, 8, 1, "")]
+        results = format_findings([f], "x.yml", fixes=[(f, edits)])
+        replacements = results[0]["fixes"][0]["artifactChanges"][0]["replacements"]
+        assert len(replacements) == 2
+
+    def test_caveat_becomes_fix_description(self) -> None:
+        f = _sample_finding()
+        edit = TextEdit(3, 1, 3, 1, "x\n", caveat="changes runtime behavior")
+        results = format_findings([f], "x.yml", fixes=[(f, [edit])])
+        assert results[0]["fixes"][0]["description"]["text"] == (
+            "changes runtime behavior"
+        )
+
+    def test_no_caveat_omits_description(self) -> None:
+        f = _sample_finding()
+        edit = TextEdit(3, 1, 3, 1, "x\n")
+        results = format_findings([f], "x.yml", fixes=[(f, [edit])])
+        assert "description" not in results[0]["fixes"][0]
+
+    def test_finding_without_edits_has_no_fixes(self) -> None:
+        with_fix = _sample_finding()
+        without_fix = Finding(
+            rule_id="CL-0002",
+            severity=Severity.HIGH,
+            service="db",
+            message="privileged",
+            line=9,
+            fix="Drop privileged.",
+        )
+        edit = TextEdit(3, 1, 3, 1, "x\n")
+        results = format_findings(
+            [with_fix, without_fix],
+            "x.yml",
+            fixes=[(with_fix, [edit])],
+        )
+        assert "fixes" in results[0]
+        assert "fixes" not in results[1]
+        # the un-fixed finding keeps its prose guidance
+        assert results[1]["properties"]["fix"] == "Drop privileged."
+
+    def test_fixes_absent_when_argument_omitted(self) -> None:
+        results = format_findings([_sample_finding()], "x.yml")
+        assert "fixes" not in results[0]
 
 
 class TestBuildSarifLog:
@@ -207,6 +283,42 @@ class TestSarifCLI:
         }
         assert len(files) >= 2
 
+    def _run_sarif(self, *, experimental: bool) -> dict:
+        env = dict(os.environ)
+        if experimental:
+            env["COMPOSE_LINT_EXPERIMENTAL"] = "1"
+        else:
+            env.pop("COMPOSE_LINT_EXPERIMENTAL", None)
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "compose_lint",
+                "--format",
+                "sarif",
+                str(FIXTURES / "insecure_no_new_priv.yml"),
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        return json.loads(result.stdout)
+
+    def test_structured_fixes_emitted_under_experimental(self) -> None:
+        data = self._run_sarif(experimental=True)
+        results = data["runs"][0]["results"]
+        with_fixes = [r for r in results if "fixes" in r]
+        assert with_fixes, "expected structured fixes when experimental is enabled"
+        change = with_fixes[0]["fixes"][0]["artifactChanges"][0]
+        assert change["replacements"]
+
+    def test_structured_fixes_gated_off_by_default(self) -> None:
+        data = self._run_sarif(experimental=False)
+        results = data["runs"][0]["results"]
+        assert all("fixes" not in r for r in results)
+        # the prose guidance is still present
+        assert any("properties" in r for r in results)
+
 
 class TestSarifSchemaCompliance:
     """Validate emitted SARIF against the canonical OASIS 2.1.0 schema."""
@@ -250,5 +362,16 @@ class TestSarifSchemaCompliance:
         log = build_sarif_log(
             format_findings([_sample_finding()], "test.yml"),
             parse_errors=[("broken.yml", "could not parse")],
+        )
+        self._validate(log, tmp_path)
+
+    def test_log_with_structured_fix_validates(self, tmp_path: Path) -> None:
+        f = _sample_finding()
+        edits = [
+            TextEdit(3, 1, 3, 1, "    read_only: true\n", caveat="behavior change"),
+            TextEdit(5, 1, 6, 1, ""),
+        ]
+        log = build_sarif_log(
+            format_findings([f], "test.yml", fixes=[(f, edits)]),
         )
         self._validate(log, tmp_path)
