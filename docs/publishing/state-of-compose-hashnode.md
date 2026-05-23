@@ -11,10 +11,10 @@ are the publish settings below.
 | Setting | Value |
 | --- | --- |
 | **Title** | 9 in 10 Docker Compose files skip the basic security flags |
-| **Subtitle** | An empirical look at how real-world Compose files are configured — and why even vendor copy-paste examples ship insecure defaults. |
-| **Canonical URL** | **The published dev.to post URL** (set under *Settings → Canonical URL*). This is mandatory — it points search authority at dev.to and stops Hashnode competing with it. |
-| **Tags** | docker, security, devops, opensource |
-| **Cover image** | Optional. If used, match the dev.to cover. |
+| **Subtitle** | What real-world Compose files actually look like, and why even the examples people copy ship insecure defaults. |
+| **Canonical URL** | Set under *Settings → Canonical URL* to the live dev.to post: `https://dev.to/tmatens/9-in-10-docker-compose-files-skip-the-basic-security-flags-2dpf`. Mandatory — it points search authority at dev.to and stops Hashnode competing with it. |
+| **Tags** | docker, security, containers, opensource |
+| **Cover image** | Upload `docs/publishing/assets/cover.png` (same hardening-triple cover as dev.to). |
 
 ## Image rendering
 
