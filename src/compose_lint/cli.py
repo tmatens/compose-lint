@@ -58,13 +58,27 @@ def _effective_config_path(explicit: str | None) -> Path | None:
     return p if p.exists() else None
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    """Build the argument parser."""
-    parser = argparse.ArgumentParser(
-        prog="compose-lint",
+# Subcommands recognized by the argv shim. Bare `compose-lint <file>` is kept
+# working as an implicit `check` (ADR-011): when the first non-flag token is
+# not one of these, the shim prepends `check`.
+_SUBCOMMANDS = ("check",)
+
+# Flags handled by the top-level parser, not `check`. A flag-only invocation
+# carrying one of these (e.g. `compose-lint --version`) is left untouched so the
+# top-level parser sees it; any other flag-only invocation routes to `check`.
+_GLOBAL_FLAGS = frozenset({"-h", "--help", "--version"})
+
+
+def _add_check_subparser(
+    subparsers: argparse._SubParsersAction,  # type: ignore[type-arg]
+) -> None:
+    """Register the `check` subcommand (the default lint operation)."""
+    check = subparsers.add_parser(
+        "check",
+        help="lint Docker Compose file(s) for security issues (default)",
         description="A security-focused linter for Docker Compose files.",
     )
-    parser.add_argument(
+    check.add_argument(
         "files",
         nargs="*",
         metavar="FILE",
@@ -74,32 +88,32 @@ def _build_parser() -> argparse.ArgumentParser:
             "docker-compose.yml, or docker-compose.yaml."
         ),
     )
-    parser.add_argument(
+    check.add_argument(
         "--format",
         choices=["text", "json", "sarif"],
         default="text",
         dest="output_format",
         help="output format (default: text)",
     )
-    parser.add_argument(
+    check.add_argument(
         "--fail-on",
         type=_severity_type,
         default=Severity.HIGH,
         metavar="{" + ",".join(s.value for s in Severity) + "}",
         help="minimum severity to trigger exit 1 (default: high)",
     )
-    parser.add_argument(
+    check.add_argument(
         "--config",
         metavar="PATH",
         help="path to .compose-lint.yml config file",
     )
-    parser.add_argument(
+    check.add_argument(
         "--skip-suppressed",
         action="store_true",
         default=False,
         help="hide suppressed findings from output",
     )
-    verbosity = parser.add_mutually_exclusive_group()
+    verbosity = check.add_mutually_exclusive_group()
     verbosity.add_argument(
         "-v",
         "--verbose",
@@ -122,7 +136,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "users. No effect on JSON or SARIF output."
         ),
     )
-    parser.add_argument(
+    check.add_argument(
         "--explain",
         metavar="CL-XXXX",
         help=(
@@ -130,19 +144,54 @@ def _build_parser() -> argparse.ArgumentParser:
             "Cannot be combined with FILE arguments."
         ),
     )
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the top-level argument parser and its subcommands."""
+    parser = argparse.ArgumentParser(
+        prog="compose-lint",
+        description="A security-focused linter for Docker Compose files.",
+    )
     parser.add_argument(
         "--version",
         action="version",
         version=f"%(prog)s {__version__}",
     )
+    subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
+    _add_check_subparser(subparsers)
     return parser
+
+
+def _normalize_argv(argv: list[str]) -> list[str]:
+    """Rewrite ``argv`` so bare invocations route to the ``check`` subcommand.
+
+    Preserves the pre-subcommand CLI: ``compose-lint <file>``,
+    ``compose-lint -q``, and ``compose-lint --explain CL-XXXX`` keep working as
+    ``check``. An explicit subcommand (``check ...``) is left untouched, as is a
+    flag-only invocation of a global flag (``--version``, ``--help``) so the
+    top-level parser handles it. The heuristic keys off the first non-flag
+    token, mirroring ADR-011's implementation note.
+    """
+    if not argv:
+        return ["check"]
+    first_positional = next((tok for tok in argv if not tok.startswith("-")), None)
+    if first_positional in _SUBCOMMANDS:
+        return argv
+    if first_positional is None and _GLOBAL_FLAGS.intersection(argv):
+        return argv
+    return ["check", *argv]
 
 
 def main(argv: list[str] | None = None) -> NoReturn:
     """Main entry point for the CLI."""
     parser = _build_parser()
-    args = parser.parse_args(argv)
+    raw = sys.argv[1:] if argv is None else argv
+    args = parser.parse_args(_normalize_argv(raw))
+    _run_check(args)
 
+
+def _run_check(args: argparse.Namespace) -> NoReturn:
+    """Run the `check` operation: lint files and exit with the verdict code."""
     if args.explain is not None:
         if args.files:
             print(
