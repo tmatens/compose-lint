@@ -13,7 +13,7 @@ canonical_url:
 
 I created [compose-lint](https://github.com/tmatens/compose-lint), a security linter for Docker Compose files, and pointed it at **6,444 public `docker-compose.yml` and `compose.yaml` files from GitHub**. (More on why below.)
 
-Three numbers stood out:
+Three things stood out:
 
 - **91%** of the files that parse have at least one security finding.
 - **68%** have at least one **HIGH or CRITICAL** finding.
