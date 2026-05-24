@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The experimental `fix` subcommand is now reachable without setting
+  `COMPOSE_LINT_EXPERIMENTAL=1` (ADR-014 Phase 2). It remains hidden from
+  `--help`, prints an experimental warning on every run, is dry-run by
+  default, and stays excluded from the SemVer contract until promoted.
+  Structured SARIF `fixes[]` from the engine remain behind
+  `COMPOSE_LINT_EXPERIMENTAL=1` until full promotion.
+
 ## [0.8.0] - 2026-05-23
 
 ### Added

@@ -77,16 +77,19 @@ _GLOBAL_FLAGS = frozenset({"-h", "--help", "--version"})
 
 # Stderr banner printed on every `fix` invocation (ADR-014, Part 5).
 _FIX_EXPERIMENTAL_WARNING = (
-    "warning: 'fix' is experimental and unstable; output and flags may change "
-    "without notice. Review the diff before --apply."
+    "warning: 'fix' is experimental; its flags, output, and behavior may change "
+    "in any release. Dry-run by default — review the diff before --apply."
 )
 
 
 def _experimental_enabled() -> bool:
-    """Return whether the experimental `fix` subcommand is gated on.
+    """Return whether experimental fix-engine *output* is gated on.
 
-    Phase 1 of ADR-014 hides `fix` entirely unless ``COMPOSE_LINT_EXPERIMENTAL``
-    is set to ``1``, so it cannot be discovered or invoked by accident.
+    Post-Phase-2 (ADR-014) the `fix` subcommand itself is always available but
+    hidden; this gate now only controls the one piece still held back for
+    Phase 3 — structured SARIF ``fixes[]`` in ``check --format sarif`` — which
+    stays behind ``COMPOSE_LINT_EXPERIMENTAL=1`` until the engine is promoted
+    into the SemVer contract.
     """
     return os.environ.get("COMPOSE_LINT_EXPERIMENTAL") == "1"
 
@@ -96,14 +99,11 @@ def _subcommands() -> set[str]:
 
     Bare ``compose-lint <file>`` is kept working as an implicit ``check``
     (ADR-011): when the first non-flag token is not one of these, the shim
-    prepends ``check``. ``fix`` is only recognized when experimental mode is on,
-    so without the env gate ``compose-lint fix ...`` falls through to ``check``
-    and fails as a missing file rather than exposing the hidden command.
+    prepends ``check``. ``fix`` is recognized so ``compose-lint fix ...`` routes
+    to it; the command is still hidden from ``--help`` (Phase 2), just no longer
+    gated behind an env var.
     """
-    commands = {"check"}
-    if _experimental_enabled():
-        commands.add("fix")
-    return commands
+    return {"check", "fix"}
 
 
 def _add_check_subparser(
@@ -191,7 +191,8 @@ def _add_fix_subparser(
     Omitting ``help=`` keeps it out of ``compose-lint --help``: argparse only
     lists subparsers that were given a help string (passing
     ``help=argparse.SUPPRESS`` instead renders a literal ``==SUPPRESS==`` row).
-    The caller also only registers it at all when experimental mode is enabled.
+    Post-Phase-2 the command is always registered; hiding it is now this
+    omission's job alone, not an env gate's.
     """
     fix = subparsers.add_parser(
         "fix",
@@ -236,8 +237,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
     _add_check_subparser(subparsers)
-    if _experimental_enabled():
-        _add_fix_subparser(subparsers)
+    # `fix` is always registered (Phase 2) but stays hidden from --help; see
+    # _add_fix_subparser for how (it omits help=).
+    _add_fix_subparser(subparsers)
     return parser
 
 
