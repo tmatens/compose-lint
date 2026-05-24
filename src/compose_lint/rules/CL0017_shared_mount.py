@@ -11,8 +11,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 CIS_REF = (
-    "CIS Docker Benchmark 5.19 — Ensure that mount propagation mode is not set "
-    "to shared"
+    "CIS Docker Benchmark 5.20 — Ensure mount propagation mode is not set to shared"
 )
 
 

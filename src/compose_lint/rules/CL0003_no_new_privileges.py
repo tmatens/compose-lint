@@ -24,8 +24,8 @@ OWASP_REF = (
 )
 
 CIS_REF = (
-    "CIS Docker Benchmark 5.25"
-    " — Restrict container from acquiring additional privileges"
+    "CIS Docker Benchmark 5.26 — Ensure that the container is restricted "
+    "from acquiring additional privileges"
 )
 
 

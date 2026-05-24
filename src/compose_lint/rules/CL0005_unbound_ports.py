@@ -25,8 +25,8 @@ OWASP_REF = (
 )
 
 CIS_REF = (
-    "CIS Docker Benchmark 5.13"
-    " — Bind incoming container traffic to a specific host interface"
+    "CIS Docker Benchmark 5.14 — Ensure that incoming container traffic "
+    "is bound to a specific host interface"
 )
 
 # Matches HOST:CONTAINER (with optional non-bracketed IPv4/hostname prefix)

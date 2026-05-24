@@ -16,7 +16,10 @@ OWASP_REF = (
     "specific-capabilities-needed-by-a-container"
 )
 
-CIS_REF = "CIS Docker Benchmark 5.3 — Restrict Linux kernel capabilities"
+CIS_REF = (
+    "CIS Docker Benchmark 5.4 — Ensure that Linux kernel capabilities "
+    "are restricted within containers"
+)
 
 
 @register_rule

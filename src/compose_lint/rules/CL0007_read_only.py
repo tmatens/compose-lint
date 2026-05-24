@@ -24,7 +24,10 @@ OWASP_REF = (
     "Docker_Security_Cheat_Sheet.html#rule-8---set-filesystem-and-volumes-to-read-only"
 )
 
-CIS_REF = "CIS Docker Benchmark 5.12 — Mount container's root filesystem as read only"
+CIS_REF = (
+    "CIS Docker Benchmark 5.13 — Ensure that the container's root "
+    "filesystem is mounted as read only"
+)
 
 
 @register_rule

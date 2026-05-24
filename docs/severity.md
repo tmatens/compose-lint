@@ -38,7 +38,7 @@ What can the attacker reach if the misconfiguration is exploited?
 
 ## CIS Docker Benchmark version
 
-CIS reference numbers in rule docs are pinned to **CIS Docker Benchmark v1.6.0** unless otherwise noted. Numbers shift between benchmark versions; if a citation looks wrong against your benchmark copy, check the version first.
+CIS reference numbers in rule docs are pinned to **CIS Docker Benchmark v1.7.0** unless otherwise noted. Numbers shift between benchmark versions; if a citation looks wrong against your benchmark copy, check the version first.
 
 ## Current rule assignments
 

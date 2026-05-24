@@ -17,7 +17,8 @@ OWASP_REF = (
 )
 
 CIS_REF = (
-    "CIS Docker Benchmark 5.3 — Restrict Linux kernel capabilities within containers"
+    "CIS Docker Benchmark 5.4 — Ensure that Linux kernel capabilities "
+    "are restricted within containers"
 )
 
 DANGEROUS_CAPS: dict[str, str] = {

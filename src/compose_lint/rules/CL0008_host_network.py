@@ -15,7 +15,9 @@ OWASP_REF = (
     "Docker_Security_Cheat_Sheet.html#rule-5---be-mindful-of-inter-container-connectivity"
 )
 
-CIS_REF = "CIS Docker Benchmark 5.9 — Do not share the host's network namespace"
+CIS_REF = (
+    "CIS Docker Benchmark 5.10 — Ensure that the host's network namespace is not shared"
+)
 
 
 @register_rule

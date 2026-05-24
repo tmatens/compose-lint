@@ -20,25 +20,37 @@ _NAMESPACE_CHECKS: list[tuple[str, str, str, str]] = [
     (
         "pid",
         "host",
-        "CIS Docker Benchmark 5.8 — Do not share the host's process namespace",
+        (
+            "CIS Docker Benchmark 5.16 — Ensure that the host's process "
+            "namespace is not shared"
+        ),
         "process namespace. The container can see and signal all host processes.",
     ),
     (
         "ipc",
         "host",
-        "CIS Docker Benchmark 5.10 — Do not share the host's IPC namespace",
+        (
+            "CIS Docker Benchmark 5.17 — Ensure that the host's IPC "
+            "namespace is not shared"
+        ),
         "IPC namespace. The container can access host shared memory segments.",
     ),
     (
         "userns_mode",
         "host",
-        "CIS Docker Benchmark 5.15 — Do not share the host's user namespace",
+        (
+            "CIS Docker Benchmark 5.31 — Ensure that the host's user "
+            "namespaces are not shared"
+        ),
         "user namespace. UID/GID mapping between container and host is disabled.",
     ),
     (
         "uts",
         "host",
-        "CIS Docker Benchmark 5.20 — Do not share the host's UTS namespace",
+        (
+            "CIS Docker Benchmark 5.21 — Ensure that the host's UTS "
+            "namespace is not shared"
+        ),
         "UTS namespace. The container can change the host's hostname.",
     ),
 ]
@@ -61,7 +73,7 @@ class HostNamespaceRule(BaseRule):
             severity=Severity.HIGH,
             references=[
                 OWASP_REF,
-                "CIS Docker Benchmark 5.8, 5.10, 5.15, 5.20",
+                "CIS Docker Benchmark 5.16, 5.17, 5.21, 5.31",
             ],
         )
 
