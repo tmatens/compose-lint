@@ -31,6 +31,17 @@ python scripts/corpus/charts.py latest       # or a specific runs/<ts>
 
 Commit the regenerated `docs/assets/*.svg` alongside the report when the pinned run changes. matplotlib is a maintainer-only extra — it is deliberately absent from every `requirements*.lock` and never reaches the runtime wheel (PyYAML-only).
 
+## Fix gate
+
+`fix_gate.py` is the parallel form of `tests/test_corpus_fix.py` — it runs the three ADR-014 fix-safety invariants (patched text re-parses, is idempotent, and introduces no new finding) over the whole corpus across all cores, ~1-2 min instead of the ~8 min single-process pytest gate.
+
+```bash
+python scripts/corpus/fix_gate.py            # all cores
+LINT_WORKERS=4 python scripts/corpus/fix_gate.py
+```
+
+Use it as the fast local loop while iterating on a fixer; the committed pytest gate stays authoritative (`COMPOSE_LINT_CORPUS=~/.cache/compose-lint-corpus pytest tests/test_corpus_fix.py`). It also prints findings-fixed counts per rule — a quick coverage signal to diff against the baseline after changing a fixer. Exits non-zero if any invariant fails.
+
 ## Tiers
 
 - `canonical` — official upstream examples (what people copy from READMEs)
