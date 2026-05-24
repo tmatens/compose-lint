@@ -3,8 +3,8 @@ name: Release prep
 # Maintainer-triggered. Opens the "Prepare X.Y.Z release" PR for you:
 # bumps pyproject.toml + src/compose_lint/__init__.py, renames the
 # CHANGELOG [Unreleased] section to [X.Y.Z] - <today>, inserts a fresh
-# empty [Unreleased] above it, commits on a release/X.Y.Z branch, and
-# opens a PR against main.
+# empty [Unreleased] above it, updates the CHANGELOG compare-link footer,
+# commits on a release/X.Y.Z branch, and opens a PR against main.
 #
 # The signed annotated tag is NOT created here. After the PR merges,
 # run `git tag -s vX.Y.Z -m "compose-lint X.Y.Z" && git push origin vX.Y.Z`
@@ -89,6 +89,38 @@ jobs:
             exit 1
           fi
           mv CHANGELOG.md.new CHANGELOG.md
+
+      - name: Update CHANGELOG compare links
+        env:
+          VERSION: ${{ inputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          # The [Unreleased] footer link encodes the previous release as
+          # vPREV...HEAD. Point [Unreleased] at the new version and insert a
+          # [X.Y.Z] link comparing vPREV...vX.Y.Z. This is cosmetic, so warn
+          # (don't fail the release) if the footer link is missing or unparseable.
+          url="https://github.com/${REPO}/compare"
+          unreleased=$(grep -E '^\[Unreleased\]: ' CHANGELOG.md || true)
+          if [ -z "${unreleased}" ]; then
+            echo "::warning::No [Unreleased] compare link in CHANGELOG.md; skipping footer update"
+            exit 0
+          fi
+          prev=$(printf '%s\n' "${unreleased}" \
+            | sed -nE 's#^.*/compare/v([0-9]+\.[0-9]+\.[0-9]+)\.\.\.HEAD$#\1#p')
+          if [ -z "${prev}" ]; then
+            echo "::warning::Could not parse previous version from '${unreleased}'; skipping footer update"
+            exit 0
+          fi
+          awk -v v="${VERSION}" -v prev="${prev}" -v url="${url}" '
+            /^\[Unreleased\]: / {
+              print "[Unreleased]: " url "/v" v "...HEAD"
+              print "[" v "]: " url "/v" prev "...v" v
+              next
+            }
+            { print }
+          ' CHANGELOG.md > CHANGELOG.md.new
+          mv CHANGELOG.md.new CHANGELOG.md
+          grep -E "^\[Unreleased\]: |^\[${VERSION}\]: " CHANGELOG.md
 
       - name: Verify versions match
         run: |
