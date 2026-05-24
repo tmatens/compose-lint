@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Duplicate mapping keys are now rejected with a parse error, matching Docker
+  (which refuses them). Previously PyYAML silently let the last value win, so a
+  service with `privileged: true` followed by `privileged: false` — a file
+  Docker will not load — reported clean, and the line map pointed at the wrong
+  occurrence. Detection runs before merge-key (`<<`) flattening, so an
+  `extends`/anchor merge that overrides an inherited key is not misreported as a
+  duplicate. (#277)
+
 - CL-0011 now flags `CAP_`-prefixed capabilities (`CAP_SYS_ADMIN`, `CAP_ALL`,
   ...). Docker treats the `CAP_` prefix as optional, but the rule keyed on the
   bare name and missed the prefixed form entirely. (#277)
