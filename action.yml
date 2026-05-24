@@ -21,6 +21,18 @@ inputs:
     description: "Path to .compose-lint.yml config file"
     required: false
     default: ""
+  skip-suppressed:
+    description: "Hide suppressed findings from output"
+    required: false
+    default: "false"
+  quiet:
+    description: "Text output: one line per finding (no fix block or excerpt)"
+    required: false
+    default: "false"
+  verbose:
+    description: "Text output: repeat the fix block and reference on every finding"
+    required: false
+    default: "false"
   sarif-file:
     description: "Path to write SARIF output (enables GitHub Code Scanning upload)"
     required: false
@@ -79,6 +91,9 @@ runs:
       env:
         CL_CONFIG: ${{ inputs.config }}
         CL_FAIL_ON: ${{ inputs.fail-on }}
+        CL_SKIP_SUPPRESSED: ${{ inputs.skip-suppressed }}
+        CL_QUIET: ${{ inputs.quiet }}
+        CL_VERBOSE: ${{ inputs.verbose }}
         CL_SARIF_FILE: ${{ inputs.sarif-file }}
         CL_TARGET_FILES: ${{ steps.find-files.outputs.files }}
       run: |
@@ -87,12 +102,25 @@ runs:
           ARGS+=(--config "$CL_CONFIG")
         fi
         ARGS+=(--fail-on "$CL_FAIL_ON")
+        if [ "$CL_SKIP_SUPPRESSED" = "true" ]; then
+          ARGS+=(--skip-suppressed)
+        fi
+        if [ "$CL_QUIET" = "true" ]; then
+          ARGS+=(--quiet)
+        fi
+        if [ "$CL_VERBOSE" = "true" ]; then
+          ARGS+=(--verbose)
+        fi
 
         # Word-split the file list intentionally — it is space-separated
         # by `Find Compose files` above.
         # shellcheck disable=SC2086
         compose-lint "${ARGS[@]}" $CL_TARGET_FILES || TEXT_EXIT=$?
 
+        # When a SARIF artifact is requested, re-run in SARIF mode. The first
+        # run prints human-readable output to the job log and sets the exit
+        # code; this run only writes the file. Rules are deterministic, so the
+        # two runs report the same findings.
         if [ -n "$CL_SARIF_FILE" ]; then
           # shellcheck disable=SC2086
           compose-lint --format sarif "${ARGS[@]}" $CL_TARGET_FILES \
