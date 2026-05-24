@@ -42,6 +42,31 @@ LINT_WORKERS=4 python scripts/corpus/fix_gate.py
 
 Use it as the fast local loop while iterating on a fixer; the committed pytest gate stays authoritative (`COMPOSE_LINT_CORPUS=~/.cache/compose-lint-corpus pytest tests/test_corpus_fix.py`). It also prints findings-fixed counts per rule — a quick coverage signal to diff against the baseline after changing a fixer. Exits non-zero if any invariant fails.
 
+## Docker config gate (external validity)
+
+`docker_config_gate.py` answers a question `fix_gate.py` can't: does **Docker's own loader** still accept a file after `compose-lint fix --apply`? The fix gate checks our internal ADR-014 invariants (re-parse, idempotent, no new finding); this one runs `docker compose config -q` on the patched text.
+
+It is **differential** — many real files fail `docker compose config` on their own (missing `include:` targets, env-only required values), which isn't our regression. A file only counts as a REGRESSION when Docker accepted the *original* but rejects the *fixed* version. To stay cheap it validates the fixed file first and only re-checks the original when the fixed one fails.
+
+```bash
+python scripts/corpus/docker_config_gate.py            # all cores, full corpus (~9 min)
+python scripts/corpus/docker_config_gate.py --limit 300  # quick sample
+LINT_WORKERS=4 python scripts/corpus/docker_config_gate.py
+```
+
+Requires the Docker Compose CLI plugin. If `docker compose version` fails the gate SKIPs with exit 0, so a Docker-less leg never breaks on it. Install at user level (no root):
+
+```bash
+v=v5.1.4; asset="docker-compose-linux-$(uname -m)"
+base="https://github.com/docker/compose/releases/download/$v"
+cd "$(mktemp -d)"
+curl -fsSL -O "$base/$asset" -O "$base/$asset.sha256"
+sha256sum -c "$asset.sha256"                       # must print: OK
+mkdir -p ~/.docker/cli-plugins
+install -m 0755 "$asset" ~/.docker/cli-plugins/docker-compose
+docker compose version
+```
+
 ## Tiers
 
 - `canonical` — official upstream examples (what people copy from READMEs)
