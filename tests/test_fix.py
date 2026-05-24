@@ -622,3 +622,24 @@ def test_render_file_diff_includes_caveat_banner_and_diff() -> None:
 def test_render_file_diff_empty_when_unchanged() -> None:
     text = "services:\n  web:\n    image: nginx:1.27\n"
     assert render_file_diff("docker-compose.yml", text, text, []) == ""
+
+
+def test_render_file_diff_marks_missing_trailing_newline() -> None:
+    # A file with no final newline must not glue the -/+ lines together; mirror
+    # git's "\ No newline at end of file" sentinel instead (issue #261 M2).
+    original = 'services:\n  web:\n    ports:\n      - "8080:80"'
+    patched = 'services:\n  web:\n    ports:\n      - "127.0.0.1:8080:80"'
+    out = render_file_diff("docker-compose.yml", original, patched, [])
+    assert '-      - "8080:80"\n' in out
+    assert '+      - "127.0.0.1:8080:80"\n' in out
+    assert out.count("\\ No newline at end of file") == 2
+    # No line glues the old and new content together.
+    assert '"8080:80"+' not in out
+
+
+def test_render_file_diff_no_spurious_newline_marker() -> None:
+    # A normal file (final newline present) keeps a clean diff, no sentinel.
+    original = "services:\n  web:\n    image: nginx:1.27\n"
+    patched = "services:\n  web:\n    read_only: true\n    image: nginx:1.27\n"
+    out = render_file_diff("docker-compose.yml", original, patched, [])
+    assert "No newline at end of file" not in out

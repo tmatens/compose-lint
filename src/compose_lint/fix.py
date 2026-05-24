@@ -624,15 +624,26 @@ def render_file_diff(
     Behavior-changing fixes are announced above the diff with a
     ``⚠ behavior-changing`` line per ADR-014 so a reader sees which edits could
     alter runtime behavior before deciding to ``--apply``.
+
+    A content line without a trailing newline (a file with no final newline, the
+    common Compose case) is followed by git's ``\\ No newline at end of file``
+    marker. ``difflib`` omits it, which would otherwise glue that line and the
+    next onto one line and garble the diff (issue #261 M2).
     """
-    diff = "".join(
-        difflib.unified_diff(
-            original.splitlines(keepends=True),
-            patched.splitlines(keepends=True),
-            fromfile=path,
-            tofile=path,
-        )
-    )
+    chunks: list[str] = []
+    for line in difflib.unified_diff(
+        original.splitlines(keepends=True),
+        patched.splitlines(keepends=True),
+        fromfile=path,
+        tofile=path,
+    ):
+        # Header lines (`---`/`+++`/`@@`) always end in a newline; only a final
+        # content line can lack one. Re-terminate it and add the git sentinel.
+        if line.endswith("\n"):
+            chunks.append(line)
+        else:
+            chunks.append(line + "\n\\ No newline at end of file\n")
+    diff = "".join(chunks)
     if not diff:
         return ""
     banner = "".join(
