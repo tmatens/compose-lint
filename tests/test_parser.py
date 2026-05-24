@@ -43,6 +43,41 @@ class TestLoads:
             loads("")
 
 
+class TestOverrideTags:
+    """Compose override-file tags (`!reset` / `!override`) parse, not crash."""
+
+    def test_override_sequence(self) -> None:
+        # Issue #277 B1: !override is valid Compose syntax; the value is the list.
+        data, _lines = loads(
+            'services:\n  app:\n    image: nginx\n    ports: !override ["8443:443"]\n'
+        )
+        assert data["services"]["app"]["ports"] == ["8443:443"]
+
+    def test_reset_scalar_is_none(self) -> None:
+        data, _lines = loads(
+            "services:\n  app:\n    image: nginx\n    ports: !reset null\n"
+        )
+        assert data["services"]["app"]["ports"] is None
+
+    def test_override_scalar_keeps_implicit_type(self) -> None:
+        # The override tag is stripped, so the scalar resolves to its plain type.
+        data, _lines = loads(
+            "services:\n  app:\n    image: nginx\n    shm_size: !override 8080\n"
+        )
+        assert data["services"]["app"]["shm_size"] == 8080
+
+    def test_override_mapping_keeps_line_tracking(self) -> None:
+        data, lines = loads(
+            "services:\n"
+            "  app:\n"
+            "    image: nginx\n"
+            "    environment: !override\n"
+            "      FOO: bar\n"
+        )
+        assert data["services"]["app"]["environment"] == {"FOO": "bar"}
+        assert lines["services.app.environment.FOO"] == 5
+
+
 class TestLoadCompose:
     """Tests for load_compose function."""
 
@@ -110,6 +145,15 @@ class TestLoadCompose:
     def test_file_not_found(self) -> None:
         with pytest.raises(FileNotFoundError):
             load_compose(FIXTURES / "nonexistent.yml")
+
+    def test_non_utf8_file_raises_compose_error(self, tmp_path: Path) -> None:
+        # Issue #277 B2: a latin-1 file raises UnicodeDecodeError (a ValueError),
+        # which the OSError handler does not catch. Left uncaught it aborts a whole
+        # directory sweep; it must surface as a per-file ComposeError instead.
+        path = tmp_path / "latin1.yml"
+        path.write_bytes("services:\n  app:\n    image: caf\xe9\n".encode("latin-1"))
+        with pytest.raises(ComposeError, match="Invalid encoding"):
+            load_compose(path)
 
     def test_empty_file(self) -> None:
         with pytest.raises(ComposeError, match="file is empty"):
