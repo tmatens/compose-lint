@@ -271,6 +271,16 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                 file=sys.stderr,
             )
             sys.exit(2)
+        # --explain emits human-readable rule prose to stdout (the requested
+        # artifact of this mode). There is no JSON/SARIF form, so reject those
+        # rather than silently printing markdown when one is requested.
+        if args.output_format != "text":
+            print(
+                "Error: --explain has no JSON or SARIF form; "
+                "use the default text output",
+                file=sys.stderr,
+            )
+            sys.exit(2)
         try:
             print(load_rule_doc(args.explain))
         except UnknownRuleError:

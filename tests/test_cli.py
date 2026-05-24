@@ -213,6 +213,13 @@ class TestCLI:
         assert "unknown rule id" in result.stderr.lower()
         assert "CL-9999" in result.stderr
 
+    def test_explain_rejects_structured_format(self) -> None:
+        for fmt in ("json", "sarif"):
+            result = run_cli("--explain", "CL-0003", "--format", fmt)
+            assert result.returncode == 2, fmt
+            assert "no JSON or SARIF form" in result.stderr
+            assert result.stdout == ""
+
     def test_explain_rejects_malformed_id(self) -> None:
         result = run_cli("--explain", "not-a-rule")
         assert result.returncode == 2
