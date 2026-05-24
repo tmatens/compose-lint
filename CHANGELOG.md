@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Compose override-file tags `!reset` and `!override` no longer make a valid
+  file fail to parse (exit 2). `LineLoader` (a `SafeLoader` subclass) had no
+  constructor for them, so it raised a `ConstructorError`; it now constructs the
+  underlying value and ignores the merge directive, which is all the linter
+  needs. (#277)
+- A non-UTF-8 (e.g. latin-1) file now raises a per-file `ComposeError` instead
+  of an uncaught `UnicodeDecodeError`. Previously one bad-encoding file aborted
+  an entire directory sweep. (#277)
 - The `fix` engine no longer adds `no-new-privileges:true` to either side of an
   `extends` relationship. Docker concatenates list fields like `security_opt`
   across an `extends` merge, so adding the entry to a service that `extends:`

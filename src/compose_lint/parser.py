@@ -169,6 +169,33 @@ def _construct_sequence(loader: LineLoader, node: yaml.SequenceNode) -> list[Any
     return items
 
 
+def _construct_override_tag(loader: LineLoader, node: yaml.Node) -> Any:
+    """Construct a node carrying a Compose override tag (``!reset``/``!override``).
+
+    These are first-class Compose override-file syntax, not arbitrary YAML object
+    tags: ``!override`` replaces a value instead of merging it, and ``!reset``
+    drops an inherited value. A ``SafeLoader`` has no constructor for them, so it
+    raises ``ConstructorError`` and a valid override file is reported broken
+    (issue #277 B1). compose-lint only needs the underlying value to lint, so we
+    construct the node as if the tag were absent — delegating to the
+    line-capturing map/seq constructors so line tracking still works inside an
+    overridden block, and re-resolving a scalar's implicit type so
+    ``!override 8080`` stays an int and ``!reset null`` stays None.
+    """
+    if isinstance(node, yaml.MappingNode):
+        return _construct_mapping(loader, node)
+    if isinstance(node, yaml.SequenceNode):
+        return _construct_sequence(loader, node)
+    # Only a scalar node remains. Re-resolve its implicit type as if the tag were
+    # absent so `!override 8080` stays an int and `!reset null` stays None.
+    assert isinstance(node, yaml.ScalarNode)  # noqa: S101
+    resolved_tag = loader.resolve(yaml.ScalarNode, node.value, (True, False))  # type: ignore[no-untyped-call]
+    plain = yaml.ScalarNode(
+        resolved_tag, node.value, node.start_mark, node.end_mark, node.style
+    )
+    return loader.construct_object(plain)  # type: ignore[no-untyped-call]
+
+
 LineLoader.add_constructor(
     yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
     _construct_mapping,
@@ -177,6 +204,9 @@ LineLoader.add_constructor(
     yaml.resolver.BaseResolver.DEFAULT_SEQUENCE_TAG,
     _construct_sequence,
 )
+# Compose override-file tags: parse the value, ignore the merge directive.
+LineLoader.add_constructor("!reset", _construct_override_tag)
+LineLoader.add_constructor("!override", _construct_override_tag)
 
 
 def _strip_lines(data: Any) -> Any:
@@ -319,6 +349,12 @@ def load_compose(
         content = filepath.read_text(encoding="utf-8")
     except FileNotFoundError:
         raise
+    except UnicodeDecodeError as e:
+        # A non-UTF-8 file (e.g. latin-1) raises UnicodeDecodeError, a ValueError
+        # subclass that the OSError handler below does not catch. Left uncaught it
+        # would abort a whole directory sweep on one bad file; surface it as a
+        # per-file ComposeError instead (issue #277 B2).
+        raise ComposeError(f"Invalid encoding: file is not valid UTF-8 ({e})") from e
     except OSError as e:
         raise ComposeError(f"Cannot read file: {e}") from e
 
