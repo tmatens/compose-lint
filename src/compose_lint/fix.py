@@ -670,3 +670,27 @@ def render_file_diff(
         f"⚠ behavior-changing · {rule_id}: {caveat}\n" for rule_id, caveat in caveats
     )
     return banner + diff
+
+
+def reparse_or_error(patched: str) -> str | None:
+    """Return a parse-error message if ``patched`` is not valid Compose, else None.
+
+    The fix engine's last safety net (ADR-014: a fixer must leave a valid Compose
+    file). Re-parsing the combined candidate text before it is written turns a
+    fixer bug from *silent corruption* into a *safe refusal* — it catches the
+    whole class of "emits invalid YAML", including a shape no test has hit yet,
+    rather than one bug at a time. The per-root-cause fixes (issue #261) still
+    matter; this is the net under them for the unknown next one.
+
+    It is deliberately a net, not a proof: parse success is weaker than
+    non-destructive, so a fixer that drops an unrelated key or comment and still
+    emits valid YAML passes this check. Catching *that* would need a structural
+    before/after comparison, which is a separate, heavier mechanism.
+    """
+    from compose_lint.parser import ComposeError, loads
+
+    try:
+        loads(patched)
+    except ComposeError as e:
+        return str(e)
+    return None
