@@ -78,6 +78,58 @@ class TestOverrideTags:
         assert lines["services.app.environment.FOO"] == 5
 
 
+class TestScalarResolvers:
+    """LineLoader avoids the YAML 1.1 sexagesimal and timestamp traps (#277 F1)."""
+
+    def test_sexagesimal_ports_stay_strings(self) -> None:
+        # `22:22` parsed as the base-60 int 1342 under YAML 1.1, hiding the colon
+        # from CL-0005. Both sides <= 59 must now stay a string.
+        data, _lines = loads(
+            "services:\n"
+            "  a:\n"
+            "    image: nginx\n"
+            "    ports:\n"
+            "      - 22:22\n"
+            "      - 25:25\n"
+            "      - 53:53\n"
+        )
+        ports = data["services"]["a"]["ports"]
+        assert ports == ["22:22", "25:25", "53:53"]
+        assert all(isinstance(p, str) for p in ports)
+
+    def test_plain_ints_and_floats_still_typed(self) -> None:
+        data, _lines = loads(
+            "services:\n  a:\n    image: nginx\n    cpu_count: 8080\n    ratio: 3.14\n"
+        )
+        svc = data["services"]["a"]
+        assert svc["cpu_count"] == 8080
+        assert svc["ratio"] == 3.14
+
+    def test_booleans_keep_yaml_1_1_spelling(self) -> None:
+        # Docker coerces yes/no/on/off to booleans for boolean-typed fields, so
+        # these must stay bool or CL-0002/CL-0007 would miss `privileged: yes`.
+        data, _lines = loads(
+            "services:\n"
+            "  a:\n"
+            "    image: nginx\n"
+            "    privileged: yes\n"
+            "    read_only: off\n"
+        )
+        svc = data["services"]["a"]
+        assert svc["privileged"] is True
+        assert svc["read_only"] is False
+
+    def test_bare_timestamp_stays_string(self) -> None:
+        # A bare date became a datetime.date under YAML 1.1, which is not
+        # JSON-serializable and breaks string-oriented rules.
+        data, _lines = loads(
+            "services:\n  a:\n    image: nginx\n    labels:\n      built: 2024-01-01\n"
+        )
+        built = data["services"]["a"]["labels"]["built"]
+        assert built == "2024-01-01"
+        assert isinstance(built, str)
+
+
 class TestLoadCompose:
     """Tests for load_compose function."""
 

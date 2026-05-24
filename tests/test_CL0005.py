@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from compose_lint.fix import apply_edits
 from compose_lint.models import Finding, Severity
-from compose_lint.parser import load_compose
+from compose_lint.parser import load_compose, loads
 from compose_lint.rules.CL0005_unbound_ports import UnboundPortsRule
 
 if TYPE_CHECKING:
@@ -32,6 +32,17 @@ class TestUnboundPortsRule:
         findings = self._check("unbound_short")
         assert len(findings) == 2
         assert all(f.rule_id == "CL-0005" for f in findings)
+
+    def test_detects_sexagesimal_port(self) -> None:
+        # `22:22` parsed as the base-60 int 1342 under YAML 1.1, so the colon
+        # vanished and the rule found no host mapping (#277 F1). With the parser
+        # fixed the port is a string again and the unbound mapping is detected.
+        data, lines = loads(
+            "services:\n  ssh:\n    image: nginx\n    ports:\n      - 22:22\n"
+        )
+        findings = list(self.rule.check("ssh", data["services"]["ssh"], data, lines))
+        assert len(findings) == 1
+        assert findings[0].rule_id == "CL-0005"
 
     def test_bound_short_syntax_no_findings(self) -> None:
         findings = self._check("bound_short")
