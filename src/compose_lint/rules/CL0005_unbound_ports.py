@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
-from compose_lint.fix import is_anchored_or_merged
+from compose_lint.fix import is_anchored_or_merged, line_indent
 from compose_lint.models import Finding, RuleMetadata, Severity, TextEdit
 from compose_lint.rules import BaseRule, register_rule
 
@@ -171,16 +171,19 @@ class UnboundPortsRule(BaseRule):
     ) -> list[TextEdit] | None:
         """Bind a wildcard or unbound published port to ``127.0.0.1``.
 
-        Edits the port scalar in place: prepends ``127.0.0.1:`` when no host IP
-        is present, or replaces a wildcard host IP (``0.0.0.0``, ``[::]``, ``*``)
-        with ``127.0.0.1``. Only short-syntax string ports are handled. The edit
+        Short syntax (``- 8080:80``) is edited in the scalar: prepend
+        ``127.0.0.1:`` when no host IP is present, or replace a wildcard host IP
+        (``0.0.0.0``, ``[::]``, ``*``) with ``127.0.0.1``. Long syntax (a mapping
+        with ``published:``) gets a ``host_ip: 127.0.0.1`` key — inserted as a
+        sibling when absent, or its wildcard value replaced in place. The edit
         carries a caveat because dropping non-local reachability changes network
         behavior (ADR-014).
 
-        Refuses (returns ``None``) for long-syntax mapping entries (adding
-        ``host_ip:`` is a different primitive), anchored/merged services, a port
-        line that is not a plain block-sequence scalar, and any scalar containing
-        ``$`` interpolation (the resolved host is unknown).
+        Refuses (returns ``None``) for anchored/merged services, flow-style or
+        lone anchor/alias entries, a port line that is not a plain block-sequence
+        scalar or mapping, a long-syntax ``host_ip`` whose value is
+        empty/null/an alias (ambiguous target), and any scalar or host-IP value
+        containing ``$`` interpolation (the resolved host is unknown).
         """
         service = finding.service
         services = data.get("services")
@@ -189,7 +192,8 @@ class UnboundPortsRule(BaseRule):
         service_config = services.get(service)
         if not isinstance(service_config, dict):
             return None
-        if not isinstance(service_config.get("ports"), list):
+        ports = service_config.get("ports")
+        if not isinstance(ports, list):
             return None
 
         item_line = finding.line
@@ -203,27 +207,194 @@ class UnboundPortsRule(BaseRule):
         if is_anchored_or_merged(source_lines, service_line):
             return None
 
-        parsed = _scalar_span(source_lines[item_line - 1])
-        if parsed is None:
-            return None
-        scalar, scalar_col = parsed
-        if "$" in scalar:
-            return None  # variable interpolation: the resolved host is unknown
+        port_config = _port_at_line(ports, lines, service, item_line)
+        if isinstance(port_config, dict):
+            return _fix_long_syntax(port_config, source_lines, item_line)
 
-        span = _host_ip_span(scalar)
-        if span is None:
+        return _fix_short_syntax(source_lines, item_line)
+
+
+def _port_at_line(
+    ports: list[Any],
+    lines: dict[str, int],
+    service: str,
+    item_line: int,
+) -> Any:
+    """Return the parsed port entry whose sequence line is ``item_line``.
+
+    Matches the finding's line against the recorded ``ports[i]`` line so the
+    fixer can tell a long-syntax mapping from a short-syntax scalar without
+    re-parsing. Returns ``None`` when no entry maps to that line.
+    """
+    for index in range(len(ports)):
+        if lines.get(f"services.{service}.ports[{index}]") == item_line:
+            return ports[index]
+    return None
+
+
+def _fix_short_syntax(source_lines: list[str], item_line: int) -> list[TextEdit] | None:
+    """Edit a short-syntax (string) port scalar to bind ``127.0.0.1``."""
+    parsed = _scalar_span(source_lines[item_line - 1])
+    if parsed is None:
+        return None
+    scalar, scalar_col = parsed
+    if "$" in scalar:
+        return None  # variable interpolation: the resolved host is unknown
+
+    span = _host_ip_span(scalar)
+    if span is None:
+        return None
+    repl_start, repl_end, replacement = span
+    return [
+        TextEdit(
+            item_line,
+            scalar_col + repl_start,
+            item_line,
+            scalar_col + repl_end,
+            replacement,
+            caveat=_CAVEAT,
+        )
+    ]
+
+
+def _fix_long_syntax(
+    port_config: dict[str, Any],
+    source_lines: list[str],
+    item_line: int,
+) -> list[TextEdit] | None:
+    """Add or correct ``host_ip`` on a long-syntax port mapping.
+
+    ``item_line`` is the mapping's first-key line (the one carrying the ``-``).
+    When ``host_ip`` is absent, insert ``host_ip: 127.0.0.1`` as a sibling key;
+    when it holds a non-empty wildcard string, replace that value in place. Any
+    other state (empty/null/alias value, flow style, lone anchor) is refused.
+    """
+    dash = _long_syntax_dash(source_lines[item_line - 1])
+    if dash is None:
+        return None  # flow style, anchor/alias entry, or a dashless mapping start
+    dash_col, key_col = dash
+
+    if "host_ip" not in port_config:
+        edit = _insert_host_ip(source_lines, item_line, key_col)
+        return [edit] if edit is not None else None
+
+    host_ip = port_config.get("host_ip")
+    if isinstance(host_ip, str) and host_ip and _is_wildcard_ip(host_ip):
+        edit = _replace_host_ip(source_lines, item_line, dash_col)
+        return [edit] if edit is not None else None
+    return None  # empty/null/alias host_ip: ambiguous, refuse
+
+
+def _long_syntax_dash(raw_line: str) -> tuple[int, int] | None:
+    """Return ``(dash_col, key_col)`` (0-indexed) for a ``- key: ...`` entry.
+
+    ``dash_col`` is the column of the ``-``; ``key_col`` is the column of the
+    first mapping key after it (the indent shared by sibling keys). Returns
+    ``None`` for flow style (``- {``/``- [``), a lone anchor/alias (``- &``/
+    ``- *``), or any line that is not a block-sequence mapping entry.
+    """
+    line = raw_line.rstrip("\n")
+    dash = len(line) - len(line.lstrip(" "))
+    if dash >= len(line) or line[dash] != "-":
+        return None
+    idx = dash + 1
+    if idx >= len(line) or line[idx] != " ":
+        return None  # need whitespace after the dash
+    while idx < len(line) and line[idx] == " ":
+        idx += 1
+    if idx >= len(line) or line[idx] in ("{", "[", "&", "*"):
+        return None  # flow collection or anchor/alias: not a plain mapping
+    return dash, idx
+
+
+def _insert_host_ip(
+    source_lines: list[str],
+    item_line: int,
+    key_col: int,
+) -> TextEdit | None:
+    """Return an edit inserting ``host_ip: 127.0.0.1`` as a sibling key.
+
+    The new line is placed right after ``item_line`` at ``key_col`` indentation
+    (every long-syntax port field is an inline scalar, so the first line never
+    opens a nested block). The file's line ending is preserved; a file whose
+    final line has no terminator gets one before the inserted key.
+    """
+    raw = source_lines[item_line - 1]
+    ending = "\r\n" if raw.endswith("\r\n") else "\n"
+    new_line = " " * key_col + "host_ip: 127.0.0.1"
+    if raw.endswith("\n"):
+        return TextEdit(
+            item_line + 1, 1, item_line + 1, 1, new_line + ending, caveat=_CAVEAT
+        )
+    end_col = len(raw) + 1
+    return TextEdit(
+        item_line, end_col, item_line, end_col, ending + new_line, caveat=_CAVEAT
+    )
+
+
+_HOST_IP_KEY = re.compile(
+    r"^[ \t]*(?:-[ \t]+)?host_ip[ \t]*:(?P<sp>[ \t]*)(?P<val>.*)$"
+)
+
+
+def _replace_host_ip(
+    source_lines: list[str],
+    item_line: int,
+    dash_col: int,
+) -> TextEdit | None:
+    """Return an edit replacing a wildcard ``host_ip`` value with ``127.0.0.1``.
+
+    Scans the mapping's lines (``item_line`` plus every line indented deeper than
+    the ``-``) for the ``host_ip:`` key, then replaces its value, keeping any
+    surrounding quotes and trailing comment. Returns ``None`` if the key cannot
+    be located as a plain wildcard scalar.
+    """
+    last = item_line
+    for idx in range(item_line, len(source_lines)):
+        line = source_lines[idx]
+        if line.strip() == "":
+            continue
+        if line_indent(line) > dash_col:
+            last = idx + 1
+        else:
+            break
+    for line_no in range(item_line, last + 1):
+        edit = _host_ip_value_edit(source_lines[line_no - 1], line_no)
+        if edit is not None:
+            return edit
+    return None
+
+
+def _host_ip_value_edit(raw_line: str, line_no: int) -> TextEdit | None:
+    """Return an edit retargeting a wildcard ``host_ip:`` value on one line.
+
+    Recognises both the dash-bearing first key (``- host_ip: 0.0.0.0``) and a
+    sibling (``  host_ip: "::"``). Replaces only the wildcard value — inside the
+    quotes when quoted — and leaves indentation, quoting, and any trailing
+    comment intact. Returns ``None`` when the line is not a wildcard ``host_ip``.
+    """
+    line = raw_line.rstrip("\n")
+    match = _HOST_IP_KEY.match(line)
+    if match is None:
+        return None
+    val = match.group("val")
+    if not val.strip() or "$" in val:
+        return None  # empty/null or interpolated: ambiguous target
+    val_col = match.start("val") + 1  # 1-indexed column of the value's first char
+    if val[0] in ("'", '"'):
+        quote = val[0]
+        close = val.find(quote, 1)
+        if close == -1 or not _is_wildcard_ip(val[1:close]):
             return None
-        repl_start, repl_end, replacement = span
-        return [
-            TextEdit(
-                item_line,
-                scalar_col + repl_start,
-                item_line,
-                scalar_col + repl_end,
-                replacement,
-                caveat=_CAVEAT,
-            )
-        ]
+        return TextEdit(
+            line_no, val_col + 1, line_no, val_col + close, "127.0.0.1", caveat=_CAVEAT
+        )
+    token = val.split()[0]
+    if not _is_wildcard_ip(token):
+        return None
+    return TextEdit(
+        line_no, val_col, line_no, val_col + len(token), "127.0.0.1", caveat=_CAVEAT
+    )
 
 
 def _scalar_span(raw_line: str) -> tuple[str, int] | None:

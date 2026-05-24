@@ -302,7 +302,7 @@ qualify:
 |------|----------------|------------------|--------|
 | **CL-0007** read-only fs | Insert `read_only: true` | **Changes** — rootfs becomes unwritable; breaks containers that write to it | **Required** |
 | **CL-0003** no-new-privileges | Append `no-new-privileges:true` to `security_opt:`, or create the list | Hardening-only — blocks setuid escalation; near-zero breakage | None |
-| **CL-0005** unbound ports | Prepend `127.0.0.1:` to the host side | **Changes** — drops non-local reachability; breaks intended LAN/remote access | **Required** |
+| **CL-0005** unbound ports | Short syntax: prepend `127.0.0.1:` to the host side. Long syntax: add `host_ip: 127.0.0.1` as a sibling key, or retarget a wildcard one | **Changes** — drops non-local reachability; breaks intended LAN/remote access | **Required** |
 | **CL-0009** unconfined profile | Delete the `seccomp:unconfined` / `apparmor:unconfined` entry | **Changes** — default seccomp/AppArmor profile re-applies; a workload needing a blocked syscall may fail | **Required** |
 | **CL-0014** logging disabled | Delete `driver: none` | **Changes** — default logging driver re-enabled; logs collected again (disk/IO) | **Required** |
 | **CL-0015** healthcheck disabled | Delete the healthcheck `disable` | **Changes** — image's default healthcheck re-enabled; an unhealthy status can affect `depends_on`/orchestration | **Required** |
@@ -311,7 +311,9 @@ Only CL-0003 is hardening-only; the other five change runtime behavior and ship
 a **mandatory dry-run caveat** (Part 3). Implementation groups by edit primitive,
 not severity: insertion (CL-0007) is the vertical slice, then the deletions
 (CL-0009/0014/0015 — structurally simplest, see below), then list-append/create
-(CL-0003), then the in-scalar edit (CL-0005, the riskiest to parse).
+(CL-0003), then the in-scalar edit (CL-0005, the riskiest to parse). CL-0005's
+long-syntax handling (insert/retarget `host_ip` on a port mapping) was added
+afterward as coverage completion — same rule, a second edit primitive.
 
 **Why these six and not the other deletion rules.** The line is *revert a
 guardrail vs. revoke a granted resource*:
