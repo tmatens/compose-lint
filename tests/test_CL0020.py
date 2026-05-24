@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from compose_lint.models import Finding, Severity
-from compose_lint.parser import load_compose
+from compose_lint.parser import load_compose, loads
 from compose_lint.rules.CL0020_credential_env_keys import CredentialEnvKeysRule
 
 FIXTURES = Path(__file__).parent / "compose_files"
@@ -31,6 +31,32 @@ class TestCredentialEnvKeysRule:
         assert findings[0].rule_id == "CL-0020"
         assert findings[0].severity == Severity.HIGH
         assert "POSTGRES_PASSWORD" in findings[0].message
+
+    def test_detects_numeric_password(self) -> None:
+        # An unquoted numeric value decodes to int and was skipped (#277 F7).
+        data, lines = loads(
+            "services:\n"
+            "  a:\n"
+            "    image: nginx:1.27\n"
+            "    environment:\n"
+            "      DB_PASSWORD: 12345678\n"
+        )
+        findings = list(self.rule.check("a", data["services"]["a"], data, lines))
+        assert len(findings) == 1
+        assert findings[0].rule_id == "CL-0020"
+
+    def test_boolean_value_not_flagged(self) -> None:
+        # A credential-shaped key whose value is a YAML boolean (decodes to a
+        # Python bool) is a toggle, not a literal secret — keep it exempt (#277 F7).
+        data, lines = loads(
+            "services:\n"
+            "  a:\n"
+            "    image: nginx:1.27\n"
+            "    environment:\n"
+            "      DB_PASSWORD: no\n"
+        )
+        findings = list(self.rule.check("a", data["services"]["a"], data, lines))
+        assert findings == []
 
     def test_detects_decoy_value(self) -> None:
         # Placeholder values still fire — same leak path, same fix.

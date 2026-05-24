@@ -58,14 +58,16 @@ def _iter_env(env_block: Any) -> Iterator[tuple[str, Any, int | None]]:
 def _find_inline_credential(value: str) -> tuple[str, str, str] | None:
     """Return (scheme, user, password) for an inline credential, else None.
 
-    Returns the first match where neither userinfo half is a variable
-    substitution. Substituted halves indicate the credential is
-    parameterized — the secure-ish pattern, not an inline literal.
+    Returns the first match whose *password* half is a literal. Only the
+    password being a `${VAR}` substitution means the secret is parameterized;
+    a substituted username with a literal password (e.g.
+    `postgres://${DB_USER}:secret@db`) still leaks the credential, so it must
+    not suppress the finding (issue #277 F6).
     """
     for m in _URI_USERINFO_RE.finditer(value):
         user = m.group("user")
         password = m.group("password")
-        if _is_var_ref(user) or _is_var_ref(password):
+        if _is_var_ref(password):
             continue
         return m.group("scheme"), user, password
     return None

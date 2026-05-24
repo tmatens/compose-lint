@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from compose_lint.parser import load_compose
+from compose_lint.parser import load_compose, loads
 from compose_lint.rules.CL0017_shared_mount import SharedMountRule
 
 FIXTURES = Path(__file__).parent / "compose_files"
@@ -35,6 +35,39 @@ class TestSharedMountRule:
     def test_detects_shared_long_syntax(self) -> None:
         findings = self._check("shared_long")
         assert len(findings) == 1
+
+    def test_detects_rshared_short_syntax(self) -> None:
+        # `rshared` (recursive) propagates to the host like `shared` and is the
+        # more common dangerous form; `"shared" in ["rshared"]` was False (#277 F4).
+        data, lines = loads(
+            "services:\n  a:\n    image: nginx:1.27\n    volumes: ['/h:/c:rshared']\n"
+        )
+        findings = list(self.rule.check("a", data["services"]["a"], data, lines))
+        assert len(findings) == 1
+        assert findings[0].rule_id == "CL-0017"
+
+    def test_detects_rshared_long_syntax(self) -> None:
+        data, lines = loads(
+            "services:\n"
+            "  a:\n"
+            "    image: nginx:1.27\n"
+            "    volumes:\n"
+            "      - type: bind\n"
+            "        source: /h\n"
+            "        target: /c\n"
+            "        bind:\n"
+            "          propagation: rshared\n"
+        )
+        findings = list(self.rule.check("a", data["services"]["a"], data, lines))
+        assert len(findings) == 1
+
+    def test_rslave_no_findings(self) -> None:
+        # rslave/slave propagate host -> container only; not flagged.
+        data, lines = loads(
+            "services:\n  a:\n    image: nginx:1.27\n    volumes: ['/h:/c:rslave']\n"
+        )
+        findings = list(self.rule.check("a", data["services"]["a"], data, lines))
+        assert findings == []
 
     def test_rprivate_no_findings(self) -> None:
         findings = self._check("rprivate_long")

@@ -68,10 +68,15 @@ class DangerousCapAddRule(BaseRule):
             return
 
         for i, cap in enumerate(cap_add):
-            cap_upper = str(cap).upper()
-            if cap_upper in DANGEROUS_CAPS:
+            cap_upper = str(cap).strip().upper()
+            # Docker treats a `CAP_` prefix as optional: `CAP_SYS_ADMIN` and
+            # `SYS_ADMIN` name the same capability (so does `CAP_ALL`). The
+            # dict keys are the bare names, so strip the prefix before lookup
+            # (issue #277 F2).
+            cap_key = cap_upper.removeprefix("CAP_")
+            if cap_key in DANGEROUS_CAPS:
                 severity = (
-                    Severity.CRITICAL if cap_upper in CRITICAL_CAPS else Severity.HIGH
+                    Severity.CRITICAL if cap_key in CRITICAL_CAPS else Severity.HIGH
                 )
                 yield Finding(
                     rule_id="CL-0011",
@@ -79,7 +84,7 @@ class DangerousCapAddRule(BaseRule):
                     service=service_name,
                     message=(
                         f"Service adds dangerous capability {cap_upper}: "
-                        f"{DANGEROUS_CAPS[cap_upper]}."
+                        f"{DANGEROUS_CAPS[cap_key]}."
                     ),
                     line=lines.get(f"services.{service_name}.cap_add[{i}]")
                     or lines.get(f"services.{service_name}.cap_add"),

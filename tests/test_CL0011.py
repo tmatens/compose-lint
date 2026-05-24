@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from compose_lint.models import Severity
-from compose_lint.parser import load_compose
+from compose_lint.parser import load_compose, loads
 from compose_lint.rules.CL0011_dangerous_cap_add import DangerousCapAddRule
 
 FIXTURES = Path(__file__).parent / "compose_files"
@@ -28,6 +28,25 @@ class TestDangerousCapAddRule:
         assert len(findings) == 1
         assert findings[0].rule_id == "CL-0011"
         assert "SYS_ADMIN" in findings[0].message
+
+    def test_detects_cap_prefixed_capability(self) -> None:
+        # Docker treats `CAP_SYS_ADMIN` == `SYS_ADMIN`; the rule keyed on the
+        # bare name and missed the prefixed form, including `CAP_ALL` (#277 F2).
+        data, lines = loads(
+            "services:\n  a:\n    image: nginx:1.27\n    cap_add: [CAP_SYS_ADMIN]\n"
+        )
+        findings = list(self.rule.check("a", data["services"]["a"], data, lines))
+        assert len(findings) == 1
+        assert findings[0].rule_id == "CL-0011"
+        assert "CAP_SYS_ADMIN" in findings[0].message
+
+    def test_detects_cap_all_prefixed(self) -> None:
+        data, lines = loads(
+            "services:\n  a:\n    image: nginx:1.27\n    cap_add: [CAP_ALL]\n"
+        )
+        findings = list(self.rule.check("a", data["services"]["a"], data, lines))
+        assert len(findings) == 1
+        assert findings[0].severity is Severity.CRITICAL
 
     def test_detects_sys_ptrace(self) -> None:
         findings = self._check("sys_ptrace")

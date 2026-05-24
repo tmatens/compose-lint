@@ -74,11 +74,13 @@ class TestConnectionStringCredentialsRule:
         findings = self._check("skip_user_literal_password_var")
         assert findings == []
 
-    def test_skip_user_var_password_literal(self) -> None:
-        # Either half being a var disqualifies — credential is parameterized
-        # at least in part.
-        findings = self._check("skip_user_var_password_literal")
-        assert findings == []
+    def test_detect_user_var_password_literal(self) -> None:
+        # Only the password being a var means the secret is parameterized. A var
+        # username with a literal password still leaks the password, so it must
+        # fire (issue #277 F6).
+        findings = self._check("detect_user_var_password_literal")
+        assert len(findings) == 1
+        assert findings[0].rule_id == "CL-0021"
 
     def test_skip_pure_var_value(self) -> None:
         findings = self._check("skip_pure_var_value")
