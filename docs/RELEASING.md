@@ -48,6 +48,9 @@ project-specific rule about new rules (see below). Pick the bump before
 you touch `pyproject.toml`; "what kind of release is this" is the first
 question to answer.
 
+The user-facing version of these guarantees — the stability promise and the
+deprecation lifecycle — lives in [compatibility.md](compatibility.md).
+
 ### Pre-1.0 (current)
 
 While the major version is `0`, the guarantees are weaker and the MINOR
@@ -116,10 +119,22 @@ Once `1.0.0` ships, the contract tightens:
 | Retire a rule ID                             | MINOR   | MAJOR    |
 | Change the default `--fail-on` threshold     | MINOR   | MAJOR    |
 | Drop a Python version                        | MINOR   | MAJOR    |
+| Add a field to JSON/SARIF output             | MINOR   | MINOR    |
+| Remove or rename a JSON/SARIF field          | MINOR   | MAJOR    |
+| Remove or rename a config key                | MINOR   | MAJOR    |
+| Deprecate a flag/key (keep it working)       | PATCH   | MINOR    |
 
 When in doubt pre-1.0, pick MINOR. When in doubt post-1.0, pick the
 higher bump — MAJOR costs the maintainer some release ceremony, but a
 too-low bump breaks users who trusted the version contract.
+
+### Deprecations
+
+Removing anything stable follows the deprecation lifecycle in
+[compatibility.md](compatibility.md#deprecation-lifecycle): announce it under
+`Deprecated` in `CHANGELOG.md`, emit a stderr `warning:` for user-invoked
+surfaces, keep it working for at least one MINOR, and remove it only in a MAJOR
+(listed under `Removed`).
 
 ## Pre-release checks
 
