@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- CL-0005 no longer misses short-syntax ports whose host and container sides are
+  both `<= 59` (`22:22`, `25:25`, `53:53`, ...). PyYAML's YAML 1.1 resolvers
+  parsed these as a single base-60 integer (`22:22` → `1342`), so the rule's
+  `str(port)` saw no colon and reported the file clean. `LineLoader` now drops
+  the sexagesimal `int`/`float` resolver alternatives and the `timestamp`
+  resolver (a bare date like `2024-01-01` was becoming a non-JSON-serializable
+  `datetime.date`), while keeping YAML 1.1 booleans — Docker coerces
+  `yes`/`no`/`on`/`off` to booleans for boolean-typed fields, so keeping them
+  preserves CL-0002/CL-0007 parity with `docker compose config`. (#277)
 - Compose override-file tags `!reset` and `!override` no longer make a valid
   file fail to parse (exit 2). `LineLoader` (a `SafeLoader` subclass) had no
   constructor for them, so it raised a `ConstructorError`; it now constructs the

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -207,6 +208,89 @@ LineLoader.add_constructor(
 # Compose override-file tags: parse the value, ignore the merge directive.
 LineLoader.add_constructor("!reset", _construct_override_tag)
 LineLoader.add_constructor("!override", _construct_override_tag)
+
+
+def _install_scalar_resolvers() -> None:
+    """Rebuild LineLoader's implicit scalar resolvers without two YAML 1.1 traps.
+
+    PyYAML's ``SafeLoader`` resolves plain scalars with YAML 1.1 rules, which
+    mis-type two kinds of Compose value in security-relevant ways:
+
+    * **Sexagesimal integers/floats.** ``22:22`` (and any ``H:C`` port whose
+      sides are both <= 59) parses as the base-60 integer ``1342``, so CL-0005's
+      ``str(port)`` finds no ``:`` and the published port escapes detection
+      (issue #277 F1). The same alternative turns ``5:5``/``25:25``/``53:53``
+      into integers.
+    * **Timestamps.** A bare ``2024-01-01`` becomes a ``datetime.date``, which is
+      not JSON-serializable (latent crash in the JSON/SARIF formatters) and
+      breaks string-oriented rules.
+
+    This rebuilds the resolver table from PyYAML's own patterns with the
+    sexagesimal ``int``/``float`` alternatives removed and the ``timestamp``
+    resolver dropped, leaving every other resolver byte-identical. Booleans keep
+    their YAML 1.1 spelling (``yes``/``no``/``on``/``off`` as well as
+    ``true``/``false``) deliberately: Docker's loader coerces those words to
+    booleans for boolean-typed fields — ``docker compose config`` renders
+    ``privileged: yes`` as ``privileged: true`` — so dropping them would make
+    CL-0002/CL-0007 miss a hardening bypass Docker honors. Only ``LineLoader`` is
+    re-tabled; the global ``yaml.SafeLoader`` is untouched.
+    """
+    LineLoader.yaml_implicit_resolvers = {}
+    LineLoader.add_implicit_resolver(  # type: ignore[no-untyped-call]
+        "tag:yaml.org,2002:bool",
+        re.compile(
+            r"""^(?:yes|Yes|YES|no|No|NO
+                |true|True|TRUE|false|False|FALSE
+                |on|On|ON|off|Off|OFF)$""",
+            re.X,
+        ),
+        list("yYnNtTfFoO"),
+    )
+    LineLoader.add_implicit_resolver(  # type: ignore[no-untyped-call]
+        "tag:yaml.org,2002:float",
+        re.compile(
+            r"""^(?:[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+][0-9]+)?
+                |\.[0-9][0-9_]*(?:[eE][-+][0-9]+)?
+                |[-+]?\.(?:inf|Inf|INF)
+                |\.(?:nan|NaN|NAN))$""",
+            re.X,
+        ),
+        list("-+0123456789."),
+    )
+    LineLoader.add_implicit_resolver(  # type: ignore[no-untyped-call]
+        "tag:yaml.org,2002:int",
+        re.compile(
+            r"""^(?:[-+]?0b[0-1_]+
+                |[-+]?0[0-7_]+
+                |[-+]?(?:0|[1-9][0-9_]*)
+                |[-+]?0x[0-9a-fA-F_]+)$""",
+            re.X,
+        ),
+        list("-+0123456789"),
+    )
+    LineLoader.add_implicit_resolver(  # type: ignore[no-untyped-call]
+        "tag:yaml.org,2002:merge",
+        re.compile(r"^(?:<<)$"),
+        ["<"],
+    )
+    LineLoader.add_implicit_resolver(  # type: ignore[no-untyped-call]
+        "tag:yaml.org,2002:null",
+        re.compile(
+            r"""^(?: ~
+                |null|Null|NULL
+                | )$""",
+            re.X,
+        ),
+        ["~", "n", "N", ""],
+    )
+    LineLoader.add_implicit_resolver(  # type: ignore[no-untyped-call]
+        "tag:yaml.org,2002:value",
+        re.compile(r"^(?:=)$"),
+        ["="],
+    )
+
+
+_install_scalar_resolvers()
 
 
 def _strip_lines(data: Any) -> Any:
