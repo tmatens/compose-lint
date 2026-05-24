@@ -145,11 +145,28 @@ def test_first_child_indent_compact_sequence() -> None:
     assert first_child_indent(["a:\n", "b:\n"], 1) is None
 
 
+def test_first_child_indent_skips_comments() -> None:
+    # A full-line comment before the first child is skipped, not counted as the
+    # child (issue #261): the real child's indent is returned.
+    lines = ["web:\n", "    # note\n", "  image: nginx\n"]
+    assert first_child_indent(lines, 1) == 2
+    # A comment that dedents to the key's indent must not be read as "no child".
+    lines = ["  web:\n", "  # note\n", "    image: nginx\n"]
+    assert first_child_indent(lines, 1) == 4
+
+
 def test_has_merge_key_child() -> None:
     merged = ["web:\n", "  <<: *base\n", "  image: nginx\n"]
     assert has_merge_key_child(merged, 1)
     plain = ["web:\n", "  image: nginx\n"]
     assert not has_merge_key_child(plain, 1)
+
+
+def test_has_merge_key_child_skips_leading_comment() -> None:
+    # A mis-indented comment before the merge key must not poison the child
+    # baseline and hide the `<<` (issue #261 H3).
+    merged = ["  web:\n", "        # over-indented\n", "    <<: *base\n"]
+    assert has_merge_key_child(merged, 1)
 
 
 def test_has_anchor_child() -> None:
@@ -160,6 +177,13 @@ def test_has_anchor_child() -> None:
     assert has_anchor_child(aliased, 1)
     # Inline `key: &a value` starts with the key, not `&`, so it is not flagged.
     assert not has_anchor_child(["web:\n", "    image: &img nginx\n"], 1)
+
+
+def test_has_anchor_child_skips_leading_comment() -> None:
+    # Same root cause as the merge-key case: a comment must not set the baseline
+    # that hides a bare anchor child (issue #261 H3).
+    anchored = ["  web:\n", "        # over-indented\n", "    &websvc\n"]
+    assert has_anchor_child(anchored, 1)
 
 
 def test_is_anchored_or_merged() -> None:
@@ -189,6 +213,18 @@ def test_block_span_covers_key_and_children() -> None:
 def test_block_span_excludes_trailing_blank_lines() -> None:
     lines = ["web:\n", "  image: x\n", "\n", "db:\n"]
     assert block_span(lines, 1) == (1, 2)
+
+
+def test_block_span_includes_interior_comment() -> None:
+    # A comment between a key and its child must not truncate the span (issue
+    # #261 H2): the block runs through its real child, comment included.
+    lines = [
+        "    logging:\n",  # 1
+        "    # comment between key and child\n",  # 2
+        "      driver: none\n",  # 3
+        "  db:\n",  # 4  sibling, dedented
+    ]
+    assert block_span(lines, 1) == (1, 3)
 
 
 def test_block_span_compact_sequence() -> None:
