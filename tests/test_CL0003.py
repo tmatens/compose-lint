@@ -236,10 +236,12 @@ class TestNoNewPrivilegesFix:
         )
         assert self._fix(tmp_path, content) is None
 
-    def test_refuses_service_using_extends(self, tmp_path: Path) -> None:
-        # Docker concatenates security_opt across an extends merge, so fixing both
-        # the base and the child yields a duplicate item Docker rejects. The base
-        # still gets fixed and the child inherits it; refuse on the child.
+    def test_refuses_both_sides_of_extends(self, tmp_path: Path) -> None:
+        # Docker concatenates security_opt across an extends merge, so adding the
+        # entry to either side can duplicate it post-merge (issue #277 C1): a base
+        # that adds it collides with one the child already carries (or that a
+        # sibling fixer adds), and the child collides with the inherited copy.
+        # Both sides refuse; the human resolves the chain.
         content = (
             "services:\n"
             "  base:\n"
@@ -249,5 +251,20 @@ class TestNoNewPrivilegesFix:
             "    image: nginx\n"
         )
         assert self._fix(tmp_path, content, service="child") is None
-        # The base, which does not extend, is still fixed.
-        assert self._fix(tmp_path, content, service="base") is not None
+        # The base is an extends target, so it is no longer auto-fixed either.
+        assert self._fix(tmp_path, content, service="base") is None
+
+    def test_fixes_service_with_no_extends_relation(self, tmp_path: Path) -> None:
+        # A plain service in a file that happens to use extends elsewhere is still
+        # fixed: only the base and the extending child step aside.
+        content = (
+            "services:\n"
+            "  base:\n"
+            "    image: nginx\n"
+            "  child:\n"
+            "    extends: base\n"
+            "    image: nginx\n"
+            "  standalone:\n"
+            "    image: nginx\n"
+        )
+        assert self._fix(tmp_path, content, service="standalone") is not None
