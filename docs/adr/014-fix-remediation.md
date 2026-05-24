@@ -462,6 +462,63 @@ experimental-on-main (Part 5) beats a branch.
 
 ---
 
+## Apply-time safety layers
+
+The corpus gate (Part 6) proves the invariants hold across ~1.5k real files
+*before* release. It cannot run on a user's machine against a file it has never
+seen. A fix can still break a running service four ways, and `--apply` defends
+each in turn — the first three at apply time, the corpus gate behind them:
+
+1. **Invalid file** — the patch is not valid Compose, so `docker compose`
+   refuses to start. Caught by the **parse net** (`reparse_or_error`): re-parse
+   the candidate; refuse and write nothing if it does not parse.
+2. **Collateral mutation** — the patch is valid Compose but a miscomputed splice
+   span dropped or mangled a key the fixer never meant to touch. The parse net
+   waves this through. Caught by **`verify_apply`'s structure check**: every
+   service the fix did not touch, and every top-level key outside `services`,
+   must parse identically before and after. This is the *cheap* form — it
+   confirms untouched config is unchanged, not that the *touched* services
+   changed in exactly the intended way (see Deferred, below).
+3. **Self-inconsistent fix** — the patch is valid and confined but does not
+   settle: a second `fix` pass would edit again, or the fix introduced a finding
+   the original lacked. Caught by **`verify_apply`'s converge + no-new-finding
+   checks** — the same two invariants the corpus gate enforces (Part 6), now
+   enforced at apply time so a live `--apply` carries the guarantee the gate only
+   proved over the corpus.
+4. **Operational write hazard** — the content is correct but the write itself
+   corrupts the file (interrupted write, full disk leaving a truncated file).
+   Caught by the **atomic write**: write a temp file in the same directory,
+   `fsync`, carry over the original's mode, and `os.replace` it in. A reader sees
+   either the old file or the complete new one, never a mix.
+
+A failure at layer 1–3 is a fixer bug, not user error: `--apply` refuses the
+whole file, writes nothing, prints the diff for diagnosis, and exits 2.
+
+### Deferred
+
+- **Strong structural proof.** The interim structure check (layer 2) only
+  asserts *untouched* config is unchanged. The strong form has each fixer
+  declare its intended semantic delta (e.g. `+services.web.read_only`,
+  `-services.web.security_opt[seccomp:unconfined]`) and the engine verify the
+  actual parsed delta equals the declared one — catching a fixer that mutates
+  *its own* service in an unintended way, not just a neighbour. Needs a delta
+  declaration on the fixer interface; defer until a real divergence motivates it.
+- **CRLF / BOM read-path fidelity.** The atomic write emits the computed text
+  verbatim, but `load_compose` reads with newline normalization, so a
+  CRLF-authored file is rewritten with LF endings. Preserving the original line
+  ending (and a leading BOM) requires the *read* path to retain them, not just
+  the write path — a separate change.
+- **Concurrency (TOCTOU).** A fix bases its edits on the file as read; a
+  concurrent edit between read and `os.replace` is silently clobbered.
+  Re-checking the on-disk content is unchanged just before the swap would refuse
+  rather than overwrite. Cheap, but a distinct concern from durability.
+- **Context-aware gating for behavior-changing fixers.** Some caveats could
+  become refusals when the same file shows a clear breakage signal: CL-0005
+  under `network_mode: host` (the `127.0.0.1:` rewrite has different semantics
+  there), and CL-0007 when a service has no `tmpfs:` or writable mount (a
+  read-only rootfs is then very likely to break it — a candidate for a stronger,
+  context-specific caveat rather than an outright refusal).
+
 ## Out of scope for this ADR
 
 - **`fix --check`** (exit 1 if edits would be made, à la `black --check`) — a
