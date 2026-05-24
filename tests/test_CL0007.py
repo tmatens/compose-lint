@@ -153,6 +153,38 @@ class TestReadOnlyFix:
         )
         assert self._fix(tmp_path, content) is None
 
+    def test_refuses_merge_key_behind_misindented_comment(self, tmp_path: Path) -> None:
+        # A mis-indented comment before the merge key must not hide it, which
+        # would let the fixer insert into an anchor-inheriting block and emit
+        # invalid YAML (issue #261 H3).
+        content = (
+            "x-base: &base\n"
+            "  restart: always\n"
+            "services:\n"
+            "  web:\n"
+            "        # over-indented comment\n"
+            "    <<: *base\n"
+            "    image: nginx\n"
+        )
+        assert self._fix(tmp_path, content) is None
+
+    def test_inserts_at_real_child_indent_past_leading_comment(
+        self, tmp_path: Path
+    ) -> None:
+        # A leading comment must not set the insertion indent; read_only lands at
+        # the real child's indent so the result still parses (issue #261).
+        content = "services:\n  web:\n    # note\n    image: nginx\n"
+        edits = self._fix(tmp_path, content)
+        assert edits is not None
+        result = apply_edits(content, edits)
+        assert result == (
+            "services:\n  web:\n    read_only: true\n    # note\n    image: nginx\n"
+        )
+        fixed = tmp_path / "ok.yml"
+        fixed.write_text(result)
+        data, _ = load_compose(fixed)
+        assert data["services"]["web"]["read_only"] is True
+
     def test_refuses_explicit_read_only_value(self, tmp_path: Path) -> None:
         content = "services:\n  web:\n    read_only: false\n    image: nginx\n"
         assert self._fix(tmp_path, content) is None

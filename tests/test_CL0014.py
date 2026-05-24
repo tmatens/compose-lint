@@ -150,6 +150,25 @@ class TestLoggingDisabledFix:
         assert "# pinned" in result
         assert "  db:\n    image: postgres\n" in result
 
+    def test_collapses_through_interior_comment(self, tmp_path: Path) -> None:
+        # A comment between `logging:` and its child must not truncate the span,
+        # which would orphan `driver: none` and emit invalid YAML (issue #261 H2).
+        content = (
+            "services:\n"
+            "  web:\n"
+            "    image: nginx\n"
+            "    logging:\n"
+            "    # comment between key and child\n"
+            "      driver: none\n"
+        )
+        edits = self._fix(tmp_path, content)
+        assert edits is not None
+        result = apply_edits(content, edits)
+        assert result == "services:\n  web:\n    image: nginx\n"
+        fixed = tmp_path / "ok.yml"
+        fixed.write_text(result)
+        load_compose(fixed)  # must still parse
+
     def test_refuses_flow_style_logging(self, tmp_path: Path) -> None:
         content = "services:\n  web:\n    logging: {driver: none}\n"
         assert self._fix(tmp_path, content) is None

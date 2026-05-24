@@ -132,6 +132,21 @@ def _is_seq_item(line: str) -> bool:
     return stripped == "-" or stripped.startswith("- ")
 
 
+def _is_blank_or_comment(line: str) -> bool:
+    """Return whether ``line`` is blank or a full-line ``#`` comment.
+
+    The block-shaping helpers below skip these uniformly. Neither a blank line
+    nor a comment contributes to a block's structure, so neither should set an
+    indent baseline, terminate a span, or be mistaken for a child. Handling them
+    inconsistently is the root cause of issue #261 H2/H3 (a comment interior to a
+    block truncated :func:`block_span`; a mis-indented comment poisoned the child
+    baseline in the anchor/merge guards). Inline comments (``key: value  # ...``)
+    are not full-line comments — those lines start with the key, not ``#``.
+    """
+    stripped = line.strip()
+    return stripped == "" or stripped.startswith("#")
+
+
 def first_child_indent(source_lines: list[str], key_line: int) -> int | None:
     """Return the indentation of the first child line under ``key_line``.
 
@@ -141,12 +156,12 @@ def first_child_indent(source_lines: list[str], key_line: int) -> int | None:
     when it is indented deeper than ``key_line`` *or* it sits at ``key_line``'s
     own indent and is a block-sequence item (``- ...``): YAML lets a sequence
     value share its key's indentation (the "compact" style), and those items are
-    still children of the key. Blank lines are skipped; comment lines count as
-    content, mirroring the original CL-0007 behavior.
+    still children of the key. Blank lines and full-line comments are skipped —
+    neither establishes block structure (issue #261).
     """
     key_indent = line_indent(source_lines[key_line - 1])
     for raw in source_lines[key_line:]:
-        if raw.strip() == "":
+        if _is_blank_or_comment(raw):
             continue
         indent = line_indent(raw)
         if indent > key_indent:
@@ -163,12 +178,13 @@ def has_merge_key_child(source_lines: list[str], key_line: int) -> bool:
     A merge key means the mapping inherits from a YAML anchor, so an edit's
     correct target (the anchor vs. this block) is ambiguous and the fixer must
     refuse (ADR-014 refusal policy). Only direct children — lines at the first
-    child indent — are considered.
+    child indent — are considered. Blank lines and full-line comments are skipped
+    so neither can set the child-indent baseline (issue #261 H3).
     """
     key_indent = line_indent(source_lines[key_line - 1])
     child_indent: int | None = None
     for raw in source_lines[key_line:]:
-        if raw.strip() == "":
+        if _is_blank_or_comment(raw):
             continue
         indent = line_indent(raw)
         if indent <= key_indent:
@@ -190,11 +206,13 @@ def has_anchor_child(source_lines: list[str], key_line: int) -> bool:
     child line that is a lone anchor (``&name``) or alias (``*name``); inline
     forms like ``key: &a value`` start with the key, not ``&``/``*``, and are
     not flagged. Only direct children (lines at the first child indent) count.
+    Blank lines and full-line comments are skipped so neither can set the
+    child-indent baseline (issue #261 H3).
     """
     key_indent = line_indent(source_lines[key_line - 1])
     child_indent: int | None = None
     for raw in source_lines[key_line:]:
-        if raw.strip() == "":
+        if _is_blank_or_comment(raw):
             continue
         indent = line_indent(raw)
         if indent <= key_indent:
@@ -234,15 +252,17 @@ def block_span(source_lines: list[str], key_line: int) -> tuple[int, int]:
     (YAML lets a sequence value share its key's indentation) — sibling items at
     that same indent are also children; the block then ends at the first line
     that dedents or is a same-indent non-item (a sibling mapping key). Blank
-    lines interior to the block are included; a trailing run of blank lines
-    after the last child is excluded. Used to delete a block whole.
+    lines and full-line comments interior to the block are included; a trailing
+    run of either after the last child is excluded. A comment is skipped rather
+    than treated as a dedent, so one sitting between a key and its child no
+    longer truncates the span (issue #261 H2). Used to delete a block whole.
     """
     key_indent = line_indent(source_lines[key_line - 1])
     compact = first_child_indent(source_lines, key_line) == key_indent
     last = key_line
     for idx in range(key_line, len(source_lines)):
         line = source_lines[idx]
-        if line.strip() == "":
+        if _is_blank_or_comment(line):
             continue
         indent = line_indent(line)
         if indent > key_indent:
