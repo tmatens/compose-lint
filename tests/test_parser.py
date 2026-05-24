@@ -43,6 +43,40 @@ class TestLoads:
             loads("")
 
 
+class TestDuplicateKeys:
+    """Duplicate mapping keys are rejected, matching Docker (#277 P2)."""
+
+    def test_duplicate_key_in_service_rejected(self) -> None:
+        # PyYAML let the last value win; Docker rejects the file outright.
+        with pytest.raises(ComposeError, match="duplicate key 'privileged'"):
+            loads(
+                "services:\n"
+                "  web:\n"
+                "    image: nginx\n"
+                "    privileged: false\n"
+                "    privileged: true\n"
+            )
+
+    def test_duplicate_service_name_rejected(self) -> None:
+        with pytest.raises(ComposeError, match="duplicate key 'web'"):
+            loads("services:\n  web:\n    image: a\n  web:\n    image: b\n")
+
+    def test_merge_key_override_is_not_a_duplicate(self) -> None:
+        # A merge key legitimately reintroduces an overridden key; the explicit
+        # value wins and the file stays valid.
+        data, _lines = loads(
+            "x-base: &base\n"
+            "  image: nginx\n"
+            '  restart: "no"\n'
+            "services:\n"
+            "  web:\n"
+            "    <<: *base\n"
+            "    restart: always\n"
+        )
+        assert data["services"]["web"]["restart"] == "always"
+        assert data["services"]["web"]["image"] == "nginx"
+
+
 class TestOverrideTags:
     """Compose override-file tags (`!reset` / `!override`) parse, not crash."""
 

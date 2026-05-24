@@ -129,7 +129,41 @@ class LineLoader(yaml.SafeLoader):
         self._seq_lines: dict[int, dict[int, int]] = {}
 
 
+def _reject_duplicate_keys(loader: LineLoader, node: yaml.MappingNode) -> None:
+    """Raise if a mapping declares the same key twice (issue #277 P2).
+
+    Docker's loader rejects duplicate mapping keys; PyYAML silently lets the last
+    value win, so ``privileged: true`` followed by ``privileged: false`` parsed
+    clean and the line map pointed at the wrong occurrence. Matching Docker, this
+    is a hard error.
+
+    Runs *before* ``flatten_mapping`` so a merge key (``<<``) that legitimately
+    reintroduces an overridden key is not mistaken for a duplicate — merge
+    overrides only appear in ``node.value`` after flattening, and they are
+    resolved by precedence, not rejected. Unhashable (complex ``? ...``) keys are
+    skipped here; the construction loop surfaces them as their own error.
+    """
+    seen: set[Any] = set()
+    for key_node, _value_node in node.value:
+        if key_node.tag == "tag:yaml.org,2002:merge":
+            continue  # the `<<` merge directive, not a data key
+        key = loader.construct_object(key_node)  # type: ignore[no-untyped-call]
+        try:
+            duplicate = key in seen
+        except TypeError:
+            continue  # unhashable key — the construction loop reports it
+        if duplicate:
+            raise yaml.constructor.ConstructorError(
+                None,
+                None,
+                f"found duplicate key {key!r}; Docker rejects duplicate mapping keys",
+                key_node.start_mark,
+            )
+        seen.add(key)
+
+
 def _construct_mapping(loader: LineLoader, node: yaml.MappingNode) -> dict[str, Any]:
+    _reject_duplicate_keys(loader, node)
     loader.flatten_mapping(node)
     mapping: dict[str, Any] = {}
     line_map: dict[str, int] = {}
