@@ -18,6 +18,7 @@ from compose_lint.fix import (
     collect_edits,
     render_file_diff,
     reparse_or_error,
+    verify_apply,
 )
 from compose_lint.formatters.json import build_json_log
 from compose_lint.formatters.json import format_findings as format_json
@@ -444,14 +445,14 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             sys.exit(2)
 
     only = set(args.only) if args.only else None
-    had_parse_error = False
+    had_error = False
 
     for filepath in args.files:
         try:
             data, lines = load_compose(filepath)
         except FileNotFoundError:
             print(f"Error: {filepath}: file not found", file=sys.stderr)
-            had_parse_error = True
+            had_error = True
             continue
         except ComposeNotApplicableError as e:
             # v1 / fragment file: skipped, not an error (ADR-013).
@@ -459,7 +460,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             continue
         except ComposeError as e:
             print(f"Error: {filepath}: {e}", file=sys.stderr)
-            had_parse_error = True
+            had_error = True
             continue
 
         text = Path(filepath).read_text(encoding="utf-8")
@@ -501,7 +502,34 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
                 f"({guard_error}); no changes written",
                 file=sys.stderr,
             )
-            had_parse_error = True
+            had_error = True
+            continue
+
+        # Layer above the parse net (ADR-014): valid Compose is not enough — the
+        # patch must also leave untouched config intact, converge on a second
+        # pass, and raise no new finding. A failure here is a fixer bug too:
+        # refuse, write nothing, and surface the diff for diagnosis.
+        verify_error = verify_apply(
+            data,
+            findings,
+            result,
+            patched,
+            only=only,
+            disabled_rules=disabled_rules,
+            severity_overrides=severity_overrides,
+            excluded_services=excluded_services,
+        )
+        if verify_error is not None:
+            print(
+                render_file_diff(filepath, text, patched, result.caveats),
+                end="",
+                file=sys.stderr,
+            )
+            print(
+                f"Error: {filepath}: {verify_error}; no changes written",
+                file=sys.stderr,
+            )
+            had_error = True
             continue
 
         if args.apply:
@@ -523,4 +551,4 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
                 file=sys.stderr,
             )
 
-    sys.exit(2 if had_parse_error else 0)
+    sys.exit(2 if had_error else 0)

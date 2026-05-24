@@ -465,3 +465,25 @@ class TestFixSubcommand:
         assert exc.value.code == 2
         assert "does not parse as Compose" in capsys.readouterr().err
         assert f.read_text() == _BARE_SERVICE  # nothing written
+
+    def test_apply_refuses_to_write_structural_drift(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        # Beyond the parse net (ADR-014): a patch that is valid Compose but
+        # mutates a service no fixer touched must also be refused, untouched.
+        # Force such a patch (valid YAML, an extra service) to drive the guard.
+        from compose_lint import cli
+
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(_BARE_SERVICE)
+        monkeypatch.setenv("COMPOSE_LINT_EXPERIMENTAL", "1")
+        drifted = _BARE_SERVICE + "  ghost:\n    image: scratch\n"
+        monkeypatch.setattr(cli, "apply_edits", lambda text, edits: drifted)
+        with pytest.raises(SystemExit) as exc:
+            cli.main(["fix", "--apply", str(f)])
+        assert exc.value.code == 2
+        assert "added or removed a service" in capsys.readouterr().err
+        assert f.read_text() == _BARE_SERVICE  # nothing written
