@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `security_opt` directives are now matched with their `=` separator treated as
+  equivalent to `:`, the way Docker accepts them. CL-0009 was missing an
+  `=`-form profile disable (`seccomp=unconfined`, `label=disable`) and CL-0003
+  was firing on a service already hardened with `no-new-privileges=true`. A
+  shared `normalize_security_opt` helper canonicalizes the separator (and case)
+  before every membership/prefix check across the rules and the fix engine.
+  (#277)
 - CL-0005 no longer misses short-syntax ports whose host and container sides are
   both `<= 59` (`22:22`, `25:25`, `53:53`, ...). PyYAML's YAML 1.1 resolvers
   parsed these as a single base-60 integer (`22:22` → `1342`), so the rule's

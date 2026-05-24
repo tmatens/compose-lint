@@ -21,6 +21,7 @@ from compose_lint.fix import (
     has_merge_key_child,
     is_anchored_or_merged,
     line_indent,
+    normalize_security_opt,
     opens_block_body,
     render_file_diff,
     reparse_or_error,
@@ -516,6 +517,17 @@ def test_coordination_refuses_anchored_service(tmp_path: Path) -> None:
     result = collect_edits(findings, data, lines, text, only={"CL-0003", "CL-0009"})
     assert result.edits == []
     assert {"CL-0003", "CL-0009"} <= {f.rule_id for f in result.manual}
+
+
+def test_normalize_security_opt() -> None:
+    # `=` and `:` separators are equivalent in Docker; normalize to the colon
+    # form, lower-case, and leave a value's own `=` (after the first) intact.
+    assert normalize_security_opt("seccomp=unconfined") == "seccomp:unconfined"
+    assert normalize_security_opt("  SECCOMP:Unconfined  ") == "seccomp:unconfined"
+    assert normalize_security_opt("no-new-privileges=true") == "no-new-privileges:true"
+    assert normalize_security_opt("label=disable") == "label:disable"
+    # Only the first separator is rewritten; a later `=` in the value survives.
+    assert normalize_security_opt("label=user:a=b") == "label:user:a=b"
 
 
 def test_extends_targets_recognises_both_forms() -> None:
