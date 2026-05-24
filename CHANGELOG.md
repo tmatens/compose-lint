@@ -7,14 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Experimental `fix` subcommand** (ADR-014) that auto-remediates the
+  mechanically-safe findings — CL-0003, CL-0005, CL-0007, CL-0009,
+  CL-0014, and CL-0015. Dry-run by default (prints a unified diff and
+  flags behavior-changing edits); `--apply` writes fixes in place;
+  `--only` restricts to named rules; `.compose-lint.yml` suppressions are
+  honored; and SARIF output can carry the edits as `fixes[]`. It is
+  reachable without `COMPOSE_LINT_EXPERIMENTAL` but stays hidden from
+  `--help`, prints an experimental warning on every run, is dry-run by
+  default, and is excluded from the SemVer contract until promoted.
+  (#246, #247, #250, #251, #253, #255, #260, #263, #264, #265, #266,
+  #267, #268, #269, #270)
+- `check` as an explicit subcommand, with the CLI routed through argparse
+  subcommands; bare `compose-lint <file>` still works as an implicit
+  `check`, and `--explain CL-XXXX` prints a rule's documentation
+  (ADR-011). (#248)
+- `skip-suppressed`, `quiet`, and `verbose` inputs on the GitHub Action,
+  mirroring the CLI flags. (#258)
+- A published compatibility and stability policy
+  (`docs/compatibility.md`) documenting what SemVer does and does not
+  cover, including the JSON `version` field. (#254)
+
 ### Changed
 
-- The experimental `fix` subcommand is now reachable without setting
-  `COMPOSE_LINT_EXPERIMENTAL=1` (ADR-014 Phase 2). It remains hidden from
-  `--help`, prints an experimental warning on every run, is dry-run by
-  default, and stays excluded from the SemVer contract until promoted.
-  Structured SARIF `fixes[]` from the engine remain behind
-  `COMPOSE_LINT_EXPERIMENTAL=1` until full promotion.
+- JSON output is wrapped in a versioned envelope: the findings array now
+  sits under a top-level object carrying a `version` field, so consumers
+  can detect the schema (ADR-015). (#252)
+- `--explain` is rejected when combined with `--format json` or
+  `--format sarif`, which produced meaningless output. (#257)
+- CIS Docker Benchmark citations re-grounded to v1.7.0. (#256)
 
 ## [0.8.0] - 2026-05-23
 
