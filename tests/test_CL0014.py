@@ -106,11 +106,19 @@ class TestLoggingDisabledFix:
         assert self._fix(tmp_path, content) is None
 
     def test_edit_carries_caveat(self, tmp_path: Path) -> None:
-        content = "services:\n  web:\n    logging:\n      driver: none\n"
+        content = (
+            "services:\n  web:\n    image: nginx\n    logging:\n      driver: none\n"
+        )
         edits = self._fix(tmp_path, content)
         assert edits is not None
         assert edits[0].caveat is not None
         assert "logging" in edits[0].caveat.lower()
+
+    def test_refuses_when_block_is_services_sole_key(self, tmp_path: Path) -> None:
+        # Deleting the logging block would leave `web:` with a null body, which
+        # no longer parses as Compose (issue #261 H1). Refuse instead.
+        content = "services:\n  web:\n    logging:\n      driver: none\n"
+        assert self._fix(tmp_path, content) is None
 
     def test_fix_resolves_finding_and_is_idempotent(self, tmp_path: Path) -> None:
         content = (
