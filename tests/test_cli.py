@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -409,6 +410,17 @@ class TestFixSubcommand:
         patched = f.read_text()
         assert "read_only: true" in patched
         assert "no-new-privileges:true" in patched
+
+    def test_apply_preserves_file_mode(self, tmp_path: Path) -> None:
+        # --apply swaps the file in atomically; the new file must keep the
+        # original's permission bits, not inherit the temp file's 0600.
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(_BARE_SERVICE)
+        f.chmod(0o640)
+        result = run_cli_env(_EXPERIMENTAL, "fix", "--apply", str(f))
+        assert result.returncode == 0
+        assert stat.S_IMODE(f.stat().st_mode) == 0o640
+        assert "read_only: true" in f.read_text()
 
     def test_only_restricts_to_named_rule(self, tmp_path: Path) -> None:
         f = tmp_path / "docker-compose.yml"

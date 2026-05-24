@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
+import stat
 import sys
+import tempfile
 from pathlib import Path
 from typing import NoReturn
 
@@ -416,6 +419,35 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     sys.exit(1 if has_errors else 0)
 
 
+def _atomic_write(path: Path, content: str) -> None:
+    """Write ``content`` to ``path`` atomically, preserving its mode.
+
+    A fix must never leave a half-written Compose file: an interrupted in-place
+    write (crash, full disk) would corrupt a file ``docker compose`` then
+    refuses to start. Write to a temp file in the same directory, flush it to
+    disk, and ``os.replace`` it into place — a reader sees either the old file or
+    the complete new one, never a truncated mix. The original file's permission
+    bits carry over so the fix neither relaxes nor tightens them. ``newline=""``
+    writes the computed text verbatim, with no newline translation.
+    """
+    fd, tmp_name = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+    )
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as tmp:
+            tmp.write(content)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        # Best-effort mode carry-over; the swap below still lands the content.
+        with contextlib.suppress(OSError):
+            os.chmod(tmp_path, stat.S_IMODE(path.stat().st_mode))
+        os.replace(tmp_path, path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+
 def _run_fix(args: argparse.Namespace) -> NoReturn:
     """Run the experimental `fix` operation (ADR-014).
 
@@ -533,7 +565,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             continue
 
         if args.apply:
-            Path(filepath).write_text(patched, encoding="utf-8")
+            _atomic_write(Path(filepath), patched)
             print(
                 f"{filepath}: applied {len(result.edits)} fix(es) across "
                 f"{len(result.fixed)} finding(s)",
