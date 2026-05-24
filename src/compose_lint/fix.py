@@ -410,22 +410,31 @@ def _coordinate_security_opt(
     lines: dict[str, int],
     source_lines: list[str],
 ) -> _FixUnit | None:
-    """Merge CL-0003 + an all-disable CL-0009 ``security_opt`` into one edit.
+    """Merge CL-0003 + CL-0009 over one ``security_opt`` list into a single edit.
 
-    This is the case both per-finding fixers deliberately refuse (ADR-014): a
-    service whose ``security_opt`` entries are *all* profile-disables, which
-    therefore also lacks ``no-new-privileges``. CL-0009 would have to empty the
-    block and CL-0003 would have to append into a block of disables — each
-    non-idempotent on its own. The idempotent joint result is to replace every
-    disable item with a single ``- no-new-privileges:true``: CL-0009's removals
-    and CL-0003's addition expressed as one edit, which re-lints clean for both
-    rules.
+    Fires when a service's ``security_opt`` holds at least one profile-disable
+    (a CL-0009 finding) and lacks ``no-new-privileges`` (a CL-0003 finding).
+    Rewrites the whole item list to its surviving (non-disable) entries plus one
+    ``- no-new-privileges:true``: CL-0009's removals and CL-0003's addition
+    expressed as one edit, which re-lints clean for both rules.
+
+    Doing it jointly resolves two cases the per-finding fixers cannot:
+
+    - **All-disable** — every entry is a disable, so CL-0009 would have to empty
+      the block and CL-0003 would have to append into a block of disables, each
+      non-idempotent on its own (the only case coordinated before #261).
+    - **Mixed with a trailing disable** — CL-0003's append point (the line after
+      the list) meets the deletion of the last item when that item is a disable,
+      so the per-finding fixers mutually refuse and the file never converges
+      (issue #261 M1). A single edit has no internal boundary to collide on.
 
     Returns a coordinated :class:`_FixUnit` consuming both rules' findings, or
     ``None`` when the pattern does not apply or the block cannot be edited
-    unambiguously: anchored/merged service, flow-style ``security_opt``, or an
-    item span holding anything but sequence items (e.g. an interleaved comment a
-    whole-span replacement would drop).
+    unambiguously: anchored/merged service, flow-style ``security_opt``, a list
+    whose items do not map one-to-one onto source lines, an entry already naming
+    ``no-new-privileges`` (e.g. ``:false`` — appending the true form would
+    duplicate the key), or an item span holding anything but sequence items (an
+    interleaved full-line comment a whole-span replacement would drop).
     """
     cl0003 = [f for f in svc_findings if f.rule_id == "CL-0003"]
     cl0009 = [f for f in svc_findings if f.rule_id == "CL-0009"]
@@ -441,10 +450,10 @@ def _coordinate_security_opt(
     security_opt = service_config.get("security_opt")
     if not isinstance(security_opt, list) or not security_opt:
         return None
-    if not all(
+    if not any(
         str(opt).strip().lower() in DISABLED_SECURITY_PROFILES for opt in security_opt
     ):
-        return None
+        return None  # no profile-disable to remove: nothing to coordinate
 
     service_line = lines.get(f"services.{service}")
     so_line = lines.get(f"services.{service}.security_opt")
@@ -469,9 +478,29 @@ def _coordinate_security_opt(
     if any(raw.strip() and not _is_seq_item(raw) for raw in source_lines[so_line:last]):
         return None
 
-    new_item = f"{' ' * item_indent}- no-new-privileges:true\n"
+    # Map each parsed item to its (single, scalar) source line so the disable
+    # test uses the resolved value (quotes resolved). A count mismatch means an
+    # item we cannot place on one line — refuse rather than guess.
+    item_lines = [i for i in range(so_line, last) if _is_seq_item(source_lines[i])]
+    if len(item_lines) != len(security_opt):
+        return None
+    kept: list[str] = []
+    for idx, opt in zip(item_lines, security_opt, strict=True):
+        value = str(opt).strip().lower()
+        if value in DISABLED_SECURITY_PROFILES:
+            continue  # a disable CL-0009 removes
+        if value.startswith("no-new-privileges"):
+            # e.g. `no-new-privileges:false`: appending the true form would
+            # duplicate the key (mirrors CL-0003's per-finding refusal).
+            return None
+        kept.append(source_lines[idx])
+
+    # Surviving entries (verbatim, keeping any inline comments) plus one
+    # no-new-privileges:true, as a single replacement so the removals and the
+    # addition share no boundary to collide on.
+    replacement = "".join(kept) + f"{' ' * item_indent}- no-new-privileges:true\n"
     edit = replace_lines(
-        source_lines, so_line + 1, last, new_item, caveat=_SECURITY_OPT_COORD_CAVEAT
+        source_lines, so_line + 1, last, replacement, caveat=_SECURITY_OPT_COORD_CAVEAT
     )
     return _FixUnit([*cl0003, *cl0009], [edit], caveat_rule_id="CL-0009")
 

@@ -487,9 +487,8 @@ def test_coordination_refuses_anchored_service(tmp_path: Path) -> None:
 
 
 def test_collect_edits_removes_one_item_keeps_others(tmp_path: Path) -> None:
-    # Two security_opt entries with the offending one first: CL-0009 removes just
-    # that item line (the list survives) and CL-0003 appends after the last item.
-    # The edits are on different lines and both apply.
+    # A mixed list (one disable, one legit) is coordinated into a single edit:
+    # the disable drops, the legit entry stays, no-new-privileges is added.
     findings, data, lines, text = _findings_for(
         tmp_path,
         "services:\n"
@@ -506,6 +505,57 @@ def test_collect_edits_removes_one_item_keeps_others(tmp_path: Path) -> None:
     assert "seccomp:unconfined" not in patched
     assert "label:type:svirt_apache" in patched
     assert "no-new-privileges:true" in patched
+
+
+def test_collect_edits_coordinates_mixed_trailing_disable(tmp_path: Path) -> None:
+    # A mixed list whose *last* item is a disable: the per-finding fixers used to
+    # mutually refuse because CL-0003's append point met the trailing CL-0009
+    # delete, leaving the HIGH unfixed and never converging (issue #261 M1).
+    # Coordination resolves both rules in one edit, keeping the legit entry.
+    source = (
+        "services:\n"
+        "  web:\n"
+        "    image: nginx:1.27\n"
+        "    security_opt:\n"
+        "      - seccomp:unconfined\n"
+        "      - label:type:svirt_apache\n"
+        "      - apparmor:unconfined\n"
+    )
+    findings, data, lines, text = _findings_for(tmp_path, source)
+    result = collect_edits(findings, data, lines, text, only={"CL-0003", "CL-0009"})
+    assert {"CL-0003", "CL-0009"} <= {f.rule_id for f in result.fixed}
+    patched = apply_edits(text, result.edits)
+    re_path = tmp_path / "patched.yml"
+    re_path.write_text(patched, encoding="utf-8")
+    re_data, re_lines = load_compose(re_path)
+    assert re_data["services"]["web"]["security_opt"] == [
+        "label:type:svirt_apache",
+        "no-new-privileges:true",
+    ]
+    # Idempotent: re-running over the patched file finds nothing to coordinate.
+    re_findings = run_rules(re_data, re_lines)
+    assert {"CL-0003", "CL-0009"}.isdisjoint({f.rule_id for f in re_findings})
+
+
+def test_coordination_refuses_existing_no_new_privileges_false(tmp_path: Path) -> None:
+    # A list already naming no-new-privileges:false must not be coordinated:
+    # appending the true form would duplicate the key. Coordination steps aside,
+    # so no no-new-privileges:true is added and CL-0003 is left for the human
+    # (it won't flip an explicit :false). CL-0009 still removes the disable.
+    findings, data, lines, text = _findings_for(
+        tmp_path,
+        "services:\n"
+        "  web:\n"
+        "    image: nginx:1.27\n"
+        "    security_opt:\n"
+        "      - seccomp:unconfined\n"
+        "      - no-new-privileges:false\n",
+    )
+    result = collect_edits(findings, data, lines, text, only={"CL-0003", "CL-0009"})
+    patched = apply_edits(text, result.edits)
+    assert "no-new-privileges:true" not in patched  # not coordinated
+    assert "no-new-privileges:false" in patched  # left intact
+    assert "CL-0003" in {f.rule_id for f in result.manual}
 
 
 def test_collect_edits_appends_to_compact_security_opt(tmp_path: Path) -> None:
