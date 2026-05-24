@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 FIXTURES = Path(__file__).parent / "compose_files"
 
 
@@ -441,3 +443,25 @@ class TestFixSubcommand:
         assert result.returncode == 2
         assert "experimental" not in result.stderr.lower()
         assert f.read_text() == _BARE_SERVICE
+
+    def test_apply_refuses_to_write_invalid_compose(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        # Safety net (ADR-014, issue #261): if the engine ever computes invalid
+        # Compose, --apply must refuse and leave the file untouched. Force a
+        # broken result to exercise the guard end-to-end (in-process so the
+        # patched engine is reachable).
+        from compose_lint import cli
+
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(_BARE_SERVICE)
+        monkeypatch.setenv("COMPOSE_LINT_EXPERIMENTAL", "1")
+        monkeypatch.setattr(cli, "apply_edits", lambda text, edits: "services: [\n")
+        with pytest.raises(SystemExit) as exc:
+            cli.main(["fix", "--apply", str(f)])
+        assert exc.value.code == 2
+        assert "does not parse as Compose" in capsys.readouterr().err
+        assert f.read_text() == _BARE_SERVICE  # nothing written

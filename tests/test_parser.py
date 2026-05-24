@@ -14,9 +14,33 @@ from compose_lint.parser import (
     _collect_lines,
     _strip_lines,
     load_compose,
+    loads,
 )
 
 FIXTURES = Path(__file__).parent / "compose_files"
+
+
+class TestLoads:
+    """Tests for the in-memory string parser (parity with load_compose)."""
+
+    def test_parses_valid_string(self) -> None:
+        data, lines = loads("services:\n  web:\n    image: nginx:1.27\n")
+        assert data["services"]["web"]["image"] == "nginx:1.27"
+        # Line capture works the same as the path-based loader.
+        assert lines["services.web"] == 2
+
+    def test_raises_on_invalid_yaml(self) -> None:
+        with pytest.raises(ComposeError, match="Invalid YAML"):
+            loads("services: [\n")
+
+    def test_raises_on_invalid_compose(self) -> None:
+        # The H1 corruption shape: a service with a null body.
+        with pytest.raises(ComposeError, match="service 'web' must be a mapping"):
+            loads("services:\n  web:\n")
+
+    def test_raises_on_empty(self) -> None:
+        with pytest.raises(ComposeError, match="file is empty"):
+            loads("")
 
 
 class TestLoadCompose:

@@ -21,6 +21,7 @@ from compose_lint.fix import (
     line_indent,
     opens_block_body,
     render_file_diff,
+    reparse_or_error,
     replace_lines,
 )
 from compose_lint.models import TextEdit
@@ -689,3 +690,23 @@ def test_render_file_diff_no_spurious_newline_marker() -> None:
     patched = "services:\n  web:\n    read_only: true\n    image: nginx:1.27\n"
     out = render_file_diff("docker-compose.yml", original, patched, [])
     assert "No newline at end of file" not in out
+
+
+# --- reparse safety net ----------------------------------------------------
+
+
+def test_reparse_or_error_passes_valid_compose() -> None:
+    assert reparse_or_error("services:\n  web:\n    image: nginx:1.27\n") is None
+
+
+def test_reparse_or_error_flags_invalid_yaml() -> None:
+    msg = reparse_or_error("services: [\n")
+    assert msg is not None
+    assert "Invalid YAML" in msg
+
+
+def test_reparse_or_error_flags_not_compose() -> None:
+    # The H1 corruption shape — a service emptied to a null body.
+    msg = reparse_or_error("services:\n  web:\n")
+    assert msg is not None
+    assert "must be a mapping" in msg

@@ -13,7 +13,12 @@ from compose_lint import __version__
 from compose_lint.config import ConfigError, load_config
 from compose_lint.engine import filter_findings, run_rules
 from compose_lint.explain import UnknownRuleError, load_rule_doc
-from compose_lint.fix import apply_edits, collect_edits, render_file_diff
+from compose_lint.fix import (
+    apply_edits,
+    collect_edits,
+    render_file_diff,
+    reparse_or_error,
+)
 from compose_lint.formatters.json import build_json_log
 from compose_lint.formatters.json import format_findings as format_json
 from compose_lint.formatters.sarif import build_sarif_log
@@ -479,6 +484,26 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             continue
 
         patched = apply_edits(text, result.edits)
+
+        # Safety net (ADR-014): re-parse the candidate before persisting it. If
+        # the combined edits do not produce valid Compose, that is a fixer bug,
+        # not user error — refuse the whole apply, write nothing, and surface the
+        # diff plus the parse error so it is diagnosable (issue #261).
+        guard_error = reparse_or_error(patched)
+        if guard_error is not None:
+            print(
+                render_file_diff(filepath, text, patched, result.caveats),
+                end="",
+                file=sys.stderr,
+            )
+            print(
+                f"Error: {filepath}: computed fix does not parse as Compose "
+                f"({guard_error}); no changes written",
+                file=sys.stderr,
+            )
+            had_parse_error = True
+            continue
+
         if args.apply:
             Path(filepath).write_text(patched, encoding="utf-8")
             print(

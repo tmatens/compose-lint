@@ -322,6 +322,21 @@ def load_compose(
     except OSError as e:
         raise ComposeError(f"Cannot read file: {e}") from e
 
+    return loads(content)
+
+
+def loads(content: str) -> tuple[dict[str, Any], dict[str, int]]:
+    """Parse and validate Compose from an in-memory string.
+
+    The string form of :func:`load_compose`: identical YAML parsing, line
+    capture, and Compose validation, but with no filesystem read. This lets the
+    fix engine re-parse its own candidate output before persisting it (ADR-014's
+    "leave a valid Compose file" safety net) without round-tripping through a
+    temporary file.
+
+    Raises:
+        ComposeError: If the text is not valid YAML or not a valid Compose file.
+    """
     # LineLoader is a yaml.SafeLoader subclass — this call cannot
     # deserialize arbitrary Python objects. The assertion makes that
     # invariant explicit so a future refactor can't silently break it.
