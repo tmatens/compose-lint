@@ -16,7 +16,10 @@ OWASP_REF = (
     "Docker_Security_Cheat_Sheet.html#rule-8---set-filesystem-and-volumes-to-read-only"
 )
 
-CIS_REF = "CIS Docker Benchmark 5.5 — Do not mount sensitive host system directories"
+CIS_REF = (
+    "CIS Docker Benchmark 5.6 — Ensure sensitive host system directories "
+    "are not mounted on containers"
+)
 
 _SENSITIVE_PATHS = (
     "/etc",

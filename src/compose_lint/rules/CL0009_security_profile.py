@@ -30,14 +30,17 @@ OWASP_REF = (
     "seccomp-apparmor-or-selinux"
 )
 
-CIS_SECCOMP_REF = "CIS Docker Benchmark 5.21 — Do not disable default seccomp profile"
+CIS_SECCOMP_REF = (
+    "CIS Docker Benchmark 5.22 — Ensure that the default seccomp profile "
+    "is not Disabled"
+)
 CIS_APPARMOR_REF = (
-    "CIS Docker Benchmark 5.1 — Ensure that, if applicable, an AppArmor profile "
-    "is enabled"
+    "CIS Docker Benchmark 5.2 — Ensure that, if applicable, an AppArmor "
+    "Profile is enabled"
 )
 CIS_SELINUX_REF = (
-    "CIS Docker Benchmark 5.2 — Ensure that, if applicable, SELinux security "
-    "options are set"
+    "CIS Docker Benchmark 5.3 — Ensure that, if applicable, SELinux "
+    "security options are set"
 )
 
 _PROFILE_DISPLAY_NAME = {

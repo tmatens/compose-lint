@@ -17,9 +17,8 @@ OWASP_REF = (
 )
 
 CIS_REF = (
-    "CIS Docker Benchmark 5.27"
-    " — Ensure docker commands always get the latest version"
-    " of the image"
+    "CIS Docker Benchmark 5.28 — Ensure that Docker commands always make "
+    "use of the latest version of their image"
 )
 
 MUTABLE_TAGS = {"latest", "stable", "edge", "nightly", "dev", "test"}

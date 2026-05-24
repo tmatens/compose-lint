@@ -17,7 +17,8 @@ OWASP_REF = (
 )
 
 CIS_REF = (
-    "CIS Docker Benchmark 5.31 — Do not mount the Docker socket inside any containers"
+    "CIS Docker Benchmark 5.32 — Ensure that the Docker socket is not "
+    "mounted inside any containers"
 )
 
 

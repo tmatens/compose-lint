@@ -12,7 +12,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 CIS_REF = (
-    "CIS Docker Benchmark 5.18 — Do not directly expose host devices to containers"
+    "CIS Docker Benchmark 5.18 — Ensure that host devices are not "
+    "directly exposed to containers"
 )
 
 _DANGEROUS_DEVICE_PATTERNS: list[tuple[re.Pattern[str], str]] = [

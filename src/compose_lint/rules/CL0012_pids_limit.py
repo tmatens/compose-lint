@@ -10,7 +10,7 @@ from compose_lint.rules import BaseRule, register_rule
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-CIS_REF = "CIS Docker Benchmark 5.29 — Ensure the PIDs cgroup limit is set"
+CIS_REF = "CIS Docker Benchmark 5.29 — Ensure that the PIDs cgroup limit is used"
 
 
 @register_rule

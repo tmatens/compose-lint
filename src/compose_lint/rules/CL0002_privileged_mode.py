@@ -16,7 +16,7 @@ OWASP_REF = (
     "privileged-flag"
 )
 
-CIS_REF = "CIS Docker Benchmark 5.4 — Do not use privileged containers"
+CIS_REF = "CIS Docker Benchmark 5.5 — Ensure that privileged containers are not used"
 
 
 @register_rule
