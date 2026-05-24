@@ -217,7 +217,72 @@ class TestUnboundPortsFix:
         )
         assert self.rule.fix(finding, data, lines, content) is None
 
-    def test_refuses_long_syntax(self, tmp_path: Path) -> None:
+    def test_long_syntax_inserts_host_ip_when_absent(self, tmp_path: Path) -> None:
+        content = (
+            "services:\n"
+            "  web:\n"
+            "    ports:\n"
+            "      - target: 80\n"
+            "        published: 8080\n"
+        )
+        edits = self._fix(tmp_path, content)
+        assert edits is not None
+        assert apply_edits(content, edits) == (
+            "services:\n"
+            "  web:\n"
+            "    ports:\n"
+            "      - target: 80\n"
+            "        host_ip: 127.0.0.1\n"
+            "        published: 8080\n"
+        )
+
+    def test_long_syntax_insert_carries_caveat(self, tmp_path: Path) -> None:
+        content = (
+            "services:\n"
+            "  web:\n"
+            "    ports:\n"
+            "      - target: 80\n"
+            "        published: 8080\n"
+        )
+        edits = self._fix(tmp_path, content)
+        assert edits is not None
+        assert edits[0].caveat is not None
+        assert "127.0.0.1" in edits[0].caveat
+
+    def test_long_syntax_replaces_quoted_ipv4_wildcard(self, tmp_path: Path) -> None:
+        content = (
+            "services:\n"
+            "  web:\n"
+            "    ports:\n"
+            "      - target: 443\n"
+            "        published: 8443\n"
+            '        host_ip: "0.0.0.0"\n'
+        )
+        edits = self._fix(tmp_path, content)
+        assert edits is not None
+        assert apply_edits(content, edits) == (
+            "services:\n"
+            "  web:\n"
+            "    ports:\n"
+            "      - target: 443\n"
+            "        published: 8443\n"
+            '        host_ip: "127.0.0.1"\n'
+        )
+
+    def test_long_syntax_replaces_quoted_ipv6_wildcard(self, tmp_path: Path) -> None:
+        content = (
+            "services:\n"
+            "  web:\n"
+            "    ports:\n"
+            "      - target: 80\n"
+            "        published: 8080\n"
+            '        host_ip: "::"\n'
+        )
+        edits = self._fix(tmp_path, content)
+        assert edits is not None
+        assert '        host_ip: "127.0.0.1"\n' in apply_edits(content, edits)
+
+    def test_long_syntax_replaces_unquoted_wildcard(self, tmp_path: Path) -> None:
         content = (
             "services:\n"
             "  web:\n"
@@ -225,6 +290,74 @@ class TestUnboundPortsFix:
             "      - target: 80\n"
             "        published: 8080\n"
             "        host_ip: 0.0.0.0\n"
+        )
+        edits = self._fix(tmp_path, content)
+        assert edits is not None
+        assert "        host_ip: 127.0.0.1\n" in apply_edits(content, edits)
+
+    def test_long_syntax_host_ip_first_key(self, tmp_path: Path) -> None:
+        content = (
+            "services:\n"
+            "  web:\n"
+            "    ports:\n"
+            "      - host_ip: 0.0.0.0\n"
+            "        target: 80\n"
+            "        published: 8080\n"
+        )
+        edits = self._fix(tmp_path, content)
+        assert edits is not None
+        assert "      - host_ip: 127.0.0.1\n" in apply_edits(content, edits)
+
+    def test_long_syntax_preserves_trailing_comment(self, tmp_path: Path) -> None:
+        content = (
+            "services:\n"
+            "  web:\n"
+            "    ports:\n"
+            "      - target: 80\n"
+            "        published: 8080\n"
+            "        host_ip: 0.0.0.0  # external\n"
+        )
+        edits = self._fix(tmp_path, content)
+        assert edits is not None
+        result = apply_edits(content, edits)
+        assert "host_ip: 127.0.0.1  # external" in result
+
+    def test_long_syntax_fix_resolves_finding_and_is_idempotent(
+        self, tmp_path: Path
+    ) -> None:
+        content = (
+            "services:\n"
+            "  web:\n"
+            "    ports:\n"
+            "      - target: 80\n"
+            "        published: 8080\n"
+        )
+        edits = self._fix(tmp_path, content)
+        assert edits is not None
+        patched = apply_edits(content, edits)
+        fixed = tmp_path / "fixed.yml"
+        fixed.write_text(patched)
+        data, lines = load_compose(fixed)
+        findings = list(self.rule.check("web", data["services"]["web"], data, lines))
+        assert findings == []
+        # A second pass produces no further edit.
+        if findings:
+            assert self.rule.fix(findings[0], data, lines, patched) is None
+
+    def test_long_syntax_refuses_flow_style(self, tmp_path: Path) -> None:
+        content = (
+            "services:\n  web:\n    ports:\n      - {target: 80, published: 8080}\n"
+        )
+        assert self._fix(tmp_path, content) is None
+
+    def test_long_syntax_refuses_empty_host_ip(self, tmp_path: Path) -> None:
+        content = (
+            "services:\n"
+            "  web:\n"
+            "    ports:\n"
+            "      - target: 80\n"
+            "        published: 8080\n"
+            "        host_ip:\n"
         )
         assert self._fix(tmp_path, content) is None
 
