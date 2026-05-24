@@ -44,6 +44,28 @@ class TestUnboundPortsRule:
         assert len(findings) == 1
         assert findings[0].rule_id == "CL-0005"
 
+    def test_detects_var_host_port_unbound(self) -> None:
+        # A `${VAR}`-valued host port failed the port regex, so the whole entry
+        # was skipped and the missing bind address went undetected (#277 F5).
+        data, lines = loads(
+            "services:\n  a:\n    image: nginx\n    ports:\n      - ${HOSTPORT}:80\n"
+        )
+        findings = list(self.rule.check("a", data["services"]["a"], data, lines))
+        assert len(findings) == 1
+        assert findings[0].rule_id == "CL-0005"
+
+    def test_var_host_port_with_loopback_bind_no_findings(self) -> None:
+        # A real bind address still suppresses the finding even with a var port.
+        data, lines = loads(
+            "services:\n"
+            "  a:\n"
+            "    image: nginx\n"
+            "    ports:\n"
+            "      - 127.0.0.1:${HOSTPORT}:80\n"
+        )
+        findings = list(self.rule.check("a", data["services"]["a"], data, lines))
+        assert findings == []
+
     def test_bound_short_syntax_no_findings(self) -> None:
         findings = self._check("bound_short")
         assert len(findings) == 0

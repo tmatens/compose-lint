@@ -80,12 +80,20 @@ def _is_literal_credential_value(raw: Any) -> bool:
     """Decide whether a value should be treated as a literal credential.
 
     Skips:
-    - Non-string and empty-string values (env unset, not a credential)
+    - Booleans (a YAML `yes`/`no`/`true`/`false` toggle, not a credential)
+    - Non-string, non-numeric, and empty-string values (env unset)
     - Boolean / numeric toggles like "yes", "true", "1"
     - Any value containing a ${VAR} substitution (parameterized)
 
-    Booleans and ints in YAML decode to Python bool/int and are skipped too.
+    An unquoted numeric value (`DB_PASSWORD: 12345678`) decodes to a Python
+    int/float; it is coerced to its string form so a numeric literal secret is
+    still flagged (issue #277 F7). Booleans subclass int, so they are checked
+    first to preserve the toggle exemption.
     """
+    if isinstance(raw, bool):
+        return False
+    if isinstance(raw, (int, float)):
+        raw = str(raw)
     if not isinstance(raw, str):
         return False
     if raw == "":

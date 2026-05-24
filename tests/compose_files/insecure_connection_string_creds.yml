@@ -36,7 +36,7 @@ services:
     image: app:1.0
     environment:
       DATABASE_URL: postgres://app:${DB_PASSWORD}@db/app
-  skip_user_var_password_literal:
+  detect_user_var_password_literal:
     image: app:1.0
     environment:
       DATABASE_URL: postgres://${USER}:literalpw@db/app

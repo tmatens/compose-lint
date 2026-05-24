@@ -14,6 +14,11 @@ CIS_REF = (
     "CIS Docker Benchmark 5.20 — Ensure mount propagation mode is not set to shared"
 )
 
+# Propagation modes that let a mount created in the container appear on the host.
+# `rshared` is the recursive form and the more common one in the wild; `slave`/
+# `rslave` propagate host -> container only, so they are not flagged (#277 F4).
+_SHARED_PROPAGATION = frozenset({"shared", "rshared"})
+
 
 @register_rule
 class SharedMountRule(BaseRule):
@@ -58,8 +63,8 @@ class SharedMountRule(BaseRule):
         # e.g., /host:/container:shared or /host:/container:ro,shared
         parts = volume.split(":")
         if len(parts) >= 3:
-            options = parts[-1].split(",")
-            return "shared" in options
+            options = {opt.strip().lower() for opt in parts[-1].split(",")}
+            return bool(options & _SHARED_PROPAGATION)
         return False
 
     def _is_shared_long_syntax(self, volume: Any) -> bool:
@@ -70,7 +75,10 @@ class SharedMountRule(BaseRule):
         if not isinstance(bind, dict):
             return False
         propagation = bind.get("propagation")
-        return isinstance(propagation, str) and propagation.lower() == "shared"
+        return (
+            isinstance(propagation, str)
+            and propagation.strip().lower() in _SHARED_PROPAGATION
+        )
 
     def _make_finding(
         self, service_name: str, lines: dict[str, int], volume_str: str, index: int

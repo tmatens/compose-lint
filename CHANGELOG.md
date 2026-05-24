@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- CL-0011 now flags `CAP_`-prefixed capabilities (`CAP_SYS_ADMIN`, `CAP_ALL`,
+  ...). Docker treats the `CAP_` prefix as optional, but the rule keyed on the
+  bare name and missed the prefixed form entirely. (#277)
+- CL-0017 now flags `rshared` mount propagation in both short and long syntax,
+  not just `shared`. `rshared` is the recursive — and more common — form that
+  still propagates container mounts to the host. (#277)
+- CL-0005 now evaluates the bind-address slot when the host port is a `${VAR}`
+  substitution (`${HOSTPORT}:80`). Previously a var-valued host port failed the
+  port pattern and the whole entry was skipped, hiding a wildcard publish. (#277)
+- CL-0021 now flags an inline connection-string credential when the username is
+  a `${VAR}` but the password is a literal (`postgres://${DB_USER}:secret@db`).
+  Only a var-valued *password* means the secret is parameterized. (#277)
+- CL-0020 now flags an unquoted numeric credential value (`DB_PASSWORD:
+  12345678`). The value decodes to an int and was skipped; it is coerced to its
+  string form before the checks, while YAML boolean toggles stay exempt. (#277)
+
 - `security_opt` directives are now matched with their `=` separator treated as
   equivalent to `:`, the way Docker accepts them. CL-0009 was missing an
   `=`-form profile disable (`seccomp=unconfined`, `label=disable`) and CL-0003

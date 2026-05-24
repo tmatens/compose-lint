@@ -31,9 +31,13 @@ CIS_REF = (
 
 # Matches HOST:CONTAINER (with optional non-bracketed IPv4/hostname prefix)
 # or HOST:CONTAINER/proto. Bracketed IPv6 prefixes are stripped before this
-# pattern is applied — see _check_short_syntax.
+# pattern is applied — see _check_short_syntax. The host and container slots
+# also accept a `${VAR}` substitution so a var-valued host port (e.g.
+# `${HOSTPORT}:80`) still has its bind-address slot evaluated rather than
+# skipping the whole entry (issue #277 F5).
+_PORT_PART = r"(?:[\d\-]+(?:/\w+)?|\$\{[^}]+\}(?:/\w+)?)"
 _PORT_PATTERN = re.compile(
-    r"^(?:(?P<ip>[^:]+):)?(?P<host>[\d\-]+):(?P<container>[\d\-]+(?:/\w+)?)$"
+    rf"^(?:(?P<ip>[^:]+):)?(?P<host>{_PORT_PART}):(?P<container>{_PORT_PART})$"
 )
 
 # Values that publish on all interfaces — equivalent to no bind address.
