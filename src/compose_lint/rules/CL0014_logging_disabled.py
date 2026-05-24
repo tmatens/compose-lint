@@ -94,7 +94,8 @@ class LoggingDisabledRule(BaseRule):
         would leave a structurally partial block we can't safely resolve — and
         for anchored/merged services or flow-style blocks (ADR-014 refusal
         policy). The edit carries a caveat because re-enabling logging changes
-        runtime behavior.
+        runtime behavior. A full-line comment sitting inside the block is removed
+        with it; it is treated as belonging to the block (issue #261 L5).
         """
         service = finding.service
         services = data.get("services")

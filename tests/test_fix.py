@@ -9,6 +9,7 @@ import pytest
 from compose_lint.engine import run_rules
 from compose_lint.fix import (
     OverlappingEditError,
+    _spans_conflict,
     apply_edits,
     block_span,
     collect_edits,
@@ -100,6 +101,33 @@ def test_caveat_field_is_preserved() -> None:
     assert edit.caveat == "breaks writers"
     # A caveat does not change how the edit is applied.
     assert apply_edits("x: 1\n", [edit]) == "read_only: true\nx: 1\n"
+
+
+def test_coincident_insertions_order_deterministically() -> None:
+    # Two pure insertions at the same point must produce the same output whatever
+    # order they arrive in — pinned by the replacement tiebreak (issue #261 L2).
+    text = "x: 1\n"
+    a = TextEdit(1, 1, 1, 1, "aaa\n")
+    b = TextEdit(1, 1, 1, 1, "bbb\n")
+    assert apply_edits(text, [a, b]) == apply_edits(text, [b, a])
+    assert apply_edits(text, [a, b]) == "aaa\nbbb\nx: 1\n"
+
+
+def test_spans_conflict_boundaries() -> None:
+    # An insertion at a deletion's *start* composes (apply_edits accepts it), so
+    # it is not a conflict; touching its *end* would orphan content, so it is
+    # (issue #261 L1). Symmetric in the argument order.
+    region = (5, 10)
+    assert not _spans_conflict((5, 5), region)  # start boundary: allowed
+    assert _spans_conflict((10, 10), region)  # end boundary: conflict
+    assert _spans_conflict((7, 7), region)  # interior: conflict
+    assert not _spans_conflict((3, 3), region)  # before the region: allowed
+    assert not _spans_conflict((11, 11), region)  # after the region: allowed
+    # Order of the two spans must not matter.
+    assert _spans_conflict(region, (10, 10))
+    assert not _spans_conflict(region, (5, 5))
+    # Two pure insertions never conflict, even at the same point.
+    assert not _spans_conflict((5, 5), (5, 5))
 
 
 # --- Text-shaping helpers -------------------------------------------------
@@ -591,6 +619,24 @@ def test_collect_edits_refuses_bare_anchor_service(tmp_path: Path) -> None:
     result = collect_edits(findings, data, lines, text, only={"CL-0003", "CL-0007"})
     assert result.edits == []
     assert {"CL-0003", "CL-0007"} <= {f.rule_id for f in result.manual}
+
+
+def test_collect_edits_insertion_at_start_of_deletion_composes(tmp_path: Path) -> None:
+    # CL-0007 inserts read_only at the service's first-child point, which is the
+    # *start* of the logging block CL-0014 deletes. That boundary touch used to be
+    # refused, dropping both fixes; it now composes into valid YAML (issue #261 L1).
+    findings, data, lines, text = _findings_for(
+        tmp_path,
+        "services:\n  web:\n    logging:\n      driver: none\n    image: nginx:1.27\n",
+    )
+    result = collect_edits(findings, data, lines, text, only={"CL-0007", "CL-0014"})
+    assert {"CL-0007", "CL-0014"} <= {f.rule_id for f in result.fixed}
+    patched = apply_edits(text, result.edits)
+    re_path = tmp_path / "patched.yml"
+    re_path.write_text(patched, encoding="utf-8")
+    re_data, _ = load_compose(re_path)  # must still parse
+    assert re_data["services"]["web"]["read_only"] is True
+    assert "logging" not in re_data["services"]["web"]
 
 
 def test_collect_edits_caveats_dedup_and_carry_rule_id(tmp_path: Path) -> None:
