@@ -20,6 +20,7 @@ from compose_lint.fix import (
     line_indent,
     opens_block_body,
     render_file_diff,
+    replace_lines,
 )
 from compose_lint.models import TextEdit
 from compose_lint.parser import load_compose
@@ -238,6 +239,26 @@ def test_delete_lines_carries_caveat() -> None:
     assert delete_lines(lines, 1, 1, caveat="note").caveat == "note"
 
 
+def test_replace_lines_substitutes_span() -> None:
+    text = "a: 1\nold1\nold2\nb: 2\n"
+    lines = text.splitlines(keepends=True)
+    out = apply_edits(text, [replace_lines(lines, 2, 3, "new\n")])
+    assert out == "a: 1\nnew\nb: 2\n"
+
+
+def test_replace_lines_final_line_drops_added_newline() -> None:
+    text = "a: 1\nold"  # final line has no trailing newline
+    lines = text.splitlines(keepends=True)
+    # replacement carries a newline, but the original final line had none, so the
+    # result must not gain a trailing newline.
+    assert apply_edits(text, [replace_lines(lines, 2, 2, "new\n")]) == "a: 1\nnew"
+
+
+def test_replace_lines_carries_caveat() -> None:
+    lines = ["a: 1\n", "b: 2\n"]
+    assert replace_lines(lines, 1, 1, "x\n", caveat="note").caveat == "note"
+
+
 # --- collect_edits ---------------------------------------------------------
 
 
@@ -288,12 +309,11 @@ def test_collect_edits_skips_suppressed(tmp_path: Path) -> None:
     assert "CL-0007" not in {f.rule_id for f in result.fixed}
 
 
-def test_collect_edits_refuses_all_disabled_security_opt(tmp_path: Path) -> None:
-    # security_opt's sole entry is seccomp:unconfined (all entries disabled).
-    # Auto-fixing this needs the two per-finding fixers to coordinate (remove the
-    # disable AND add no-new-privileges) which they can't, so both step aside:
-    # CL-0003 declines to append a survivor and CL-0009 declines to empty the
-    # block. Both are left manual rather than producing a non-idempotent result.
+def test_collect_edits_coordinates_sole_disabled_security_opt(tmp_path: Path) -> None:
+    # security_opt's sole entry is seccomp:unconfined (all entries disabled), so
+    # both per-finding fixers refuse (CL-0003 won't append a survivor, CL-0009
+    # won't empty the block). The coordination pass merges them into one edit:
+    # replace the disable with no-new-privileges. Both findings are marked fixed.
     findings, data, lines, text = _findings_for(
         tmp_path,
         "services:\n"
@@ -304,11 +324,130 @@ def test_collect_edits_refuses_all_disabled_security_opt(tmp_path: Path) -> None
     )
     result = collect_edits(findings, data, lines, text, only={"CL-0003", "CL-0009"})
     fixed_rules = {f.rule_id for f in result.fixed}
-    manual_rules = {f.rule_id for f in result.manual}
-    assert "CL-0003" not in fixed_rules
-    assert "CL-0009" not in fixed_rules
-    assert {"CL-0003", "CL-0009"} <= manual_rules
+    assert {"CL-0003", "CL-0009"} <= fixed_rules
+    patched = apply_edits(text, result.edits)
+    assert "seccomp:unconfined" not in patched
+    assert "no-new-privileges:true" in patched
+    # The merged edit carries CL-0009's behavior-changing caveat.
+    assert any(rule_id == "CL-0009" and caveat for rule_id, caveat in result.caveats)
+    # Idempotent: the patched file re-lints clean for both rules and a second
+    # collection scoped to them produces no further edits.
+    re_path = tmp_path / "patched.yml"
+    re_path.write_text(patched, encoding="utf-8")
+    re_data, re_lines = load_compose(re_path)
+    re_findings = run_rules(re_data, re_lines)
+    assert {"CL-0003", "CL-0009"}.isdisjoint({f.rule_id for f in re_findings})
+    re_result = collect_edits(
+        re_findings, re_data, re_lines, patched, only={"CL-0003", "CL-0009"}
+    )
+    assert re_result.edits == []
+
+
+def test_collect_edits_coordinates_multiple_disabled_entries(tmp_path: Path) -> None:
+    # Two profile-disables and no no-new-privileges: the whole item list collapses
+    # to a single no-new-privileges entry (CL-0009 removals + CL-0003 add merged).
+    findings, data, lines, text = _findings_for(
+        tmp_path,
+        "services:\n"
+        "  web:\n"
+        "    image: nginx:1.27\n"
+        "    security_opt:\n"
+        "      - seccomp:unconfined\n"
+        "      - apparmor:unconfined\n",
+    )
+    result = collect_edits(findings, data, lines, text, only={"CL-0003", "CL-0009"})
+    patched = apply_edits(text, result.edits)
+    re_path = tmp_path / "patched.yml"
+    re_path.write_text(patched, encoding="utf-8")
+    re_data, _ = load_compose(re_path)
+    assert re_data["services"]["web"]["security_opt"] == ["no-new-privileges:true"]
+
+
+def test_collect_edits_coordinates_compact_all_disabled(tmp_path: Path) -> None:
+    # Compact block sequence (items at the key's own indent) that is all-disable.
+    findings, data, lines, text = _findings_for(
+        tmp_path,
+        "services:\n"
+        "  web:\n"
+        "    image: nginx:1.27\n"
+        "    security_opt:\n"
+        "    - seccomp:unconfined\n",
+    )
+    result = collect_edits(findings, data, lines, text, only={"CL-0003", "CL-0009"})
+    patched = apply_edits(text, result.edits)
+    re_path = tmp_path / "patched.yml"
+    re_path.write_text(patched, encoding="utf-8")
+    re_data, _ = load_compose(re_path)
+    assert re_data["services"]["web"]["security_opt"] == ["no-new-privileges:true"]
+
+
+def test_coordination_skipped_when_only_one_rule_selected(tmp_path: Path) -> None:
+    # Coordination needs both rules in scope. With only CL-0009, CL-0003 is not
+    # eligible, so the pass cannot add no-new-privileges; CL-0009 alone still
+    # refuses to empty the block and the finding is left manual.
+    findings, data, lines, text = _findings_for(
+        tmp_path,
+        "services:\n"
+        "  web:\n"
+        "    image: nginx:1.27\n"
+        "    security_opt:\n"
+        "      - seccomp:unconfined\n",
+    )
+    result = collect_edits(findings, data, lines, text, only={"CL-0009"})
     assert result.edits == []
+    assert "CL-0009" in {f.rule_id for f in result.manual}
+
+
+def test_coordination_skipped_when_one_side_suppressed(tmp_path: Path) -> None:
+    # Suppressing CL-0003 (a human decision) takes it out of scope, so the merge
+    # cannot run and CL-0009 falls back to its own (refusing) fixer.
+    source = (
+        "services:\n"
+        "  web:\n"
+        "    image: nginx:1.27\n"
+        "    security_opt:\n"
+        "      - seccomp:unconfined\n"
+    )
+    path = tmp_path / "docker-compose.yml"
+    path.write_text(source, encoding="utf-8")
+    data, lines = load_compose(path)
+    findings = run_rules(data, lines, disabled_rules={"CL-0003": "by policy"})
+    result = collect_edits(findings, data, lines, source, only={"CL-0003", "CL-0009"})
+    assert result.edits == []
+    assert "CL-0009" in {f.rule_id for f in result.manual}
+
+
+def test_coordination_refuses_interleaved_comment(tmp_path: Path) -> None:
+    # A comment among the items would be lost by a whole-span replacement, so the
+    # coordinator refuses and leaves the findings for manual remediation.
+    findings, data, lines, text = _findings_for(
+        tmp_path,
+        "services:\n"
+        "  web:\n"
+        "    image: nginx:1.27\n"
+        "    security_opt:\n"
+        "      - seccomp:unconfined\n"
+        "      # keep me\n"
+        "      - apparmor:unconfined\n",
+    )
+    result = collect_edits(findings, data, lines, text, only={"CL-0003", "CL-0009"})
+    assert result.edits == []
+    assert {"CL-0003", "CL-0009"} <= {f.rule_id for f in result.manual}
+
+
+def test_coordination_refuses_anchored_service(tmp_path: Path) -> None:
+    # An anchored service is never edited (re-anchoring risk), coordination too.
+    findings, data, lines, text = _findings_for(
+        tmp_path,
+        "services:\n"
+        "  web: &web\n"
+        "    image: nginx:1.27\n"
+        "    security_opt:\n"
+        "      - seccomp:unconfined\n",
+    )
+    result = collect_edits(findings, data, lines, text, only={"CL-0003", "CL-0009"})
+    assert result.edits == []
+    assert {"CL-0003", "CL-0009"} <= {f.rule_id for f in result.manual}
 
 
 def test_collect_edits_removes_one_item_keeps_others(tmp_path: Path) -> None:

@@ -255,6 +255,33 @@ def block_span(source_lines: list[str], key_line: int) -> tuple[int, int]:
     return key_line, last
 
 
+def replace_lines(
+    source_lines: list[str],
+    first: int,
+    last: int,
+    replacement: str,
+    *,
+    caveat: str | None = None,
+) -> TextEdit:
+    """Return a :class:`TextEdit` that replaces lines ``first``..``last`` whole.
+
+    The region runs from the start of ``first`` to the start of the line after
+    ``last`` (its trailing newline included), so ``replacement`` substitutes for
+    those lines entirely. When ``last`` is the final line of a file with no
+    trailing newline, the region ends at that line's end instead (there is no
+    following line to anchor to) and a trailing newline on ``replacement`` is
+    dropped so the file does not gain one it never had. :func:`delete_lines` is
+    the empty-``replacement`` special case.
+    """
+    if last < len(source_lines):
+        return TextEdit(first, 1, last + 1, 1, replacement, caveat=caveat)
+    # `last` is the final line: end at its end (its newline, if any, included).
+    end_col = len(source_lines[last - 1]) + 1
+    if replacement.endswith("\n") and not source_lines[last - 1].endswith("\n"):
+        replacement = replacement[:-1]
+    return TextEdit(first, 1, last, end_col, replacement, caveat=caveat)
+
+
 def delete_lines(
     source_lines: list[str],
     first: int,
@@ -264,16 +291,12 @@ def delete_lines(
 ) -> TextEdit:
     """Return a :class:`TextEdit` that removes lines ``first``..``last`` whole.
 
-    The region runs from the start of ``first`` to the start of the line after
-    ``last`` so the trailing newline goes with the deleted lines. When ``last``
-    is the final line of a file with no trailing newline, the region ends at the
-    end of that line instead (there is no following line to anchor to).
+    The empty-``replacement`` case of :func:`replace_lines`: the region runs from
+    the start of ``first`` to the start of the line after ``last`` so the trailing
+    newline goes with the deleted lines (or to the final line's end when there is
+    no following line to anchor to).
     """
-    if last < len(source_lines):
-        return TextEdit(first, 1, last + 1, 1, "", caveat=caveat)
-    # `last` is the final line: end at its end (its newline, if any, included).
-    end_col = len(source_lines[last - 1]) + 1
-    return TextEdit(first, 1, last, end_col, "", caveat=caveat)
+    return replace_lines(source_lines, first, last, "", caveat=caveat)
 
 
 # --- Edit collection across a file's findings -----------------------------
@@ -331,6 +354,108 @@ def _spans_conflict(a: tuple[int, int], b: tuple[int, int]) -> bool:
     return a[0] < b[1] and b[0] < a[1]
 
 
+@dataclass(frozen=True)
+class _FixUnit:
+    """A group of findings resolved together by one set of edits.
+
+    Most units pair a single finding with the edits its rule's fixer produced. A
+    *coordinated* unit groups several findings across rules that one merged edit
+    resolves jointly (see :func:`_coordinate_security_opt`). The unit is the
+    granularity of conflict resolution: if its edits conflict with another unit's,
+    *all* of its findings are refused together. ``caveat_rule_id`` attributes the
+    units's caveats in the dry-run banner — the single finding's rule for a normal
+    unit, or the behavior-changing rule for a coordinated one.
+    """
+
+    findings: list[Finding]
+    edits: list[TextEdit]
+    caveat_rule_id: str
+
+
+# Caveat for the coordinated all-disable `security_opt` rewrite below. Defined
+# here (not imported from CL-0009) because rule modules import `fix`, not the
+# reverse; the wording covers the joint remove-disables + add-no-new-privileges
+# edit rather than CL-0009's single-item removal.
+_SECURITY_OPT_COORD_CAVEAT = (
+    "Replacing the unconfined entries re-applies the default seccomp/AppArmor/"
+    "SELinux profile; a workload that relies on a syscall the default profile "
+    "blocks may fail."
+)
+
+
+def _coordinate_security_opt(
+    service: str,
+    svc_findings: list[Finding],
+    data: dict[str, Any],
+    lines: dict[str, int],
+    source_lines: list[str],
+) -> _FixUnit | None:
+    """Merge CL-0003 + an all-disable CL-0009 ``security_opt`` into one edit.
+
+    This is the case both per-finding fixers deliberately refuse (ADR-014): a
+    service whose ``security_opt`` entries are *all* profile-disables, which
+    therefore also lacks ``no-new-privileges``. CL-0009 would have to empty the
+    block and CL-0003 would have to append into a block of disables — each
+    non-idempotent on its own. The idempotent joint result is to replace every
+    disable item with a single ``- no-new-privileges:true``: CL-0009's removals
+    and CL-0003's addition expressed as one edit, which re-lints clean for both
+    rules.
+
+    Returns a coordinated :class:`_FixUnit` consuming both rules' findings, or
+    ``None`` when the pattern does not apply or the block cannot be edited
+    unambiguously: anchored/merged service, flow-style ``security_opt``, or an
+    item span holding anything but sequence items (e.g. an interleaved comment a
+    whole-span replacement would drop).
+    """
+    cl0003 = [f for f in svc_findings if f.rule_id == "CL-0003"]
+    cl0009 = [f for f in svc_findings if f.rule_id == "CL-0009"]
+    if not cl0003 or not cl0009:
+        return None
+
+    services = data.get("services")
+    if not isinstance(services, dict):
+        return None
+    service_config = services.get(service)
+    if not isinstance(service_config, dict):
+        return None
+    security_opt = service_config.get("security_opt")
+    if not isinstance(security_opt, list) or not security_opt:
+        return None
+    if not all(
+        str(opt).strip().lower() in DISABLED_SECURITY_PROFILES for opt in security_opt
+    ):
+        return None
+
+    service_line = lines.get(f"services.{service}")
+    so_line = lines.get(f"services.{service}.security_opt")
+    n = len(source_lines)
+    if service_line is None or so_line is None:
+        return None
+    if not (1 <= service_line <= n and 1 <= so_line <= n):
+        return None
+    if is_anchored_or_merged(source_lines, service_line):
+        return None
+    if not opens_block_body(source_lines[so_line - 1]):
+        return None
+
+    item_indent = first_child_indent(source_lines, so_line)
+    if item_indent is None:
+        return None
+    _first, last = block_span(source_lines, so_line)
+    if last <= so_line:
+        return None  # `security_opt:` opened a body but has no item lines
+    # The body must be only sequence items (and blanks); refuse if a comment or
+    # other content sits among them so the whole-span replacement never drops it.
+    if any(raw.strip() and not _is_seq_item(raw) for raw in source_lines[so_line:last]):
+        return None
+
+    new_item = f"{' ' * item_indent}- no-new-privileges:true\n"
+    edit = replace_lines(
+        source_lines, so_line + 1, last, new_item, caveat=_SECURITY_OPT_COORD_CAVEAT
+    )
+    return _FixUnit([*cl0003, *cl0009], [edit], caveat_rule_id="CL-0009")
+
+
 def collect_edits(
     findings: Iterable[Finding],
     data: dict[str, Any],
@@ -347,10 +472,14 @@ def collect_edits(
     rule id is not in it are ignored entirely. Findings whose fixer returns
     ``None`` (report-only or a per-occurrence refusal) go to ``manual``.
 
-    Edits are then checked for conflicts across findings: if any edit of one
-    finding conflicts with any edit of another (see :func:`_spans_conflict`),
-    *both* findings are refused and moved to ``manual`` rather than guessing a
-    merge. The surviving edits are returned ready to apply.
+    Before the per-finding pass, a coordination pass groups cross-rule findings
+    that one merged edit resolves jointly where each rule's own fixer would refuse
+    (see :func:`_coordinate_security_opt`); consumed findings are not offered to
+    their own fixers. Edits are then checked for conflicts across *units* (a unit
+    is one finding's edits, or a coordinated group's): if any edit of one unit
+    conflicts with any edit of another (see :func:`_spans_conflict`), *all* of
+    both units' findings are refused and moved to ``manual`` rather than guessing
+    a merge. The surviving edits are returned ready to apply.
     """
     from compose_lint.rules import get_registered_rules
 
@@ -359,19 +488,38 @@ def collect_edits(
         rule = rule_cls()
         rules_by_id[rule.metadata.id] = rule
 
-    candidates: list[tuple[Finding, list[TextEdit]]] = []
+    eligible = [
+        finding
+        for finding in findings
+        if not finding.suppressed
+        and (only is None or finding.rule_id in only)
+        and finding.rule_id in rules_by_id
+    ]
+
+    source_lines = text.splitlines(keepends=True)
+
+    # Coordination pass first, per service, so consumed findings skip their own
+    # (refusing) fixers below.
+    units: list[_FixUnit] = []
+    consumed: set[int] = set()
+    by_service: dict[str, list[Finding]] = {}
+    for finding in eligible:
+        by_service.setdefault(finding.service, []).append(finding)
+    for service, svc_findings in by_service.items():
+        unit = _coordinate_security_opt(
+            service, svc_findings, data, lines, source_lines
+        )
+        if unit is not None:
+            units.append(unit)
+            consumed.update(id(finding) for finding in unit.findings)
+
     manual: list[Finding] = []
-    for finding in findings:
-        if finding.suppressed:
+    for finding in eligible:
+        if id(finding) in consumed:
             continue
-        if only is not None and finding.rule_id not in only:
-            continue
-        matched = rules_by_id.get(finding.rule_id)
-        if matched is None:
-            continue
-        edits = matched.fix(finding, data, lines, text)
+        edits = rules_by_id[finding.rule_id].fix(finding, data, lines, text)
         if edits:
-            candidates.append((finding, edits))
+            units.append(_FixUnit([finding], edits, caveat_rule_id=finding.rule_id))
         else:
             manual.append(finding)
 
@@ -386,27 +534,31 @@ def collect_edits(
             for edit in edits
         ]
 
-    spanned = [(finding, edits, spans_of(edits)) for finding, edits in candidates]
+    spanned = [(unit, spans_of(unit.edits)) for unit in units]
     refused: set[int] = set()
     for i in range(len(spanned)):
         for j in range(i + 1, len(spanned)):
-            if any(_spans_conflict(x, y) for x in spanned[i][2] for y in spanned[j][2]):
+            if any(_spans_conflict(x, y) for x in spanned[i][1] for y in spanned[j][1]):
                 refused.add(i)
                 refused.add(j)
 
     result = FixResult()
     seen_caveats: set[tuple[str, str]] = set()
-    for index, (finding, edits, _spans) in enumerate(spanned):
+    for index, (unit, _spans) in enumerate(spanned):
         if index in refused:
-            result.manual.append(finding)
+            result.manual.extend(unit.findings)
             continue
-        result.fixed.append(finding)
-        result.edits.extend(edits)
-        result.fixed_edits.append((finding, edits))
-        for edit in edits:
-            if edit.caveat and (finding.rule_id, edit.caveat) not in seen_caveats:
-                seen_caveats.add((finding.rule_id, edit.caveat))
-                result.caveats.append((finding.rule_id, edit.caveat))
+        result.fixed.extend(unit.findings)
+        result.edits.extend(unit.edits)
+        for finding in unit.findings:
+            result.fixed_edits.append((finding, unit.edits))
+        for edit in unit.edits:
+            if not edit.caveat:
+                continue
+            key = (unit.caveat_rule_id, edit.caveat)
+            if key not in seen_caveats:
+                seen_caveats.add(key)
+                result.caveats.append(key)
     result.manual.extend(manual)
     return result
 

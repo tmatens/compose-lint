@@ -186,6 +186,30 @@ three things we must produce — a diff, a write, and SARIF `artifactChanges` �
 and keeps the destructive operation in one auditable place rather than smeared
 across 21 rules.
 
+### Multi-rule coordination
+
+A few findings are jointly fixable even though each rule's per-finding fixer must
+refuse in isolation. The canonical case: a `security_opt` whose entries are *all*
+profile-disables (so the service also lacks `no-new-privileges`). CL-0009 alone
+would have to empty the block and CL-0003 alone would have to append into a block
+of disables — each non-idempotent (a second pass would re-fire the other rule).
+The engine runs a **coordination pass** before the per-finding pass: it groups a
+service's findings and, when it recognizes such a pattern, synthesizes one merged
+edit (here: replace every disable item with a single `- no-new-privileges:true`)
+that resolves all the grouped findings at once and re-lints clean. Consumed
+findings skip their own fixers.
+
+This does not weaken "non-overlapping within a file": the coordinator emits a
+single coherent edit, so `apply_edits` still never merges overlapping edits — the
+merge is decided up front by an engine pass that owns the cross-rule knowledge,
+not guessed at splice time. A coordinated group is also the unit of conflict
+resolution: if its edit conflicts with another unit's, the whole group is
+refused. Coordination only fires when every rule it spans is in scope (`--only`)
+and unsuppressed, so it never applies a change the user took out of scope. It
+refuses the same conditions the underlying fixers do (anchored/merged service,
+flow style) plus anything its whole-span rewrite would silently drop, such as a
+comment interleaved among the items.
+
 ---
 
 ## Part 3 — CLI shape and write semantics
