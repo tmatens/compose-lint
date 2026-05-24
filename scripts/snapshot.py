@@ -54,8 +54,13 @@ def _load_findings(results_path: Path) -> tuple[dict[str, list[list[Any]]], list
             if entry.get("error") == "usage_or_parse":
                 parse_errors.append(content_hash)
                 continue
+            # `lint` holds the linter's full JSON document
+            # ({version, tool, findings, errors}); the findings live under the
+            # `findings` key. A clean file with no findings serializes `lint` as
+            # null.
+            lint = entry.get("lint") or {}
             tuples: list[list[Any]] = []
-            for f in entry.get("lint", []):
+            for f in lint.get("findings", []):
                 tuples.append([f["rule_id"], f.get("service") or "", f.get("line")])
             tuples.sort(key=lambda t: (t[0], t[1], t[2] if t[2] is not None else -1))
             if tuples:
