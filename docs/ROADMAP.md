@@ -75,7 +75,7 @@ v1.0 is the **stability commitment**: the CLI surface, exit codes, configuration
 - **Stable, documented contract** — CLI flags, exit codes ([ADR-006](adr/006-exit-codes.md)), the `.compose-lint.yml` schema, and the JSON + SARIF output shapes are frozen and documented as the 1.0 surface. The JSON output gains a versioned envelope before the freeze, so run-level metadata (tool version, parse errors) can be added later without breaking consumers.
 - **`fix` resolved** — shipped as GA, or explicitly carved out as experimental with its own stability exemption, so the rest of the surface can stabilize independently ([ADR-014](adr/014-fix-remediation.md)).
 - **Grounding + severity audit complete** — every rule cites OWASP/CIS/Docker, and no severity change is pending that would alter a CI gate after the freeze.
-- **Documented upgrade/deprecation policy** — how rule additions, severity changes, and config changes are versioned post-1.0.
+- **Documented upgrade/deprecation policy** — the SemVer stability promise (rule additions, severity changes, config and output-shape changes) and the deprecation lifecycle, in [compatibility.md](compatibility.md).
 
 **At GA:** bump the PyPI classifier from `4 - Beta` to `5 - Production/Stable` in the version→1.0.0 commit, and publish a moving `v1` Action tag so users can pin `uses: tmatens/compose-lint@v1`.
 

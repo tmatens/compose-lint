@@ -167,11 +167,11 @@ If you need broad IaC coverage across Terraform, Kubernetes, and more, KICS cove
 | [CL-0012](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0012.md) | MEDIUM | PIDs cgroup limit disabled | — | 5.29 |
 | [CL-0013](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0013.md) | HIGH | Sensitive host path mounted | [Rule #8](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8---set-filesystem-and-volumes-to-read-only) | 5.5 |
 | [CL-0014](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0014.md) | MEDIUM | Logging driver disabled | — | — |
-| [CL-0015](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0015.md) | LOW | Healthcheck disabled | — | 4.6, 5.27 |
+| [CL-0015](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0015.md) | LOW | Healthcheck disabled | — | 4.6, 5.26 |
 | [CL-0016](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0016.md) | HIGH | Dangerous host device exposed | — | 5.18 |
 | [CL-0017](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0017.md) | MEDIUM | Shared mount propagation | — | 5.20 |
 | [CL-0018](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0018.md) | MEDIUM | Explicit root user | [Rule #7](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-7---do-not-run-containers-with-a-root-user) | — |
-| [CL-0019](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0019.md) | MEDIUM | Image tag without digest | [Rule #13](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-13---enhance-supply-chain-security) | 5.27 |
+| [CL-0019](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0019.md) | MEDIUM | Image tag without digest | [Rule #13](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-13---enhance-supply-chain-security) | — |
 | [CL-0020](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0020.md) | HIGH | Credential-shaped env key with literal value | [Rule #11](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-11---use-secret-management-tools) | — |
 | [CL-0021](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0021.md) | HIGH | Credential embedded in connection-string env value | [Rule #11](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-11---use-secret-management-tools) | — |
 
@@ -214,6 +214,10 @@ compose-lint [OPTIONS] [FILE ...]
   --explain CL-XXXX            Print the full documentation for a single rule
   --version                    Show version and exit
 ```
+
+## Versioning & stability
+
+compose-lint follows [Semantic Versioning](https://semver.org/). From 1.0, the CLI, exit codes, config schema, and JSON/SARIF output are stable. New and tightened rules ship in MINOR releases, so pin a version or use `--fail-on` if you need deterministic CI. See [docs/compatibility.md](https://github.com/tmatens/compose-lint/blob/main/docs/compatibility.md) for the full stability promise and deprecation policy.
 
 Color is on when stdout is a terminal. Set `NO_COLOR` to disable it (even on a
 terminal) or `FORCE_COLOR` to force it through a pipe — e.g. into `less -R` or a
