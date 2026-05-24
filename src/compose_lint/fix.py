@@ -27,10 +27,25 @@ if TYPE_CHECKING:
 # territory. Shared here so CL-0003 can decline to append into a block whose
 # entries are *all* profile-disables: CL-0009 will act on those, and appending a
 # survivor first would let a second `fix` pass delete them (breaking idempotency,
-# ADR-014). Values are matched against `str(opt).strip().lower()`.
+# ADR-014). Values are matched against `normalize_security_opt(opt)`.
 DISABLED_SECURITY_PROFILES = frozenset(
     {"seccomp:unconfined", "apparmor:unconfined", "label:disable"}
 )
+
+
+def normalize_security_opt(opt: Any) -> str:
+    """Canonicalize a ``security_opt`` entry for comparison.
+
+    Docker accepts both separators for a ``security_opt`` directive —
+    ``seccomp=unconfined`` ≡ ``seccomp:unconfined``, ``no-new-privileges=true`` ≡
+    ``no-new-privileges:true`` (verified with ``docker compose config``, which
+    accepts and preserves both). Rules and fixers compare against the colon form,
+    so without normalizing the separator CL-0009 misses an ``=``-form disable
+    (issue #277 F3) and CL-0003 fires on an already-hardened ``=``-form
+    ``no-new-privileges`` (#277 P1). Lower-cases and rewrites only the first
+    ``=`` (the key/value separator), leaving any ``=`` inside a value untouched.
+    """
+    return str(opt).strip().lower().replace("=", ":", 1)
 
 
 def extends_targets(data: dict[str, Any]) -> set[str]:
@@ -512,7 +527,8 @@ def _coordinate_security_opt(
     if not isinstance(security_opt, list) or not security_opt:
         return None
     if not any(
-        str(opt).strip().lower() in DISABLED_SECURITY_PROFILES for opt in security_opt
+        normalize_security_opt(opt) in DISABLED_SECURITY_PROFILES
+        for opt in security_opt
     ):
         return None  # no profile-disable to remove: nothing to coordinate
 
@@ -547,7 +563,7 @@ def _coordinate_security_opt(
         return None
     kept: list[str] = []
     for idx, opt in zip(item_lines, security_opt, strict=True):
-        value = str(opt).strip().lower()
+        value = normalize_security_opt(opt)
         if value in DISABLED_SECURITY_PROFILES:
             continue  # a disable CL-0009 removes
         if value.startswith("no-new-privileges"):

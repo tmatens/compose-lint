@@ -11,6 +11,7 @@ from compose_lint.fix import (
     first_child_indent,
     is_anchored_or_merged,
     line_indent,
+    normalize_security_opt,
     opens_block_body,
 )
 from compose_lint.models import Finding, RuleMetadata, Severity, TextEdit
@@ -60,7 +61,8 @@ class NoNewPrivilegesRule(BaseRule):
             security_opt = []
 
         has_no_new_privs = any(
-            str(opt).strip() in ("no-new-privileges:true", "no-new-privileges")
+            normalize_security_opt(opt)
+            in ("no-new-privileges:true", "no-new-privileges")
             for opt in security_opt
         )
 
@@ -153,13 +155,14 @@ class NoNewPrivilegesRule(BaseRule):
         if not isinstance(security_opt, list):
             return None
         if any(
-            str(opt).strip().startswith("no-new-privileges") for opt in security_opt
+            normalize_security_opt(opt).startswith("no-new-privileges")
+            for opt in security_opt
         ):
             # Already named (e.g. `no-new-privileges:false`): appending the true
             # form would duplicate the key. Leave it for the human.
             return None
         if security_opt and all(
-            str(opt).strip().lower() in DISABLED_SECURITY_PROFILES
+            normalize_security_opt(opt) in DISABLED_SECURITY_PROFILES
             for opt in security_opt
         ):
             # Every entry is a profile-disable CL-0009 will remove. If we append

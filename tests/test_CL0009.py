@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from compose_lint.fix import apply_edits
-from compose_lint.parser import load_compose
+from compose_lint.parser import load_compose, loads
 from compose_lint.rules.CL0009_security_profile import SecurityProfileRule
 
 if TYPE_CHECKING:
@@ -34,6 +34,21 @@ class TestSecurityProfileRule:
         assert len(findings) == 1
         assert findings[0].rule_id == "CL-0009"
         assert "seccomp" in findings[0].message
+
+    def test_detects_equals_separator_disable(self) -> None:
+        # Docker accepts `seccomp=unconfined` as well as `seccomp:unconfined`;
+        # the rule compared only the colon form and missed it (#277 F3).
+        data, lines = loads(
+            "services:\n"
+            "  a:\n"
+            "    image: nginx:1.27\n"
+            "    security_opt:\n"
+            "      - seccomp=unconfined\n"
+            "      - label=disable\n"
+        )
+        findings = list(self.rule.check("a", data["services"]["a"], data, lines))
+        assert {f.rule_id for f in findings} == {"CL-0009"}
+        assert len(findings) == 2
 
     def test_detects_apparmor_unconfined(self) -> None:
         data, lines = load_compose(FIXTURES / "insecure_security_profile.yml")

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from compose_lint.fix import apply_edits
-from compose_lint.parser import load_compose
+from compose_lint.parser import load_compose, loads
 from compose_lint.rules.CL0003_no_new_privileges import NoNewPrivilegesRule
 
 if TYPE_CHECKING:
@@ -64,6 +64,19 @@ class TestNoNewPrivilegesRule:
             self.rule.check("short_form", data["services"]["short_form"], data, lines)
         )
         assert len(findings) == 0
+
+    def test_equals_separator_counts_as_hardened(self) -> None:
+        # Docker accepts `no-new-privileges=true` as well as the colon form, so a
+        # service hardened with the `=` form must not be flagged (#277 P1).
+        data, lines = loads(
+            "services:\n"
+            "  a:\n"
+            "    image: nginx:1.27\n"
+            "    security_opt:\n"
+            "      - no-new-privileges=true\n"
+        )
+        findings = list(self.rule.check("a", data["services"]["a"], data, lines))
+        assert findings == []
 
     def test_safe_short_form_with_others_no_findings(self) -> None:
         data, lines = load_compose(FIXTURES / "safe_no_new_priv_short.yml")

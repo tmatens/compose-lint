@@ -8,6 +8,7 @@ from compose_lint.fix import (
     DISABLED_SECURITY_PROFILES,
     delete_lines,
     is_anchored_or_merged,
+    normalize_security_opt,
     opens_block_body,
 )
 from compose_lint.models import Finding, RuleMetadata, Severity
@@ -86,7 +87,7 @@ class SecurityProfileRule(BaseRule):
             return
 
         for i, opt in enumerate(security_opt):
-            opt_str = str(opt).strip().lower()
+            opt_str = normalize_security_opt(opt)
             if opt_str not in DISABLED_SECURITY_PROFILES:
                 continue
             profile_key = opt_str.split(":", 1)[0]
@@ -166,7 +167,7 @@ class SecurityProfileRule(BaseRule):
         disabled = sum(
             1
             for opt in security_opt
-            if str(opt).strip().lower() in DISABLED_SECURITY_PROFILES
+            if normalize_security_opt(opt) in DISABLED_SECURITY_PROFILES
         )
         legit_remaining = len(security_opt) - disabled
 
