@@ -62,7 +62,9 @@ def apply_edits(text: str, edits: list[TextEdit]) -> str:
     position to the first so earlier offsets stay valid as later text changes
     length. Adjacent edits (one ending exactly where the next begins) are
     allowed; genuinely overlapping regions raise :class:`OverlappingEditError`.
-    An empty ``edits`` list returns ``text`` unchanged.
+    Two coincident insertions (same zero-width point) order deterministically by
+    their replacement text, so the result never depends on the order findings
+    arrived in. An empty ``edits`` list returns ``text`` unchanged.
     """
     if not edits:
         return text
@@ -76,7 +78,10 @@ def apply_edits(text: str, edits: list[TextEdit]) -> str:
         )
         for edit in edits
     ]
-    spans.sort(key=lambda span: (span[0], span[1]))
+    # Region first; the replacement is a final, content-derived tiebreak so
+    # coincident insertions order deterministically. Rule id would be ideal but
+    # is not carried on a TextEdit at the splice layer (issue #261 L2).
+    spans.sort(key=lambda span: (span[0], span[1], span[2].replacement))
 
     prev_end = -1
     for begin, end, _edit in spans:
@@ -103,7 +108,13 @@ def apply_edits(text: str, edits: list[TextEdit]) -> str:
 
 
 def line_indent(line: str) -> int:
-    """Return the number of leading spaces on ``line`` (newline-insensitive)."""
+    """Return the number of leading spaces on ``line`` (newline-insensitive).
+
+    Counts spaces only; a tab would not be measured as indentation. This is
+    safe because :func:`compose_lint.parser.load_compose` rejects tab
+    indentation before any fixer runs, so the fixers never see it (issue
+    #261 L3).
+    """
     body = line.rstrip("\n")
     return len(body) - len(body.lstrip(" "))
 
@@ -117,6 +128,11 @@ def opens_block_body(line: str) -> bool:
     colon, and for a line with no colon at all. A fixer that needs to insert
     into or delete a block treats ``False`` as a refusal: there is no plain
     block body to edit unambiguously.
+
+    Uses the first ``:`` on the line, so a quoted key that itself contains a
+    colon (``"a:b":``) is read as having an inline value and returns ``False``.
+    That is a safe over-refusal — the fixer falls back to manual review rather
+    than mis-editing — and the shape is rare (issue #261 L4).
     """
     body = line.rstrip("\n")
     colon = body.find(":")
@@ -353,13 +369,17 @@ def _spans_conflict(a: tuple[int, int], b: tuple[int, int]) -> bool:
       point they splice as independent, well-formed lines (e.g. CL-0007's
       ``read_only`` and CL-0003's ``security_opt``, both inserted as a service's
       first child). They are *not* refused.
-    - **An insertion touching a non-empty region's closed interval**
-      (``begin <= point <= end``) *is* a conflict. The motivating case: CL-0003
-      appends an entry at the line just after a ``security_opt`` block that
-      CL-0009 is collapsing whole — the insertion point equals the deletion's end
-      boundary, so applying both would orphan the appended entry beside the
-      removed parent key. :func:`apply_edits` uses half-open overlap and would
-      not catch this touch, so it is caught here (ADR-014: refuse, never guess).
+    - **An insertion touching a non-empty region's *end*** (``lo < point <= hi``)
+      *is* a conflict; touching its *start* (``point == lo``) is not. The
+      motivating end case: CL-0003 appends an entry at the line just after a
+      ``security_opt`` block that CL-0009 is collapsing whole — the insertion
+      point equals the deletion's end boundary, so applying both would orphan the
+      appended entry beside the removed parent key. :func:`apply_edits` uses
+      half-open overlap and would not catch that touch, so it is caught here
+      (ADR-014: refuse, never guess). An insertion at the *start* boundary lands
+      before the deleted region and composes cleanly — it is exactly what
+      :func:`apply_edits` already accepts — so refusing it only drops a safe fix
+      (issue #261 L1).
     - **Two non-empty regions** conflict on half-open overlap only; adjacency
       (one ending exactly where the next begins) composes fine and is allowed,
       matching :func:`apply_edits`.
@@ -370,7 +390,7 @@ def _spans_conflict(a: tuple[int, int], b: tuple[int, int]) -> bool:
         return False
     if a_empty or b_empty:
         point, lo, hi = (a[0], b[0], b[1]) if a_empty else (b[0], a[0], a[1])
-        return lo <= point <= hi
+        return lo < point <= hi
     return a[0] < b[1] and b[0] < a[1]
 
 
