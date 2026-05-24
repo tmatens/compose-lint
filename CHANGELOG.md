@@ -16,8 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--only` restricts to named rules; `.compose-lint.yml` suppressions are
   honored; and SARIF output can carry the edits as `fixes[]`. It is
   reachable without `COMPOSE_LINT_EXPERIMENTAL` but stays hidden from
-  `--help`, prints an experimental warning on every run, is dry-run by
-  default, and is excluded from the SemVer contract until promoted.
+  `--help`, prints an experimental warning on every run, and is excluded
+  from the SemVer contract until promoted.
   (#246, #247, #250, #251, #253, #255, #260, #263, #264, #265, #266,
   #267, #268, #269, #270)
 - `check` as an explicit subcommand, with the CLI routed through argparse
@@ -32,12 +32,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- JSON output is wrapped in a versioned envelope: the findings array now
-  sits under a top-level object carrying a `version` field, so consumers
-  can detect the schema (ADR-015). (#252)
+- **Breaking (JSON consumers):** `--format json` is now a versioned
+  envelope — an object with `version`, `tool`, `findings`, and `errors`
+  — instead of a bare findings array. Read findings from `.findings`, and
+  `.version` for the schema (ADR-015). (#252)
 - `--explain` is rejected when combined with `--format json` or
   `--format sarif`, which produced meaningless output. (#257)
-- CIS Docker Benchmark citations re-grounded to v1.7.0. (#256)
+- CIS Docker Benchmark rule citations re-grounded to v1.7.0 and
+  corrected — e.g. CL-0015 now cites 5.26 (was 5.27) and CL-0019 drops a
+  miscited 5.27. (#249, #256)
 
 ## [0.8.0] - 2026-05-23
 
