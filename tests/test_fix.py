@@ -15,6 +15,7 @@ from compose_lint.fix import (
     block_span,
     collect_edits,
     delete_lines,
+    extends_targets,
     first_child_indent,
     has_anchor_child,
     has_merge_key_child,
@@ -515,6 +516,78 @@ def test_coordination_refuses_anchored_service(tmp_path: Path) -> None:
     result = collect_edits(findings, data, lines, text, only={"CL-0003", "CL-0009"})
     assert result.edits == []
     assert {"CL-0003", "CL-0009"} <= {f.rule_id for f in result.manual}
+
+
+def test_extends_targets_recognises_both_forms() -> None:
+    data = {
+        "services": {
+            "base": {"image": "nginx"},
+            "other_base": {"image": "nginx"},
+            "remote_base": {"image": "nginx"},
+            "shortform": {"extends": "base"},
+            "longform": {"extends": {"service": "other_base"}},
+            # An extends pointing at another file does not target a local service.
+            "crossfile": {"extends": {"file": "common.yml", "service": "remote_base"}},
+            "plain": {"image": "nginx"},
+        }
+    }
+    assert extends_targets(data) == {"base", "other_base"}
+
+
+def test_extends_targets_empty_without_services() -> None:
+    assert extends_targets({}) == set()
+    assert extends_targets({"services": []}) == set()
+
+
+def test_coordination_refuses_extends_child(tmp_path: Path) -> None:
+    # Issue #277 C1: the child goes through the coordination pass (it has a
+    # disable + no no-new-privileges), but it `extends` a base whose security_opt
+    # is append-merged into it. Rewriting the child here, while the base's
+    # per-finding fixer appends to the base, duplicates the entry post-merge —
+    # invisible to the reparse guard. Both sides must refuse: the file is left
+    # untouched so Docker (which accepted the original) still accepts it.
+    findings, data, lines, text = _findings_for(
+        tmp_path,
+        "services:\n"
+        "  base:\n"
+        "    image: nginx:1.27\n"
+        "    security_opt:\n"
+        "      - label:user:foo\n"
+        "  child:\n"
+        "    extends:\n"
+        "      service: base\n"
+        "    image: nginx:1.27\n"
+        "    security_opt:\n"
+        "      - seccomp:unconfined\n",
+    )
+    result = collect_edits(findings, data, lines, text, only={"CL-0003", "CL-0009"})
+    assert result.edits == []
+    manual_rules = {f.rule_id for f in result.manual}
+    assert {"CL-0003", "CL-0009"} <= manual_rules
+
+
+def test_extends_base_not_appended_when_child_declares_entry(tmp_path: Path) -> None:
+    # Issue #277 C1, base side: the child already declares no-new-privileges, so
+    # nothing fires on it, but the base lacks it and CL-0003 fires. Appending to
+    # the base would collide with the child's inherited-then-own copy post-merge.
+    # The base is an extends target, so its per-finding fixer must refuse.
+    findings, data, lines, text = _findings_for(
+        tmp_path,
+        "services:\n"
+        "  base:\n"
+        "    image: nginx:1.27\n"
+        "    security_opt:\n"
+        "      - label:user:foo\n"
+        "  child:\n"
+        "    extends:\n"
+        "      service: base\n"
+        "    image: nginx:1.27\n"
+        "    security_opt:\n"
+        "      - no-new-privileges:true\n",
+    )
+    result = collect_edits(findings, data, lines, text, only={"CL-0003", "CL-0009"})
+    assert result.edits == []
+    assert "CL-0003" in {f.rule_id for f in result.manual}
 
 
 def test_collect_edits_removes_one_item_keeps_others(tmp_path: Path) -> None:

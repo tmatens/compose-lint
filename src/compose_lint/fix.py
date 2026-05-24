@@ -33,6 +33,41 @@ DISABLED_SECURITY_PROFILES = frozenset(
 )
 
 
+def extends_targets(data: dict[str, Any]) -> set[str]:
+    """Return the names of services another in-file service ``extends``.
+
+    A base service must not have list-valued fields (``security_opt``,
+    ``cap_add``, ...) auto-appended or created by a fixer: Docker append-merges
+    the base's list into every service that ``extends`` it, so an item we add to
+    the base can collide with one the child already declares — or one a fixer
+    adds to a sibling — yielding a duplicate item Docker rejects. Our parser
+    never resolves ``extends``, so that duplicate exists only post-merge, where
+    neither the reparse guard nor ``verify_apply`` can see it. This mirrors the
+    child-side ``"extends" in service_config`` refusal the per-finding fixers
+    already carry (issue #277 C1).
+
+    Only same-file targets count: an ``extends`` carrying a ``file:`` key points
+    at a base in another file, so a like-named local service is not its target.
+    Both the mapping form (``extends: {service: base}``) and the string short
+    form (``extends: base``) are recognised.
+    """
+    services = data.get("services")
+    if not isinstance(services, dict):
+        return set()
+    targets: set[str] = set()
+    for name, config in services.items():
+        if name == "__lines__" or not isinstance(config, dict):
+            continue
+        ext = config.get("extends")
+        if isinstance(ext, str):
+            targets.add(ext)
+        elif isinstance(ext, dict) and not ext.get("file"):
+            service = ext.get("service")
+            if isinstance(service, str):
+                targets.add(service)
+    return targets
+
+
 class OverlappingEditError(ValueError):
     """Raised when two edits target overlapping regions of the same file."""
 
@@ -466,6 +501,12 @@ def _coordinate_security_opt(
         return None
     service_config = services.get(service)
     if not isinstance(service_config, dict):
+        return None
+    if "extends" in service_config or service in extends_targets(data):
+        # Either side of an extends merge: rewriting this security_opt would
+        # collide with the append-merged list on the other side (issue #277 C1).
+        # The per-finding fixers already refuse the child side; refuse the base
+        # side too, since the coordinator re-implements the security_opt add.
         return None
     security_opt = service_config.get("security_opt")
     if not isinstance(security_opt, list) or not security_opt:

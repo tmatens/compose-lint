@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from compose_lint.fix import (
     DISABLED_SECURITY_PROFILES,
     block_span,
+    extends_targets,
     first_child_indent,
     is_anchored_or_merged,
     line_indent,
@@ -97,8 +98,9 @@ class NoNewPrivilegesRule(BaseRule):
         the only hardening-only fixer (ADR-014) — blocking setuid/setgid
         escalation has near-zero breakage — so the edit carries no caveat.
 
-        Refuses (returns ``None``) for anchored/merged services, services that
-        use ``extends:``, a flow-style or non-list ``security_opt``, a service
+        Refuses (returns ``None``) for anchored/merged services, either side of
+        an ``extends`` merge (the service uses ``extends:``, or a sibling
+        ``extends`` it), a flow-style or non-list ``security_opt``, a service
         whose child indentation cannot be determined, or a ``security_opt`` that
         already names ``no-new-privileges`` with a different value (appending the
         true form would duplicate the key).
@@ -111,13 +113,15 @@ class NoNewPrivilegesRule(BaseRule):
         if not isinstance(service_config, dict):
             return None
 
-        if "extends" in service_config:
+        if "extends" in service_config or service in extends_targets(data):
             # Docker concatenates list fields like ``security_opt`` across an
-            # ``extends`` merge. If we add the entry here and the base also gets
-            # it (the rule fires on both, since the parser doesn't resolve
-            # ``extends``), Docker sees two equal items and rejects the file.
-            # The base — or any non-extending service — still gets fixed, and the
-            # child inherits it. Refuse; leave extends chains for the human.
+            # ``extends`` merge. Adding the entry to either side risks a duplicate
+            # post-merge: a child that adds it collides with the inherited copy,
+            # and a base that adds it collides with one the child already declares
+            # or that a sibling fixer adds. The rule fires on every unmerged
+            # service (the parser doesn't resolve ``extends``), and the duplicate
+            # exists only inside Docker, so the reparse guard can't catch it.
+            # Refuse both sides; leave extends chains for the human (issue #277 C1).
             return None
 
         key_line = lines.get(f"services.{service}")

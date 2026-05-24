@@ -9,11 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- The CL-0003 (`no-new-privileges`) fixer no longer adds `security_opt` to a
-  service that uses `extends:`. Docker concatenates list fields across an
-  `extends` merge, so fixing both a base and the service extending it produced a
-  duplicated `no-new-privileges:true` that `docker compose config` rejects. The
-  base is still fixed and the child inherits the entry.
+- The `fix` engine no longer adds `no-new-privileges:true` to either side of an
+  `extends` relationship. Docker concatenates list fields like `security_opt`
+  across an `extends` merge, so adding the entry to a service that `extends:`
+  another — or to a base another service extends — could produce a duplicated
+  item that `docker compose config` rejects. The duplicate only exists after
+  Docker's merge (our parser does not resolve `extends`), so the post-apply
+  reparse guard could not catch it. Both the per-finding CL-0003 fixer and the
+  CL-0003/CL-0009 coordination pass now refuse both sides and leave the chain
+  for manual review. (#276, #277)
 
 ## [0.9.0] - 2026-05-24
 
