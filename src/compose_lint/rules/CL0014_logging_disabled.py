@@ -129,5 +129,11 @@ class LoggingDisabledRule(BaseRule):
         if len(logging_config) != 1:
             return None
 
+        # Sole key of the service -> deleting the block would leave the service
+        # with a null body (`web:` with no mapping), which no longer parses as
+        # Compose. Refuse rather than emit invalid YAML (ADR-014).
+        if len(service_config) == 1:
+            return None
+
         first, last = block_span(source_lines, logging_line)
         return [delete_lines(source_lines, first, last, caveat=_CAVEAT)]
