@@ -235,3 +235,19 @@ class TestNoNewPrivilegesFix:
             "    image: nginx\n"
         )
         assert self._fix(tmp_path, content) is None
+
+    def test_refuses_service_using_extends(self, tmp_path: Path) -> None:
+        # Docker concatenates security_opt across an extends merge, so fixing both
+        # the base and the child yields a duplicate item Docker rejects. The base
+        # still gets fixed and the child inherits it; refuse on the child.
+        content = (
+            "services:\n"
+            "  base:\n"
+            "    image: nginx\n"
+            "  child:\n"
+            "    extends: base\n"
+            "    image: nginx\n"
+        )
+        assert self._fix(tmp_path, content, service="child") is None
+        # The base, which does not extend, is still fixed.
+        assert self._fix(tmp_path, content, service="base") is not None

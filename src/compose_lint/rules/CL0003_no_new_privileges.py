@@ -97,10 +97,11 @@ class NoNewPrivilegesRule(BaseRule):
         the only hardening-only fixer (ADR-014) — blocking setuid/setgid
         escalation has near-zero breakage — so the edit carries no caveat.
 
-        Refuses (returns ``None``) for anchored/merged services, a flow-style or
-        non-list ``security_opt``, a service whose child indentation cannot be
-        determined, or a ``security_opt`` that already names ``no-new-privileges``
-        with a different value (appending the true form would duplicate the key).
+        Refuses (returns ``None``) for anchored/merged services, services that
+        use ``extends:``, a flow-style or non-list ``security_opt``, a service
+        whose child indentation cannot be determined, or a ``security_opt`` that
+        already names ``no-new-privileges`` with a different value (appending the
+        true form would duplicate the key).
         """
         service = finding.service
         services = data.get("services")
@@ -108,6 +109,15 @@ class NoNewPrivilegesRule(BaseRule):
             return None
         service_config = services.get(service)
         if not isinstance(service_config, dict):
+            return None
+
+        if "extends" in service_config:
+            # Docker concatenates list fields like ``security_opt`` across an
+            # ``extends`` merge. If we add the entry here and the base also gets
+            # it (the rule fires on both, since the parser doesn't resolve
+            # ``extends``), Docker sees two equal items and rejects the file.
+            # The base — or any non-extending service — still gets fixed, and the
+            # child inherits it. Refuse; leave extends chains for the human.
             return None
 
         key_line = lines.get(f"services.{service}")

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The CL-0003 (`no-new-privileges`) fixer no longer adds `security_opt` to a
+  service that uses `extends:`. Docker concatenates list fields across an
+  `extends` merge, so fixing both a base and the service extending it produced a
+  duplicated `no-new-privileges:true` that `docker compose config` rejects. The
+  base is still fixed and the child inherits the entry.
+
 ## [0.9.0] - 2026-05-24
 
 ### Added
