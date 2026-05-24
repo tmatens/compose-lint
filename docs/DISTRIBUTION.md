@@ -32,13 +32,15 @@ That workflow requires the same per-channel environment approval.
 
 ### 3. Version source of truth
 
-`pyproject.toml` is the authoritative version. All other references
-(`src/compose_lint/__init__.py`, extension `package.json`, etc.) must match
-it. Use `scripts/bump-version.sh` to update all pre-release version files
-atomically — do not edit them by hand.
+`pyproject.toml` is the authoritative version, and `src/compose_lint/__init__.py`
+must match it. `scripts/bump-version.sh X.Y.Z` updates those two source-of-truth
+files; CI's `version-consistency` gate enforces that they agree.
 
-The `marketplace-smoke.yml` action pin is a post-release step (the commit SHA
-only exists once the tag is pushed). See `docs/RELEASING.md`.
+The README integration snippets also carry version pins (the pre-commit `rev:`,
+the `pip install` pin, the Docker image tag, and the Action `# vX.Y.Z` comment).
+Those are part of the release checklist in `docs/RELEASING.md`, not the script —
+bump them there. The Action commit-SHA pin and the `marketplace-smoke.yml` pin
+are post-release steps, since the SHA only exists once the tag is pushed.
 
 ### 4. Every artifact is signed and attested
 
