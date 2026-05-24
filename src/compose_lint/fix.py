@@ -17,7 +17,7 @@ import difflib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from compose_lint.models import Finding, TextEdit
+from compose_lint.models import Finding, Severity, TextEdit
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -693,4 +693,111 @@ def reparse_or_error(patched: str) -> str | None:
         loads(patched)
     except ComposeError as e:
         return str(e)
+    return None
+
+
+def _structural_drift(
+    original: dict[str, Any],
+    patched: dict[str, Any],
+    fixed_services: set[str],
+) -> str | None:
+    """Return a message if ``patched`` changed anything outside the fixed services.
+
+    Compares the two parsed trees, which carry plain Python types only (line
+    numbers live in a separate map), so deep equality is a faithful test of
+    "same configuration". Three things must hold for the patch to be confined to
+    what the fixers claimed: every top-level key other than ``services`` is
+    unchanged, the set of service names is unchanged, and every service the fix
+    did *not* touch is deep-equal before and after. Returns ``None`` when only
+    the fixed services differ, else the first violation found.
+    """
+    orig_top = {k: v for k, v in original.items() if k != "services"}
+    new_top = {k: v for k, v in patched.items() if k != "services"}
+    if orig_top != new_top:
+        return "computed fix changed configuration outside services"
+
+    orig_services = original.get("services") or {}
+    new_services = patched.get("services") or {}
+    if set(orig_services) != set(new_services):
+        return "computed fix added or removed a service"
+
+    for name, config in orig_services.items():
+        if name in fixed_services:
+            continue
+        if config != new_services.get(name):
+            return f"computed fix altered untouched service '{name}'"
+    return None
+
+
+def verify_apply(
+    original_data: dict[str, Any],
+    findings: list[Finding],
+    result: FixResult,
+    patched: str,
+    *,
+    only: set[str] | None = None,
+    disabled_rules: dict[str, str | None] | None = None,
+    severity_overrides: dict[str, Severity] | None = None,
+    excluded_services: dict[str, dict[str, str | None]] | None = None,
+) -> str | None:
+    """Verify a patched candidate beyond "it parses" before it is written.
+
+    The layer above :func:`reparse_or_error` (ADR-014). Re-parsing proves the
+    output is *valid* Compose; it does not prove it is the *intended* Compose. A
+    text splice with a miscomputed span can drop or mangle a neighbouring key and
+    still emit valid YAML, which :func:`reparse_or_error` waves through. This
+    re-runs the engine on the candidate and checks the three properties the
+    corpus gate enforces pre-release but a live ``--apply`` could not, returning a
+    diagnostic on the first failure (else ``None``):
+
+    1. **Structure preserved** — every service the fix did not touch, and every
+       top-level key outside ``services``, parses identically before and after
+       (:func:`_structural_drift`). This is the cheap form of the check: it
+       confirms untouched config is unchanged in the parsed tree, not that the
+       *touched* services changed in exactly the intended way (that would need
+       each fixer to declare its semantic delta — a heavier mechanism).
+    2. **Converges** — a second collection on the candidate is a no-op, so a
+       re-run of ``fix`` would not keep editing the file.
+    3. **No new finding** — the candidate raises nothing the original did not, so
+       a fix never trades one problem for another.
+
+    Assumes ``patched`` already parses (the caller runs :func:`reparse_or_error`
+    first); a parse failure here is reported as a verification failure all the
+    same rather than raising.
+    """
+    from compose_lint.engine import run_rules
+    from compose_lint.parser import ComposeError, loads
+
+    try:
+        re_data, re_lines = loads(patched)
+    except ComposeError as e:  # pragma: no cover - reparse guard runs first
+        return f"computed fix does not parse as Compose ({e})"
+
+    drift = _structural_drift(original_data, re_data, {f.service for f in result.fixed})
+    if drift is not None:
+        return drift
+
+    re_findings = run_rules(
+        re_data,
+        re_lines,
+        disabled_rules=disabled_rules,
+        severity_overrides=severity_overrides,
+        excluded_services=excluded_services,
+    )
+
+    if collect_edits(re_findings, re_data, re_lines, patched, only=only).edits:
+        return "computed fix does not converge: a second pass would still edit it"
+
+    before = {(f.rule_id, f.service, f.message) for f in findings}
+    new = sorted(
+        {
+            (f.rule_id, f.service)
+            for f in re_findings
+            if (f.rule_id, f.service, f.message) not in before
+        }
+    )
+    if new:
+        sample = ", ".join(f"{rule_id} on '{service}'" for rule_id, service in new[:2])
+        return f"computed fix introduces a new finding ({sample})"
+
     return None

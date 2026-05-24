@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -410,6 +411,17 @@ class TestFixSubcommand:
         assert "read_only: true" in patched
         assert "no-new-privileges:true" in patched
 
+    def test_apply_preserves_file_mode(self, tmp_path: Path) -> None:
+        # --apply swaps the file in atomically; the new file must keep the
+        # original's permission bits, not inherit the temp file's 0600.
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(_BARE_SERVICE)
+        f.chmod(0o640)
+        result = run_cli_env(_EXPERIMENTAL, "fix", "--apply", str(f))
+        assert result.returncode == 0
+        assert stat.S_IMODE(f.stat().st_mode) == 0o640
+        assert "read_only: true" in f.read_text()
+
     def test_only_restricts_to_named_rule(self, tmp_path: Path) -> None:
         f = tmp_path / "docker-compose.yml"
         f.write_text(_BARE_SERVICE)
@@ -464,4 +476,26 @@ class TestFixSubcommand:
             cli.main(["fix", "--apply", str(f)])
         assert exc.value.code == 2
         assert "does not parse as Compose" in capsys.readouterr().err
+        assert f.read_text() == _BARE_SERVICE  # nothing written
+
+    def test_apply_refuses_to_write_structural_drift(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        # Beyond the parse net (ADR-014): a patch that is valid Compose but
+        # mutates a service no fixer touched must also be refused, untouched.
+        # Force such a patch (valid YAML, an extra service) to drive the guard.
+        from compose_lint import cli
+
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(_BARE_SERVICE)
+        monkeypatch.setenv("COMPOSE_LINT_EXPERIMENTAL", "1")
+        drifted = _BARE_SERVICE + "  ghost:\n    image: scratch\n"
+        monkeypatch.setattr(cli, "apply_edits", lambda text, edits: drifted)
+        with pytest.raises(SystemExit) as exc:
+            cli.main(["fix", "--apply", str(f)])
+        assert exc.value.code == 2
+        assert "added or removed a service" in capsys.readouterr().err
         assert f.read_text() == _BARE_SERVICE  # nothing written

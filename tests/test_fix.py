@@ -8,6 +8,7 @@ import pytest
 
 from compose_lint.engine import run_rules
 from compose_lint.fix import (
+    FixResult,
     OverlappingEditError,
     _spans_conflict,
     apply_edits,
@@ -23,8 +24,9 @@ from compose_lint.fix import (
     render_file_diff,
     reparse_or_error,
     replace_lines,
+    verify_apply,
 )
-from compose_lint.models import TextEdit
+from compose_lint.models import Finding, Severity, TextEdit
 from compose_lint.parser import load_compose
 
 if TYPE_CHECKING:
@@ -710,3 +712,82 @@ def test_reparse_or_error_flags_not_compose() -> None:
     msg = reparse_or_error("services:\n  web:\n")
     assert msg is not None
     assert "must be a mapping" in msg
+
+
+# --- verify_apply (post-parse safety net) ----------------------------------
+
+
+def test_verify_apply_passes_clean_fix(tmp_path: Path) -> None:
+    # The real fixers leave a converging, finding-free, structure-preserving
+    # result, so the verifier must accept their own output.
+    findings, data, lines, text = _findings_for(
+        tmp_path, "services:\n  web:\n    image: nginx:1.27\n"
+    )
+    result = collect_edits(findings, data, lines, text)
+    patched = apply_edits(text, result.edits)
+    assert verify_apply(data, findings, result, patched) is None
+
+
+def test_verify_apply_flags_structural_drift() -> None:
+    # A patch that parses but alters a service no fixer touched is collateral
+    # damage the parse net cannot see; the verifier names the wrong service.
+    original = {"services": {"web": {"image": "a"}, "db": {"image": "b"}}}
+    result = FixResult(
+        fixed=[
+            Finding(
+                rule_id="CL-0007",
+                severity=Severity.MEDIUM,
+                service="web",
+                message="x",
+            )
+        ]
+    )
+    patched = "services:\n  web:\n    image: a\n  db:\n    image: CHANGED\n"
+    msg = verify_apply(original, [], result, patched)
+    assert msg is not None
+    assert "untouched service 'db'" in msg
+
+
+def test_verify_apply_flags_added_service() -> None:
+    # A patch may not invent (or drop) a service the original never had.
+    original = {"services": {"web": {"image": "a"}}}
+    patched = "services:\n  web:\n    image: a\n  ghost:\n    image: b\n"
+    msg = verify_apply(original, [], FixResult(), patched)
+    assert msg is not None
+    assert "added or removed a service" in msg
+
+
+def test_verify_apply_flags_non_convergence(tmp_path: Path) -> None:
+    # A patch still carrying a fixable finding would make a second `fix` pass
+    # edit again — refuse it. Feeding the original text back as the "patch"
+    # (no edits applied) is exactly that shape.
+    findings, data, lines, text = _findings_for(
+        tmp_path, "services:\n  web:\n    image: nginx:1.27\n"
+    )
+    msg = verify_apply(data, findings, FixResult(), text)
+    assert msg is not None
+    assert "does not converge" in msg
+
+
+def test_verify_apply_flags_new_finding(tmp_path: Path) -> None:
+    # A patch that introduces a finding the original lacked must be refused.
+    # `only` is scoped to a report-only rule so the convergence check passes
+    # (nothing fixable left) and the new-finding check is what fires.
+    findings, data, lines, text = _findings_for(
+        tmp_path, "services:\n  web:\n    image: nginx:1.27\n"
+    )
+    result = FixResult(
+        fixed=[
+            Finding(
+                rule_id="CL-0007",
+                severity=Severity.MEDIUM,
+                service="web",
+                message="x",
+            )
+        ]
+    )
+    patched = "services:\n  web:\n    image: nginx:1.27\n    privileged: true\n"
+    msg = verify_apply(data, findings, result, patched, only={"CL-0002"})
+    assert msg is not None
+    assert "introduces a new finding" in msg
+    assert "CL-0002" in msg

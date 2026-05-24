@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
+import stat
 import sys
+import tempfile
 from pathlib import Path
 from typing import NoReturn
 
@@ -18,6 +21,7 @@ from compose_lint.fix import (
     collect_edits,
     render_file_diff,
     reparse_or_error,
+    verify_apply,
 )
 from compose_lint.formatters.json import build_json_log
 from compose_lint.formatters.json import format_findings as format_json
@@ -415,6 +419,35 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     sys.exit(1 if has_errors else 0)
 
 
+def _atomic_write(path: Path, content: str) -> None:
+    """Write ``content`` to ``path`` atomically, preserving its mode.
+
+    A fix must never leave a half-written Compose file: an interrupted in-place
+    write (crash, full disk) would corrupt a file ``docker compose`` then
+    refuses to start. Write to a temp file in the same directory, flush it to
+    disk, and ``os.replace`` it into place — a reader sees either the old file or
+    the complete new one, never a truncated mix. The original file's permission
+    bits carry over so the fix neither relaxes nor tightens them. ``newline=""``
+    writes the computed text verbatim, with no newline translation.
+    """
+    fd, tmp_name = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+    )
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as tmp:
+            tmp.write(content)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        # Best-effort mode carry-over; the swap below still lands the content.
+        with contextlib.suppress(OSError):
+            os.chmod(tmp_path, stat.S_IMODE(path.stat().st_mode))
+        os.replace(tmp_path, path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+
 def _run_fix(args: argparse.Namespace) -> NoReturn:
     """Run the experimental `fix` operation (ADR-014).
 
@@ -444,14 +477,14 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             sys.exit(2)
 
     only = set(args.only) if args.only else None
-    had_parse_error = False
+    had_error = False
 
     for filepath in args.files:
         try:
             data, lines = load_compose(filepath)
         except FileNotFoundError:
             print(f"Error: {filepath}: file not found", file=sys.stderr)
-            had_parse_error = True
+            had_error = True
             continue
         except ComposeNotApplicableError as e:
             # v1 / fragment file: skipped, not an error (ADR-013).
@@ -459,7 +492,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             continue
         except ComposeError as e:
             print(f"Error: {filepath}: {e}", file=sys.stderr)
-            had_parse_error = True
+            had_error = True
             continue
 
         text = Path(filepath).read_text(encoding="utf-8")
@@ -501,11 +534,38 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
                 f"({guard_error}); no changes written",
                 file=sys.stderr,
             )
-            had_parse_error = True
+            had_error = True
+            continue
+
+        # Layer above the parse net (ADR-014): valid Compose is not enough — the
+        # patch must also leave untouched config intact, converge on a second
+        # pass, and raise no new finding. A failure here is a fixer bug too:
+        # refuse, write nothing, and surface the diff for diagnosis.
+        verify_error = verify_apply(
+            data,
+            findings,
+            result,
+            patched,
+            only=only,
+            disabled_rules=disabled_rules,
+            severity_overrides=severity_overrides,
+            excluded_services=excluded_services,
+        )
+        if verify_error is not None:
+            print(
+                render_file_diff(filepath, text, patched, result.caveats),
+                end="",
+                file=sys.stderr,
+            )
+            print(
+                f"Error: {filepath}: {verify_error}; no changes written",
+                file=sys.stderr,
+            )
+            had_error = True
             continue
 
         if args.apply:
-            Path(filepath).write_text(patched, encoding="utf-8")
+            _atomic_write(Path(filepath), patched)
             print(
                 f"{filepath}: applied {len(result.edits)} fix(es) across "
                 f"{len(result.fixed)} finding(s)",
@@ -523,4 +583,4 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
                 file=sys.stderr,
             )
 
-    sys.exit(2 if had_parse_error else 0)
+    sys.exit(2 if had_error else 0)
