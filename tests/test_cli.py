@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import stat
 import subprocess
 import sys
@@ -20,18 +19,6 @@ def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
         [sys.executable, "-m", "compose_lint", *args],
         capture_output=True,
         text=True,
-    )
-
-
-def run_cli_env(
-    env_extra: dict[str, str], *args: str
-) -> subprocess.CompletedProcess[str]:
-    """Run the CLI with extra environment variables (e.g. the experimental gate)."""
-    return subprocess.run(
-        [sys.executable, "-m", "compose_lint", *args],
-        capture_output=True,
-        text=True,
-        env={**os.environ, **env_extra},
     )
 
 
@@ -382,17 +369,21 @@ class TestCLI:
         assert "CL-0003" in result.stderr
 
 
-_EXPERIMENTAL = {"COMPOSE_LINT_EXPERIMENTAL": "1"}
 _BARE_SERVICE = "services:\n  web:\n    image: nginx:1.27\n"
 
 
 class TestFixSubcommand:
-    """Tests for the hidden, experimental `fix` subcommand (ADR-014)."""
+    """Tests for the hidden, experimental `fix` subcommand (ADR-014).
+
+    Post-Phase-2 `fix` is reachable without ``COMPOSE_LINT_EXPERIMENTAL``, so
+    these invoke it with a plain ``run_cli``; the env var now only gates SARIF
+    fixes (see ``test_sarif``).
+    """
 
     def test_dry_run_prints_diff_to_stdout(self, tmp_path: Path) -> None:
         f = tmp_path / "docker-compose.yml"
         f.write_text(_BARE_SERVICE)
-        result = run_cli_env(_EXPERIMENTAL, "fix", str(f))
+        result = run_cli("fix", str(f))
         assert result.returncode == 0
         # Diff (data) on stdout; warning + status (human) on stderr.
         assert "+    read_only: true" in result.stdout
@@ -404,7 +395,7 @@ class TestFixSubcommand:
     def test_apply_writes_file_and_emits_no_diff(self, tmp_path: Path) -> None:
         f = tmp_path / "docker-compose.yml"
         f.write_text(_BARE_SERVICE)
-        result = run_cli_env(_EXPERIMENTAL, "fix", "--apply", str(f))
+        result = run_cli("fix", "--apply", str(f))
         assert result.returncode == 0
         assert result.stdout == ""
         patched = f.read_text()
@@ -417,7 +408,7 @@ class TestFixSubcommand:
         f = tmp_path / "docker-compose.yml"
         f.write_text(_BARE_SERVICE)
         f.chmod(0o640)
-        result = run_cli_env(_EXPERIMENTAL, "fix", "--apply", str(f))
+        result = run_cli("fix", "--apply", str(f))
         assert result.returncode == 0
         assert stat.S_IMODE(f.stat().st_mode) == 0o640
         assert "read_only: true" in f.read_text()
@@ -425,7 +416,7 @@ class TestFixSubcommand:
     def test_only_restricts_to_named_rule(self, tmp_path: Path) -> None:
         f = tmp_path / "docker-compose.yml"
         f.write_text(_BARE_SERVICE)
-        run_cli_env(_EXPERIMENTAL, "fix", "--apply", "--only", "CL-0007", str(f))
+        run_cli("fix", "--apply", "--only", "CL-0007", str(f))
         patched = f.read_text()
         assert "read_only: true" in patched
         assert "no-new-privileges" not in patched
@@ -435,25 +426,27 @@ class TestFixSubcommand:
         f.write_text(_BARE_SERVICE)
         config = tmp_path / ".compose-lint.yml"
         config.write_text("rules:\n  CL-0007:\n    enabled: false\n")
-        run_cli_env(_EXPERIMENTAL, "fix", "--apply", "--config", str(config), str(f))
+        run_cli("fix", "--apply", "--config", str(config), str(f))
         patched = f.read_text()
         # CL-0007 suppressed => not fixed; CL-0003 still applied.
         assert "read_only: true" not in patched
         assert "no-new-privileges:true" in patched
 
-    def test_hidden_from_help_even_when_enabled(self) -> None:
-        result = run_cli_env(_EXPERIMENTAL, "--help")
+    def test_hidden_from_help(self) -> None:
+        # Always registered post-Phase-2, but still omitted from --help.
+        result = run_cli("--help")
         assert result.returncode == 0
         assert "fix" not in result.stdout
 
-    def test_unavailable_without_env_gate(self, tmp_path: Path) -> None:
+    def test_available_without_env_gate(self, tmp_path: Path) -> None:
         f = tmp_path / "docker-compose.yml"
         f.write_text(_BARE_SERVICE)
-        # Without the gate, `fix` is not a subcommand: the shim routes it to
-        # `check` as a (missing) file, so no fix runs and no warning prints.
+        # Phase 2: `fix` runs without COMPOSE_LINT_EXPERIMENTAL — still hidden,
+        # still warned-on, dry-run by default (writes nothing).
         result = run_cli("fix", str(f))
-        assert result.returncode == 2
-        assert "experimental" not in result.stderr.lower()
+        assert result.returncode == 0
+        assert "experimental" in result.stderr.lower()
+        assert "+    read_only: true" in result.stdout
         assert f.read_text() == _BARE_SERVICE
 
     def test_apply_refuses_to_write_invalid_compose(
@@ -470,7 +463,6 @@ class TestFixSubcommand:
 
         f = tmp_path / "docker-compose.yml"
         f.write_text(_BARE_SERVICE)
-        monkeypatch.setenv("COMPOSE_LINT_EXPERIMENTAL", "1")
         monkeypatch.setattr(cli, "apply_edits", lambda text, edits: "services: [\n")
         with pytest.raises(SystemExit) as exc:
             cli.main(["fix", "--apply", str(f)])
@@ -491,7 +483,6 @@ class TestFixSubcommand:
 
         f = tmp_path / "docker-compose.yml"
         f.write_text(_BARE_SERVICE)
-        monkeypatch.setenv("COMPOSE_LINT_EXPERIMENTAL", "1")
         drifted = _BARE_SERVICE + "  ghost:\n    image: scratch\n"
         monkeypatch.setattr(cli, "apply_edits", lambda text, edits: drifted)
         with pytest.raises(SystemExit) as exc:
