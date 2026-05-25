@@ -35,7 +35,7 @@ Disables still produce suppressed findings. `reason` flows to `suppression_reaso
 
 ## Adding a rule
 
-See CONTRIBUTING.md for the full checklist. Every rule must cite OWASP, CIS, or Docker docs. Every finding must be actionable with specific fix guidance.
+See CONTRIBUTING.md for the full checklist. Every rule must cite OWASP, CIS, or Docker docs **that demonstrate the need in a container context** — generic host/Linux hardening a container's defaults already neutralize is not enough (see CL-0022/CL-0023). If a container-context source is thin, the rule's premise must be **validated at runtime**: a rule that describes container runtime state gets a check in `scripts/validate_rule_premises.py`, which proves the insecure state is Docker's *default* (for absence rules) or that the flagged config produces the insecure behavior (for presence rules). That suite runs in CI (`rule-premises` job). Every finding must be actionable with specific fix guidance.
 
 ## Contributor workflow
 
