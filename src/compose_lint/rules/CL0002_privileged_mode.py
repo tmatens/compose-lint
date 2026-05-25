@@ -12,8 +12,8 @@ if TYPE_CHECKING:
 
 OWASP_REF = (
     "https://cheatsheetseries.owasp.org/cheatsheets/"
-    "Docker_Security_Cheat_Sheet.html#rule-3---do-not-run-containers-with-the---"
-    "privileged-flag"
+    "Docker_Security_Cheat_Sheet.html#rule-3-limit-capabilities-grant-only-"
+    "specific-capabilities-needed-by-a-container"
 )
 
 CIS_REF = "CIS Docker Benchmark 5.5 — Ensure that privileged containers are not used"
@@ -50,9 +50,10 @@ class PrivilegedModeRule(BaseRule):
                 severity=Severity.CRITICAL,
                 service=service_name,
                 message=(
-                    "Service runs in privileged mode. This disables container "
-                    "isolation and is functionally equivalent to running on the "
-                    "host as root."
+                    "Service runs in privileged mode. This disables nearly all "
+                    "container isolation — the container gets all Linux "
+                    "capabilities and host device access, and is trivially "
+                    "escapable to host root."
                 ),
                 line=lines.get(f"services.{service_name}.privileged"),
                 fix=(

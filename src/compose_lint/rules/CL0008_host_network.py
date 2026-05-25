@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 OWASP_REF = (
     "https://cheatsheetseries.owasp.org/cheatsheets/"
-    "Docker_Security_Cheat_Sheet.html#rule-5---be-mindful-of-inter-container-connectivity"
+    "Docker_Security_Cheat_Sheet.html#rule-5-be-mindful-of-inter-container-connectivity"
 )
 
 CIS_REF = (

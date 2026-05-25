@@ -27,8 +27,8 @@ _CAVEAT = (
 
 OWASP_REF = (
     "https://cheatsheetseries.owasp.org/cheatsheets/"
-    "Docker_Security_Cheat_Sheet.html#rule-6---use-linux-security-module-"
-    "seccomp-apparmor-or-selinux"
+    "Docker_Security_Cheat_Sheet.html#rule-6-use-linux-security-module-"
+    "seccomp-apparmor-or-selinux-for-runtime-security"
 )
 
 CIS_SECCOMP_REF = (

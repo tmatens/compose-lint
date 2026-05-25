@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Documentation and grounding drift corrected (issue #279 D1–D6). OWASP
+  renumbered the Docker Security Cheat Sheet and switched its anchors to a
+  single-dash slug, so every citation was either pointing at the wrong rule or
+  landing at page top. All OWASP deep links (rule docs, the README table, and
+  the embedded `references=` URLs in code) now use the live single-dash anchors,
+  and four drifted citations are corrected: CL-0002 and CL-0011 → Rule #3 (Limit
+  capabilities, where `--privileged` is discussed), CL-0003 → Rule #4 (Prevent
+  in-container privilege escalation), CL-0018 → Rule #2 (Set a user), CL-0020 and
+  CL-0021 → Rule #12 (Utilize Docker Secrets). CL-0002's finding message no
+  longer overclaims "functionally equivalent to host root" — it now matches the
+  doc's "trivially escapable to host root." The CL-0018 doc now reflects that
+  the rule fires on any root *user portion* regardless of group (`root:1000`),
+  and the CL-0015 doc now documents the `test: ["NONE"]` branch the code already
+  implements. (#279)
+
 - Rule coverage gaps closed (issue #279 R3/R4/R5). CL-0001 now flags any
   container-runtime control socket — `containerd.sock`, `crio.sock`, and
   `podman.sock` in addition to `docker.sock` (podman/crio were caught by no

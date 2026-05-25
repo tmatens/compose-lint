@@ -23,6 +23,15 @@ class TestPrivilegedModeRule:
         assert findings[0].rule_id == "CL-0002"
         assert findings[0].severity.value == "critical"
 
+    def test_message_matches_doc_wording(self) -> None:
+        # The message must not overclaim "functionally equivalent to host root";
+        # the doc/metadata say "trivially escapable" instead (issue #279 D5).
+        data, lines = load_compose(FIXTURES / "insecure_privileged.yml")
+        findings = list(self.rule.check("app", data["services"]["app"], data, lines))
+        msg = findings[0].message
+        assert "trivially escapable to host root" in msg
+        assert "functionally equivalent" not in msg
+
     def test_clean_service_no_findings(self) -> None:
         data, lines = load_compose(FIXTURES / "insecure_privileged.yml")
         findings = list(
