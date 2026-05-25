@@ -110,6 +110,80 @@ class TestLoadConfig:
             load_config(config)
 
 
+class TestConfigValidation:
+    """Validation of silent config misconfiguration (issue #279 G1/G2)."""
+
+    def test_unknown_rule_id_warns(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-9999:\n    enabled: false\n")
+        load_config(config)
+        err = capsys.readouterr().err
+        assert "unknown rule id 'CL-9999'" in err
+
+    def test_typoed_rule_id_warns(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # `CL-001` (missing a digit) is a common, silent typo.
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-001:\n    enabled: false\n")
+        load_config(config)
+        assert "unknown rule id 'CL-001'" in capsys.readouterr().err
+
+    def test_known_rule_id_does_not_warn(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0001:\n    enabled: false\n")
+        load_config(config)
+        assert "unknown rule id" not in capsys.readouterr().err
+
+    def test_unknown_top_level_key_warns(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # A top-level `fail_on:` is a natural mistake (it's a CLI flag).
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("fail_on: critical\nrules:\n  CL-0001:\n    enabled: false\n")
+        load_config(config)
+        assert "unknown top-level key 'fail_on'" in capsys.readouterr().err
+
+    def test_unknown_rule_key_warns(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0001:\n    severty: high\n")
+        load_config(config)
+        assert "unknown key 'severty'" in capsys.readouterr().err
+
+    def test_enabled_quoted_false_raises(self, tmp_path: Path) -> None:
+        # A quoted 'false' is a string, not the YAML boolean — it must not be a
+        # silent no-op that leaves the rule on (issue #279 G2).
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0001:\n    enabled: 'false'\n")
+        with pytest.raises(ConfigError, match="'enabled' must be true or false"):
+            load_config(config)
+
+    def test_enabled_zero_raises(self, tmp_path: Path) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0001:\n    enabled: 0\n")
+        with pytest.raises(ConfigError, match="'enabled' must be true or false"):
+            load_config(config)
+
+    def test_enabled_yaml_no_still_disables(self, tmp_path: Path) -> None:
+        # YAML 1.1 `no` parses to the boolean False, so it legitimately disables.
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0001:\n    enabled: no\n")
+        disabled, _overrides, _excluded = load_config(config)
+        assert "CL-0001" in disabled
+
+    def test_enabled_true_keeps_rule_active(self, tmp_path: Path) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0001:\n    enabled: true\n")
+        disabled, _overrides, _excluded = load_config(config)
+        assert "CL-0001" not in disabled
+
+
 class TestExcludeServices:
     """Tests for per-service rule exclusions (ADR-010)."""
 
