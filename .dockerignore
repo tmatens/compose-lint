@@ -21,6 +21,8 @@ mutants/
 .coverage
 htmlcov/
 .claude/
+CLAUDE.md
+AGENTS.md
 .vscode/
 .idea/
 .env
