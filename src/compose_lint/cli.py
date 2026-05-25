@@ -412,9 +412,15 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             print(format_aggregate_summary(all_file_findings, len(parse_errors)))
         print(format_verdict(all_file_findings, args.fail_on, len(parse_errors)))
     elif args.output_format == "json":
-        print(json.dumps(build_json_log(all_json, parse_errors), indent=2))
+        # allow_nan=False makes a stray float NaN/Infinity raise rather than emit
+        # bare `NaN`/`Infinity` tokens, which RFC 8259 forbids and strict parsers
+        # reject. The formatter already coerces `service` to str, so this guards
+        # any future numeric field; the same applies to the SARIF dump below.
+        json_log = build_json_log(all_json, parse_errors)
+        print(json.dumps(json_log, indent=2, allow_nan=False))
     elif args.output_format == "sarif":
-        print(json.dumps(build_sarif_log(all_sarif, parse_errors), indent=2))
+        sarif_log = build_sarif_log(all_sarif, parse_errors)
+        print(json.dumps(sarif_log, indent=2, allow_nan=False))
 
     if parse_errors:
         sys.exit(2)
