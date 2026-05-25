@@ -91,7 +91,7 @@ dev = [
     # Statement coverage gate (>=80%) is enforced by the `coverage` CI job.
     # Threshold lives in [tool.coverage.report] below.
     "pytest-cov==7.1.0",
-    "types-pyyaml==6.0.12.20260408",
+    "types-pyyaml==6.0.12.20260518",
 ]
 
 [project.scripts]
