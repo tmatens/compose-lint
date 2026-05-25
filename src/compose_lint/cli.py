@@ -14,6 +14,7 @@ from typing import NoReturn
 
 from compose_lint import __version__
 from compose_lint.config import ConfigError, load_config
+from compose_lint.config_emit import render_config
 from compose_lint.engine import filter_findings, run_rules
 from compose_lint.explain import UnknownRuleError, load_rule_doc
 from compose_lint.fix import (
@@ -81,10 +82,10 @@ def _subcommands() -> set[str]:
 
     Bare ``compose-lint <file>`` is kept working as an implicit ``check``
     (ADR-011): when the first non-flag token is not one of these, the shim
-    prepends ``check``. ``fix`` is recognized so ``compose-lint fix ...`` routes
-    to it.
+    prepends ``check``. ``fix`` and ``init`` are recognized so
+    ``compose-lint fix ...`` / ``compose-lint init ...`` route to them.
     """
-    return {"check", "fix"}
+    return {"check", "fix", "init"}
 
 
 def _add_check_subparser(
@@ -208,6 +209,45 @@ def _add_fix_subparser(
     )
 
 
+def _add_init_subparser(
+    subparsers: argparse._SubParsersAction,  # type: ignore[type-arg]
+) -> None:
+    """Register the `init` subcommand (ADR-011).
+
+    Bootstraps a starter ``.compose-lint.yml`` from a file's findings so users
+    triage suppressions deliberately instead of hand-authoring the config.
+    """
+    init = subparsers.add_parser(
+        "init",
+        help="generate a starter .compose-lint.yml from a file's findings",
+        description=(
+            "Generate a starter .compose-lint.yml from the findings in a single "
+            "Compose file. Every finding becomes a per-service exclude_services "
+            "entry with a placeholder reason for you to triage — replace it with "
+            "a real justification or delete the entry and fix the issue. Refuses "
+            "to overwrite an existing config without --force."
+        ),
+    )
+    init.add_argument(
+        "file",
+        metavar="FILE",
+        help="Docker Compose file to analyze",
+    )
+    init.add_argument(
+        "-o",
+        "--output",
+        metavar="PATH",
+        default=".compose-lint.yml",
+        help="where to write the config (default: .compose-lint.yml)",
+    )
+    init.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="overwrite an existing config file",
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the top-level argument parser and its subcommands."""
     parser = argparse.ArgumentParser(
@@ -222,6 +262,7 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
     _add_check_subparser(subparsers)
     _add_fix_subparser(subparsers)
+    _add_init_subparser(subparsers)
     return parser
 
 
@@ -252,6 +293,8 @@ def main(argv: list[str] | None = None) -> NoReturn:
     args = parser.parse_args(_normalize_argv(raw))
     if args.command == "fix":
         _run_fix(args)
+    if args.command == "init":
+        _run_init(args)
     _run_check(args)
 
 
@@ -588,3 +631,65 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             )
 
     sys.exit(2 if had_error else 0)
+
+
+def _run_init(args: argparse.Namespace) -> NoReturn:
+    """Run the `init` operation (ADR-011).
+
+    Lint a single Compose file with no existing config (raw findings) and write
+    a starter ``.compose-lint.yml`` whose entries the user triages. Refuses to
+    clobber an existing config without ``--force``. Status goes to stderr; the
+    artifact lands on disk. Exit 0 on a successful write (or when there is
+    nothing to suppress), 2 on usage/parse error or overwrite-without-force —
+    findings are the input here, not the failure signal.
+    """
+    try:
+        data, lines = load_compose(args.file)
+    except FileNotFoundError:
+        print(f"Error: {args.file}: file not found", file=sys.stderr)
+        sys.exit(2)
+    except ComposeNotApplicableError as e:
+        # v1 / fragment file: skipped, not an error (ADR-013). Nothing to lint,
+        # so nothing to bootstrap.
+        print(f"{args.file}: {e}", file=sys.stderr)
+        sys.exit(0)
+    except ComposeError as e:
+        print(f"Error: {args.file}: {e}", file=sys.stderr)
+        sys.exit(2)
+
+    findings = run_rules(data, lines)
+    if not findings:
+        print(
+            f"{args.file}: no findings; nothing to suppress, not writing {args.output}",
+            file=sys.stderr,
+        )
+        sys.exit(0)
+
+    out_path = Path(args.output)
+    # Refuse only when we would actually write: a parse error or a clean file
+    # above already exited, so reaching here means there is a config to land.
+    # Protect deliberate human suppression decisions from a silent clobber.
+    if out_path.exists() and not args.force:
+        print(
+            f"Error: {out_path} already exists; pass --force to overwrite",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+    existed = out_path.exists()
+    _atomic_write(out_path, render_config(findings))
+    if not existed:
+        # _atomic_write carries over an existing file's mode but a fresh file
+        # inherits mkstemp's restrictive 0600. A config meant to be committed and
+        # read in CI wants the usual 0644; best-effort, never fatal.
+        with contextlib.suppress(OSError):
+            out_path.chmod(0o644)
+
+    rule_count = len({f.rule_id for f in findings})
+    pair_count = len({(f.rule_id, f.service) for f in findings})
+    print(
+        f"wrote {out_path} with {pair_count} suppression(s) across "
+        f"{rule_count} rule(s)",
+        file=sys.stderr,
+    )
+    sys.exit(0)

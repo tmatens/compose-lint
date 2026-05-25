@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The `init` subcommand generates a starter `.compose-lint.yml` from a Compose
+  file's findings (ADR-011). Each finding becomes a per-service
+  `exclude_services` entry with a placeholder reason for triage — never a global
+  `enabled: false`, so a service added later still trips the rule. All
+  severities are emitted and annotated; it writes `.compose-lint.yml` in the
+  current directory by default (`-o PATH` to override), refuses to overwrite an
+  existing config without `--force`, writes nothing for a clean file, and sends
+  status to stderr. Takes a single `FILE`. Bare `compose-lint <file>` and
+  `compose-lint check` are unaffected.
+
 ## [0.11.0] - 2026-05-25
 
 ### Added

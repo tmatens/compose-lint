@@ -202,8 +202,11 @@ See [docs/configuration.md](https://github.com/tmatens/compose-lint/blob/main/do
 ## CLI Reference
 
 ```
-compose-lint [OPTIONS] [FILE ...]
+compose-lint [check] [OPTIONS] [FILE ...]   Lint files (default; bare invocation works)
+compose-lint fix [OPTIONS] [FILE ...]       Auto-remediate safe findings
+compose-lint init [OPTIONS] FILE            Generate a starter .compose-lint.yml
 
+check options:
   --format {text,json,sarif}   Output format (default: text)
   --fail-on {low,medium,high,critical}
                                Minimum severity to trigger exit 1 (default: high)
@@ -213,6 +216,10 @@ compose-lint [OPTIONS] [FILE ...]
   --config PATH                Path to config file (default: .compose-lint.yml)
   --explain CL-XXXX            Print the full documentation for a single rule
   --version                    Show version and exit
+
+init options:
+  -o, --output PATH            Where to write the config (default: .compose-lint.yml)
+  --force                      Overwrite an existing config file
 ```
 
 ## Fixing findings
@@ -248,6 +255,26 @@ compose-lint fix --only CL-0007 --apply .      # restrict to one rule
 Structured fixes also ride in SARIF output: `compose-lint check --format sarif`
 populates `fixes[].artifactChanges`, which GitHub Code Scanning renders as an
 inline suggested change on the pull request.
+
+## Generating a starter config
+
+`compose-lint init` turns a file's current findings into a `.compose-lint.yml`
+you then triage, so you don't have to hand-author suppressions from the schema:
+
+```bash
+compose-lint init docker-compose.yml          # writes ./.compose-lint.yml
+compose-lint init docker-compose.yml -o ci.yml # write somewhere else
+compose-lint init docker-compose.yml --force   # overwrite an existing config
+```
+
+Each finding becomes a per-service `exclude_services` entry with a placeholder
+reason — never a global `enabled: false`, so a service you add later still trips
+the rule instead of being silently uncovered. It refuses to overwrite an
+existing config without `--force`, writes nothing for a clean file, and sends
+status to stderr. Replace each `TODO` reason with a real justification or delete
+the entry and fix the issue. See
+[docs/configuration.md](https://github.com/tmatens/compose-lint/blob/main/docs/configuration.md#generating-a-starter-config)
+for the full behavior.
 
 ## Versioning & stability
 

@@ -2,6 +2,37 @@
 
 compose-lint reads `.compose-lint.yml` from the current working directory by default. Use `--config PATH` to point at a different file.
 
+## Generating a starter config
+
+Rather than hand-author the file from this page, run `compose-lint init` to turn a file's current findings into a `.compose-lint.yml` you then triage:
+
+```bash
+compose-lint init docker-compose.yml          # writes ./.compose-lint.yml
+compose-lint init docker-compose.yml -o ci.yml # write somewhere else
+compose-lint init docker-compose.yml --force   # overwrite an existing config
+```
+
+Every finding becomes a per-service [`exclude_services`](#per-service-exclusions) entry with a placeholder reason for you to fill in or delete:
+
+```yaml
+rules:
+  CL-0001:  # CRITICAL — Docker socket mounted
+    exclude_services:
+      proxy: "TODO: justify or fix"
+  CL-0007:  # MEDIUM — Filesystem not read-only
+    exclude_services:
+      web: "TODO: justify or fix"
+      worker: "TODO: justify or fix"
+```
+
+- **Per-service, not global.** `init` never writes `enabled: false`; it names the exact services where each rule fired, so a service you add later still trips the rule instead of being silently uncovered.
+- **All severities are included** and annotated; review the CRITICAL and HIGH entries first and prefer fixing over suppressing.
+- **It refuses to overwrite an existing `.compose-lint.yml`** without `--force`, so a generated file can't clobber suppressions you've already triaged.
+- **A clean file writes nothing** — `init` reports that there is nothing to suppress and exits 0.
+- Status goes to stderr; `init` takes a single `FILE` (no directory discovery).
+
+The generated file is a starting point. Replace each `TODO` reason with a real justification (`enabled: false` plus a `reason` is the right shape if a rule is universally inapplicable), or delete entries you intend to fix.
+
 ## Disabling and adjusting rules
 
 ```yaml

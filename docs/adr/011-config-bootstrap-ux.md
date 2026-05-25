@@ -1,6 +1,6 @@
 # ADR-011: UX for Generating a Starter `.compose-lint.yml`
 
-**Status:** Proposed
+**Status:** Accepted
 
 **Context:** Once a user runs compose-lint against a real file, they often want to convert the findings into a `.compose-lint.yml` so they can triage suppressions deliberately instead of hand-authoring the config from the schema docs. Hand-writing the config is the current friction point: users have to know the rule IDs, the `exclude_services` shape (ADR-010), and the mapping-vs-list forms. The intent of this ADR is to decide the shape of the *user-facing entry point* for generating that starter config, and the destination of its output. The content of the generated file (grouping strategy, placeholder reasons, severity warnings, header comment) is out of scope and will be specified when the feature is built.
 
@@ -131,3 +131,34 @@ Cons:
 - Exit codes: `init` exits 0 on successful write, 2 on usage/parse error or overwrite-without-force, same as `check`. It does not exit 1 on findings — findings are the input, not the failure signal.
 - Status messages ("wrote .compose-lint.yml with N suppressions") go to stderr so they don't interfere with any future `--stdout` mode.
 - Tests must cover: bare invocation still works, `check` explicit form works, `init` writes a file that round-trips through `load_config`, overwrite refused without `--force`, `-o PATH` honored, compose file literally named `init`/`check`/etc. handled via `./init` workaround.
+
+## Resolution (implemented)
+
+The subparser infrastructure this ADR priced as the dominant cost was already
+built when `fix` shipped (0.11.0), so `init` was a small addition on top of the
+existing `add_subparsers` + argv shim. The content decisions this ADR deferred
+were resolved at build time as follows:
+
+- **Encoding: per-service `exclude_services`, always.** Every finding becomes an
+  `exclude_services` entry naming the service it fired on — never a global
+  `enabled: false`, and no hybrid that collapses to one when a rule fires on
+  every service. "Fired on every service" is not cleanly defined (rules have
+  applicability scopes, so a rule can fire everywhere it applies yet not on
+  every service in the file), and a global disable fails *open*: a service added
+  later is silently uncovered, whereas a named exclusion lets the rule fire on
+  the new service. Widening a generated `exclude_services` into one
+  `enabled: false` is a trivial manual edit; the reverse is not.
+- **Severity: emit all uniformly.** Every finding becomes an active suppression
+  regardless of severity, with a per-rule `# SEVERITY — name` annotation so the
+  user can prioritize. No severity gating or commented-out high-severity
+  entries.
+- **Scope: a single positional `FILE`.** No multi-file or directory discovery
+  (unlike `check`/`fix`), matching this ADR's `init <file>` wording.
+- **No-findings:** writes nothing and reports it on stderr (exit 0) rather than
+  emit an empty scaffold that could clobber an existing config.
+- **Module:** `src/compose_lint/config_emit.py`, outside `formatters/` as
+  specified. The fresh file is written via the same atomic swap `fix` uses (so a
+  `--force` overwrite can't truncate a reviewed config), then chmod'd to the
+  usual 0644 since `mkstemp` defaults to 0600.
+
+Stdout emission and `--merge` remain out of scope, as above.
