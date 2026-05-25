@@ -75,24 +75,6 @@ def _effective_config_path(explicit: str | None) -> Path | None:
 # top-level parser sees it; any other flag-only invocation routes to `check`.
 _GLOBAL_FLAGS = frozenset({"-h", "--help", "--version"})
 
-# Stderr banner printed on every `fix` invocation (ADR-014, Part 5).
-_FIX_EXPERIMENTAL_WARNING = (
-    "warning: 'fix' is experimental; its flags, output, and behavior may change "
-    "in any release. Dry-run by default — review the diff before --apply."
-)
-
-
-def _experimental_enabled() -> bool:
-    """Return whether experimental fix-engine *output* is gated on.
-
-    Post-Phase-2 (ADR-014) the `fix` subcommand itself is always available but
-    hidden; this gate now only controls the one piece still held back for
-    Phase 3 — structured SARIF ``fixes[]`` in ``check --format sarif`` — which
-    stays behind ``COMPOSE_LINT_EXPERIMENTAL=1`` until the engine is promoted
-    into the SemVer contract.
-    """
-    return os.environ.get("COMPOSE_LINT_EXPERIMENTAL") == "1"
-
 
 def _subcommands() -> set[str]:
     """Return the subcommand names the argv shim should recognize.
@@ -100,8 +82,7 @@ def _subcommands() -> set[str]:
     Bare ``compose-lint <file>`` is kept working as an implicit ``check``
     (ADR-011): when the first non-flag token is not one of these, the shim
     prepends ``check``. ``fix`` is recognized so ``compose-lint fix ...`` routes
-    to it; the command is still hidden from ``--help`` (Phase 2), just no longer
-    gated behind an env var.
+    to it.
     """
     return {"check", "fix"}
 
@@ -186,17 +167,20 @@ def _add_check_subparser(
 def _add_fix_subparser(
     subparsers: argparse._SubParsersAction,  # type: ignore[type-arg]
 ) -> None:
-    """Register the hidden, experimental `fix` subcommand (ADR-014).
+    """Register the `fix` subcommand (ADR-014).
 
-    Omitting ``help=`` keeps it out of ``compose-lint --help``: argparse only
-    lists subparsers that were given a help string (passing
-    ``help=argparse.SUPPRESS`` instead renders a literal ``==SUPPRESS==`` row).
-    Post-Phase-2 the command is always registered; hiding it is now this
-    omission's job alone, not an env gate's.
+    Promoted to the documented, SemVer-covered surface in 0.11.0: it carries a
+    ``help=`` string so it lists in ``compose-lint --help`` like ``check``.
     """
     fix = subparsers.add_parser(
         "fix",
-        description="Auto-remediate auto-fixable findings (experimental).",
+        help="auto-remediate auto-fixable findings (dry-run; --apply to write)",
+        description=(
+            "Auto-remediate auto-fixable findings. Dry-run by default: prints a "
+            "unified diff and writes nothing. Pass --apply to write fixes in "
+            "place. Findings with no safe automatic fix are left for manual "
+            "review; suppressed findings are never touched."
+        ),
     )
     fix.add_argument(
         "files",
@@ -237,8 +221,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
     _add_check_subparser(subparsers)
-    # `fix` is always registered (Phase 2) but stays hidden from --help; see
-    # _add_fix_subparser for how (it omits help=).
     _add_fix_subparser(subparsers)
     return parser
 
@@ -397,13 +379,12 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             print(format_summary(findings, filepath), flush=True)
             all_file_findings.append((findings, filepath))
         elif args.output_format == "sarif":
-            # Structured SARIF fixes ride on the experimental fix engine, so they
-            # stay gated until the feature is promoted (ADR-014). Without the gate
-            # the output keeps the prose `properties.fix` only.
-            fixes = None
-            if _experimental_enabled():
-                text = Path(filepath).read_text(encoding="utf-8")
-                fixes = collect_edits(findings, data, lines, text).fixed_edits
+            # Structured SARIF fixes (ADR-014, promoted in 0.11.0): every
+            # auto-fixable finding carries its machine-applicable edit so GitHub
+            # Code Scanning can render a suggested change. Findings with no safe
+            # fixer keep the prose `properties.fix` only.
+            text = Path(filepath).read_text(encoding="utf-8")
+            fixes = collect_edits(findings, data, lines, text).fixed_edits
             all_sarif.extend(format_sarif(findings, filepath, fixes=fixes))
         else:
             all_json.extend(format_json(findings, filepath))
@@ -474,7 +455,7 @@ def _atomic_write(path: Path, content: str) -> None:
 
 
 def _run_fix(args: argparse.Namespace) -> NoReturn:
-    """Run the experimental `fix` operation (ADR-014).
+    """Run the `fix` operation (ADR-014).
 
     Dry-run by default: a unified diff of proposed edits goes to stdout and
     status goes to stderr; nothing is written. ``--apply`` writes edits in
@@ -482,8 +463,6 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
     Exit 0 on success, 2 on usage/parse error — findings are the input, not the
     failure signal, so residual manual-only findings do not change the code.
     """
-    print(_FIX_EXPERIMENTAL_WARNING, file=sys.stderr)
-
     try:
         disabled_rules, severity_overrides, excluded_services = load_config(args.config)
     except ConfigError as e:
