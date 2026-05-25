@@ -1,0 +1,36 @@
+name: Docker Hub description (manual)
+
+# Standalone, manually-triggered resync of the Docker Hub overview from the
+# README on the default branch. The automated sync is the dockerhub-description
+# job in publish.yml, but that runs during a release (tag push) — before the
+# post-release README version-pin bump has merged — so the overview can lag one
+# release behind. Run this after that bump lands, or any time the README's
+# marketing copy changes, to resync without cutting a release.
+#
+# No `environment: dockerhub`: that environment's deployment-branch policy is
+# tags-only (v*), which would block a default-branch dispatch. The DOCKERHUB_*
+# secrets are repo-level, so the job reads them directly. Reuses the same
+# first-party composite action as publish.yml, so no third-party code holds the
+# delete-capable PAT.
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  dockerhub-description:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/update-dockerhub-description
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          token: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: composelint/compose-lint
+          readme-filepath: ./README.md
