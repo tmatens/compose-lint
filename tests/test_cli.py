@@ -7,8 +7,14 @@ import stat
 import subprocess
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from compose_lint.models import Finding
 
 FIXTURES = Path(__file__).parent / "compose_files"
 
@@ -492,3 +498,50 @@ class TestFixSubcommand:
         assert exc.value.code == 2
         assert "added or removed a service" in capsys.readouterr().err
         assert f.read_text() == _BARE_SERVICE  # nothing written
+
+
+class TestRuleCrashExitCode:
+    """A rule that raises maps to exit 2, not a clean/findings exit (#279 E1)."""
+
+    def test_rule_crash_exits_2_with_diagnostic(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        from compose_lint import cli
+        from compose_lint.models import RuleMetadata, Severity
+        from compose_lint.rules import BaseRule, _registry
+
+        class _CrashingRule(BaseRule):
+            @property
+            def metadata(self) -> RuleMetadata:
+                return RuleMetadata(
+                    id="CL-CRASH",
+                    name="Crashing rule",
+                    description="Always raises",
+                    severity=Severity.HIGH,
+                )
+
+            def check(self, *_: object) -> Iterator[Finding]:
+                raise RuntimeError("boom")
+                yield  # pragma: no cover - makes this a generator
+
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(_BARE_SERVICE)
+
+        saved = list(_registry)
+        _registry.clear()
+        _registry.append(_CrashingRule)
+        try:
+            with pytest.raises(SystemExit) as exc:
+                cli.main(["check", str(f)])
+        finally:
+            _registry.clear()
+            _registry.extend(saved)
+
+        # Exit 2: "compose-lint itself couldn't run" (ADR-006), distinguishable
+        # from a clean run (0) and from real findings (1).
+        assert exc.value.code == 2
+        err = capsys.readouterr().err
+        assert "CL-CRASH" in err
+        assert "RuntimeError" in err

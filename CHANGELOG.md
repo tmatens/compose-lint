@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A rule that raises no longer aborts the entire run. Previously an uncaught
+  exception from any rule escaped as a traceback and exited 1 —
+  indistinguishable from a normal "findings at/above threshold" result, and in a
+  directory sweep every remaining file was lost. The engine now isolates each
+  rule per service: a failure is reported to stderr and the run continues, and
+  the CLI maps it to exit 2 ("compose-lint itself couldn't run", ADR-006) so a
+  crash is never mistaken for a clean lint failure. (#279)
+
 - Text output: the `SUPPRESSED` marker no longer pushes a suppressed finding's
   rule and message columns out of alignment — the severity column is padded to
   fit the marker so every row lines up. CL-0020 and CL-0021 (credential-shaped

@@ -2,11 +2,24 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from compose_lint.models import Finding, Severity
 from compose_lint.rules import get_registered_rules
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+
+def _default_rule_error(rule_id: str, service_name: str, exc: Exception) -> None:
+    """Report a crashed rule to stderr without aborting the run."""
+    print(
+        f"Error: rule {rule_id} failed on service '{service_name}': "
+        f"{type(exc).__name__}: {exc}",
+        file=sys.stderr,
+    )
 
 
 def run_rules(
@@ -15,6 +28,7 @@ def run_rules(
     disabled_rules: dict[str, str | None] | None = None,
     severity_overrides: dict[str, Severity] | None = None,
     excluded_services: dict[str, dict[str, str | None]] | None = None,
+    on_error: Callable[[str, str, Exception], None] | None = None,
 ) -> list[Finding]:
     """Run all registered rules against the parsed Compose data.
 
@@ -22,10 +36,18 @@ def run_rules(
     those findings are marked suppressed with an appropriate reason. A
     global disable takes precedence over per-service exclusions (see
     ADR-010). Returns findings sorted by line number (None-line last).
+
+    A rule that raises is isolated rather than allowed to abort the whole
+    run: the failure is reported via ``on_error`` (defaulting to a stderr
+    diagnostic) and the engine continues with the next service and rule. The
+    CLI maps such a failure to exit 2 ("compose-lint itself couldn't run",
+    ADR-006) so a directory sweep is never silently truncated and a crash is
+    never mistaken for a clean lint failure.
     """
     disabled = disabled_rules or {}
     overrides = severity_overrides or {}
     excluded = excluded_services or {}
+    report_error = on_error if on_error is not None else _default_rule_error
     findings: list[Finding] = []
 
     rule_classes = get_registered_rules()
@@ -39,7 +61,14 @@ def run_rules(
         rule_excluded = excluded.get(rule_id, {})
 
         for service_name, service_config in services.items():
-            for finding in rule.check(service_name, service_config, data, lines):
+            try:
+                rule_findings = list(
+                    rule.check(service_name, service_config, data, lines)
+                )
+            except Exception as exc:  # noqa: BLE001 - isolate a crashing rule
+                report_error(rule_id, service_name, exc)
+                continue
+            for finding in rule_findings:
                 if rule_id in overrides and not is_suppressed:
                     finding = replace(finding, severity=overrides[rule_id])
                 if is_suppressed:

@@ -10,3 +10,4 @@
 - Matches Hadolint's `--failure-threshold` and KICS's severity-mapped exit codes.
 - Default behavior is strict (fail on high/critical) but teams can relax with `--fail-on critical` or tighten with `--fail-on low`.
 - Exit 2 for file/config errors distinguishes "your compose file has issues" from "compose-lint itself couldn't run."
+- A rule that raises is isolated rather than aborting the run (the failure is reported to stderr and the sweep continues), and maps to exit 2 for the same reason: it means compose-lint itself couldn't complete the analysis, not that the file failed the lint. This keeps a crash from being silently truncated mid-sweep or mistaken for a clean exit-1 findings result.

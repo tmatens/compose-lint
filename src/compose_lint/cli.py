@@ -339,6 +339,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     all_sarif: list[dict[str, object]] = []
     all_file_findings: list[tuple[list[Finding], str]] = []
     parse_errors: list[tuple[str, str]] = []
+    rule_errors: list[tuple[str, str]] = []
     has_errors = False
     seen_services: set[str] = set()
 
@@ -362,12 +363,26 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
 
         seen_services.update(data.get("services", {}).keys())
 
+        def _record_rule_error(
+            rule_id: str,
+            service_name: str,
+            exc: Exception,
+            _filepath: str = filepath,
+        ) -> None:
+            msg = (
+                f"rule {rule_id} failed on service '{service_name}': "
+                f"{type(exc).__name__}: {exc}"
+            )
+            rule_errors.append((_filepath, msg))
+            print(f"Error: {_filepath}: {msg}", file=sys.stderr)
+
         findings = run_rules(
             data,
             lines,
             disabled_rules=disabled_rules,
             severity_overrides=severity_overrides,
             excluded_services=excluded_services,
+            on_error=_record_rule_error,
         )
 
         if args.skip_suppressed:
@@ -422,7 +437,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         sarif_log = build_sarif_log(all_sarif, parse_errors)
         print(json.dumps(sarif_log, indent=2, allow_nan=False))
 
-    if parse_errors:
+    if parse_errors or rule_errors:
         sys.exit(2)
     sys.exit(1 if has_errors else 0)
 
