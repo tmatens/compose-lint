@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deliberately excludes the line number, so an alert survives unrelated line
   shifts. Additive to the SARIF contract (ADR-015). (#278)
 
+### Security
+
+- ClusterFuzzLite hygiene (issue #279). The `cflite-pr` and `cflite-batch`
+  workflow checkouts now set `persist-credentials: false` like every other
+  workflow, so the `GITHUB_TOKEN` is not left in `.git/config` while PR-author
+  code runs during fuzzing. The fuzz image's `COPY .` no longer ingests
+  `CLAUDE.md` / `AGENTS.md` — they are added to `.dockerignore`. (#279)
+
 ### Fixed
 
 - Documentation and grounding drift corrected (issue #279 D1–D6). OWASP
