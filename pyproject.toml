@@ -52,7 +52,7 @@ dependencies = [
 # "Development dependencies" — and Dependabot's weekly pass bumps
 # them.
 lint = [
-    "ruff==0.15.11",
+    "ruff==0.15.14",
 ]
 security = [
     "bandit==1.9.4",
