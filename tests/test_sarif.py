@@ -250,6 +250,66 @@ class TestBuildSarifLog:
         assert parsed["version"] == "2.1.0"
 
 
+class TestSarifDescriptorFixes:
+    """Descriptor-level SARIF fixes from issue #279 (S-a / S-b / S-c)."""
+
+    @staticmethod
+    def _rule(log: dict, rule_id: str) -> dict:
+        rules = log["runs"][0]["tool"]["driver"]["rules"]
+        return next(r for r in rules if r["id"] == rule_id)
+
+    def test_helpuri_omitted_for_cis_only_rule(self) -> None:
+        # CL-0012's only reference is CIS prose, not a URI (issue #279 S-a).
+        rule = self._rule(build_sarif_log([]), "CL-0012")
+        assert "helpUri" not in rule
+        # The prose still appears in help.text.
+        assert "CIS" in rule["help"]["text"]
+
+    def test_helpuri_is_a_uri_when_available(self) -> None:
+        # CL-0001's first reference is an OWASP URL.
+        rule = self._rule(build_sarif_log([]), "CL-0001")
+        assert rule["helpUri"].startswith(("http://", "https://"))
+
+    def test_no_rule_emits_a_non_uri_helpuri(self) -> None:
+        for rule in build_sarif_log([])["runs"][0]["tool"]["driver"]["rules"]:
+            if "helpUri" in rule:
+                assert rule["helpUri"].startswith(("http://", "https://"))
+
+    def test_severity_override_reaches_descriptor(self) -> None:
+        # GitHub derives the alert severity from the rule descriptor, not the
+        # result, so an override must reach both (issue #279 S-b).
+        log = build_sarif_log([], severity_overrides={"CL-0007": Severity.CRITICAL})
+        rule = self._rule(log, "CL-0007")
+        assert rule["properties"]["security-severity"] == "9.5"
+        assert rule["defaultConfiguration"]["level"] == "error"
+
+    def test_descriptor_uses_default_without_override(self) -> None:
+        rule = self._rule(build_sarif_log([]), "CL-0007")
+        assert rule["properties"]["security-severity"] == "5.5"
+        assert rule["defaultConfiguration"]["level"] == "warning"
+
+    def test_edits_match_by_logical_identity_not_object_id(self) -> None:
+        # The fix list and the findings list may hold distinct objects with the
+        # same logical identity; the match must survive that (issue #279 S-c).
+        original = _sample_finding()
+        edit = TextEdit(3, 1, 3, 1, "    read_only: true\n")
+        twin = Finding(
+            rule_id=original.rule_id,
+            severity=original.severity,
+            service=original.service,
+            message=original.message,
+            line=original.line,
+            fix=original.fix,
+            references=original.references,
+        )
+        assert twin is not original
+        results = format_findings(
+            [twin], "docker-compose.yml", fixes=[(original, [edit])]
+        )
+        assert "fixes" in results[0]
+        assert results[0]["fixes"][0]["artifactChanges"][0]["replacements"]
+
+
 class TestSarifCLI:
     """CLI integration tests for SARIF output."""
 

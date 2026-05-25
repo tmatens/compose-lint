@@ -434,7 +434,9 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         json_log = build_json_log(all_json, parse_errors)
         print(json.dumps(json_log, indent=2, allow_nan=False))
     elif args.output_format == "sarif":
-        sarif_log = build_sarif_log(all_sarif, parse_errors)
+        sarif_log = build_sarif_log(
+            all_sarif, parse_errors, severity_overrides=severity_overrides
+        )
         print(json.dumps(sarif_log, indent=2, allow_nan=False))
 
     if parse_errors or rule_errors:

@@ -78,6 +78,17 @@ def _physical_location(filepath: str, line: int | None) -> dict[str, Any]:
     return location
 
 
+def _finding_key(finding: Finding) -> tuple[str, int | None, str, str]:
+    """A stable logical identity for matching a finding to its edits.
+
+    Covers rule, line, service, and message — the message carries the specific
+    offending value, so it distinguishes multiple hits of one rule on one
+    service. Unlike ``id(finding)`` this survives a finding being copied or
+    reconstructed between the ``fixes`` and ``findings`` arguments.
+    """
+    return (finding.rule_id, finding.line, str(finding.service), finding.message)
+
+
 # Fingerprint scheme version. Bump if the inputs below change, so a consumer can
 # tell an algorithm change from a genuine new finding.
 _FINGERPRINT_KEY = "composeLintFinding/v1"
@@ -120,11 +131,22 @@ _SARIF_LEVEL: dict[Severity, str] = {
 }
 
 
-def _build_rules() -> tuple[list[dict[str, Any]], dict[str, int]]:
+def _build_rules(
+    severity_overrides: dict[str, Severity] | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """Build SARIF rule definitions from the rule registry.
 
     Returns the rules array and a mapping of rule ID to index.
+
+    ``severity_overrides`` (from ``.compose-lint.yml``) is resolved into each
+    descriptor's ``defaultConfiguration.level`` and ``properties.security-severity``
+    so the rule's advertised severity matches the per-result ``level`` the engine
+    already overrides. GitHub Code Scanning derives an alert's severity column
+    from the *rule's* ``security-severity``, so without this an override to e.g.
+    ``critical`` still showed Medium in GitHub and the JSON/SARIF disagreed on the
+    same finding (issue #279 S-b).
     """
+    overrides = severity_overrides or {}
     rules: list[dict[str, Any]] = []
     index_map: dict[str, int] = {}
 
@@ -132,6 +154,7 @@ def _build_rules() -> tuple[list[dict[str, Any]], dict[str, int]]:
         rule = cls()
         meta = rule.metadata
         index_map[meta.id] = len(rules)
+        severity = overrides.get(meta.id, meta.severity)
 
         rule_obj: dict[str, Any] = {
             "id": meta.id,
@@ -139,15 +162,25 @@ def _build_rules() -> tuple[list[dict[str, Any]], dict[str, int]]:
             "shortDescription": {"text": meta.name},
             "fullDescription": {"text": meta.description},
             "defaultConfiguration": {
-                "level": _SARIF_LEVEL[meta.severity],
+                "level": _SARIF_LEVEL[severity],
             },
             "properties": {
-                "security-severity": _SECURITY_SEVERITY[meta.severity],
+                "security-severity": _SECURITY_SEVERITY[severity],
             },
         }
 
         if meta.references:
-            rule_obj["helpUri"] = meta.references[0]
+            # SARIF 2.1.0 declares helpUri with "format": "uri"; a CIS benchmark
+            # reference is free-text prose, not a URI, and strict validators /
+            # GitHub Code Scanning reject or ignore a non-URI helpUri. Use the
+            # first reference that looks like a URL; otherwise omit helpUri (the
+            # prose still appears in help.text). (issue #279 S-a)
+            help_uri = next(
+                (r for r in meta.references if r.startswith(("http://", "https://"))),
+                None,
+            )
+            if help_uri is not None:
+                rule_obj["helpUri"] = help_uri
             help_lines = [meta.description, "", "References:"]
             help_lines.extend(f"- {ref}" for ref in meta.references)
             rule_obj["help"] = {"text": "\n".join(help_lines)}
@@ -215,7 +248,14 @@ def format_findings(
     """
     rules, index_map = _build_rules()
     results: list[dict[str, Any]] = []
-    edits_by_finding = {id(finding): edits for finding, edits in (fixes or [])}
+    # Match edits to findings on a stable logical key rather than id(): the CLI
+    # happens to pass the same list objects to both calls today, but any future
+    # refactor that copies or reconstructs findings would silently drop every
+    # fix. Genuinely-identical findings would share edits, which is correct.
+    # (issue #279 S-c)
+    edits_by_finding = {
+        _finding_key(finding): edits for finding, edits in (fixes or [])
+    }
 
     for f in findings:
         physical_location = _physical_location(filepath, f.line)
@@ -239,7 +279,7 @@ def format_findings(
         if f.fix:
             result["properties"] = {"fix": f.fix}
 
-        edits = edits_by_finding.get(id(f))
+        edits = edits_by_finding.get(_finding_key(f))
         if edits:
             result["fixes"] = [_build_fix(edits, filepath)]
 
@@ -260,14 +300,19 @@ def format_findings(
 def build_sarif_log(
     all_results: list[dict[str, Any]],
     parse_errors: list[tuple[str, str]] | None = None,
+    severity_overrides: dict[str, Severity] | None = None,
 ) -> dict[str, Any]:
     """Build a complete SARIF log object.
 
     parse_errors entries (filepath, message) become invocation
     toolExecutionNotifications so SARIF consumers (GitHub code scanning)
     can report files that were skipped during the run.
+
+    ``severity_overrides`` (from ``.compose-lint.yml``) are resolved into the
+    rule descriptors so their advertised severity matches the per-result level
+    (issue #279 S-b).
     """
-    rules, _ = _build_rules()
+    rules, _ = _build_rules(severity_overrides)
 
     working_dir_uri = _working_dir_uri()
     invocation: dict[str, Any] = {

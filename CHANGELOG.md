@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- SARIF rule descriptors are now correct in three ways. `helpUri` is set only
+  to a reference that is actually a URI — rules grounded in a CIS benchmark
+  (CL-0012, CL-0015, CL-0016, CL-0017) emitted the benchmark *prose* as
+  `helpUri`, which SARIF 2.1.0 declares `"format": "uri"` and strict validators
+  / GitHub Code Scanning reject; the prose still appears in `help.text`. A
+  config `severity:` override now reaches `defaultConfiguration.level` and
+  `properties.security-severity` on the rule descriptor, not just the per-result
+  `level` — GitHub derives an alert's severity column from the rule, so an
+  override to e.g. `critical` no longer showed Medium while JSON and SARIF
+  disagreed. And a finding's structured `fixes[]` are matched to the finding by
+  logical identity (rule, line, service, message) rather than `id()`, so a
+  future refactor that copies findings can't silently drop every fix. (#279)
+
 - A rule that raises no longer aborts the entire run. Previously an uncaught
   exception from any rule escaped as a traceback and exited 1 —
   indistinguishable from a normal "findings at/above threshold" result, and in a
