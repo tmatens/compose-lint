@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- JSON output now emits `service` as a string and never emits bare `NaN`/
+  `Infinity`. A service name is a YAML mapping key, so a key like `true`, a bare
+  number, or `.nan` resolved to a non-string scalar: `.nan` produced invalid
+  JSON (`"service": NaN`, which RFC 8259 forbids) while `true`/`123` produced a
+  wrongly-typed `service` field (ADR-015 contracts it as a string). The formatter
+  now coerces `service` to `str`, and both the JSON and SARIF dumps use
+  `allow_nan=False` so a stray non-finite float raises instead of writing invalid
+  JSON. (#278)
+
 - Duplicate mapping keys are now rejected with a parse error, matching Docker
   (which refuses them). Previously PyYAML silently let the last value win, so a
   service with `privileged: true` followed by `privileged: false` — a file

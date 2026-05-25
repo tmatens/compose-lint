@@ -23,7 +23,12 @@ def format_findings(findings: list[Finding], filepath: str) -> list[dict[str, ob
             "line": f.line,
             "rule_id": f.rule_id,
             "severity": f.severity.value,
-            "service": f.service,
+            # A service name is a YAML mapping key, which the loader may resolve
+            # into a non-string scalar (a bool from `true:`, an int from a bare
+            # number, a float from `.nan`). ADR-015 contracts `service` as a
+            # string, and a float NaN/Inf would also serialize as invalid JSON,
+            # so coerce here regardless of what the key resolved to.
+            "service": str(f.service),
             "message": f.message,
             "fix": f.fix,
             "references": list(f.references),
