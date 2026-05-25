@@ -52,7 +52,7 @@ jobs:
           persist-credentials: false
 
       - name: Clean fixture should pass
-        uses: tmatens/compose-lint@3cfe56bb661b3a65e099c92c9e281642e75a4a68 # v0.9.0
+        uses: tmatens/compose-lint@94ddcaae5c63b7326ff34f4d0dd5115dbedbd7db # v0.10.0
         with:
           files: tests/smoke/clean.yml
           fail-on: high
@@ -60,7 +60,7 @@ jobs:
       - name: Insecure fixture should fail
         id: insecure
         continue-on-error: true
-        uses: tmatens/compose-lint@3cfe56bb661b3a65e099c92c9e281642e75a4a68 # v0.9.0
+        uses: tmatens/compose-lint@94ddcaae5c63b7326ff34f4d0dd5115dbedbd7db # v0.10.0
         with:
           files: tests/smoke/insecure.yml
           fail-on: high
