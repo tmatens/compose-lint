@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote
 
 from compose_lint import __version__
 from compose_lint.models import Severity
@@ -17,6 +20,43 @@ SARIF_SCHEMA = (
     "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/"
     "main/sarif-2.1/schema/sarif-schema-2.1.0.json"
 )
+
+# Symbolic base for relativized artifact URIs. Declared once per run in
+# ``originalUriBaseIds`` (pointed at the working directory) and referenced from
+# each in-tree ``artifactLocation`` via ``uriBaseId``; GitHub Code Scanning
+# resolves the pair to a repo-relative path.
+_URI_BASE_ID = "SRCROOT"
+
+
+def _working_dir_uri() -> str:
+    """The current working directory as a ``file:`` URI with a trailing slash.
+
+    A base URI for relative-reference resolution must end in ``/`` (RFC 3986
+    §5.3); ``Path.as_uri`` percent-encodes any spaces/Unicode in the path.
+    """
+    return Path.cwd().as_uri() + "/"
+
+
+def _artifact_location(filepath: str) -> dict[str, Any]:
+    """Build a SARIF ``artifactLocation`` with a conformant URI reference.
+
+    SARIF §3.4.1 requires ``uri`` to be a valid RFC-3986 URI reference, and
+    GitHub Code Scanning resolves it against the repository root — so emitting a
+    raw OS path verbatim is wrong twice over: an absolute path won't resolve on
+    GitHub, and a space or non-ASCII byte (``/tmp/my dir/café.yml``) is not a
+    legal URI reference. When the file lives under the working directory, emit a
+    percent-encoded repo-relative path tagged with the ``SRCROOT`` base id;
+    otherwise fall back to an absolute, percent-encoded ``file:`` URI.
+    """
+    try:
+        rel = os.path.relpath(filepath, os.getcwd())
+    except ValueError:
+        # No common base (e.g. different drive on Windows).
+        rel = ".."
+    if not rel.startswith(".."):
+        return {"uri": quote(rel.replace(os.sep, "/")), "uriBaseId": _URI_BASE_ID}
+    return {"uri": Path(filepath).resolve().as_uri()}
+
 
 # GitHub Code Scanning security-severity mapping (numeric).
 # Over 9.0 = critical, 7.0-8.9 = high, 4.0-6.9 = medium, 0.1-3.9 = low.
@@ -103,7 +143,7 @@ def _build_fix(edits: list[TextEdit], filepath: str) -> dict[str, Any]:
     fix: dict[str, Any] = {
         "artifactChanges": [
             {
-                "artifactLocation": {"uri": filepath},
+                "artifactLocation": _artifact_location(filepath),
                 "replacements": replacements,
             },
         ],
@@ -141,7 +181,7 @@ def format_findings(
             "locations": [
                 {
                     "physicalLocation": {
-                        "artifactLocation": {"uri": filepath},
+                        "artifactLocation": _artifact_location(filepath),
                         "region": {"startLine": f.line or 1},
                     },
                 },
@@ -181,8 +221,10 @@ def build_sarif_log(
     """
     rules, _ = _build_rules()
 
+    working_dir_uri = _working_dir_uri()
     invocation: dict[str, Any] = {
         "executionSuccessful": not parse_errors,
+        "workingDirectory": {"uri": working_dir_uri},
     }
     if parse_errors:
         invocation["toolExecutionNotifications"] = [
@@ -192,7 +234,7 @@ def build_sarif_log(
                 "locations": [
                     {
                         "physicalLocation": {
-                            "artifactLocation": {"uri": filepath},
+                            "artifactLocation": _artifact_location(filepath),
                         },
                     },
                 ],
@@ -213,6 +255,7 @@ def build_sarif_log(
                         "rules": rules,
                     },
                 },
+                "originalUriBaseIds": {_URI_BASE_ID: {"uri": working_dir_uri}},
                 "invocations": [invocation],
                 "results": all_results,
             },
