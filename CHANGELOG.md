@@ -27,6 +27,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the CLI maps it to exit 2 ("compose-lint itself couldn't run", ADR-006) so a
   crash is never mistaken for a clean lint failure. (#279)
 
+- CL-0005 now flags a bare short-syntax port with no colon (`"3000"`, `3001`, a
+  `"3000-3005"` range). Docker still publishes it — `docker compose up` assigns a
+  random (ephemeral) host port bound to all interfaces (`0.0.0.0` and `[::]`) —
+  so it is the same exposure class the rule targets, and it is the most common
+  port form in real homelab files. The finding notes the host port is ephemeral
+  and the guidance binds it to localhost with `127.0.0.1::<port>`. The in-scalar
+  autofixer refuses this form (it can't synthesize the empty-host-port syntax).
+  (#279)
+
+- CL-0021 now flags a password-only userinfo (`scheme://:password@host`). The
+  regex required a non-empty username, but RFC 3986 §3.2.1 permits an empty one
+  and `redis://:password@host` is the standard Redis URL form. The
+  password-is-a-`$VAR` skip is unchanged. (#279)
+
 - Text output: the `SUPPRESSED` marker no longer pushes a suppressed finding's
   rule and message columns out of alignment — the severity column is padded to
   fit the marker so every row lines up. CL-0020 and CL-0021 (credential-shaped

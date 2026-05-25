@@ -22,11 +22,14 @@ RFC3986_REF = "https://datatracker.ietf.org/doc/html/rfc3986#section-3.2.1"
 
 # Match `scheme://user:password@` in any env value. The scheme follows
 # RFC 3986 §3.1 (alpha + alnum/+/-/.); user and password halves stop at
-# the structural separators (':', '/', '@', whitespace). The '$' guard
-# below filters out variable substitutions in either half.
+# the structural separators (':', '/', '@', whitespace). The user half is
+# optional (`*`, not `+`): RFC 3986 §3.2.1 permits an empty username, and
+# `redis://:password@host` — the standard Redis URL form — must still fire
+# (issue #279 R2). The '$' guard below filters out variable substitutions in
+# the password half.
 _URI_USERINFO_RE = re.compile(
     r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.\-]*)://"
-    r"(?P<user>[^:/@\s]+):"
+    r"(?P<user>[^:/@\s]*):"
     r"(?P<password>[^@/\s]+)@"
 )
 

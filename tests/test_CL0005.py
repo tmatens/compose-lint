@@ -78,9 +78,15 @@ class TestUnboundPortsRule:
         findings = self._check("bound_long")
         assert len(findings) == 0
 
-    def test_container_only_port_no_findings(self) -> None:
-        findings = self._check("container_only")
-        assert len(findings) == 0
+    def test_bare_port_fires_as_ephemeral(self) -> None:
+        # A bare short-syntax port (`"80"`) is still published: Docker assigns
+        # an ephemeral host port bound to all interfaces (issue #279 R1).
+        findings = self._check("bare_port")
+        assert len(findings) == 1
+        assert findings[0].rule_id == "CL-0005"
+        assert "ephemeral" in findings[0].message
+        # Guidance keeps the ephemeral host port while binding to localhost.
+        assert "127.0.0.1::80" in (findings[0].fix or "")
 
     def test_port_range(self) -> None:
         findings = self._check("port_range")
@@ -249,6 +255,14 @@ class TestUnboundPortsFix:
             line=line,
         )
         assert self.rule.fix(finding, data, lines, content) is None
+
+    def test_refuses_bare_port(self, tmp_path: Path) -> None:
+        # A bare port fires (issue #279 R1), but the in-scalar fixer only
+        # rewrites a host:container scalar; it can't synthesize the
+        # ephemeral-localhost (`127.0.0.1::3000`) form, so it refuses (ADR-014).
+        content = 'services:\n  web:\n    ports:\n      - "3000"\n'
+        edits = self._fix(tmp_path, content)
+        assert edits is None
 
     def test_long_syntax_inserts_host_ip_when_absent(self, tmp_path: Path) -> None:
         content = (

@@ -40,6 +40,13 @@ _PORT_PATTERN = re.compile(
     rf"^(?:(?P<ip>[^:]+):)?(?P<host>{_PORT_PART}):(?P<container>{_PORT_PART})$"
 )
 
+# A bare short-syntax port with no colon (`"3000"`, `3001`, a `"3000-3005"`
+# range, optional `/proto`). Docker still publishes it — `docker compose
+# config` normalizes `- "3000"` to a `target` with an ephemeral host port
+# bound to all interfaces (0.0.0.0) — so it is the same exposure class this
+# rule targets (issue #279 R1). Anchored to reject non-port junk.
+_BARE_PORT_PATTERN = re.compile(rf"^{_PORT_PART}$")
+
 # Values that publish on all interfaces — equivalent to no bind address.
 # These are detection patterns, not actual bind addresses.
 _WILDCARD_IPS = frozenset({"0.0.0.0", "::", "[::]", "*"})  # nosec B104
@@ -95,8 +102,14 @@ class UnboundPortsRule(BaseRule):
         lines: dict[str, int],
         index: int,
     ) -> Iterator[Finding]:
-        # Container-only port (no host mapping) — not published, skip
+        # A bare port with no colon is still published: Docker assigns an
+        # ephemeral host port bound to all interfaces (issue #279 R1). Fire
+        # with an ephemeral-port message; reject non-port junk via the pattern.
         if ":" not in port_str:
+            if _BARE_PORT_PATTERN.match(port_str):
+                yield self._make_finding(
+                    port_str, service_name, lines, index, bare=True
+                )
             return
 
         # Extract bracketed IPv6 prefix (e.g. "[::]:8080:80") before the
@@ -147,22 +160,40 @@ class UnboundPortsRule(BaseRule):
         service_name: str,
         lines: dict[str, int],
         index: int,
+        bare: bool = False,
     ) -> Finding:
+        if bare:
+            message = (
+                f"Bare port '{port_str}' is published on all interfaces: Docker "
+                "assigns a random (ephemeral) host port bound to 0.0.0.0. It "
+                "bypasses host firewalls (UFW/firewalld), potentially exposing "
+                "this port to the public internet."
+            )
+            # `127.0.0.1::3000` keeps the ephemeral host port (empty middle
+            # field) while pinning the bind address to localhost.
+            fix = (
+                f"Bind to localhost, keeping an ephemeral host port: "
+                f"127.0.0.1::{port_str}\n"
+                "If public access is needed, use a reverse proxy with TLS."
+            )
+        else:
+            message = (
+                f"Port '{port_str}' is bound to all interfaces. Docker bypasses "
+                "host firewalls (UFW/firewalld), potentially exposing this port "
+                "to the public internet."
+            )
+            fix = (
+                f"Bind to localhost: 127.0.0.1:{port_str}\n"
+                "If public access is needed, use a reverse proxy with TLS."
+            )
         return Finding(
             rule_id="CL-0005",
             severity=Severity.HIGH,
             service=service_name,
-            message=(
-                f"Port '{port_str}' is bound to all interfaces. Docker bypasses "
-                "host firewalls (UFW/firewalld), potentially exposing this port "
-                "to the public internet."
-            ),
+            message=message,
             line=lines.get(f"services.{service_name}.ports[{index}]")
             or lines.get(f"services.{service_name}.ports"),
-            fix=(
-                f"Bind to localhost: 127.0.0.1:{port_str}\n"
-                "If public access is needed, use a reverse proxy with TLS."
-            ),
+            fix=fix,
             references=[OWASP_REF, CIS_REF],
         )
 
