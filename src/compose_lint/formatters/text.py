@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 from compose_lint.models import Finding, Severity
@@ -22,8 +23,16 @@ _RESET = "\033[0m"
 _BOLD = "\033[1m"
 _DIM = "\033[2m"
 
-# All active severity labels are padded to this width so finding columns align.
+# The marker shown in the severity column for a suppressed finding.
+_SUPPRESSED_LABEL = "SUPPRESSED"
+
+# All severity-column cells — severity labels and the SUPPRESSED marker — are
+# padded to this width so the rule/message columns line up across every row,
+# suppressed or not. "SUPPRESSED" (10) is wider than the longest severity
+# ("critical", 8), so the column widens to it rather than letting suppressed
+# rows push the later columns out of alignment.
 _SEV_WIDTH = max(len(s.value) for s in Severity)  # len("critical") == 8
+_LABEL_WIDTH = max(_SEV_WIDTH, len(_SUPPRESSED_LABEL))
 
 # Rule ids are always CL-XXXX; pad the column header to match the finding rows.
 _RULE_WIDTH = len("CL-XXXX")
@@ -61,6 +70,8 @@ _PRESENCE_RULES = frozenset(
         "CL-0017",
         "CL-0018",
         "CL-0019",
+        "CL-0020",
+        "CL-0021",
     }
 )
 
@@ -71,15 +82,17 @@ def _color_enabled() -> bool:
     """Decide whether to emit ANSI color, honoring the de-facto env standards.
 
     ``NO_COLOR`` (set to any non-empty value) disables color even on a TTY and
-    wins over everything, per https://no-color.org. ``FORCE_COLOR`` (set and
-    not ``0``) forces color even through a pipe — useful for pagers and CI logs
-    that render ANSI. Otherwise color follows whether stdout is a terminal.
+    wins over everything, per https://no-color.org. ``FORCE_COLOR``, when set,
+    overrides TTY detection: ``0`` or ``false`` (case-insensitive) disables
+    color, any other value — including the empty string — enables it, matching
+    the chalk/supports-color convention. Otherwise color follows whether stdout
+    is a terminal.
     """
     if os.environ.get("NO_COLOR"):
         return False
     force = os.environ.get("FORCE_COLOR")
-    if force and force != "0":
-        return True
+    if force is not None:
+        return force.lower() not in ("0", "false")
     return sys.stdout.isatty()
 
 
@@ -88,6 +101,50 @@ def _colorize(text: str, code: str) -> str:
     if not _color_enabled():
         return text
     return f"{code}{text}{_RESET}"
+
+
+def _display_width(text: str) -> int:
+    """Terminal column width of ``text``.
+
+    East-Asian wide/fullwidth code points count as 2 columns and zero-width
+    combining marks as 0, so an underline lines up under CJK or accented text
+    instead of drifting by the code-point/column mismatch. Uses the stdlib
+    ``unicodedata`` rather than ``wcwidth`` to keep the runtime dependency
+    surface at PyYAML only.
+    """
+    width = 0
+    for ch in text:
+        if unicodedata.combining(ch):
+            continue
+        width += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+    return width
+
+
+def _find_token(haystack: str, needle: str) -> int:
+    """Index of ``needle`` in ``haystack`` at a token boundary, else first match.
+
+    Plain ``str.find`` underlines the first substring hit, which mis-points when
+    the value also appears inside a longer token (``80`` inside ``8080``) or as
+    an earlier substring. Prefer an occurrence whose neighbors are not
+    alphanumerics; fall back to the first match so a value that is only ever a
+    substring still gets underlined rather than skipped.
+    """
+
+    def _word(c: str) -> bool:
+        return c.isalnum() or c == "_"
+
+    first = haystack.find(needle)
+    start = 0
+    while True:
+        idx = haystack.find(needle, start)
+        if idx < 0:
+            return first
+        end = idx + len(needle)
+        before = haystack[idx - 1] if idx > 0 else ""
+        after = haystack[end] if end < len(haystack) else ""
+        if not _word(before) and not _word(after):
+            return idx
+        start = idx + 1
 
 
 def format_header(
@@ -141,9 +198,10 @@ def _excerpt(
     match = _QUOTED.search(message)
     if match:
         needle = match.group(1)
-        col = raw.find(needle)
+        col = _find_token(raw, needle)
         if col >= 0:
-            underline = " " * col + "─" * len(needle)
+            indent = _display_width(raw[:col])
+            underline = " " * indent + "─" * _display_width(needle)
             color = _COLORS.get(severity, "")
             out.append(f"{pad} {bar} {_colorize(underline, color)}")
     return out
@@ -196,7 +254,7 @@ def format_findings(
         out.append(
             _colorize(
                 f"    {'line'.rjust(4)}  "
-                f"{'severity'.ljust(_SEV_WIDTH)}  "
+                f"{'severity'.ljust(_LABEL_WIDTH)}  "
                 f"{'rule'.ljust(_RULE_WIDTH)}  message",
                 _DIM,
             )
@@ -206,9 +264,12 @@ def format_findings(
             if f.suppressed:
                 reason = f.suppression_reason or "disabled in .compose-lint.yml"
                 line_label = str(f.line) if f.line else "?"
+                marker = _colorize(
+                    _SUPPRESSED_LABEL.ljust(_LABEL_WIDTH), _SUPPRESSED_COLOR
+                )
                 out.append(
                     f"    {line_label.rjust(4)}  "
-                    f"{_colorize('SUPPRESSED', _SUPPRESSED_COLOR)}  "
+                    f"{marker}  "
                     f"{_colorize(f.rule_id, _DIM)}  "
                     f"{_colorize(f.message, _SUPPRESSED_COLOR)}"
                 )
@@ -216,7 +277,7 @@ def format_findings(
                     out.append(f"          {_colorize('reason:', _DIM)} {reason}")
                 continue
 
-            severity_label = f.severity.value.upper().ljust(_SEV_WIDTH)
+            severity_label = f.severity.value.upper().ljust(_LABEL_WIDTH)
             color = _COLORS.get(f.severity, "")
             line_label = str(f.line) if f.line else "?"
 

@@ -14,8 +14,12 @@ import pytest
 
 from compose_lint.formatters.text import (
     _COLORS,
+    _LABEL_WIDTH,
+    _PRESENCE_RULES,
     _RESET,
     _colorize,
+    _display_width,
+    _find_token,
     format_aggregate_summary,
     format_findings,
     format_verdict,
@@ -266,3 +270,119 @@ def test_aggregate_summary_singular_file() -> None:
 def test_aggregate_summary_plural_files() -> None:
     out = format_aggregate_summary([([], "a.yml"), ([], "b.yml")])
     assert "2 files scanned" in out
+
+
+# --- T1: suppressed-row column alignment ----------------------------------
+
+
+def test_suppressed_row_aligns_with_finding_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _no_tty(monkeypatch)  # plain output, no ANSI to skew column indexing
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    findings = [
+        Finding("CL-0001", Severity.CRITICAL, "web", "active finding", line=2),
+        Finding(
+            "CL-0002", Severity.HIGH, "web", "muted finding", line=3, suppressed=True
+        ),
+    ]
+    out = format_findings(findings, "compose.yml")
+    rule_cols = [ln.index("CL-000") for ln in out.splitlines() if "CL-000" in ln]
+    assert len(rule_cols) == 2
+    assert rule_cols[0] == rule_cols[1]  # SUPPRESSED no longer shifts its row
+
+
+def test_suppressed_marker_padded_to_label_width(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _no_tty(monkeypatch)
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    finding = Finding("CL-0001", Severity.CRITICAL, "web", "x", line=1, suppressed=True)
+    out = format_findings([finding], "compose.yml")
+    assert f"SUPPRESSED{' ' * (_LABEL_WIDTH - len('SUPPRESSED'))}" in out
+
+
+# --- T2: CL-0020 / CL-0021 are presence rules -----------------------------
+
+
+def test_new_credential_rules_are_presence_rules() -> None:
+    assert {"CL-0020", "CL-0021"} <= _PRESENCE_RULES
+
+
+def test_cl0020_renders_source_excerpt(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    path = tmp_path / "compose.yml"
+    path.write_text(
+        "services:\n  web:\n    environment:\n"
+        "      AWS_SECRET_ACCESS_KEY: literalvalue\n",
+        encoding="utf-8",
+    )
+    finding = Finding(
+        "CL-0020",
+        Severity.HIGH,
+        "web",
+        "Service has credential-shaped env key 'AWS_SECRET_ACCESS_KEY' "
+        "with a literal value.",
+        line=4,
+    )
+    out = format_findings([finding], str(path))
+    assert "│" in out  # source gutter rendered
+    assert "─" * len("AWS_SECRET_ACCESS_KEY") in out  # underline under the key
+
+
+# --- T3: FORCE_COLOR truthiness -------------------------------------------
+
+
+def test_force_color_false_disables(monkeypatch: pytest.MonkeyPatch) -> None:
+    _force_color(monkeypatch)  # stdout looks like a tty (would colorize)
+    monkeypatch.setenv("FORCE_COLOR", "false")
+    assert _colorize("x", _RED) == "x"
+
+
+def test_force_color_false_is_case_insensitive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _force_color(monkeypatch)
+    monkeypatch.setenv("FORCE_COLOR", "FALSE")
+    assert _colorize("x", _RED) == "x"
+
+
+def test_force_color_empty_string_enables(monkeypatch: pytest.MonkeyPatch) -> None:
+    _no_tty(monkeypatch)  # pipe: default would be no color
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("FORCE_COLOR", "")
+    assert _colorize("x", _RED) == f"{_RED}x{_RESET}"
+
+
+# --- T4: excerpt underline alignment --------------------------------------
+
+
+def test_display_width_counts_wide_and_combining() -> None:
+    assert _display_width("abc") == 3
+    assert _display_width("你好") == 4  # two fullwidth code points
+    assert _display_width("é") == 1  # 'e' + combining acute = one column
+
+
+def test_find_token_prefers_boundary_over_substring() -> None:
+    # The standalone "80" (after the colon), not the "80" inside "8080".
+    assert _find_token("8080:80", "80") == 5
+    # Falls back to the first match when the value is only ever a substring.
+    assert _find_token("only-substr", "subst") == 5
+
+
+def test_underline_targets_standalone_token(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    path = tmp_path / "compose.yml"
+    path.write_text(
+        "services:\n  web:\n    ports:\n      - 8080:80\n", encoding="utf-8"
+    )
+    finding = Finding(
+        "CL-0005", Severity.HIGH, "web", "Host port '80' is published.", line=4
+    )
+    out = format_findings([finding], str(path))
+    raw = "      - 8080:80"
+    # The underline sits under the standalone 80 (after the colon, col 13), not
+    # the "80" inside 8080 (col 8); a col-8 underline would be " " * 8 + "──".
+    expected_col = raw.index(":80") + 1
+    assert expected_col == 13
+    assert (" " * expected_col + "──") in out
