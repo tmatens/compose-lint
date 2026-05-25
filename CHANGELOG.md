@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- CL-0022 is reworked. As shipped in 0.12.0 it flagged tmpfs entries *missing*
+  `noexec`/`nosuid`/`nodev` — but Docker mounts every tmpfs with all three by
+  default (verified across the short, list, and long forms, and with `size=`
+  set), so the old rule fired on already-secure configs and missed the real
+  weakening. It now flags the *presence* of `exec`, `suid`, or `dev`, which
+  explicitly remove those defaults, at LOW (was MEDIUM). A plain `tmpfs: [/tmp]`
+  is no longer flagged; `tmpfs: [/tmp:exec]` is. The auto-fix is dropped — the
+  option is set deliberately, so reverting is left to manual review.
+
 ### Removed
 
 - CL-0023 (dangerous network sysctls), shipped in 0.12.0, is removed. Verified
