@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- CL-0023 (dangerous network sysctls), shipped in 0.12.0, is removed. Verified
+  against real Docker, its premise did not hold: `net.ipv4.ip_forward` and
+  `net.ipv4.conf.all.send_redirects` are already `1` by default in every
+  container (so flagging them flagged the platform default), and Docker rejects
+  `net.*` sysctls under host networking — so the rule's "acute under host
+  networking" case is a configuration Docker refuses to start. Hit rate was 0%
+  across the corpus. Pre-1.0, the `CL-0023` id is freed and may be reassigned to
+  a future rule. The remaining net.* deviations (`accept_source_route`,
+  `accept_redirects`, IPv6 forwarding) are too niche and weakly grounded to
+  carry a rule on their own.
+
 ## [0.12.0] - 2026-05-25
 
 ### Added
