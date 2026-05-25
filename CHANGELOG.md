@@ -27,6 +27,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Parser line-map robustness (issue #279 E2/E3). A service (or any key) named
+  `__lines__` is no longer silently dropped: the loader's line map now hangs off
+  a private non-string sentinel key instead of the literal string `"__lines__"`,
+  so it can't collide with user data — a security linter must not skip a service.
+  And a service that both defines a YAML anchor and is aliased elsewhere now
+  resolves its own line: previously the alias and the anchor-definer shared one
+  dict, and only whichever the traversal reached first got its keys recorded, so
+  the other (often the definer — the most obvious location) reported `line=None`.
+  Line numbers are now recorded per reachable path while the subtree is still
+  walked once, so the chained-alias DoS guard (issue #154) is preserved. (#279)
+
 - Documentation and grounding drift corrected (issue #279 D1–D6). OWASP
   renumbered the Docker Security Cheat Sheet and switched its anchors to a
   single-dash slug, so every citation was either pointing at the wrong rule or
