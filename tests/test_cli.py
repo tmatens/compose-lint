@@ -498,6 +498,104 @@ class TestFixSubcommand:
         assert f.read_text() == _BARE_SERVICE  # nothing written
 
 
+class TestInitSubcommand:
+    """`init` bootstraps a starter .compose-lint.yml from a file (ADR-011)."""
+
+    def test_writes_config_that_round_trips_through_load_config(
+        self, tmp_path: Path
+    ) -> None:
+        from compose_lint.config import load_config
+
+        src = tmp_path / "docker-compose.yml"
+        src.write_text(_BARE_SERVICE)
+        out = tmp_path / ".compose-lint.yml"
+        result = run_cli("init", str(src), "-o", str(out))
+        assert result.returncode == 0
+        assert out.exists()
+        # The generated file is a valid config the loader accepts, encoded as
+        # per-service exclusions (never a global enabled: false).
+        disabled, overrides, excluded = load_config(str(out))
+        assert disabled == {}
+        assert overrides == {}
+        # _BARE_SERVICE has a single service `web` with several findings.
+        assert excluded
+        assert all("web" in services for services in excluded.values())
+
+    def test_status_goes_to_stderr_not_stdout(self, tmp_path: Path) -> None:
+        src = tmp_path / "docker-compose.yml"
+        src.write_text(_BARE_SERVICE)
+        out = tmp_path / ".compose-lint.yml"
+        result = run_cli("init", str(src), "-o", str(out))
+        assert result.stdout == ""
+        assert "wrote" in result.stderr
+
+    def test_writes_default_filename_in_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        src = tmp_path / "docker-compose.yml"
+        src.write_text(_BARE_SERVICE)
+        monkeypatch.chdir(tmp_path)
+        result = run_cli("init", str(src))
+        assert result.returncode == 0
+        assert (tmp_path / ".compose-lint.yml").exists()
+
+    def test_refuses_to_overwrite_without_force(self, tmp_path: Path) -> None:
+        src = tmp_path / "docker-compose.yml"
+        src.write_text(_BARE_SERVICE)
+        out = tmp_path / ".compose-lint.yml"
+        out.write_text("rules: {}\n")
+        result = run_cli("init", str(src), "-o", str(out))
+        assert result.returncode == 2
+        assert "already exists" in result.stderr
+        # The existing file is left untouched.
+        assert out.read_text() == "rules: {}\n"
+
+    def test_force_overwrites(self, tmp_path: Path) -> None:
+        src = tmp_path / "docker-compose.yml"
+        src.write_text(_BARE_SERVICE)
+        out = tmp_path / ".compose-lint.yml"
+        out.write_text("rules: {}\n")
+        result = run_cli("init", str(src), "-o", str(out), "--force")
+        assert result.returncode == 0
+        assert out.read_text() != "rules: {}\n"
+        assert "exclude_services" in out.read_text()
+
+    def test_no_findings_writes_nothing(self, tmp_path: Path) -> None:
+        out = tmp_path / ".compose-lint.yml"
+        result = run_cli("init", str(FIXTURES / "valid_basic.yml"), "-o", str(out))
+        assert result.returncode == 0
+        assert not out.exists()
+        assert "nothing to suppress" in result.stderr
+
+    def test_file_not_found_exits_2(self, tmp_path: Path) -> None:
+        result = run_cli(
+            "init", str(tmp_path / "nope.yml"), "-o", str(tmp_path / "out.yml")
+        )
+        assert result.returncode == 2
+        assert "file not found" in result.stderr
+
+    def test_listed_in_help(self) -> None:
+        result = run_cli("--help")
+        assert result.returncode == 0
+        assert "init" in result.stdout
+
+    def test_file_named_init_lintable_via_relative_path(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A compose file literally named `init` collides with the subcommand;
+        # the documented workaround is `./init`, which the argv shim routes to
+        # `check` (ADR-011).
+        collide = tmp_path / "init"
+        collide.write_text(_BARE_SERVICE)
+        monkeypatch.chdir(tmp_path)
+        result = run_cli("./init")
+        # Routed to `check`, not parsed as the init subcommand: the file is
+        # linted (its name appears in the per-file output) and there is no usage
+        # error. _BARE_SERVICE trips only sub-threshold findings, so exit 0.
+        assert result.returncode != 2
+        assert "./init" in result.stdout
+
+
 class TestRuleCrashExitCode:
     """A rule that raises maps to exit 2, not a clean/findings exit (#279 E1)."""
 
