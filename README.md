@@ -254,7 +254,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: tmatens/compose-lint@94c3389d42a8a8e5239df90010f0921c84956cb6 # v0.8.0
+      - uses: tmatens/compose-lint@94ddcaae5c63b7326ff34f4d0dd5115dbedbd7db # v0.10.0
         with:
           sarif-file: results.sarif
 ```
@@ -290,7 +290,7 @@ jobs:
         run: |
           apt-get update -qq
           apt-get install -yqq --no-install-recommends python3-pip
-          pip3 install --break-system-packages --no-cache-dir compose-lint==0.8.0
+          pip3 install --break-system-packages --no-cache-dir compose-lint==0.10.0
       - name: Run compose-lint
         run: compose-lint --fail-on high
 ```
@@ -309,7 +309,7 @@ compose-lint --format sarif docker-compose.yml > results.sarif
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/tmatens/compose-lint
-    rev: v0.8.0
+    rev: v0.10.0
     hooks:
       - id: compose-lint
 ```
