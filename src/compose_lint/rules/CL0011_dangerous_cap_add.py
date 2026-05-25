@@ -32,7 +32,10 @@ DANGEROUS_CAPS: dict[str, str] = {
     "SYS_MODULE": "load/unload kernel modules",
     "SYS_RAWIO": "raw I/O port access (iopl/ioperm)",
     "SYS_TIME": "change system clock, affecting all containers and the host",
+    "SYS_BOOT": "reboot the host or load a new kernel via kexec",
     "DAC_READ_SEARCH": "bypass file read permission checks on the host",
+    "DAC_OVERRIDE": "bypass all file read, write, and execute permission checks",
+    "BPF": "load BPF programs — arbitrary kernel read/write on modern kernels",
 }
 
 CRITICAL_CAPS: frozenset[str] = frozenset({"ALL"})

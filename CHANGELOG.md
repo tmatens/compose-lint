@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Rule coverage gaps closed (issue #279 R3/R4/R5). CL-0001 now flags any
+  container-runtime control socket — `containerd.sock`, `crio.sock`, and
+  `podman.sock` in addition to `docker.sock` (podman/crio were caught by no
+  rule before); the rule is retitled "Container runtime socket mounted" and its
+  message names the runtime. CL-0020 adds `PASSPHRASE` and `ENCRYPTION_KEY` to
+  the credential-key list (a generic `_KEY` suffix is deliberately not matched
+  — it false-positives on `LICENSE_KEY` etc.). CL-0011 adds the `SYS_BOOT`,
+  `DAC_OVERRIDE`, and `BPF` capabilities; CL-0016 adds the `/dev/fuse` and
+  `/dev/kmsg` devices. (#279)
+
 - SARIF rule descriptors are now correct in three ways. `helpUri` is set only
   to a reference that is actually a URI — rules grounded in a CIS benchmark
   (CL-0012, CL-0015, CL-0016, CL-0017) emitted the benchmark *prose* as

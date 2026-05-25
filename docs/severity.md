@@ -44,7 +44,7 @@ CIS reference numbers in rule docs are pinned to **CIS Docker Benchmark v1.7.0**
 
 | Rule | Exploitability | Impact | Severity |
 |------|---------------|--------|----------|
-| CL-0001 (Docker socket) | Direct | Host | CRITICAL |
+| CL-0001 (runtime socket) | Direct | Host | CRITICAL |
 | CL-0002 (Privileged mode) | Direct | Host | CRITICAL |
 | CL-0005 (Unbound ports) | Exposed | Single container | HIGH |
 | CL-0008 (Host network) | Exposed | Host | HIGH |
@@ -84,7 +84,7 @@ These rules trigger when a service does not declare a recommended hardening dire
 - **CL-0007** — `read_only: true` not set
 - **CL-0019** — `image:` not pinned to a digest
 
-CL-0001 (Docker socket) and CL-0002 (privileged) are technically presence-based, but the underlying patterns (mounting the socket, running privileged) are common enough that, in practice, they cluster with absence rules in frequency.
+CL-0001 (runtime socket) and CL-0002 (privileged) are technically presence-based, but the underlying patterns (mounting the socket, running privileged) are common enough that, in practice, they cluster with absence rules in frequency.
 
 ### Explicit-disable rules — fire only when a service opts into a dangerous configuration
 

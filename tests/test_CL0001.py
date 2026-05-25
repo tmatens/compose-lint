@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from compose_lint.parser import load_compose
+from compose_lint.parser import load_compose, loads
 from compose_lint.rules.CL0001_docker_socket import DockerSocketRule
 
 FIXTURES = Path(__file__).parent / "compose_files"
@@ -33,6 +33,30 @@ class TestDockerSocketRule:
         )
         assert len(findings) == 1
         assert "docker.sock" in findings[0].message
+
+    def _check_socket(self, mount: str) -> list:
+        data, lines = loads(
+            f"services:\n  svc:\n    image: nginx\n    volumes:\n      - {mount}\n"
+        )
+        return list(self.rule.check("svc", data["services"]["svc"], data, lines))
+
+    def test_detects_podman_socket(self) -> None:
+        # podman.sock was caught by neither CL-0001 nor CL-0013 (issue #279 R4).
+        findings = self._check_socket("/run/podman/podman.sock:/run/podman/podman.sock")
+        assert len(findings) == 1
+        assert "Podman" in findings[0].message
+
+    def test_detects_containerd_socket(self) -> None:
+        findings = self._check_socket(
+            "/run/containerd/containerd.sock:/run/containerd/containerd.sock"
+        )
+        assert len(findings) == 1
+        assert "containerd" in findings[0].message
+
+    def test_detects_crio_socket(self) -> None:
+        findings = self._check_socket("/var/run/crio/crio.sock:/var/run/crio/crio.sock")
+        assert len(findings) == 1
+        assert "CRI-O" in findings[0].message
 
     def test_clean_service_no_findings(self) -> None:
         data, lines = load_compose(FIXTURES / "valid_basic.yml")

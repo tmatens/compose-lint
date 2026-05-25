@@ -19,8 +19,14 @@ OWASP_REF = (
 COMPOSE_SECRETS_REF = "https://docs.docker.com/reference/compose-file/secrets/"
 
 # Substring matches (case-insensitive on the upper-cased key).
+# PASSPHRASE and ENCRYPTION_KEY are unambiguously secret material (issue #279
+# R3). A *generic* `_KEY` suffix is deliberately not added: it false-positives on
+# non-secret names like LICENSE_KEY / PUBLIC_KEY / IDEMPOTENCY_KEY, against this
+# project's "no unactionable findings" principle. GPG_KEY is likewise omitted —
+# it commonly names a key *id*/fingerprint (public), not key material.
 _SUBSTRING_PATTERNS = (
     "PASSWORD",
+    "PASSPHRASE",
     "TOKEN",
     "SECRET",
     "API_KEY",
@@ -28,6 +34,7 @@ _SUBSTRING_PATTERNS = (
     "PRIVATE_KEY",
     "ACCESS_KEY",
     "SECRET_KEY",
+    "ENCRYPTION_KEY",
     "CREDENTIAL",
 )
 
@@ -134,9 +141,10 @@ class CredentialEnvKeysRule(BaseRule):
             name="Credential-shaped env key with literal value",
             description=(
                 "Environment variables whose key name matches a credential "
-                "convention (PASSWORD, TOKEN, SECRET, API_KEY, ACCESS_KEY, "
-                "PRIVATE_KEY, CREDENTIAL, *_PASS, *_PWD, PASSWD, *_SALT, "
-                "*_DSN) and whose value is a non-empty literal string. The "
+                "convention (PASSWORD, PASSPHRASE, TOKEN, SECRET, API_KEY, "
+                "ACCESS_KEY, PRIVATE_KEY, ENCRYPTION_KEY, CREDENTIAL, *_PASS, "
+                "*_PWD, PASSWD, *_SALT, *_DSN) and whose value is a non-empty "
+                "literal string. The "
                 "credential is exposed via `docker inspect`, "
                 "`/proc/<pid>/environ`, `docker compose config`, process "
                 "listings, and CI logs. Compose's `secrets:` primitive "

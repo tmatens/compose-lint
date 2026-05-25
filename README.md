@@ -114,7 +114,7 @@ docker-compose.yml
 
   service: traefik  (line 9)
     line  severity  rule     message
-       9  SUPPRESSED  CL-0001  Docker socket mounted via '/var/run/docker.sock:/var/run/docker.sock'. This gives the container full control over the Docker daemon.
+       9  SUPPRESSED  CL-0001  Docker runtime socket mounted via '/var/run/docker.sock:/var/run/docker.sock'. This gives the container full control over the Docker runtime — equivalent to root on the host.
           reason: SEC-1234 approved — socket proxy planned for 2026-Q3
        9  HIGH      CL-0013  Service mounts sensitive host path '/var/run/docker.sock' (under /var/run). This exposes host system files to the container.
           9 │       - /var/run/docker.sock:/var/run/docker.sock
@@ -153,7 +153,7 @@ If you need broad IaC coverage across Terraform, Kubernetes, and more, KICS cove
 
 | ID | Severity | Description | OWASP | CIS |
 |----|----------|-------------|-------|-----|
-| [CL-0001](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0001.md) | CRITICAL | Docker socket mounted | [Rule #1](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-1---do-not-expose-the-docker-daemon-socket-even-to-the-containers) | 5.32 |
+| [CL-0001](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0001.md) | CRITICAL | Container runtime socket mounted | [Rule #1](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-1---do-not-expose-the-docker-daemon-socket-even-to-the-containers) | 5.32 |
 | [CL-0002](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0002.md) | CRITICAL | Privileged mode enabled | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3---do-not-run-containers-with-the---privileged-flag) | 5.5 |
 | [CL-0003](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0003.md) | MEDIUM | Privilege escalation not blocked | [Rule #4](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-4---add-no-new-privileges-flag) | 5.26 |
 | [CL-0004](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0004.md) | MEDIUM | Image not pinned to version | [Rule #13](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-13---enhance-supply-chain-security) | 5.28 |

@@ -58,6 +58,17 @@ class TestDangerousDevicesRule:
         assert len(findings) == 1
         assert "/dev/disk/" in findings[0].message
 
+    def test_detects_dev_fuse(self) -> None:
+        # /dev/fuse enables mount-based container escapes (issue #279 R5).
+        findings = self._check("dev_fuse")
+        assert len(findings) == 1
+        assert "/dev/fuse" in findings[0].message
+
+    def test_detects_dev_kmsg(self) -> None:
+        findings = self._check("dev_kmsg")
+        assert len(findings) == 1
+        assert "/dev/kmsg" in findings[0].message
+
     def test_detects_multiple(self) -> None:
         findings = self._check("multiple")
         assert len(findings) == 2
