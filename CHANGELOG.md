@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   status to stderr. Takes a single `FILE`. Bare `compose-lint <file>` and
   `compose-lint check` are unaffected.
 
+- CL-0022 flags `tmpfs:` mounts that omit `noexec`, `nosuid`, or `nodev`
+  (MEDIUM). A writable, executable in-memory mount is a payload-staging surface,
+  especially under `read_only: true` where tmpfs is often the only writable
+  path. Covers the short string/list `tmpfs:` form (the long `volumes:` form
+  can't express these flags through Compose); the message names the missing
+  flags. `compose-lint fix` appends them in place, preserving existing options
+  like `size=`, with a caveat that `noexec` is behavior-changing.
+
 ### Changed
 
 - CL-0011 now flags the `PERFMON` capability (HIGH), completing the pair split

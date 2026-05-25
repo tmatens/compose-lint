@@ -9,8 +9,8 @@ services:
       - ALL
     read_only: true
     tmpfs:
-      - /tmp
-      - /run
+      - /tmp:noexec,nosuid,nodev
+      - /run:noexec,nosuid,nodev
   db:
     image: postgres:16-alpine@sha256:b1234567890abcdef
     security_opt:
@@ -19,5 +19,5 @@ services:
       - ALL
     read_only: true
     tmpfs:
-      - /tmp
-      - /run
+      - /tmp:noexec,nosuid,nodev
+      - /run:noexec,nosuid,nodev
