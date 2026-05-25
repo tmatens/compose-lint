@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- SARIF `artifactLocation.uri` is now a conformant, GitHub-resolvable URI
+  reference. Paths were emitted verbatim, so an absolute path would not resolve
+  on GitHub Code Scanning and a space or non-ASCII byte
+  (`/tmp/my dir/café.yml`) was not a legal RFC-3986 URI reference at all. Files
+  under the working directory are now emitted as percent-encoded repo-relative
+  paths tagged with a `SRCROOT` `uriBaseId`, declared once per run in
+  `originalUriBaseIds` alongside `invocations[].workingDirectory`; out-of-tree
+  paths fall back to an absolute, percent-encoded `file:` URI. (#278)
+
 - JSON output now emits `service` as a string and never emits bare `NaN`/
   `Infinity`. A service name is a YAML mapping key, so a key like `true`, a bare
   number, or `.nan` resolved to a non-string scalar: `.nan` produced invalid

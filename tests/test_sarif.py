@@ -375,3 +375,93 @@ class TestSarifSchemaCompliance:
             format_findings([f], "test.yml", fixes=[(f, edits)]),
         )
         self._validate(log, tmp_path)
+
+
+class TestArtifactUri:
+    """`artifactLocation.uri` is a conformant, GitHub-resolvable URI (S1)."""
+
+    def test_in_tree_path_is_relative_with_base_id(self, tmp_path: Path) -> None:
+        # A file under the working directory becomes a repo-relative path tagged
+        # with the SRCROOT base id rather than a non-resolvable absolute path.
+        sub = tmp_path / "stack"
+        sub.mkdir()
+        target = sub / "docker-compose.yml"
+        target.touch()
+        cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            loc = format_findings([_sample_finding()], str(target))[0]
+            art = loc["locations"][0]["physicalLocation"]["artifactLocation"]
+        finally:
+            os.chdir(cwd)
+        assert art["uri"] == "stack/docker-compose.yml"
+        assert art["uriBaseId"] == "SRCROOT"
+
+    def test_relative_input_stays_relative(self) -> None:
+        loc = format_findings([_sample_finding()], "docker-compose.yml")[0]
+        art = loc["locations"][0]["physicalLocation"]["artifactLocation"]
+        assert art["uri"] == "docker-compose.yml"
+        assert art["uriBaseId"] == "SRCROOT"
+
+    def test_spaces_and_unicode_are_percent_encoded(self, tmp_path: Path) -> None:
+        d = tmp_path / "my dir"
+        d.mkdir()
+        target = d / "café.yml"
+        target.touch()
+        cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            art = format_findings([_sample_finding()], str(target))[0]["locations"][0][
+                "physicalLocation"
+            ]["artifactLocation"]
+        finally:
+            os.chdir(cwd)
+        assert art["uri"] == "my%20dir/caf%C3%A9.yml"
+        assert " " not in art["uri"]
+
+    def test_out_of_tree_path_is_absolute_file_uri(self, tmp_path: Path) -> None:
+        # A path that does not live under the working directory cannot be made
+        # repo-relative without a `..`, so it falls back to an absolute file: URI
+        # (percent-encoded, no base id).
+        outside = tmp_path / "outside space.yml"
+        outside.touch()
+        work = tmp_path / "work"
+        work.mkdir()
+        cwd = os.getcwd()
+        os.chdir(work)
+        try:
+            art = format_findings([_sample_finding()], str(outside))[0]["locations"][0][
+                "physicalLocation"
+            ]["artifactLocation"]
+        finally:
+            os.chdir(cwd)
+        assert art["uri"].startswith("file://")
+        assert "outside%20space.yml" in art["uri"]
+        assert "uriBaseId" not in art
+
+    def test_log_declares_src_root_and_working_directory(self) -> None:
+        run = build_sarif_log(format_findings([_sample_finding()], "x.yml"))["runs"][0]
+        base = run["originalUriBaseIds"]["SRCROOT"]["uri"]
+        assert base.startswith("file://")
+        assert base.endswith("/")
+        assert run["invocations"][0]["workingDirectory"]["uri"] == base
+
+    def test_fix_and_notification_uris_are_normalized(self, tmp_path: Path) -> None:
+        f = _sample_finding()
+        edit = TextEdit(3, 1, 3, 1, "x\n")
+        sub = tmp_path / "stack"
+        sub.mkdir()
+        target = sub / "compose.yml"
+        target.touch()
+        cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            results = format_findings([f], str(target), fixes=[(f, [edit])])
+            fix_uri = results[0]["fixes"][0]["artifactChanges"][0]["artifactLocation"]
+            log = build_sarif_log(results, parse_errors=[(str(target), "broken")])
+        finally:
+            os.chdir(cwd)
+        assert fix_uri == {"uri": "stack/compose.yml", "uriBaseId": "SRCROOT"}
+        notif = log["runs"][0]["invocations"][0]["toolExecutionNotifications"][0]
+        notif_art = notif["locations"][0]["physicalLocation"]["artifactLocation"]
+        assert notif_art == {"uri": "stack/compose.yml", "uriBaseId": "SRCROOT"}

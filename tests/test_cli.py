@@ -341,7 +341,9 @@ class TestCLI:
         uri = notifications[0]["locations"][0]["physicalLocation"]["artifactLocation"][
             "uri"
         ]
-        assert uri == str(bad)
+        # `bad` lives outside the repo working directory, so it is emitted as an
+        # absolute, percent-encoded file: URI rather than the raw OS path (S1).
+        assert uri == bad.resolve().as_uri()
 
     def test_sarif_clean_run_marks_execution_successful(self) -> None:
         result = run_cli(
