@@ -86,7 +86,7 @@ dev = [
     "compose-lint[lint]",
     "check-jsonschema==0.37.2",
     "mutmut==3.5.0",
-    "mypy==1.20.1",
+    "mypy==1.20.2",
     "pytest==9.0.3",
     # Statement coverage gate (>=80%) is enforced by the `coverage` CI job.
     # Threshold lives in [tool.coverage.report] below.
