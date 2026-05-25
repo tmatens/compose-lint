@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   status to stderr. Takes a single `FILE`. Bare `compose-lint <file>` and
   `compose-lint check` are unaffected.
 
+### Changed
+
+- CL-0011 now flags the `PERFMON` capability (HIGH), completing the pair split
+  out of `SYS_ADMIN` in Linux 5.8 (`BPF` shipped in 0.10.0). A service with
+  `cap_add: [PERFMON]` that previously passed will now report a finding.
+
 ## [0.11.0] - 2026-05-25
 
 ### Added
