@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Text output: the `SUPPRESSED` marker no longer pushes a suppressed finding's
+  rule and message columns out of alignment — the severity column is padded to
+  fit the marker so every row lines up. CL-0020 and CL-0021 (credential-shaped
+  env keys and inline connection-string credentials) now render the source
+  excerpt and underline like the other value-naming rules; they had been left
+  out of the presence-rule set. `FORCE_COLOR=0`/`false` (case-insensitive) now
+  disables color and any other set value — including the empty string — enables
+  it, matching the chalk/supports-color convention (previously `FORCE_COLOR=false`
+  turned color *on*). The excerpt underline now matches the value at a token
+  boundary and measures display width (East-Asian wide and combining characters),
+  so it no longer mis-points on a value that is a substring of a longer token or
+  contains CJK/accented characters. (#278)
+
 - SARIF no longer emits a misleading `ruleIndex` for an unregistered rule.
   `ruleIndex` defaulted to `0`, so a result whose rule was absent from the
   registry pointed at the first rule (CL-0001) while `ruleId` named the real one
