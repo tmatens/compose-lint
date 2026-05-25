@@ -51,14 +51,13 @@ Turn findings into fixes. This is where the product's differentiation grows the 
 
 **`--explain CL-XXXX`** _(shipped in v0.4.x)_ — prints the full prose from `docs/rules/CL-XXXX.md` in the terminal, reducing context-switching to the browser during triage. Rule-doc markdown is force-included into the wheel at build time. No new deps; pulled forward out of Milestone 3 because it's strictly additive and unblocks the `--fix` UX work.
 
-**`--fix` mode** — auto-fix for safe, unambiguous rules:
-- CL-0003: inject `no-new-privileges:true` into `security_opt:`
-- CL-0005: prepend `127.0.0.1:` to unbound port mappings
-- CL-0007: add `read_only: true`
-- Dry run by default; `--fix --apply` writes in-place.
-- Out of scope for auto-fix: CL-0001 (socket proxy replacement is non-trivial), CL-0016 (correct secret management is context-dependent).
+**`fix` subcommand** _(shipped; promoted to the documented, SemVer-covered surface in 0.11.0 — [ADR-014](adr/014-fix-remediation.md))_ — auto-fix for safe, unambiguous rules:
+- Six fixers: CL-0003 (`no-new-privileges:true`), CL-0005 (bind published ports to `127.0.0.1`), CL-0007 (`read_only: true`), CL-0009, CL-0014, CL-0015.
+- Dry run by default; `fix --apply` writes in-place via an atomic swap; `--only CL-XXXX` scopes to named rules.
+- Refuses anchors/merge keys/`${VAR}` regions and guards every apply with a re-parse + verify-apply pass.
+- Out of scope for auto-fix: CL-0001 (socket proxy replacement is non-trivial), CL-0006 (capability lists are image-specific), CL-0016 (correct secret management is context-dependent).
 
-**Remediation snippets in SARIF** — populate `fix.changes[]` objects so GitHub Code Scanning can display a suggested-change diff inline on pull requests.
+**Remediation snippets in SARIF** _(shipped in 0.11.0)_ — `check --format sarif` populates `fixes[].artifactChanges` so GitHub Code Scanning displays a suggested-change diff inline on pull requests.
 
 **Shellcheck integration** _(pending decision — [ADR-007](adr/007-shellcheck-integration.md))_
 - Lint shell commands inside `command` and `entrypoint` (string form) and `healthcheck.test` with `CMD-SHELL`.
@@ -73,7 +72,7 @@ v1.0 is the **stability commitment**: the CLI surface, exit codes, configuration
 
 **GA criteria:**
 - **Stable, documented contract** — CLI flags, exit codes ([ADR-006](adr/006-exit-codes.md)), the `.compose-lint.yml` schema, and the JSON + SARIF output shapes are frozen and documented as the 1.0 surface. The JSON output gains a versioned envelope before the freeze, so run-level metadata (tool version, parse errors) can be added later without breaking consumers.
-- **`fix` resolved** — shipped as GA, or explicitly carved out as experimental with its own stability exemption, so the rest of the surface can stabilize independently ([ADR-014](adr/014-fix-remediation.md)).
+- **`fix` resolved** — _done._ Shipped as GA and brought under the SemVer contract in 0.11.0 ([ADR-014](adr/014-fix-remediation.md)), independently of the 1.0 cut.
 - **Grounding + severity audit complete** — every rule cites OWASP/CIS/Docker, and no severity change is pending that would alter a CI gate after the freeze.
 - **Documented upgrade/deprecation policy** — the SemVer stability promise (rule additions, severity changes, config and output-shape changes) and the deprecation lifecycle, in [compatibility.md](compatibility.md).
 
@@ -128,6 +127,6 @@ Python 3.10 is scheduled to age out of the matrix when it reaches upstream EOL i
 | Rule Coverage (19 rules) | v0.3 | complete |
 | Per-service rule overrides | v0.4 | complete |
 | CL-0006 profiles + real-world examples + Homebrew tap | v0.4.x | in progress |
-| Remediation (`--explain`, `--fix`, SARIF fixes, shellcheck) | v0.5–0.8 | in progress |
+| Remediation (`--explain`, `fix`, SARIF fixes, shellcheck) | v0.5–0.11 | `fix` GA in 0.11.0; shellcheck pending |
 | GA / 1.0 — stable contract + `fix` + upgrade policy | v1.0 | next |
 | Ecosystem integrations (VS Code, custom rules) | v1.x | |

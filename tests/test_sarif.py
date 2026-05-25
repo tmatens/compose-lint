@@ -370,12 +370,7 @@ class TestSarifCLI:
         }
         assert len(files) >= 2
 
-    def _run_sarif(self, *, experimental: bool) -> dict:
-        env = dict(os.environ)
-        if experimental:
-            env["COMPOSE_LINT_EXPERIMENTAL"] = "1"
-        else:
-            env.pop("COMPOSE_LINT_EXPERIMENTAL", None)
+    def _run_sarif(self) -> dict:
         result = subprocess.run(
             [
                 sys.executable,
@@ -387,23 +382,19 @@ class TestSarifCLI:
             ],
             capture_output=True,
             text=True,
-            env=env,
         )
         return json.loads(result.stdout)
 
-    def test_structured_fixes_emitted_under_experimental(self) -> None:
-        data = self._run_sarif(experimental=True)
+    def test_structured_fixes_emitted_by_default(self) -> None:
+        # Promoted in 0.11.0: structured SARIF fixes ship unconditionally, with
+        # no COMPOSE_LINT_EXPERIMENTAL gate.
+        data = self._run_sarif()
         results = data["runs"][0]["results"]
         with_fixes = [r for r in results if "fixes" in r]
-        assert with_fixes, "expected structured fixes when experimental is enabled"
+        assert with_fixes, "expected structured fixes in SARIF output"
         change = with_fixes[0]["fixes"][0]["artifactChanges"][0]
         assert change["replacements"]
-
-    def test_structured_fixes_gated_off_by_default(self) -> None:
-        data = self._run_sarif(experimental=False)
-        results = data["runs"][0]["results"]
-        assert all("fixes" not in r for r in results)
-        # the prose guidance is still present
+        # the prose guidance is still present alongside the structured fix
         assert any("properties" in r for r in results)
 
 

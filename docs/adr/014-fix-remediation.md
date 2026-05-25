@@ -1,6 +1,11 @@
 # ADR-014: `fix` — Automated Remediation of Auto-Fixable Findings
 
-**Status:** Proposed
+**Status:** Accepted — Phase 3 reached in 0.11.0. `fix` is promoted to the
+documented, SemVer-covered surface: it lists in `--help`, structured SARIF
+`fixes[]` ship unconditionally, and the per-invocation experimental warning and
+`COMPOSE_LINT_EXPERIMENTAL` gate are removed. All five promotion criteria in
+Part 5 are met, including the full-corpus soak (~6.4k files: zero re-parse
+failures, zero non-idempotent fixes, zero new findings introduced).
 
 **Context:** compose-lint tells a user what is wrong and how to fix it, but
 today the fix is prose the user applies by hand. Milestone 3 of the roadmap

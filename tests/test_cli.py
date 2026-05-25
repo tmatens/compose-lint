@@ -381,22 +381,16 @@ _BARE_SERVICE = "services:\n  web:\n    image: nginx:1.27\n"
 
 
 class TestFixSubcommand:
-    """Tests for the hidden, experimental `fix` subcommand (ADR-014).
-
-    Post-Phase-2 `fix` is reachable without ``COMPOSE_LINT_EXPERIMENTAL``, so
-    these invoke it with a plain ``run_cli``; the env var now only gates SARIF
-    fixes (see ``test_sarif``).
-    """
+    """Tests for the `fix` subcommand (ADR-014, promoted in 0.11.0)."""
 
     def test_dry_run_prints_diff_to_stdout(self, tmp_path: Path) -> None:
         f = tmp_path / "docker-compose.yml"
         f.write_text(_BARE_SERVICE)
         result = run_cli("fix", str(f))
         assert result.returncode == 0
-        # Diff (data) on stdout; warning + status (human) on stderr.
+        # Diff (data) on stdout; status (human) on stderr.
         assert "+    read_only: true" in result.stdout
         assert "⚠ behavior-changing · CL-0007" in result.stdout
-        assert "experimental" in result.stderr.lower()
         # Dry-run writes nothing.
         assert f.read_text() == _BARE_SERVICE
 
@@ -440,20 +434,24 @@ class TestFixSubcommand:
         assert "read_only: true" not in patched
         assert "no-new-privileges:true" in patched
 
-    def test_hidden_from_help(self) -> None:
-        # Always registered post-Phase-2, but still omitted from --help.
+    def test_listed_in_help(self) -> None:
+        # Promoted in 0.11.0: `fix` carries a help string, so it appears in
+        # the top-level command list alongside `check`.
         result = run_cli("--help")
         assert result.returncode == 0
-        assert "fix" not in result.stdout
+        assert "fix" in result.stdout
+        assert "auto-remediate" in result.stdout.lower()
 
-    def test_available_without_env_gate(self, tmp_path: Path) -> None:
+    def test_no_experimental_warning(self, tmp_path: Path) -> None:
+        # Promoted to the SemVer contract: no per-invocation experimental
+        # warning is printed (it was the carve-out's mitigation).
         f = tmp_path / "docker-compose.yml"
         f.write_text(_BARE_SERVICE)
-        # Phase 2: `fix` runs without COMPOSE_LINT_EXPERIMENTAL — still hidden,
-        # still warned-on, dry-run by default (writes nothing).
         result = run_cli("fix", str(f))
         assert result.returncode == 0
-        assert "experimental" in result.stderr.lower()
+        # Match the old warning's phrase, not the bare word — the temp path can
+        # contain "experimental" (it is derived from this test's name).
+        assert "is experimental" not in result.stderr.lower()
         assert "+    read_only: true" in result.stdout
         assert f.read_text() == _BARE_SERVICE
 

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The `fix` subcommand is promoted out of experimental and onto the documented,
+  SemVer-covered surface (ADR-014, Phase 3). It now lists in `compose-lint
+  --help` and has a README section. Behavior is unchanged: dry-run by default
+  (prints a unified diff, writes nothing), `--apply` writes fixes in place via
+  an atomic swap, `--only CL-XXXX` scopes to named rules, suppressed findings
+  are never touched, and every apply is guarded by a re-parse plus a
+  verify-apply pass that refuses to write anything that wouldn't re-lint clean.
+  Promotion follows a full-corpus soak over ~6.4k real Compose files with zero
+  re-parse failures, zero non-idempotent fixes, and zero new findings
+  introduced.
+
+### Changed
+
+- Structured SARIF `fixes[]` (machine-applicable `artifactChanges`, which GitHub
+  Code Scanning renders as suggested changes) now ship unconditionally in
+  `check --format sarif`. They were previously gated behind
+  `COMPOSE_LINT_EXPERIMENTAL=1`; that environment variable is now a no-op.
+- `fix` no longer prints a per-invocation "experimental" warning to stderr — it
+  is part of the stability contract from this release.
+
 ## [0.10.0] - 2026-05-25
 
 ### Added

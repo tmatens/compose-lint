@@ -26,11 +26,6 @@ These may change in any release, including PATCH, without a major bump:
 - **Human text output** — the exact wording, layout, colour, and ordering of
   `--format text`. It is for humans; parse JSON or SARIF if you need a stable
   shape. (The JSON `version` field exists precisely so you can.)
-- **The experimental `fix` subcommand** — reachable but hidden from `--help`,
-  prints a stderr warning on every run, and is excluded from the SemVer contract
-  until promoted ([ADR-014](adr/014-fix-remediation.md)). Its flags, output, and
-  behavior may change in any release. (Structured SARIF `fixes[]` from the engine
-  stay behind `COMPOSE_LINT_EXPERIMENTAL=1` until that promotion.)
 - **Internal Python API** — anything beyond `compose_lint.__version__` and the
   documented CLI. compose-lint is a CLI / GitHub Action, not an importable
   library; rule classes, the engine, parser, and formatters are implementation

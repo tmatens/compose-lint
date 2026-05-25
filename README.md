@@ -215,6 +215,40 @@ compose-lint [OPTIONS] [FILE ...]
   --version                    Show version and exit
 ```
 
+## Fixing findings
+
+`compose-lint fix` auto-remediates the findings that have a safe, unambiguous
+edit — adding `read_only: true`, `no-new-privileges:true`, dropping a bare
+`latest` tag, binding a published port to `127.0.0.1`, and similar. It is
+**dry-run by default**: it prints a unified diff and writes nothing.
+
+```bash
+compose-lint fix docker-compose.yml            # preview the diff, write nothing
+compose-lint fix --apply docker-compose.yml    # write the fixes in place
+compose-lint fix --only CL-0007 --apply .      # restrict to one rule
+```
+
+- **Dry-run by default; `--apply` writes in place** via an atomic swap that
+  preserves the file's permission bits — an interrupted write never corrupts the
+  Compose file.
+- **Only safe, mechanical fixes are applied.** Findings whose remediation is
+  context-dependent (e.g. CL-0006 capability lists, CL-0001 socket mounts) are
+  reported as needing manual review, never auto-edited.
+- **Suppressed findings are never touched** — `.compose-lint.yml` disables and
+  per-service excludes are honored.
+- **Refuses unsafe edits.** Files using YAML anchors, merge keys, or `${VAR}`
+  interpolation in the affected region are skipped rather than risk a wrong
+  rewrite, and every apply is re-parsed and re-linted before it is written —
+  anything that wouldn't round-trip clean is refused with the diff surfaced for
+  diagnosis.
+- **Diff is data, status is human.** The diff goes to stdout; progress and
+  warnings go to stderr, so `compose-lint fix file.yml > changes.diff` captures
+  exactly the patch.
+
+Structured fixes also ride in SARIF output: `compose-lint check --format sarif`
+populates `fixes[].artifactChanges`, which GitHub Code Scanning renders as an
+inline suggested change on the pull request.
+
 ## Versioning & stability
 
 compose-lint follows [Semantic Versioning](https://semver.org/). From 1.0, the CLI, exit codes, config schema, and JSON/SARIF output are stable. New and tightened rules ship in MINOR releases, so pin a version or use `--fail-on` if you need deterministic CI. See [docs/compatibility.md](https://github.com/tmatens/compose-lint/blob/main/docs/compatibility.md) for the full stability promise and deprecation policy.
