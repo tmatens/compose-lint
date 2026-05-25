@@ -175,7 +175,6 @@ If you need broad IaC coverage across Terraform, Kubernetes, and more, KICS cove
 | [CL-0020](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0020.md) | HIGH | Credential-shaped env key with literal value | [Rule #12](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-12-utilize-docker-secrets-for-sensitive-data-management) | — |
 | [CL-0021](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0021.md) | HIGH | Credential embedded in connection-string env value | [Rule #12](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-12-utilize-docker-secrets-for-sensitive-data-management) | — |
 | [CL-0022](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0022.md) | MEDIUM | tmpfs mount not hardened | [Rule #8](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8-set-filesystem-and-volumes-to-read-only) | — |
-| [CL-0023](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0023.md) | MEDIUM | Dangerous network sysctl enabled | — | — |
 
 ## Severity Levels
 
