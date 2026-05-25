@@ -67,7 +67,9 @@ class TestFormatFindings:
         assert "fixes" not in results[0]
         assert "properties" not in results[0]
 
-    def test_line_defaults_to_1_when_none(self) -> None:
+    def test_region_omitted_when_line_unknown(self) -> None:
+        # A missing line cannot be a valid region (startLine must be >= 1), so the
+        # location carries only artifactLocation rather than a fabricated line 1.
         finding = Finding(
             rule_id="CL-0001",
             severity=Severity.CRITICAL,
@@ -77,7 +79,29 @@ class TestFormatFindings:
         )
         results = format_findings([finding], "test.yml")
         loc = results[0]["locations"][0]["physicalLocation"]
-        assert loc["region"]["startLine"] == 1
+        assert "region" not in loc
+        assert loc["artifactLocation"]["uri"] == "test.yml"
+
+    def test_registered_rule_has_matching_index(self) -> None:
+        results = format_findings([_sample_finding()], "test.yml")
+        log = build_sarif_log(results)
+        rules = log["runs"][0]["tool"]["driver"]["rules"]
+        idx = results[0]["ruleIndex"]
+        assert rules[idx]["id"] == results[0]["ruleId"]
+
+    def test_unregistered_rule_omits_index(self) -> None:
+        # An index would have to point somewhere; defaulting to 0 falsely
+        # attributes the result to the first registered rule. Omit it instead.
+        finding = Finding(
+            rule_id="CL-9999",
+            severity=Severity.HIGH,
+            service="web",
+            message="phantom rule",
+            line=3,
+        )
+        results = format_findings([finding], "test.yml")
+        assert results[0]["ruleId"] == "CL-9999"
+        assert "ruleIndex" not in results[0]
 
     def test_empty_findings(self) -> None:
         results = format_findings([], "docker-compose.yml")
@@ -181,8 +205,11 @@ class TestBuildSarifLog:
     def test_schema_and_version(self) -> None:
         log = build_sarif_log([])
         assert log["version"] == "2.1.0"
-        assert "$schema" in log
-        assert "sarif-schema-2.1.0" in log["$schema"]
+        # The canonical, immutable OASIS errata01 URL — not a mutable branch ref.
+        assert log["$schema"] == (
+            "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/"
+            "sarif-schema-2.1.0.json"
+        )
 
     def test_has_single_run(self) -> None:
         log = build_sarif_log([])

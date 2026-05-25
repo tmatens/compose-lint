@@ -16,9 +16,13 @@ if TYPE_CHECKING:
 
     from compose_lint.models import Finding, TextEdit
 
+# The schema's canonical `$id`, served from the OASIS errata01 OS publication.
+# It is an immutable, versioned URL — unlike the previous raw.githubusercontent
+# `main`-branch link, which was a mutable ref (and so conflicted with this
+# repo's no-mutable-refs principle as well as not being the schema's own `$id`).
 SARIF_SCHEMA = (
-    "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/"
-    "main/sarif-2.1/schema/sarif-schema-2.1.0.json"
+    "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/"
+    "sarif-schema-2.1.0.json"
 )
 
 # Symbolic base for relativized artifact URIs. Declared once per run in
@@ -56,6 +60,21 @@ def _artifact_location(filepath: str) -> dict[str, Any]:
     if not rel.startswith(".."):
         return {"uri": quote(rel.replace(os.sep, "/")), "uriBaseId": _URI_BASE_ID}
     return {"uri": Path(filepath).resolve().as_uri()}
+
+
+def _physical_location(filepath: str, line: int | None) -> dict[str, Any]:
+    """Build a SARIF ``physicalLocation``, including ``region`` only when known.
+
+    SARIF requires ``region.startLine`` to be >= 1, so a missing or non-positive
+    line cannot be expressed as a region. Rather than fabricate ``startLine: 1``
+    (which mislocates the result at the top of the file), omit the region
+    entirely — a location with only an ``artifactLocation`` is valid and lets a
+    consumer attribute the result to the file as a whole.
+    """
+    location: dict[str, Any] = {"artifactLocation": _artifact_location(filepath)}
+    if line is not None and line >= 1:
+        location["region"] = {"startLine": line}
+    return location
 
 
 # GitHub Code Scanning security-severity mapping (numeric).
@@ -175,18 +194,19 @@ def format_findings(
     for f in findings:
         result: dict[str, Any] = {
             "ruleId": f.rule_id,
-            "ruleIndex": index_map.get(f.rule_id, 0),
             "level": _SARIF_LEVEL.get(f.severity, "warning"),
             "message": {"text": f.message},
             "locations": [
-                {
-                    "physicalLocation": {
-                        "artifactLocation": _artifact_location(filepath),
-                        "region": {"startLine": f.line or 1},
-                    },
-                },
+                {"physicalLocation": _physical_location(filepath, f.line)},
             ],
         }
+
+        # ruleIndex must identify the descriptor the result refers to (SARIF
+        # §3.52.5). Emit it only when the rule is actually in the registry;
+        # defaulting to 0 would point an unregistered rule at CL-0001 while
+        # ruleId named the real one — a self-contradiction.
+        if f.rule_id in index_map:
+            result["ruleIndex"] = index_map[f.rule_id]
 
         if f.fix:
             result["properties"] = {"fix": f.fix}

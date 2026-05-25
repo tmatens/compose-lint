@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- SARIF no longer emits a misleading `ruleIndex` for an unregistered rule.
+  `ruleIndex` defaulted to `0`, so a result whose rule was absent from the
+  registry pointed at the first rule (CL-0001) while `ruleId` named the real one
+  — a SARIF §3.52.5 contradiction. It is now emitted only when the rule is in
+  the registry. A result with an unknown or non-positive line likewise omits its
+  `region` instead of fabricating `startLine: 1`, which had mislocated the alert
+  at the top of the file. (#278)
+- SARIF `$schema` now points at the canonical, immutable OASIS errata01 URL
+  (`docs.oasis-open.org/.../sarif-schema-2.1.0.json`) instead of a
+  `raw.githubusercontent.com` `main`-branch link — the schema's own `$id`, and
+  no longer a mutable ref. (#278)
+
 - SARIF `artifactLocation.uri` is now a conformant, GitHub-resolvable URI
   reference. Paths were emitted verbatim, so an absolute path would not resolve
   on GitHub Code Scanning and a space or non-ASCII byte
