@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- SARIF results now carry a stable `partialFingerprints` value
+  (`composeLintFinding/v1`). GitHub Code Scanning uses it to deduplicate
+  uploads and track an alert across commits; without it, direct SARIF uploads
+  produced duplicate alerts and lost continuity when code moved. The digest is
+  derived from the finding's logical identity (file, rule, service, message) and
+  deliberately excludes the line number, so an alert survives unrelated line
+  shifts. Additive to the SARIF contract (ADR-015). (#278)
+
 ### Fixed
 
 - SARIF no longer emits a misleading `ruleIndex` for an unregistered rule.

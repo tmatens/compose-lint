@@ -404,6 +404,48 @@ class TestSarifSchemaCompliance:
         self._validate(log, tmp_path)
 
 
+class TestPartialFingerprints:
+    """Each result carries a stable fingerprint for GitHub dedup/tracking (S3)."""
+
+    def test_present_on_every_result(self) -> None:
+        results = format_findings([_sample_finding()], "x.yml")
+        fp = results[0]["partialFingerprints"]
+        assert isinstance(fp["composeLintFinding/v1"], str)
+        assert len(fp["composeLintFinding/v1"]) == 64  # sha256 hex
+
+    def test_stable_across_runs(self) -> None:
+        a = format_findings([_sample_finding()], "x.yml")[0]
+        b = format_findings([_sample_finding()], "x.yml")[0]
+        assert a["partialFingerprints"] == b["partialFingerprints"]
+
+    def test_independent_of_line_number(self) -> None:
+        # An alert should survive an unrelated line shift, so the fingerprint
+        # must not change when only the line moves.
+        base = _sample_finding()
+        moved = Finding(
+            rule_id=base.rule_id,
+            severity=base.severity,
+            service=base.service,
+            message=base.message,
+            line=base.line + 100,
+        )
+        fa = format_findings([base], "x.yml")[0]["partialFingerprints"]
+        fb = format_findings([moved], "x.yml")[0]["partialFingerprints"]
+        assert fa == fb
+
+    def test_differs_by_rule_service_and_message(self) -> None:
+        base = _sample_finding()
+        variants = [
+            Finding("CL-0002", base.severity, base.service, base.message, base.line),
+            Finding(base.rule_id, base.severity, "other", base.message, base.line),
+            Finding(base.rule_id, base.severity, base.service, "other msg", base.line),
+        ]
+        baseline = format_findings([base], "x.yml")[0]["partialFingerprints"]
+        for v in variants:
+            other = format_findings([v], "x.yml")[0]["partialFingerprints"]
+            assert other != baseline
+
+
 class TestArtifactUri:
     """`artifactLocation.uri` is a conformant, GitHub-resolvable URI (S1)."""
 

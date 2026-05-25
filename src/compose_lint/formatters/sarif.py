@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -75,6 +76,31 @@ def _physical_location(filepath: str, line: int | None) -> dict[str, Any]:
     if line is not None and line >= 1:
         location["region"] = {"startLine": line}
     return location
+
+
+# Fingerprint scheme version. Bump if the inputs below change, so a consumer can
+# tell an algorithm change from a genuine new finding.
+_FINGERPRINT_KEY = "composeLintFinding/v1"
+
+
+def _partial_fingerprints(uri: str, finding: Finding) -> dict[str, str]:
+    """A stable per-finding fingerprint for GitHub alert dedup/tracking.
+
+    GitHub uses ``partialFingerprints`` to match the *same* alert across commits
+    and to deduplicate uploads; without them, repeated SARIF uploads create
+    duplicate alerts and lose continuity when code moves. The digest covers the
+    finding's logical identity — file, rule, service, and message (the message
+    carries the specific offending value, which distinguishes multiple hits of
+    one rule on one service) — but deliberately **not** the line number, so an
+    alert survives unrelated line shifts. Optional in base SARIF; emitting it is
+    additive to the contract (ADR-015).
+    """
+    # repr() of the component list is an unambiguous, collision-safe
+    # serialization (it escapes embedded quotes), so distinct findings
+    # cannot alias by component-boundary coincidence.
+    parts = [uri, finding.rule_id, str(finding.service), finding.message]
+    digest = hashlib.sha256(repr(parts).encode("utf-8")).hexdigest()
+    return {_FINGERPRINT_KEY: digest}
 
 
 # GitHub Code Scanning security-severity mapping (numeric).
@@ -192,13 +218,15 @@ def format_findings(
     edits_by_finding = {id(finding): edits for finding, edits in (fixes or [])}
 
     for f in findings:
+        physical_location = _physical_location(filepath, f.line)
         result: dict[str, Any] = {
             "ruleId": f.rule_id,
             "level": _SARIF_LEVEL.get(f.severity, "warning"),
             "message": {"text": f.message},
-            "locations": [
-                {"physicalLocation": _physical_location(filepath, f.line)},
-            ],
+            "locations": [{"physicalLocation": physical_location}],
+            "partialFingerprints": _partial_fingerprints(
+                physical_location["artifactLocation"]["uri"], f
+            ),
         }
 
         # ruleIndex must identify the descriptor the result refers to (SARIF
