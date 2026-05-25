@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from compose_lint.parser import (
+    _LINES,
     ComposeError,
     ComposeNotApplicableError,
     _collect_lines,
@@ -185,9 +186,9 @@ class TestLoadCompose:
 
     def test_no_lines_metadata_in_data(self) -> None:
         data, _lines = load_compose(FIXTURES / "valid_basic.yml")
-        assert "__lines__" not in data
-        assert "__lines__" not in data["services"]
-        assert "__lines__" not in data["services"]["web"]
+        for container in (data, data["services"], data["services"]["web"]):
+            assert _LINES not in container
+            assert "__lines__" not in container
 
     def test_line_numbers_present(self) -> None:
         _data, lines = load_compose(FIXTURES / "valid_basic.yml")
@@ -217,6 +218,34 @@ class TestLoadCompose:
         assert web["security_opt"] == ["no-new-privileges:true"]
         assert web["image"] == "nginx:1.27-alpine"
         assert lines["services.web"] > lines["services"]
+
+    def test_service_named_lines_is_not_dropped(self) -> None:
+        # The line-map sentinel must not collide with a service literally
+        # named __lines__ — it used to be silently overwritten and skipped, a
+        # security linter dropping a service (issue #279 E2).
+        data, lines = loads(
+            "services:\n  __lines__:\n    image: nginx\n    privileged: true\n"
+        )
+        assert "__lines__" in data["services"]
+        assert data["services"]["__lines__"]["privileged"] is True
+        assert lines["services.__lines__.privileged"] == 4
+
+    def test_anchor_definer_and_alias_both_resolve_lines(self) -> None:
+        # An anchor-defining service and its alias reach the same shared dict.
+        # Both must resolve the shared key's line, not just whichever the
+        # traversal reached first — the definer used to report line=None
+        # (issue #279 E3).
+        data, lines = loads(
+            "services:\n"
+            "  one: &base\n"
+            "    image: nginx\n"
+            "    privileged: true\n"
+            "  two: *base\n"
+        )
+        assert data["services"]["one"]["privileged"] is True
+        assert data["services"]["two"]["privileged"] is True
+        assert lines["services.one.privileged"] == 4
+        assert lines["services.two.privileged"] == 4
 
     def test_v2_with_version_key(self) -> None:
         data, _lines = load_compose(FIXTURES / "valid_v2.yml")
@@ -321,7 +350,7 @@ class TestDeepNestingTraversal:
     def _build_deep_chain(depth: int) -> dict[str, Any]:
         node: Any = "leaf"
         for i in range(depth):
-            node = {"a": node, "__lines__": {"a": i + 1}}
+            node = {"a": node, _LINES: {"a": i + 1}}
         return node
 
     def test_collect_lines_handles_depth_above_recursion_limit(self) -> None:
@@ -339,7 +368,7 @@ class TestDeepNestingTraversal:
         walk: Any = result
         for _ in range(depth):
             assert isinstance(walk, dict)
-            assert "__lines__" not in walk
+            assert _LINES not in walk
             walk = walk["a"]
         assert walk == "leaf"
 
@@ -347,19 +376,19 @@ class TestDeepNestingTraversal:
         # YAML anchors produce the same Python dict reachable from multiple
         # parents. The iterative impl memoizes by id() so shared subtrees
         # are processed once, keeping work linear in the underlying graph.
-        shared = {"image": "nginx", "__lines__": {"image": 3}}
+        shared = {"image": "nginx", _LINES: {"image": 3}}
         root = {
             "services": {
                 "web": shared,
                 "api": shared,
-                "__lines__": {"web": 2, "api": 4},
+                _LINES: {"web": 2, "api": 4},
             },
-            "__lines__": {"services": 1},
+            _LINES: {"services": 1},
         }
         stripped = _strip_lines(root)
         # Same stripped dict returned for both aliases.
         assert stripped["services"]["web"] is stripped["services"]["api"]
-        assert "__lines__" not in stripped["services"]["web"]
+        assert _LINES not in stripped["services"]["web"]
 
     def test_collect_lines_bounds_chained_alias_blowup(self) -> None:
         # Regression for issue #154: ClusterFuzzLite found a sub-1KB Compose

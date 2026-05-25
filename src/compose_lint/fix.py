@@ -70,8 +70,8 @@ def extends_targets(data: dict[str, Any]) -> set[str]:
     if not isinstance(services, dict):
         return set()
     targets: set[str] = set()
-    for name, config in services.items():
-        if name == "__lines__" or not isinstance(config, dict):
+    for _name, config in services.items():
+        if not isinstance(config, dict):
             continue
         ext = config.get("extends")
         if isinstance(ext, str):
