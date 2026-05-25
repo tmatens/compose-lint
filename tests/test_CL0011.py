@@ -52,6 +52,13 @@ class TestDangerousCapAddRule:
         assert len(findings) == 1
         assert "BPF" in findings[0].message
 
+    def test_detects_perfmon(self) -> None:
+        # Split out of SYS_ADMIN in Linux 5.8, like BPF (issue #192).
+        findings = self._check_cap("PERFMON")
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.HIGH
+        assert "PERFMON" in findings[0].message
+
     def test_detects_cap_prefixed_capability(self) -> None:
         # Docker treats `CAP_SYS_ADMIN` == `SYS_ADMIN`; the rule keyed on the
         # bare name and missed the prefixed form, including `CAP_ALL` (#277 F2).
