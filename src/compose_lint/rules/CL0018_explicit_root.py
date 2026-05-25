@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 OWASP_REF = (
     "https://cheatsheetseries.owasp.org/cheatsheets/"
-    "Docker_Security_Cheat_Sheet.html#rule-7---do-not-use-root-user"
+    "Docker_Security_Cheat_Sheet.html#rule-2-set-a-user"
 )
 
 DOCKER_REF = "https://docs.docker.com/engine/security/userns-remap/"

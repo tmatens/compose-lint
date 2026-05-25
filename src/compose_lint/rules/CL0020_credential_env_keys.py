@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 OWASP_REF = (
     "https://cheatsheetseries.owasp.org/cheatsheets/"
-    "Docker_Security_Cheat_Sheet.html#rule-11---use-secret-management-tools"
+    "Docker_Security_Cheat_Sheet.html#rule-12-utilize-docker-secrets-for-sensitive-data-management"
 )
 
 COMPOSE_SECRETS_REF = "https://docs.docker.com/reference/compose-file/secrets/"

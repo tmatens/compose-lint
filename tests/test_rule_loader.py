@@ -41,6 +41,20 @@ def test_each_rule_id_is_unique() -> None:
     assert len(rule_ids) == len(set(rule_ids)), f"duplicate rule IDs: {rule_ids}"
 
 
+def test_owasp_references_use_single_dash_anchors() -> None:
+    """OWASP cheat-sheet anchors must use the live single-dash slug form.
+
+    The page's mkdocs build collapses `[-\\s]+` to one separator, so the old
+    GitHub-style triple-dash anchors (`#rule-1---do-not-...`) land at page top.
+    Guards against reintroducing them (issue #279 D1).
+    """
+    for cls in get_registered_rules():
+        for ref in cls().metadata.references:
+            if "Docker_Security_Cheat_Sheet.html#" in ref:
+                anchor = ref.split("#", 1)[1]
+                assert "--" not in anchor, f"{cls().metadata.id}: stale anchor {anchor}"
+
+
 def test_register_rule_appends_to_registry() -> None:
     from compose_lint.rules import BaseRule, register_rule
 

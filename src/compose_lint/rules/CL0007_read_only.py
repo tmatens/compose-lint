@@ -21,7 +21,7 @@ _CAVEAT = (
 
 OWASP_REF = (
     "https://cheatsheetseries.owasp.org/cheatsheets/"
-    "Docker_Security_Cheat_Sheet.html#rule-8---set-filesystem-and-volumes-to-read-only"
+    "Docker_Security_Cheat_Sheet.html#rule-8-set-filesystem-and-volumes-to-read-only"
 )
 
 CIS_REF = (

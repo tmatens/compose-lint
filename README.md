@@ -120,13 +120,13 @@ docker-compose.yml
           9 │       - /var/run/docker.sock:/var/run/docker.sock
             │         ────────────────────
           fix: Remove the bind mount for /var/run/docker.sock. If the container needs specific files, copy them into the image at build time or use a named volume with only the required data.
-          ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8---set-filesystem-and-volumes-to-read-only
+          ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8-set-filesystem-and-volumes-to-read-only
       11  HIGH      CL-0005  Port '8080:80' is bound to all interfaces. Docker bypasses host firewalls (UFW/firewalld), potentially exposing this port to the public internet.
           11 │       - "8080:80"
              │          ───────
           fix: Bind to localhost: 127.0.0.1:8080:80
                If public access is needed, use a reverse proxy with TLS.
-          ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5a---be-careful-when-mapping-container-ports-to-the-host-with-firewalls-like-ufw
+          ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5a-be-careful-when-mapping-container-ports-to-the-host-with-firewalls-like-ufw
 
 docker-compose.yml: 2 high  ·  1 suppressed (not counted)
 ✗ FAIL  ·  2 findings at or above high
@@ -153,27 +153,27 @@ If you need broad IaC coverage across Terraform, Kubernetes, and more, KICS cove
 
 | ID | Severity | Description | OWASP | CIS |
 |----|----------|-------------|-------|-----|
-| [CL-0001](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0001.md) | CRITICAL | Container runtime socket mounted | [Rule #1](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-1---do-not-expose-the-docker-daemon-socket-even-to-the-containers) | 5.32 |
-| [CL-0002](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0002.md) | CRITICAL | Privileged mode enabled | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3---do-not-run-containers-with-the---privileged-flag) | 5.5 |
-| [CL-0003](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0003.md) | MEDIUM | Privilege escalation not blocked | [Rule #4](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-4---add-no-new-privileges-flag) | 5.26 |
-| [CL-0004](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0004.md) | MEDIUM | Image not pinned to version | [Rule #13](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-13---enhance-supply-chain-security) | 5.28 |
-| [CL-0005](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0005.md) | HIGH | Ports bound to all interfaces | [Rule #5a](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5a---be-careful-when-mapping-container-ports-to-the-host-with-firewalls-like-ufw) | 5.14 |
-| [CL-0006](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0006.md) | MEDIUM | No capability restrictions | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3---limit-capabilities-grant-only-specific-capabilities-needed-by-a-container) | 5.4 |
-| [CL-0007](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0007.md) | MEDIUM | Filesystem not read-only | [Rule #8](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8---set-filesystem-and-volumes-to-read-only) | 5.13 |
-| [CL-0008](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0008.md) | HIGH | Host network mode | [Rule #5](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5---be-mindful-of-inter-container-connectivity) | 5.10 |
-| [CL-0009](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0009.md) | HIGH | Security profile disabled | [Rule #6](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-6---use-linux-security-module-seccomp-apparmor-or-selinux) | 5.2, 5.3, 5.22 |
-| [CL-0010](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0010.md) | HIGH | Host namespace sharing | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3---limit-capabilities-grant-only-specific-capabilities-needed-by-a-container) | 5.16, 5.17, 5.21, 5.31 |
-| [CL-0011](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0011.md) | HIGH | Dangerous capabilities added | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3---limit-capabilities-grant-only-specific-capabilities-needed-by-a-container) | 5.4 |
+| [CL-0001](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0001.md) | CRITICAL | Container runtime socket mounted | [Rule #1](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-1-do-not-expose-the-docker-daemon-socket-even-to-the-containers) | 5.32 |
+| [CL-0002](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0002.md) | CRITICAL | Privileged mode enabled | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3-limit-capabilities-grant-only-specific-capabilities-needed-by-a-container) | 5.5 |
+| [CL-0003](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0003.md) | MEDIUM | Privilege escalation not blocked | [Rule #4](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-4-prevent-in-container-privilege-escalation) | 5.26 |
+| [CL-0004](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0004.md) | MEDIUM | Image not pinned to version | [Rule #13](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-13-enhance-supply-chain-security) | 5.28 |
+| [CL-0005](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0005.md) | HIGH | Ports bound to all interfaces | [Rule #5a](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5a-be-careful-when-mapping-container-ports-to-the-host-with-firewalls-like-ufw) | 5.14 |
+| [CL-0006](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0006.md) | MEDIUM | No capability restrictions | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3-limit-capabilities-grant-only-specific-capabilities-needed-by-a-container) | 5.4 |
+| [CL-0007](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0007.md) | MEDIUM | Filesystem not read-only | [Rule #8](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8-set-filesystem-and-volumes-to-read-only) | 5.13 |
+| [CL-0008](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0008.md) | HIGH | Host network mode | [Rule #5](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5-be-mindful-of-inter-container-connectivity) | 5.10 |
+| [CL-0009](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0009.md) | HIGH | Security profile disabled | [Rule #6](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-6-use-linux-security-module-seccomp-apparmor-or-selinux-for-runtime-security) | 5.2, 5.3, 5.22 |
+| [CL-0010](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0010.md) | HIGH | Host namespace sharing | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3-limit-capabilities-grant-only-specific-capabilities-needed-by-a-container) | 5.16, 5.17, 5.21, 5.31 |
+| [CL-0011](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0011.md) | HIGH | Dangerous capabilities added | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3-limit-capabilities-grant-only-specific-capabilities-needed-by-a-container) | 5.4 |
 | [CL-0012](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0012.md) | MEDIUM | PIDs cgroup limit disabled | — | 5.29 |
-| [CL-0013](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0013.md) | HIGH | Sensitive host path mounted | [Rule #8](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8---set-filesystem-and-volumes-to-read-only) | 5.6 |
+| [CL-0013](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0013.md) | HIGH | Sensitive host path mounted | [Rule #8](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8-set-filesystem-and-volumes-to-read-only) | 5.6 |
 | [CL-0014](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0014.md) | MEDIUM | Logging driver disabled | — | — |
 | [CL-0015](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0015.md) | LOW | Healthcheck disabled | — | 4.6, 5.27 |
 | [CL-0016](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0016.md) | HIGH | Dangerous host device exposed | — | 5.18 |
 | [CL-0017](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0017.md) | MEDIUM | Shared mount propagation | — | 5.20 |
-| [CL-0018](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0018.md) | MEDIUM | Explicit root user | [Rule #7](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-7---do-not-run-containers-with-a-root-user) | — |
-| [CL-0019](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0019.md) | MEDIUM | Image tag without digest | [Rule #13](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-13---enhance-supply-chain-security) | — |
-| [CL-0020](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0020.md) | HIGH | Credential-shaped env key with literal value | [Rule #11](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-11---use-secret-management-tools) | — |
-| [CL-0021](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0021.md) | HIGH | Credential embedded in connection-string env value | [Rule #11](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-11---use-secret-management-tools) | — |
+| [CL-0018](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0018.md) | MEDIUM | Explicit root user | [Rule #2](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-2-set-a-user) | — |
+| [CL-0019](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0019.md) | MEDIUM | Image tag without digest | [Rule #13](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-13-enhance-supply-chain-security) | — |
+| [CL-0020](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0020.md) | HIGH | Credential-shaped env key with literal value | [Rule #12](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-12-utilize-docker-secrets-for-sensitive-data-management) | — |
+| [CL-0021](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0021.md) | HIGH | Credential embedded in connection-string env value | [Rule #12](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-12-utilize-docker-secrets-for-sensitive-data-management) | — |
 
 ## Severity Levels
 

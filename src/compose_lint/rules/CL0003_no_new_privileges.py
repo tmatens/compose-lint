@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 OWASP_REF = (
     "https://cheatsheetseries.owasp.org/cheatsheets/"
-    "Docker_Security_Cheat_Sheet.html#rule-4---add-no-new-privileges-flag"
+    "Docker_Security_Cheat_Sheet.html#rule-4-prevent-in-container-privilege-escalation"
 )
 
 CIS_REF = (

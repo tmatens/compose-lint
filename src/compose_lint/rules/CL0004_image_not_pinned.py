@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 OWASP_REF = (
     "https://cheatsheetseries.owasp.org/cheatsheets/"
-    "Docker_Security_Cheat_Sheet.html#rule-13---enhance-supply-chain-security"
+    "Docker_Security_Cheat_Sheet.html#rule-13-enhance-supply-chain-security"
 )
 
 CIS_REF = (

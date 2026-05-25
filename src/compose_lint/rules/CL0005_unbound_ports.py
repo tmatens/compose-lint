@@ -20,7 +20,7 @@ _CAVEAT = (
 
 OWASP_REF = (
     "https://cheatsheetseries.owasp.org/cheatsheets/"
-    "Docker_Security_Cheat_Sheet.html#rule-5a---be-careful-when-mapping-container-"
+    "Docker_Security_Cheat_Sheet.html#rule-5a-be-careful-when-mapping-container-"
     "ports-to-the-host-with-firewalls-like-ufw"
 )
 

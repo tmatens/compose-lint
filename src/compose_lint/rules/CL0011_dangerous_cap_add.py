@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 OWASP_REF = (
     "https://cheatsheetseries.owasp.org/cheatsheets/"
-    "Docker_Security_Cheat_Sheet.html#rule-3---limit-capabilities-grant-only-"
+    "Docker_Security_Cheat_Sheet.html#rule-3-limit-capabilities-grant-only-"
     "specific-capabilities-needed-by-a-container"
 )
 
