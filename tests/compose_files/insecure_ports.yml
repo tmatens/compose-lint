@@ -19,7 +19,7 @@ services:
       - target: 80
         published: 8080
         host_ip: "127.0.0.1"
-  container_only:
+  bare_port:
     image: nginx:1.27-alpine
     ports:
       - "80"

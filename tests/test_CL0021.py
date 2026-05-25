@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from compose_lint.models import Finding, Severity
-from compose_lint.parser import load_compose
+from compose_lint.parser import load_compose, loads
 from compose_lint.rules.CL0021_connection_string_credentials import (
     ConnectionStringCredentialsRule,
 )
@@ -72,6 +72,29 @@ class TestConnectionStringCredentialsRule:
 
     def test_skip_user_literal_password_var(self) -> None:
         findings = self._check("skip_user_literal_password_var")
+        assert findings == []
+
+    def _check_inline(self, value: str) -> list[Finding]:
+        data, lines = loads(
+            "services:\n"
+            "  app:\n"
+            "    image: nginx\n"
+            "    environment:\n"
+            f"      URL: {value}\n"
+        )
+        return list(self.rule.check("app", data["services"]["app"], data, lines))
+
+    def test_detect_password_only_userinfo(self) -> None:
+        # RFC 3986 §3.2.1 permits an empty username, and `redis://:password@host`
+        # is the standard Redis URL form — it must fire (issue #279 R2).
+        findings = self._check_inline('"redis://:supersecret@redis:6379/0"')
+        assert len(findings) == 1
+        assert findings[0].rule_id == "CL-0021"
+        assert "redis" in findings[0].message
+
+    def test_skip_password_only_userinfo_var_password(self) -> None:
+        # The empty-username form still honors the password-is-a-var guard.
+        findings = self._check_inline('"redis://:${REDIS_PASSWORD}@redis:6379/0"')
         assert findings == []
 
     def test_detect_user_var_password_literal(self) -> None:
