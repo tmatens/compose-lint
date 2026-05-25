@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -9,9 +10,36 @@ import yaml
 
 from compose_lint.models import Severity
 
+# The only top-level key the config schema defines today (docs/configuration.md).
+# Anything else is almost certainly a typo or a misplaced CLI flag (e.g. a
+# top-level `fail_on:`), so we warn rather than silently drop it (issue #279 G1).
+_KNOWN_TOP_LEVEL_KEYS = frozenset({"rules"})
+
+# Recognized keys inside a per-rule block. A key outside this set (a typo'd
+# `severty:` or a `reason:` with no `enabled: false`) is silently inert today;
+# warn so the user learns their override never took effect (issue #279 G1).
+_KNOWN_RULE_KEYS = frozenset({"enabled", "reason", "severity", "exclude_services"})
+
 
 class ConfigError(Exception):
     """Raised when a config file is invalid."""
+
+
+def _warn(message: str) -> None:
+    """Emit a non-fatal config diagnostic to stderr.
+
+    Mirrors the CLI's unknown-service warning (ADR-010): a misconfiguration that
+    silently weakens a security control should be visible, but config and
+    Compose files evolve independently, so it must not hard-fail the run.
+    """
+    print(f"Warning: {message}", file=sys.stderr)
+
+
+def _known_rule_ids() -> set[str]:
+    """Return the set of registered rule IDs for config validation."""
+    from compose_lint.rules import get_registered_rules
+
+    return {cls().metadata.id for cls in get_registered_rules()}
 
 
 def _parse_severity(value: str) -> Severity:
@@ -70,6 +98,13 @@ def load_config(
     if not isinstance(data, dict):
         raise ConfigError("Config file must be a YAML mapping")
 
+    for key in data:
+        if str(key) not in _KNOWN_TOP_LEVEL_KEYS:
+            _warn(
+                f"config: unknown top-level key '{key}' (recognized: "
+                f"{', '.join(sorted(_KNOWN_TOP_LEVEL_KEYS))}); it has no effect"
+            )
+
     return _parse_rules(data.get("rules", {}))
 
 
@@ -83,6 +118,7 @@ def _parse_rules(
     disabled: dict[str, str | None] = {}
     overrides: dict[str, Severity] = {}
     excluded: ExcludedServices = {}
+    known_ids = _known_rule_ids()
 
     for rule_id, rule_config in rules.items():
         rule_id = str(rule_id)
@@ -90,9 +126,30 @@ def _parse_rules(
         if not isinstance(rule_config, dict):
             raise ConfigError(f"Config for rule '{rule_id}' must be a mapping")
 
-        if rule_config.get("enabled") is False:
-            reason = rule_config.get("reason")
-            disabled[rule_id] = str(reason) if reason is not None else None
+        if rule_id not in known_ids:
+            _warn(
+                f"config: unknown rule id '{rule_id}'; the override has no effect "
+                "(check for a typo or a retired rule)"
+            )
+
+        for key in rule_config:
+            if str(key) not in _KNOWN_RULE_KEYS:
+                _warn(
+                    f"config: rule '{rule_id}' has unknown key '{key}' (recognized: "
+                    f"{', '.join(sorted(_KNOWN_RULE_KEYS))}); it has no effect"
+                )
+
+        if "enabled" in rule_config:
+            enabled = rule_config["enabled"]
+            if not isinstance(enabled, bool):
+                raise ConfigError(
+                    f"Config for rule '{rule_id}': 'enabled' must be true or false, "
+                    f"not {enabled!r} — a quoted 'false', 0, or no would otherwise "
+                    "silently leave the rule on"
+                )
+            if enabled is False:
+                reason = rule_config.get("reason")
+                disabled[rule_id] = str(reason) if reason is not None else None
 
         if "severity" in rule_config:
             overrides[rule_id] = _parse_severity(str(rule_config["severity"]))

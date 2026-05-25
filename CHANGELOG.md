@@ -41,6 +41,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `redis://:password@host` is the standard Redis URL form. The
   password-is-a-`$VAR` skip is unchanged. (#279)
 
+- `.compose-lint.yml` no longer silently ignores misconfiguration that would
+  leave a security control at its default. An unknown rule id (a typo'd
+  `CL-001` or a retired `CL-9999`), an unrecognized top-level key (a misplaced
+  `fail_on:`), or an unknown per-rule key (`severty:`) now prints a stderr
+  warning instead of being dropped — mirroring the existing unknown-service
+  warning. And `enabled` must be a real boolean: a quoted `'false'` or a `0` is
+  now a hard error (exit 2) rather than a silent no-op that left the rule
+  running while the user believed it off. (YAML's bare `false`/`no`/`off` still
+  parse to a real boolean and work.) (#279)
+
 - Text output: the `SUPPRESSED` marker no longer pushes a suppressed finding's
   rule and message columns out of alignment — the severity column is padded to
   fit the marker so every row lines up. CL-0020 and CL-0021 (credential-shaped
