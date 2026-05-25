@@ -229,7 +229,7 @@ CI log that renders ANSI.
 |------|---------|
 | 0 | No findings at or above the `--fail-on` threshold |
 | 1 | One or more findings at or above the `--fail-on` threshold |
-| 2 | Usage error (invalid args, file not found, invalid Compose file) |
+| 2 | compose-lint couldn't run (invalid args, file not found, invalid Compose file, or a rule crashed) |
 
 The default threshold is `high` — medium and low findings don't fail CI unless you opt in:
 

@@ -210,6 +210,73 @@ class TestRunRules:
         assert findings[0].suppressed is False
 
 
+class _CrashingRule(BaseRule):
+    """A test rule that raises while checking any service."""
+
+    @property
+    def metadata(self) -> RuleMetadata:
+        return RuleMetadata(
+            id="CL-CRASH",
+            name="Crashing rule",
+            description="Always raises",
+            severity=Severity.HIGH,
+        )
+
+    def check(
+        self,
+        service_name: str,
+        service_config: dict[str, Any],
+        global_config: dict[str, Any],
+        lines: dict[str, int],
+    ) -> Iterator[Finding]:
+        raise RuntimeError("boom")
+        yield  # pragma: no cover - makes this a generator
+
+
+class TestRuleIsolation:
+    """A rule that raises must not abort the whole run (issue #279 E1)."""
+
+    def setup_method(self) -> None:
+        self._saved_registry = list(_registry)
+        _registry.clear()
+        _registry.append(_CrashingRule)
+        _registry.append(_DummyRule)
+
+    def teardown_method(self) -> None:
+        _registry.clear()
+        _registry.extend(self._saved_registry)
+
+    def test_other_rules_still_run_when_one_crashes(self) -> None:
+        data = {"services": {"web": {"test_flag": True}}}
+        findings = run_rules(data, {}, on_error=lambda *_: None)
+        # The good rule's finding survives; the crashing rule yields nothing.
+        assert [f.rule_id for f in findings] == ["CL-TEST"]
+
+    def test_default_reports_crash_to_stderr(self, capsys: Any) -> None:
+        data = {"services": {"web": {"test_flag": True}}}
+        run_rules(data, {})
+        err = capsys.readouterr().err
+        assert "CL-CRASH" in err
+        assert "web" in err
+        assert "RuntimeError" in err
+
+    def test_on_error_callback_receives_failure(self) -> None:
+        seen: list[tuple[str, str, str]] = []
+        data = {"services": {"web": {"image": "nginx"}}}
+        run_rules(
+            data,
+            {},
+            on_error=lambda rid, svc, exc: seen.append((rid, svc, type(exc).__name__)),
+        )
+        assert seen == [("CL-CRASH", "web", "RuntimeError")]
+
+    def test_crash_reported_per_service(self) -> None:
+        seen: list[str] = []
+        data = {"services": {"web": {}, "db": {}}}
+        run_rules(data, {}, on_error=lambda _rid, svc, _exc: seen.append(svc))
+        assert sorted(seen) == ["db", "web"]
+
+
 class TestFilterFindings:
     """Tests for filter_findings function."""
 
