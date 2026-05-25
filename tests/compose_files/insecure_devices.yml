@@ -32,10 +32,17 @@ services:
     devices:
       - /dev/mem:/dev/mem
       - /dev/sda:/dev/sda
+  dev_fuse:
+    image: nginx:1.27-alpine
+    devices:
+      - /dev/fuse:/dev/fuse
+  dev_kmsg:
+    image: nginx:1.27-alpine
+    devices:
+      - /dev/kmsg:/dev/kmsg
   safe_device:
     image: nginx:1.27-alpine
     devices:
       - /dev/net/tun:/dev/net/tun
-      - /dev/fuse:/dev/fuse
   no_devices:
     image: nginx:1.27-alpine

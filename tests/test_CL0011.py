@@ -29,6 +29,29 @@ class TestDangerousCapAddRule:
         assert findings[0].rule_id == "CL-0011"
         assert "SYS_ADMIN" in findings[0].message
 
+    def _check_cap(self, cap: str) -> list:
+        data, lines = loads(
+            f"services:\n  a:\n    image: nginx:1.27\n    cap_add: [{cap}]\n"
+        )
+        return list(self.rule.check("a", data["services"]["a"], data, lines))
+
+    def test_detects_sys_boot(self) -> None:
+        # Curated-list additions (issue #279 R5).
+        findings = self._check_cap("SYS_BOOT")
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.HIGH
+        assert "SYS_BOOT" in findings[0].message
+
+    def test_detects_dac_override(self) -> None:
+        findings = self._check_cap("DAC_OVERRIDE")
+        assert len(findings) == 1
+        assert "DAC_OVERRIDE" in findings[0].message
+
+    def test_detects_bpf(self) -> None:
+        findings = self._check_cap("BPF")
+        assert len(findings) == 1
+        assert "BPF" in findings[0].message
+
     def test_detects_cap_prefixed_capability(self) -> None:
         # Docker treats `CAP_SYS_ADMIN` == `SYS_ADMIN`; the rule keyed on the
         # bare name and missed the prefixed form, including `CAP_ALL` (#277 F2).

@@ -45,6 +45,30 @@ class TestCredentialEnvKeysRule:
         assert len(findings) == 1
         assert findings[0].rule_id == "CL-0020"
 
+    def _check_key(self, key: str, value: str = "hunter2") -> list[Finding]:
+        data, lines = loads(
+            "services:\n"
+            "  a:\n"
+            "    image: nginx:1.27\n"
+            "    environment:\n"
+            f"      {key}: {value}\n"
+        )
+        return list(self.rule.check("a", data["services"]["a"], data, lines))
+
+    def test_detects_passphrase(self) -> None:
+        # PASSPHRASE is unambiguously a secret and was missed (issue #279 R3).
+        findings = self._check_key("GPG_PASSPHRASE")
+        assert len(findings) == 1
+        assert "GPG_PASSPHRASE" in findings[0].message
+
+    def test_detects_encryption_key(self) -> None:
+        findings = self._check_key("ENCRYPTION_KEY")
+        assert len(findings) == 1
+
+    def test_license_key_not_flagged(self) -> None:
+        # A generic `_KEY` suffix is deliberately not matched (issue #279 R3).
+        assert self._check_key("LICENSE_KEY") == []
+
     def test_boolean_value_not_flagged(self) -> None:
         # A credential-shaped key whose value is a YAML boolean (decodes to a
         # Python bool) is a toggle, not a literal secret — keep it exempt (#277 F7).

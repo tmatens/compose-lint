@@ -32,6 +32,11 @@ _DANGEROUS_DEVICE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^/dev/zfs$"), "/dev/zfs — ZFS pool control device"),
     (re.compile(r"^/dev/rbd"), "/dev/rbd* — Ceph RBD block device"),
     (re.compile(r"^/dev/raw"), "/dev/raw* — raw character device"),
+    (
+        re.compile(r"^/dev/fuse$"),
+        "/dev/fuse — userspace filesystem mounts (enables mount-based escapes)",
+    ),
+    (re.compile(r"^/dev/kmsg$"), "/dev/kmsg — kernel log buffer read/inject"),
 ]
 
 
