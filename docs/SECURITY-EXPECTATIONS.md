@@ -75,7 +75,7 @@ pipeline, this is the page to read.
    It cannot tell you what a running container is *actually* doing —
    only what its declared configuration *would* let it do.
 
-5. **It is not exhaustive.** The 22 rules cover the misconfigurations
+5. **It is not exhaustive.** The 23 rules cover the misconfigurations
    that the OWASP Docker Security Cheat Sheet, CIS Docker Benchmark,
    and Docker official documentation ground (see
    [README.md](../README.md#rules) for the full list). Misconfigurations

@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   flags. `compose-lint fix` appends them in place, preserving existing options
   like `size=`, with a caveat that `noexec` is behavior-changing.
 
+- CL-0023 flags services that enable an escape-adjacent `net.*` sysctl —
+  `ip_forward`, IPv6 `forwarding`, `accept_source_route`, and ICMP
+  `accept_redirects`/`send_redirects` (MEDIUM). Enabling these turns the
+  container into a network pivot, most acutely with host networking (CL-0008)
+  or multiple networks. Handles the map and list `sysctls:` forms; a value of
+  `0` and unlisted sysctls are not flagged. No auto-fix — the parameter is set
+  deliberately when present, so removal is left to manual review.
+
 ### Changed
 
 - CL-0011 now flags the `PERFMON` capability (HIGH), completing the pair split
