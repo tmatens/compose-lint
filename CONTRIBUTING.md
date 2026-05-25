@@ -90,15 +90,25 @@ pytest --cov=compose_lint --cov-report=term-missing --cov-fail-under=80
 7. Add rule documentation in `docs/rules/CL-{NNNN}.md`
 8. Fix guidance must be specific and actionable — show the exact YAML change
 9. Include a direct link to the supporting OWASP/CIS/Docker docs section
+10. If the rule describes container *runtime* state, add a premise check to
+    `scripts/validate_rule_premises.py` proving the insecure state is Docker's
+    default (absence rules) or that the flagged config produces the insecure
+    behavior (presence rules). It runs in CI (`rule-premises`) and guards
+    against flagging a Docker default — the CL-0022/CL-0023 failure mode
 
 ### Rule requirements
 
-- **Grounded in an authoritative source.** No opinion-only rules.
+- **Grounded in an authoritative source that demonstrates the need in a
+  container context** (CIS Docker, OWASP Docker Cheat Sheet, Docker docs) — not
+  generic host/Linux hardening a container's defaults already neutralize. If
+  container-context grounding is thin, validate the premise at runtime
+  (`scripts/validate_rule_premises.py`). No opinion-only rules.
 - **Every finding must be actionable.** If you can't tell the user exactly what
   to change, the finding isn't ready.
 - **Severity reflects real-world exploitability**, not subjective importance.
   See [docs/severity.md](docs/severity.md) for the scoring matrix.
-- **Rule IDs are permanent.** Never reuse or retire a `CL-XXXX` ID.
+- **Rule IDs are permanent from 1.0.** Never reuse or retire a `CL-XXXX` ID once
+  1.0 ships; pre-1.0, a mis-grounded rule may be removed and its ID reclaimed.
 
 ## Commit conventions
 

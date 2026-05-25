@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is no longer flagged; `tmpfs: [/tmp:exec]` is. The auto-fix is dropped — the
   option is set deliberately, so reverting is left to manual review.
 
+- CL-0012's message no longer asserts a container can "create unlimited
+  processes" and fork-bomb the host. A container's `pids.max` is bounded by the
+  cgroup hierarchy (often a high parent cap, occasionally unbounded), so the
+  finding now says the limit is left to whatever that hierarchy allows. The rule
+  is unchanged — it still flags an explicit `pids_limit` of 0 or negative.
+
 ### Removed
 
 - CL-0023 (dangerous network sysctls), shipped in 0.12.0, is removed. Verified

@@ -53,9 +53,11 @@ class PidsLimitRule(BaseRule):
                 severity=Severity.MEDIUM,
                 service=service_name,
                 message=(
-                    f"PIDs cgroup limit is disabled (pids_limit: {value}). "
-                    "The container can create unlimited processes, enabling "
-                    "fork bomb attacks against the host."
+                    f"PIDs cgroup limit is explicitly disabled (pids_limit: "
+                    f"{value}). The container's process count is then bounded "
+                    "only by whatever the cgroup hierarchy allows — often very "
+                    "high or unbounded — risking PID/resource exhaustion (a fork "
+                    "bomb) on the host."
                 ),
                 line=lines.get(f"services.{service_name}.pids_limit"),
                 fix=(

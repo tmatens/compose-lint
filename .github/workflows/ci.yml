@@ -520,6 +520,27 @@ jobs:
           echo "::error::Expected action to fail on insecure fixture, got '${{ steps.insecure.outcome }}'"
           exit 1
 
+  # Runtime arm of the rule-grounding bar: every rule that describes container
+  # runtime state must demonstrate its premise against a live container (the
+  # insecure state is the Docker default, or the flagged config produces the
+  # insecure behavior). Catches the CL-0022/CL-0023 failure mode — a rule that
+  # flags a Docker default — before it ships. Runners have Docker preinstalled.
+  rule-premises:
+    name: Validate rule premises (live container)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Validate each runtime rule's premise against a live container
+        run: python scripts/validate_rule_premises.py
+
   # Single rollup job for branch protection. Required-status-checks should
   # point at this job name instead of the individual ci.yml job names, so
   # adding/renaming/removing jobs doesn't require a protection-rule edit.
@@ -546,6 +567,7 @@ jobs:
       - dockerfile-digests
       - docker-smoke
       - action-smoke
+      - rule-premises
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 1
