@@ -71,7 +71,7 @@ publish = [
 # the generated requirements-build.lock hash-pins only what's needed to
 # invoke `python -m build`, without pulling in pytest/ruff/mypy/etc.
 container = [
-    "build==1.4.3",
+    "build==1.5.0",
 ]
 # Chart generation for the State of Compose report (scripts/corpus/charts.py).
 # Manual maintainer task run at report-refresh time, not a CI job — so this
