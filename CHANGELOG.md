@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the `rule-premises` CI job already enforce. It captures *why* the policy
   exists (the CL-0022 rework and CL-0023 removal), which previously lived only in
   the CHANGELOG and the script's docstring, and extends ADR-002.
+- A registry-wide consistency test (`tests/test_rule_consistency.py`) that fails
+  if any rule's emitted `Finding.rule_id`/`severity` drift from its
+  `metadata.id`/`severity`. Each rule states these twice and nothing else tied
+  them together, so a typo could desynchronise the SARIF rule descriptor's
+  `security-severity` from a result's `level`. Deliberate per-finding escalation
+  (CL-0011, CL-0013) is declared in an allow-list; adding it elsewhere is a test
+  failure by design.
 
 ## [0.12.1] - 2026-05-25
 
