@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- ADR-016 records the runtime rule-premise validation bar — the second,
+  `docker run`-based arm of rule grounding that `scripts/validate_rule_premises.py`
+  and the `rule-premises` CI job already enforce. It captures *why* the policy
+  exists (the CL-0022 rework and CL-0023 removal), which previously lived only in
+  the CHANGELOG and the script's docstring, and extends ADR-002.
+
 ## [0.12.1] - 2026-05-25
 
 ### Changed
