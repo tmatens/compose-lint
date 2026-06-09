@@ -19,9 +19,12 @@ from compose_lint.formatters.text import (
     _RESET,
     _colorize,
     _display_width,
+    _excerpt,
     _find_token,
+    _sanitize,
     format_aggregate_summary,
     format_findings,
+    format_summary,
     format_verdict,
 )
 from compose_lint.models import Finding, Severity
@@ -386,3 +389,57 @@ def test_underline_targets_standalone_token(tmp_path) -> None:  # type: ignore[n
     expected_col = raw.index(":80") + 1
     assert expected_col == 13
     assert (" " * expected_col + "──") in out
+
+
+# --- terminal-output sanitization (bidi / control-char injection) ---------
+
+# Built via chr()/\x escapes so no invisible code points live in this file.
+_RLO = chr(0x202E)  # RIGHT-TO-LEFT OVERRIDE
+_ZWSP = chr(0x200B)  # ZERO WIDTH SPACE
+
+
+def test_sanitize_escapes_bidi_and_control_chars() -> None:
+    # A bidi override can visually reorder a malicious image tag to read benign.
+    assert _sanitize(f"alpine{_RLO}3.18") == "alpine\\u202e3.18"
+    # ESC (the ANSI introducer) and other C0 controls are neutralized.
+    assert _sanitize("a\x1bb") == "a\\u001bb"
+    # Zero-width characters can hide text.
+    assert _sanitize(f"a{_ZWSP}b") == "a\\u200bb"
+
+
+def test_sanitize_leaves_clean_text_unchanged() -> None:
+    # ASCII, em-dash, and accented text must pass through untouched...
+    clean = "postgres:9.6.9-alpine — café"
+    assert _sanitize(clean) == clean
+    # ...and tab is preserved so YAML excerpt indentation still lines up.
+    assert _sanitize("\tindented") == "\tindented"
+
+
+def test_format_findings_escapes_bidi_in_message() -> None:
+    # An untrusted image name carrying a bidi override reaches the message.
+    finding = Finding(
+        "CL-0004",
+        Severity.HIGH,
+        "web",
+        f"Service uses unpinned image 'nginx{_RLO}latest'.",
+        line=3,
+    )
+    out = format_findings([finding], "compose.yml", quiet=True)
+    assert _RLO not in out
+    assert "\\u202e" in out
+
+
+def test_excerpt_escapes_control_chars_read_off_disk() -> None:
+    # The source excerpt is read straight off disk, bypassing the parser's
+    # printable-character check — a raw ESC on the offending line would inject
+    # an ANSI sequence into the terminal. It must be escaped instead.
+    source_lines = ["services:", "  web:", "    image: nginx\x1b[31mhack"]
+    out = "".join(_excerpt(3, source_lines, "image is bad", Severity.HIGH))
+    assert "\x1b" not in out
+    assert "\\u001b" in out
+
+
+def test_format_summary_escapes_bidi_in_path() -> None:
+    out = format_summary([], f"compose{_RLO}.yml")
+    assert _RLO not in out
+    assert "\\u202e" in out
