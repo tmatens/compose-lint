@@ -67,6 +67,13 @@ def _find_inline_credential(value: str) -> tuple[str, str, str] | None:
     `postgres://${DB_USER}:secret@db`) still leaks the credential, so it must
     not suppress the finding (issue #277 F6).
     """
+    # The pattern requires a terminating '@', so a value without one can never
+    # match. Bail before `finditer` runs: without this guard a value shaped like
+    # `scheme://<many chars>:<many chars>` with no '@' makes the password half
+    # rescan the whole tail from every offset — O(n^2) on attacker-controlled
+    # env values, a cheap DoS when sweeping untrusted compose files.
+    if "@" not in value:
+        return None
     for m in _URI_USERINFO_RE.finditer(value):
         user = m.group("user")
         password = m.group("password")

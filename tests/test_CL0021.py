@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from compose_lint.models import Finding, Severity
@@ -134,6 +135,22 @@ class TestConnectionStringCredentialsRule:
     def test_skip_no_environment(self) -> None:
         findings = self._check("skip_no_environment")
         assert findings == []
+
+    # ---- Performance: ReDoS regression ----
+
+    def test_large_value_without_at_is_linear(self) -> None:
+        # A value shaped like `scheme://<many>:<many>` with no terminating '@'
+        # can never match (the pattern requires '@'), but before the early
+        # guard `finditer` rescanned the tail from every offset, giving O(n^2)
+        # behavior on attacker-controlled env values — a cheap DoS when
+        # sweeping untrusted Compose files. The unguarded path takes ~20s at
+        # this size; the guard makes it instant.
+        value = '"redis://' + "u" * 100_000 + ":" + "p" * 100_000 + '"'
+        start = time.perf_counter()
+        findings = self._check_inline(value)
+        elapsed = time.perf_counter() - start
+        assert findings == []
+        assert elapsed < 2.0, f"CL-0021 scan took {elapsed:.2f}s (possible ReDoS)"
 
     # ---- Output shape ----
 
