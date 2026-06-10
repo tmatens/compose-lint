@@ -17,6 +17,7 @@ import hashlib
 import json
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -71,11 +72,41 @@ def raw_url(blob_url: str) -> str:
     )
 
 
+# The fetcher only ever pulls raw file content from GitHub's raw host. Candidate
+# URLs come from the GitHub API, so this is defense-in-depth rather than the
+# primary trust boundary: pin scheme+host and refuse redirects so a malformed or
+# hostile candidate (or a `raw_url` rewrite that didn't match, leaving a
+# non-github URL intact) can't turn a download into a request against an
+# internal or attacker-chosen host (SSRF).
+RAW_HOST = "raw.githubusercontent.com"
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects; a 3xx surfaces as an HTTPError the caller records."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+        return None
+
+
+_PINNED_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
+def _validate_raw_url(url: str) -> None:
+    """Raise ValueError unless ``url`` is an https raw.githubusercontent.com URL."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != "https" or parts.hostname != RAW_HOST:
+        raise ValueError(f"refusing non-{RAW_HOST} URL: {url!r}")
+
+
 def _download(item: dict) -> tuple[dict, bytes | None, str | None]:
     url = raw_url(item["url"])
+    try:
+        _validate_raw_url(url)
+    except ValueError:
+        return item, None, "bad_url"
     req = urllib.request.Request(url, headers={"User-Agent": "compose-lint-corpus/1"})
     try:
-        with urllib.request.urlopen(req, timeout=PER_FILE_TIMEOUT) as r:
+        with _PINNED_OPENER.open(req, timeout=PER_FILE_TIMEOUT) as r:
             data = r.read(MAX_FILE_BYTES + 1)
         if len(data) > MAX_FILE_BYTES:
             return item, None, "too_large"

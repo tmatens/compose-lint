@@ -24,6 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is read straight off disk and bypasses the parser's printable-character check,
   a raw ANSI escape into a terminal or CI log. They now render as visible
   `\uXXXX` escapes. JSON and SARIF output were already safe (`ensure_ascii`).
+- The corpus fetcher (`scripts/corpus/`, development tooling) now pins the
+  download host and refuses redirects. It rewrites `github.com` blob URLs to
+  `raw.githubusercontent.com`, but a candidate whose prefix didn't match was
+  left intact and fetched verbatim, and `urlopen` follows redirects by default —
+  so a malformed or hostile candidate URL could have turned a download into a
+  request against an internal or attacker-chosen host (SSRF). The fetcher now
+  rejects any non-`https://raw.githubusercontent.com/` URL before opening it and
+  uses an opener that does not follow redirects. Candidate URLs come from the
+  GitHub API, so this is defense-in-depth.
 
 ### Added
 
