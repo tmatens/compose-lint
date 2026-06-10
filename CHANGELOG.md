@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- CL-0021 no longer exhibits quadratic (ReDoS) behavior on crafted env values.
+  A value shaped like `scheme://<many chars>:<many chars>` with no terminating
+  `@` made the connection-string regex rescan the tail from every offset —
+  O(n^2) on attacker-controlled input, a cheap DoS when sweeping untrusted
+  Compose files. The rule now bails before scanning when the value contains no
+  `@` (the pattern requires one, so this changes no findings).
+
 ### Added
 
 - ADR-016 records the runtime rule-premise validation bar — the second,
