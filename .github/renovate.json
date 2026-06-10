@@ -14,6 +14,10 @@
   "pip-compile": {
     "managerFilePatterns": ["/(^|/)requirements[\\w-]*\\.lock$/"]
   },
+  "poetry": {
+    "enabled": false,
+    "description": "pyproject.toml is already covered by pep621 + pip-compile. The poetry manager detects the same [project] deps but is not in the python group rule, so it spawned duplicate ungrouped PRs that bumped pyproject without regenerating the lockfiles (e.g. renovate/ruff-0.x, #329)."
+  },
   "packageRules": [
     {
       "description": "GitHub Actions: SHA-pin every uses: with version comment (CLAUDE.md).",
