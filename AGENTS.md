@@ -58,20 +58,28 @@ Pin everything to an immutable ref. Renovate bumps the pins.
 
 ```bash
 uv pip compile pyproject.toml \
-  --universal --python-version 3.10 \
-  --generate-hashes -o requirements.lock
+  --universal --python-version=3.10 \
+  --generate-hashes --output-file=requirements.lock
 
 uv pip compile pyproject.toml \
-  --extra dev --extra lint --extra security --extra publish \
-  --universal --python-version 3.10 \
-  --generate-hashes -o requirements-dev.lock
+  --extra=dev --extra=lint --extra=security --extra=publish \
+  --universal --python-version=3.10 \
+  --generate-hashes --output-file=requirements-dev.lock
 
-uv pip compile pyproject.toml --extra container \
-  --universal --python-version 3.10 \
-  --generate-hashes -o requirements-build.lock
+uv pip compile pyproject.toml --extra=container \
+  --universal --python-version=3.10 \
+  --generate-hashes --output-file=requirements-build.lock
 ```
 
-`--python-version 3.10` matches `requires-python` so backport deps for older matrix legs are included. Commit lockfiles and `pyproject.toml` together.
+`--python-version=3.10` matches `requires-python` so backport deps for older matrix legs are included. Commit lockfiles and `pyproject.toml` together.
+
+Use the `=`/`--output-file=` flag form (not `--extra dev` / `-o`). Renovate's
+`pip-compile` manager parses the `uv` command recorded in each lock's header to
+manage its pins; it only accepts the equals/long-flag form and silently skips a
+lockfile whose header uses space-separated `--extra`/`--python-version` or the
+short `-o`, leaving those pins unmanaged (they then drift from `pyproject.toml`
+until caught by pip-audit). It does not yet understand `--universal`, but that
+is non-fatal — it's ignored, and extraction still succeeds.
 
 ## Publishing
 

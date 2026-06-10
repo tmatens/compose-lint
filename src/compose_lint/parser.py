@@ -167,7 +167,7 @@ def _reject_duplicate_keys(loader: LineLoader, node: yaml.MappingNode) -> None:
     for key_node, _value_node in node.value:
         if key_node.tag == "tag:yaml.org,2002:merge":
             continue  # the `<<` merge directive, not a data key
-        key = loader.construct_object(key_node)  # type: ignore[no-untyped-call]
+        key = loader.construct_object(key_node)
         try:
             duplicate = key in seen
         except TypeError:
@@ -188,7 +188,7 @@ def _construct_mapping(loader: LineLoader, node: yaml.MappingNode) -> dict[Any, 
     mapping: dict[Any, Any] = {}
     line_map: dict[str, int] = {}
     for key_node, value_node in node.value:
-        key = loader.construct_object(key_node)  # type: ignore[no-untyped-call]
+        key = loader.construct_object(key_node)
         try:
             hash(key)
         except TypeError as e:
@@ -205,7 +205,7 @@ def _construct_mapping(loader: LineLoader, node: yaml.MappingNode) -> dict[Any, 
                 "Compose files may only use scalar keys",
                 key_node.start_mark,
             ) from e
-        value = loader.construct_object(value_node)  # type: ignore[no-untyped-call]
+        value = loader.construct_object(value_node)
         if isinstance(key, str):
             line_map[key] = key_node.start_mark.line + 1
         mapping[key] = value
@@ -214,10 +214,7 @@ def _construct_mapping(loader: LineLoader, node: yaml.MappingNode) -> dict[Any, 
 
 
 def _construct_sequence(loader: LineLoader, node: yaml.SequenceNode) -> list[Any]:
-    items: list[Any] = [
-        loader.construct_object(item_node)  # type: ignore[no-untyped-call]
-        for item_node in node.value
-    ]
+    items: list[Any] = [loader.construct_object(item_node) for item_node in node.value]
     loader._seq_lines[id(items)] = {
         i: item_node.start_mark.line + 1 for i, item_node in enumerate(node.value)
     }
@@ -248,7 +245,7 @@ def _construct_override_tag(loader: LineLoader, node: yaml.Node) -> Any:
     plain = yaml.ScalarNode(
         resolved_tag, node.value, node.start_mark, node.end_mark, node.style
     )
-    return loader.construct_object(plain)  # type: ignore[no-untyped-call]
+    return loader.construct_object(plain)
 
 
 LineLoader.add_constructor(
