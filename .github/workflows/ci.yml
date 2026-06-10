@@ -178,7 +178,17 @@ jobs:
         # (via sigstore/tuf/twine) and not part of the runtime image.
         # Remove this ignore if the OSV record is withdrawn or a fix
         # release is published.
-        run: pip-audit --skip-editable --ignore-vuln PYSEC-2025-183
+        #
+        # --ignore-vuln GHSA-qp9x-wp8f-qgjj: platform-dependent
+        # delegation path matching in tuf. Fixed in tuf 7.0.0, but
+        # sigstore 4.2.0 requires tuf~=6.0, so no fix is installable
+        # under current constraints. tuf is a transitive dev/publish
+        # dependency (via sigstore) and not part of the runtime image.
+        # Remove this ignore once sigstore allows tuf >= 7.
+        run: >-
+          pip-audit --skip-editable
+          --ignore-vuln PYSEC-2025-183
+          --ignore-vuln GHSA-qp9x-wp8f-qgjj
 
   # Fails the PR if `pyproject.toml` and `src/compose_lint/__init__.py`
   # disagree about the project version. The two strings drifted silently
