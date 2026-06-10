@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   O(n^2) on attacker-controlled input, a cheap DoS when sweeping untrusted
   Compose files. The rule now bails before scanning when the value contains no
   `@` (the pattern requires one, so this changes no findings).
+- The text formatter now escapes terminal-unsafe code points — C0/C1 controls
+  (ANSI/escape-sequence injection), DEL, and bidirectional/zero-width formatting
+  characters — in every string derived from an untrusted Compose file (finding
+  messages, fix text, service names, paths, and the on-disk source excerpt). A
+  crafted image or service name could previously smuggle a U+202E override (to
+  make a malicious tag render as a benign one) or, via the source excerpt that
+  is read straight off disk and bypasses the parser's printable-character check,
+  a raw ANSI escape into a terminal or CI log. They now render as visible
+  `\uXXXX` escapes. JSON and SARIF output were already safe (`ensure_ascii`).
 
 ### Added
 

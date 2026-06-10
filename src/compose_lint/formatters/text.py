@@ -77,6 +77,40 @@ _PRESENCE_RULES = frozenset(
 
 _QUOTED = re.compile(r"'([^']+)'")
 
+# Code-point ranges (inclusive) that can spoof or corrupt terminal output when
+# an untrusted string from the Compose file (image name, service name, env key,
+# or a source line read straight off disk) is printed: C0/C1 controls —
+# ANSI/escape-sequence injection, including the ESC and CSI introducers — plus
+# DEL, and the bidirectional and zero-width formatting characters that visually
+# reorder or hide text (e.g. U+202E RIGHT-TO-LEFT OVERRIDE rendering a malicious
+# tag as a benign one). Built from hex so no invisible literals live in source;
+# tab and newline are deliberately excluded so excerpt layout survives.
+_UNSAFE_RANGES = (
+    (0x00, 0x08),
+    (0x0B, 0x1F),
+    (0x7F, 0x9F),
+    (0x200B, 0x200F),
+    (0x202A, 0x202E),
+    (0x2060, 0x2064),
+    (0x2066, 0x206F),
+    (0xFEFF, 0xFEFF),
+)
+_UNSAFE_OUTPUT_CHARS = re.compile(
+    "[" + "".join(f"{chr(lo)}-{chr(hi)}" for lo, hi in _UNSAFE_RANGES) + "]"
+)
+
+
+def _sanitize(text: str) -> str:
+    """Render terminal-unsafe code points as visible ``\\uXXXX`` escapes.
+
+    Findings and source excerpts carry attacker-controlled text. The source
+    excerpt in particular is read directly off disk (``_read_source_lines``),
+    bypassing the parser's printable-character check, so a crafted Compose file
+    could otherwise inject raw ANSI escapes or bidi overrides into a terminal
+    or CI log. Clean ASCII/Unicode text is returned unchanged.
+    """
+    return _UNSAFE_OUTPUT_CHARS.sub(lambda m: f"\\u{ord(m.group()):04x}", text)
+
 
 def _color_enabled() -> bool:
     """Decide whether to emit ANSI color, honoring the de-facto env standards.
@@ -157,7 +191,7 @@ def format_header(
     sep = _colorize("·", _DIM)
     config_str = config_path if config_path else "none"
     params = (
-        f"files: {', '.join(files)}"
+        f"files: {', '.join(_sanitize(f) for f in files)}"
         f"  {sep}  config: {config_str}"
         f"  {sep}  fail-on: {fail_on.value}"
     )
@@ -189,7 +223,7 @@ def _excerpt(
     """
     if line_num < 1 or line_num > len(source_lines):
         return []
-    raw = source_lines[line_num - 1].rstrip()
+    raw = _sanitize(source_lines[line_num - 1].rstrip())
     line_label = str(line_num)
     pad = " " * len(line_label)
     bar = _colorize("│", _DIM)
@@ -242,7 +276,7 @@ def format_findings(
     )
 
     out: list[str] = []
-    out.append(_colorize(filepath, _BOLD))
+    out.append(_colorize(_sanitize(filepath), _BOLD))
     out.append("")
 
     seen_rules: set[str] = set()
@@ -250,7 +284,9 @@ def format_findings(
     for service, group in services_in_order:
         svc_line = next((f.line for f in group if f.line is not None), None)
         header_suffix = f"  ({_colorize('line', _DIM)} {svc_line})" if svc_line else ""
-        out.append(f"  {_colorize('service:', _DIM)} {service}{header_suffix}")
+        out.append(
+            f"  {_colorize('service:', _DIM)} {_sanitize(service)}{header_suffix}"
+        )
         out.append(
             _colorize(
                 f"    {'line'.rjust(4)}  "
@@ -271,15 +307,18 @@ def format_findings(
                     f"    {line_label.rjust(4)}  "
                     f"{marker}  "
                     f"{_colorize(f.rule_id, _DIM)}  "
-                    f"{_colorize(f.message, _SUPPRESSED_COLOR)}"
+                    f"{_colorize(_sanitize(f.message), _SUPPRESSED_COLOR)}"
                 )
                 if not quiet:
-                    out.append(f"          {_colorize('reason:', _DIM)} {reason}")
+                    out.append(
+                        f"          {_colorize('reason:', _DIM)} {_sanitize(reason)}"
+                    )
                 continue
 
             severity_label = f.severity.value.upper().ljust(_LABEL_WIDTH)
             color = _COLORS.get(f.severity, "")
             line_label = str(f.line) if f.line else "?"
+            message = _sanitize(f.message)
 
             already_shown = f.rule_id in seen_rules
             show_fix = not quiet and (verbose or not already_shown)
@@ -291,7 +330,7 @@ def format_findings(
                 f"    {line_label.rjust(4)}  "
                 f"{_colorize(severity_label, color)}  "
                 f"{_colorize(f.rule_id, _DIM)}  "
-                f"{f.message}{suffix}"
+                f"{message}{suffix}"
             )
 
             if (
@@ -299,13 +338,11 @@ def format_findings(
                 and f.rule_id in _PRESENCE_RULES
                 and f.line is not None
             ):
-                for excerpt_line in _excerpt(
-                    f.line, source_lines, f.message, f.severity
-                ):
+                for excerpt_line in _excerpt(f.line, source_lines, message, f.severity):
                     out.append(f"          {excerpt_line}")
 
             if show_fix and f.fix:
-                fix_lines = f.fix.split("\n")
+                fix_lines = _sanitize(f.fix).split("\n")
                 out.append(f"          {_colorize('fix:', _DIM)} {fix_lines[0]}")
                 for fix_line in fix_lines[1:]:
                     out.append(f"               {fix_line}")
@@ -324,6 +361,7 @@ def format_summary(
     filepath: str,
 ) -> str:
     """Format a one-line summary of findings for a single file."""
+    filepath = _sanitize(filepath)
     if not findings:
         return _colorize(f"{filepath}: no issues found", _GREEN)
 
