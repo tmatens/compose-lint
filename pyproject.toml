@@ -52,20 +52,20 @@ dependencies = [
 # "Development dependencies" — and Dependabot's weekly pass bumps
 # them.
 lint = [
-    "ruff==0.15.14",
+    "ruff==0.15.17",
 ]
 security = [
     "bandit==1.9.4",
-    "pip-audit==2.10.0",
+    "pip-audit==2.10.1",
 ]
 publish = [
-    "build==1.4.3",
+    "build==1.5.0",
     "twine==6.2.0",
     # Used by the post-release canary in publish.yml to verify the
     # Sigstore bundles attached to the GitHub Release. Matches the
     # version bundled by sigstore/gh-action-sigstore-python v3.3.0 so
     # the signer and verifier are in lockstep.
-    "sigstore==4.2.0",
+    "sigstore==4.3.0",
 ]
 # Minimal build-tool set for the Dockerfile build stage. Kept narrow so
 # the generated requirements-build.lock hash-pins only what's needed to
@@ -79,13 +79,13 @@ container = [
 # commands in CLAUDE.md). matplotlib never reaches the runtime wheel, which
 # stays at PyYAML-only per CLAUDE.md.
 corpus = [
-    "matplotlib==3.10.9",
+    "matplotlib==3.11.0",
 ]
 dev = [
     # Self-reference so the ruff pin lives only in [lint]; no drift.
     "compose-lint[lint]",
-    "check-jsonschema==0.37.2",
-    "mutmut==3.5.0",
+    "check-jsonschema==0.37.3",
+    "mutmut==3.6.0",
     "mypy==1.20.2",
     "pytest==9.0.3",
     # Statement coverage gate (>=80%) is enforced by the `coverage` CI job.
