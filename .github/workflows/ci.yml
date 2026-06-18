@@ -15,7 +15,82 @@ concurrency:
 permissions: {}
 
 jobs:
+  # Detects which classes of files a PR touches so the expensive jobs below
+  # (the 5-version test matrix, coverage, container smokes, rule-premises)
+  # can skip when nothing they exercise changed — a docs- or metadata-only
+  # PR returns a green `ci-ok` in seconds instead of waiting on container
+  # spin-ups. This is per-job gating, NOT a workflow-level `paths:` filter:
+  # the only required status check is `ci-ok`, and a workflow-level filter
+  # would stop `ci-ok` from ever reporting on a skipped PR, leaving the
+  # required check pending forever. `ci-ok` already counts `skipped` as a
+  # pass, so gating jobs here is safe. Filters are deliberately inclusive —
+  # any source/test/dependency change runs the full suite — and on `push`
+  # everything runs unconditionally so main always gets a complete pass.
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+      docker: ${{ steps.filter.outputs.docker }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+      dockerfile: ${{ steps.filter.outputs.dockerfile }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Compute change filters
+        id: filter
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # On push (no PR diff context) run every group — main must always
+          # get a full validation pass.
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            {
+              echo "code=true"
+              echo "docker=true"
+              echo "workflows=true"
+              echo "dockerfile=true"
+            } >> "$GITHUB_OUTPUT"
+            echo "push event — running all job groups."
+            exit 0
+          fi
+          changed=$(git diff --name-only "${BASE_SHA}" "${HEAD_SHA}")
+          echo "Changed files:"
+          echo "${changed}"
+          match() { echo "${changed}" | grep -qE "$1"; }
+          code=false; docker=false; workflows=false; dockerfile=false
+          # Python sources, tests, helper scripts, the package manifest,
+          # hash-pinned lockfiles, and the action contract all warrant the
+          # full lint/type/test/coverage/security/smoke suite.
+          if match '^(src/|tests/|scripts/|pyproject\.toml$|requirements[.-].*lock$|action\.yml$)'; then
+            code=true
+          fi
+          if match '^(Dockerfile$|\.dockerignore$|requirements\.lock$|requirements-build\.lock$|pyproject\.toml$|src/)'; then
+            docker=true
+          fi
+          if match '^\.github/workflows/'; then
+            workflows=true
+          fi
+          if match '^Dockerfile$'; then
+            dockerfile=true
+          fi
+          {
+            echo "code=${code}"
+            echo "docker=${docker}"
+            echo "workflows=${workflows}"
+            echo "dockerfile=${dockerfile}"
+          } >> "$GITHUB_OUTPUT"
+
   lint:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -40,6 +115,8 @@ jobs:
       - run: ruff format --check src/ tests/
 
   type-check:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -63,6 +140,8 @@ jobs:
       - run: mypy src/
 
   test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -98,6 +177,8 @@ jobs:
   # level so a config drift can't silently lower it.
   coverage:
     name: Test coverage (>= 80% statement)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -136,6 +217,8 @@ jobs:
 
   security:
     name: Security scan (bandit + pip-audit)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -367,6 +450,8 @@ jobs:
   # Renovate's github-releases datasource handles version bumps.
   actionlint:
     name: Lint GitHub Actions workflows
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     permissions:
@@ -392,6 +477,8 @@ jobs:
   # don't surface until docker-publish at release time.
   dockerfile-digests:
     name: Verify Dockerfile digests are manifest lists
+    needs: changes
+    if: needs.changes.outputs.dockerfile == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions:
@@ -409,6 +496,11 @@ jobs:
   # the gate cheap; the release pipeline covers multi-arch.
   docker-smoke:
     name: Smoke test Dockerfile (amd64)
+    # Build inputs are detected centrally by the `changes` job (the `docker`
+    # group: Dockerfile, .dockerignore, the runtime/build lockfiles,
+    # pyproject.toml, src/). On push, that group is always true.
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -416,29 +508,9 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - name: Determine if Docker-relevant files changed
-        id: changes
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if git diff --name-only "${BASE_SHA}" "${HEAD_SHA}" \
-              | grep -qE '^(Dockerfile|\.dockerignore|requirements\.lock|requirements-build\.lock|pyproject\.toml|src/)'; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "No Docker-relevant files changed — skipping build."
-          fi
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
-        if: steps.changes.outputs.run == 'true'
       - name: Build image
-        if: steps.changes.outputs.run == 'true'
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
@@ -448,7 +520,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Clean fixture exits 0
-        if: steps.changes.outputs.run == 'true'
         run: |
           cat > /tmp/clean.yml <<'YAML'
           services:
@@ -464,7 +535,6 @@ jobs:
           YAML
           docker run --rm -v /tmp/clean.yml:/src/docker-compose.yml composelint/compose-lint:pr-smoke
       - name: Insecure fixture exits 1
-        if: steps.changes.outputs.run == 'true'
         run: |
           cat > /tmp/insecure.yml <<'YAML'
           services:
@@ -479,7 +549,6 @@ jobs:
             exit 1
           fi
       - name: SARIF output is valid JSON
-        if: steps.changes.outputs.run == 'true'
         run: |
           cat > /tmp/test.yml <<'YAML'
           services:
@@ -491,6 +560,8 @@ jobs:
 
   action-smoke:
     name: Smoke test action.yml
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -537,6 +608,8 @@ jobs:
   # flags a Docker default — before it ships. Runners have Docker preinstalled.
   rule-premises:
     name: Validate rule premises (live container)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -563,6 +636,7 @@ jobs:
   ci-ok:
     name: ci-ok
     needs:
+      - changes
       - lint
       - type-check
       - test
