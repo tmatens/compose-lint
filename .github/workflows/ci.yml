@@ -249,6 +249,17 @@ jobs:
       - name: Bandit (source SAST)
         run: bandit -r src/ -ll
       - name: pip-audit (dependency CVEs)
+        # INFORMATIONAL on PRs (continue-on-error) — not a merge gate.
+        # pip-audit queries a live advisory DB, so a newly disclosed CVE
+        # against an *unchanged* pinned dep flips this red with no code
+        # change, which would block every unrelated open PR at once (see
+        # the 2026-06 cryptography/msgpack incident). Detection of new
+        # advisories is handled continuously by Renovate's OSV alerts
+        # (renovate.json), and the hard gate runs at release time in
+        # publish.yml's `build` job, where the build/publish toolchain
+        # actually executes. Keep the --ignore-vuln set in sync with that
+        # publish-time step.
+        #
         # --skip-editable skips compose-lint itself (it isn't on PyPI
         # for the local install path); PyYAML and any future runtime
         # deps are still scanned.
@@ -268,6 +279,7 @@ jobs:
         # under current constraints. tuf is a transitive dev/publish
         # dependency (via sigstore) and not part of the runtime image.
         # Remove this ignore once sigstore allows tuf >= 7.
+        continue-on-error: true
         run: >-
           pip-audit --skip-editable
           --ignore-vuln PYSEC-2025-183

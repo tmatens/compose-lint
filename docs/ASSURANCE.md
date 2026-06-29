@@ -98,7 +98,7 @@ Common Python-level weakness classes and their mitigations:
 | Resource exhaustion (CWE-400)                        | Iterative parser traversals; ClusterFuzzLite runs as a continuous gate.     |
 | Type confusion in rule predicates                    | `mypy --strict` on every commit; rules receive plain types only (AGENTS.md). |
 | Logic bug in a rule (false negative or positive)     | Per-rule positive + negative + hardened-but-unusual fixtures; corpus snapshot regression gate; mutation testing on rule predicates via `mutmut`. |
-| Outdated dependency with known CVE                   | `pip-audit`, `dependency-review`, Renovate weekly; OpenVEX document for stripped-component CVEs (ADR-012). |
+| Outdated dependency with known CVE                   | `pip-audit` (informational on PRs, blocking at release in `publish.yml`); `dependency-review`; Renovate weekly + same-day OSV security alerts; OpenVEX document for stripped-component CVEs (ADR-012). |
 | Tampered release artifact                            | Sigstore + cosign + SLSA provenance + SBOM + post-release `verify-release-signatures` job. |
 
 ## Continuous-assurance tooling
@@ -108,11 +108,16 @@ prompting:
 
 - **CI gate (every PR + push)**: `ruff`, `ruff format --check`,
   `mypy src/`, `pytest` matrix on Python 3.10–3.14, `bandit`,
-  `pip-audit`, `actionlint`, `dependency-review`, `dockerfile-digests`
+  `actionlint`, `dependency-review`, `dockerfile-digests`
   manifest-list check, `docker-smoke` (clean fixture exits 0, insecure
   fixture exits 1, SARIF is valid JSON), `action-smoke`, DCO trailer
   check, no-AI-attribution check, version-string consistency,
-  CHANGELOG-bump gate.
+  CHANGELOG-bump gate. (`pip-audit` also runs here but is informational
+  — the blocking dependency-CVE gate is at release time; see below.)
+- **Dependency-CVE gate**: `pip-audit` is `continue-on-error` on PRs (a
+  live-advisory disclosure must not block unrelated work); Renovate OSV
+  alerts open a same-day security PR; `publish.yml` runs `pip-audit` as a
+  hard gate before any artifact is built.
 - **Static analysis**: CodeQL (security-and-quality queries) on push,
   PR, and weekly schedule; Bandit per push.
 - **Fuzzing**: ClusterFuzzLite per-PR (`cflite-pr.yml`) and weekly

@@ -102,6 +102,18 @@ jobs:
         run: |
           pip install --require-hashes -r requirements-dev.lock
           pip install --no-deps -e .
+      - name: pip-audit (block release on dependency CVEs)
+        # Release-time HARD gate for the build/publish toolchain (twine,
+        # sigstore, build, cryptography, ...). On PRs the same audit is
+        # informational (see ci.yml) because the advisory DB is queried
+        # live and a CVE newly disclosed against an unchanged pinned dep
+        # must not block unrelated work. At publish those deps actually
+        # run and touch release integrity, so a known advisory must stop
+        # the release. Keep the --ignore-vuln set identical to ci.yml's.
+        run: >-
+          pip-audit --skip-editable
+          --ignore-vuln PYSEC-2025-183
+          --ignore-vuln GHSA-qp9x-wp8f-qgjj
       - run: python -m build
       - name: Verify dist contents
         run: |
