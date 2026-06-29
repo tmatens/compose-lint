@@ -31,7 +31,7 @@ cancels in-progress runs when you push new commits to the same PR.
 | `lint`                    | `ruff check` + `ruff format --check` on `src/` and `tests/`                               |
 | `type-check`              | `mypy src/` in strict mode                                                                |
 | `test`                    | `pytest` across the Python matrix — 3.10, 3.11, 3.12, 3.13, 3.14                          |
-| `security`                | `bandit -r src/ -ll` + `pip-audit` for CVEs in hash-pinned dev deps                       |
+| `security`                | `bandit -r src/ -ll` (blocking) + `pip-audit` for dep CVEs (informational on PRs — see note) |
 | `dependency-review`       | Blocks PRs adding deps with known high-severity CVEs or disallowed licenses               |
 | `actionlint`              | Lints every workflow under `.github/workflows/` (embeds shellcheck for `run:` blocks)     |
 | `dockerfile-digests`      | Fails if any `FROM @sha256:` in the Dockerfile is a per-arch manifest instead of an index |
@@ -43,6 +43,25 @@ cancels in-progress runs when you push new commits to the same PR.
 `version-consistency` and `changelog-gate` were added in 0.3.8 to catch
 the historically painful release-bump mistakes at review time rather
 than tag-push time.
+
+### Dependency-CVE gate (`pip-audit`)
+
+`pip-audit` queries a live advisory database, so a CVE newly disclosed
+against an *unchanged*, already-pinned dependency turns the check red with
+no code change — and because the lock is shared with `main`, that would
+block every open PR at once. To avoid blocking unrelated work on a
+time-of-disclosure accident, the gate is split three ways:
+
+- **On PRs** the `pip-audit` step is `continue-on-error` — it still runs
+  and is visible in the job log, but does not fail `ci-ok`. (`bandit` in
+  the same job stays blocking.)
+- **Continuous detection** comes from Renovate's OSV alerts
+  (`osvVulnerabilityAlerts`), which open a security PR the day an advisory
+  lands instead of waiting for the weekly schedule.
+- **At release time** the same `pip-audit` invocation is a hard gate in
+  `publish.yml`'s `build` job, where the build/publish toolchain actually
+  runs and touches release integrity. The `--ignore-vuln` set is kept
+  identical in both places.
 
 ### Dependency lockfiles
 
