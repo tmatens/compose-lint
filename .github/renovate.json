@@ -7,6 +7,7 @@
     ":semanticCommitsDisabled"
   ],
   "schedule": ["before 4am on monday"],
+  "automergeSchedule": ["at any time"],
   "osvVulnerabilityAlerts": true,
   "vulnerabilityAlerts": {
     "description": "Open a security PR the moment an advisory lands instead of waiting for the weekly schedule. osvVulnerabilityAlerts covers the uv/pip-compile *.lock files that GitHub's native Dependabot does not parse. Security PRs are NOT given a blanket automerge here: only patch-level fixes match the existing automerge packageRule, so minor/major security bumps open as labelled PRs for manual review. This is the continuous-detection half of the pip-audit split (PR audit informational, publish audit blocking — see .github/workflows/ci.yml).",
