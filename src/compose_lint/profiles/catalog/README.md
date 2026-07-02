@@ -6,8 +6,8 @@ One YAML document per image, conforming to
 Entries are **derived, not hand-authored.** A profile is produced by running
 [container-sec-derive](https://github.com/tmatens/container-sec-derive) against a
 live container (`--format compose-lint-profile`, ≥5-minute window, digest-pinned
-image) and contributed via PR through the profile-validation workflow, which
-appends `ci-smoke` to `validated_via`. See the contributor guide (forthcoming).
+image) and contributed via PR, gated by the `profile-validate` CI job. See the
+[contributor guide](../../../../docs/profiles.md).
 
 The match key is the canonical repository reference — files may be organized in
 `registry/namespace/` subdirectories for readability, but the loader indexes each

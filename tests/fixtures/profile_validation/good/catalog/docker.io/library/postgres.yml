@@ -1,0 +1,26 @@
+# Validation fixture: a well-formed VALIDATED profile with a committed,
+# hash-verified workload. Digest is a placeholder (not a real derivation).
+schema_version: "1.0"
+image: docker.io/library/postgres
+applies_to:
+  tags: ["16", "16.*"]
+status: validated
+dimensions:
+  capabilities:
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID]
+    derivation:
+      tool: container-sec-derive
+      tool_version: "0.6.0"
+      sidecar_schema_version: "1.5"
+      observer: caps
+      validated_image: docker.io/library/postgres@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      validated_date: "2026-07-02"
+      duration_seconds: 600
+      confidence: high
+      workload: profiles/workloads/postgres.sh
+      workload_sha256: 986ae634987bf53546c5d6f799783e79e52a02c85f5583697d50df08d394f1c0
+      validated_via: [bpf-observation, ci-smoke]
+      observation_backend:
+        ig_version: v0.51.0
+        gadgets: []
