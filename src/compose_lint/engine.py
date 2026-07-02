@@ -7,10 +7,13 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from compose_lint.models import Finding, Severity
+from compose_lint.profiles.enrich import enrich_fix
 from compose_lint.rules import get_registered_rules
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from compose_lint.profiles.models import ProfileMatch
 
 
 def _default_rule_error(rule_id: str, service_name: str, exc: Exception) -> None:
@@ -29,6 +32,7 @@ def run_rules(
     severity_overrides: dict[str, Severity] | None = None,
     excluded_services: dict[str, dict[str, str | None]] | None = None,
     on_error: Callable[[str, str, Exception], None] | None = None,
+    profile_lookup: Callable[[str], ProfileMatch | None] | None = None,
 ) -> list[Finding]:
     """Run all registered rules against the parsed Compose data.
 
@@ -43,6 +47,11 @@ def run_rules(
     CLI maps such a failure to exit 2 ("compose-lint itself couldn't run",
     ADR-006) so a directory sweep is never silently truncated and a crash is
     never mistaken for a clean lint failure.
+
+    When ``profile_lookup`` is supplied, each service's image is resolved to a
+    validated csd-derived profile (ADR-017) and matching findings get
+    image-specific guidance appended to their ``fix`` text. This is purely
+    additive — the set and classification of findings is unchanged.
     """
     disabled = disabled_rules or {}
     overrides = severity_overrides or {}
@@ -54,6 +63,21 @@ def run_rules(
     rules = [cls() for cls in rule_classes]
 
     services = data.get("services", {})
+
+    # Resolve each service's derived profile once (ADR-017). Enrichment only
+    # appends image-specific guidance to a finding's fix text; it never changes
+    # which findings are produced. Off unless profile_lookup is supplied.
+    service_matches: dict[str, ProfileMatch | None] = {}
+    if profile_lookup is not None:
+        for service_name, service_config in services.items():
+            image = (
+                service_config.get("image")
+                if isinstance(service_config, dict)
+                else None
+            )
+            service_matches[service_name] = (
+                profile_lookup(image) if isinstance(image, str) and image else None
+            )
 
     for rule in rules:
         rule_id = rule.metadata.id
@@ -88,6 +112,9 @@ def run_rules(
                         suppressed=True,
                         suppression_reason=reason or default,
                     )
+                match = service_matches.get(service_name)
+                if match is not None:
+                    finding = enrich_fix(finding, match)
                 findings.append(finding)
 
     findings.sort(key=lambda f: (f.line is None, f.line or 0))

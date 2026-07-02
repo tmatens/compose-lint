@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import NoReturn
 
 from compose_lint import __version__
-from compose_lint.config import ConfigError, load_config
+from compose_lint.config import ConfigError, load_config, load_profiles_enabled
 from compose_lint.config_emit import render_config
 from compose_lint.engine import filter_findings, run_rules
 from compose_lint.explain import UnknownRuleError, load_rule_doc
@@ -37,6 +37,7 @@ from compose_lint.formatters.text import (
 from compose_lint.formatters.text import format_findings as format_text
 from compose_lint.models import Finding, Severity
 from compose_lint.parser import ComposeError, ComposeNotApplicableError, load_compose
+from compose_lint.profiles.loader import load_profile
 
 
 def _severity_type(value: str) -> Severity:
@@ -331,9 +332,12 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
 
     try:
         disabled_rules, severity_overrides, excluded_services = load_config(args.config)
+        profiles_enabled = load_profiles_enabled(args.config)
     except ConfigError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(2)
+
+    profile_lookup = load_profile if profiles_enabled else None
 
     if not args.files:
         args.files = _discover_compose_files()
@@ -408,6 +412,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             severity_overrides=severity_overrides,
             excluded_services=excluded_services,
             on_error=_record_rule_error,
+            profile_lookup=profile_lookup,
         )
 
         if args.skip_suppressed:

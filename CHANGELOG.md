@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in profile enrichment (ADR-017). When `profiles.enabled: true` is set in
+  `.compose-lint.yml`, findings from CL-0006/0007/0002/0011/0016 gain
+  image-specific fix guidance from a matching container-sec-derive (csd) profile
+  — e.g. the observed minimum `cap_add` for that image. Enrichment is advisory
+  and additive only: it never creates, drops, or reclassifies a finding. Off by
+  default; the bundled profile catalog ships empty until derived profiles land.
+
 ## [0.12.2] - 2026-06-13
 
 ### Security
