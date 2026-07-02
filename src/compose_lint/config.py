@@ -10,10 +10,13 @@ import yaml
 
 from compose_lint.models import Severity
 
-# The only top-level key the config schema defines today (docs/configuration.md).
+# Top-level keys the config schema defines today (docs/configuration.md).
 # Anything else is almost certainly a typo or a misplaced CLI flag (e.g. a
 # top-level `fail_on:`), so we warn rather than silently drop it (issue #279 G1).
-_KNOWN_TOP_LEVEL_KEYS = frozenset({"rules"})
+_KNOWN_TOP_LEVEL_KEYS = frozenset({"rules", "profiles"})
+
+# Recognized keys inside the `profiles` block (ADR-017).
+_KNOWN_PROFILES_KEYS = frozenset({"enabled"})
 
 # Recognized keys inside a per-rule block. A key outside this set (a typo'd
 # `severty:` or a `reason:` with no `enabled: false`) is silently inert today;
@@ -68,11 +71,27 @@ def load_config(
     If path is None, looks for .compose-lint.yml in the current directory.
     If no config file is found, returns empty defaults.
     """
-    empty: tuple[dict[str, str | None], dict[str, Severity], ExcludedServices] = (
-        {},
-        {},
-        {},
-    )
+    data = _read_raw_config(path)
+    if data is None:
+        return {}, {}, {}
+
+    for key in data:
+        if str(key) not in _KNOWN_TOP_LEVEL_KEYS:
+            _warn(
+                f"config: unknown top-level key '{key}' (recognized: "
+                f"{', '.join(sorted(_KNOWN_TOP_LEVEL_KEYS))}); it has no effect"
+            )
+
+    return _parse_rules(data.get("rules", {}))
+
+
+def _read_raw_config(path: str | Path | None) -> dict[str, Any] | None:
+    """Read and parse a config file to a mapping, or None when there is none.
+
+    Returns None when no config file is found (implicit path) or the file is
+    empty. Raises ConfigError for an explicitly-named missing file, a read
+    error, invalid YAML, or a non-mapping top level.
+    """
     if path is not None:
         config_path = Path(path)
         if not config_path.exists():
@@ -80,7 +99,7 @@ def load_config(
     else:
         config_path = Path(".compose-lint.yml")
         if not config_path.exists():
-            return empty
+            return None
 
     try:
         content = config_path.read_text(encoding="utf-8")
@@ -93,19 +112,42 @@ def load_config(
         raise ConfigError(f"Invalid YAML in config file: {e}") from e
 
     if data is None:
-        return empty
+        return None
 
     if not isinstance(data, dict):
         raise ConfigError("Config file must be a YAML mapping")
 
-    for key in data:
-        if str(key) not in _KNOWN_TOP_LEVEL_KEYS:
+    return data
+
+
+def load_profiles_enabled(path: str | Path | None = None) -> bool:
+    """Return whether profile enrichment is opted in (``profiles.enabled``).
+
+    Off by default (ADR-017). Reads the same file as ``load_config``; the
+    top-level key-validation warning is emitted there, so this only validates
+    the ``profiles`` block itself.
+    """
+    data = _read_raw_config(path)
+    if data is None:
+        return False
+
+    profiles = data.get("profiles", {})
+    if not isinstance(profiles, dict):
+        raise ConfigError("'profiles' must be a mapping")
+
+    for key in profiles:
+        if str(key) not in _KNOWN_PROFILES_KEYS:
             _warn(
-                f"config: unknown top-level key '{key}' (recognized: "
-                f"{', '.join(sorted(_KNOWN_TOP_LEVEL_KEYS))}); it has no effect"
+                f"config: profiles has unknown key '{key}' (recognized: "
+                f"{', '.join(sorted(_KNOWN_PROFILES_KEYS))}); it has no effect"
             )
 
-    return _parse_rules(data.get("rules", {}))
+    enabled = profiles.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ConfigError(
+            f"Config: profiles.enabled must be true or false, not {enabled!r}"
+        )
+    return enabled
 
 
 def _parse_rules(
