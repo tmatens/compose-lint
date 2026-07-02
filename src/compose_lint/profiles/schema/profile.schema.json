@@ -1,0 +1,240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tmatens/compose-lint/profiles/profile.schema.json",
+  "title": "compose-lint security profile",
+  "description": "A derived, evidence-backed minimum-security profile for one container image. Produced by container-sec-derive (csd); consumed by compose-lint as fix-guidance enrichment. One document per image; dimensions are additive. See docs/adr/017-security-profile-catalog.md.",
+  "type": "object",
+  "required": ["schema_version", "image", "status", "dimensions"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "Catalog profile schema version (independent of csd's sidecar schema_version, which is recorded per-dimension under derivation.sidecar_schema_version).",
+      "type": "string",
+      "const": "1.0"
+    },
+    "image": {
+      "description": "Canonical repository reference WITHOUT tag or digest -- the match key. Registry and namespace normalized (docker.io/library/postgres, lscr.io/linuxserver/radarr).",
+      "type": "string",
+      "pattern": "^[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*$"
+    },
+    "applies_to": {
+      "description": "Optional staleness/matching policy. Absent => advisory across all tags (enrichment only, never conformance). Present => the tag/digest set this profile is validated for.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "tags": {
+          "description": "Exact tags or glob patterns, e.g. [\"16\", \"16.*\"].",
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "digests": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/digest" },
+          "minItems": 1
+        }
+      }
+    },
+    "status": {
+      "description": "validated = cleared csd's acceptance contract AND compose-lint's ci-smoke gate; exploratory = below bar, advisory draft only (lives under catalog/exploratory/, never used for enrichment or conformance).",
+      "enum": ["validated", "exploratory"]
+    },
+    "acceptance_contract_violations": {
+      "description": "Required and non-empty when status=exploratory; must be absent when status=validated. Mirrors csd's --allow-exploratory annotation.",
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "dimensions": {
+      "description": "Per-security-dimension derived config. All optional and additive -- a caps-only profile is valid. Each maps to a compose-lint rule.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "description": "CL-0006. Minimum capability set.",
+          "type": "object",
+          "required": ["cap_drop", "cap_add", "derivation"],
+          "additionalProperties": false,
+          "properties": {
+            "cap_drop": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/capName" },
+              "default": ["ALL"]
+            },
+            "cap_add": { "type": "array", "items": { "$ref": "#/$defs/capName" } },
+            "derivation": { "$ref": "#/$defs/derivation" }
+          }
+        },
+        "filesystem": {
+          "description": "CL-0007. read_only + tmpfs.",
+          "type": "object",
+          "required": ["read_only", "derivation"],
+          "additionalProperties": false,
+          "properties": {
+            "read_only": { "type": "boolean" },
+            "tmpfs": { "type": "array", "items": { "$ref": "#/$defs/absPath" } },
+            "derivation": { "$ref": "#/$defs/derivation" }
+          }
+        },
+        "devices": {
+          "description": "CL-0002 / CL-0016. Minimum /dev grant plus any caps implied by device access.",
+          "type": "object",
+          "required": ["devices", "derivation"],
+          "additionalProperties": false,
+          "properties": {
+            "devices": { "type": "array", "items": { "$ref": "#/$defs/devPath" } },
+            "derived_caps": { "type": "array", "items": { "$ref": "#/$defs/capName" } },
+            "derivation": { "$ref": "#/$defs/derivation" }
+          }
+        },
+        "cap_add_validation": {
+          "description": "CL-0011. Minimized cap_add for an already-granted dangerous cap.",
+          "type": "object",
+          "required": ["recommended_cap_add", "derivation"],
+          "additionalProperties": false,
+          "properties": {
+            "recommended_cap_add": { "type": "array", "items": { "$ref": "#/$defs/capName" } },
+            "validated_caps": { "type": "array", "items": { "$ref": "#/$defs/capName" } },
+            "derivation": { "$ref": "#/$defs/derivation" }
+          }
+        },
+        "privileged_decomposition": {
+          "description": "CL-0002. Non-privileged equivalent of privileged: true.",
+          "type": "object",
+          "required": ["cap_add", "devices", "partial", "derivation"],
+          "additionalProperties": false,
+          "properties": {
+            "cap_add": { "type": "array", "items": { "$ref": "#/$defs/capName" } },
+            "devices": { "type": "array", "items": { "$ref": "#/$defs/devPath" } },
+            "partial": {
+              "type": "boolean",
+              "description": "true when the security_opt/AppArmor/seccomp axis was NOT observed (no denial gadget at pin). A partial decomposition must never be used to conformance-fail."
+            },
+            "security_opt_unobserved": { "type": "boolean" },
+            "derivation": { "$ref": "#/$defs/derivation" }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["status"],
+        "properties": { "status": { "const": "exploratory" } }
+      },
+      "then": { "required": ["acceptance_contract_violations"] }
+    },
+    {
+      "if": {
+        "required": ["status"],
+        "properties": { "status": { "const": "validated" } }
+      },
+      "then": { "not": { "required": ["acceptance_contract_violations"] } }
+    }
+  ],
+  "$defs": {
+    "capName": {
+      "type": "string",
+      "pattern": "^(CAP_)?[A-Z][A-Z0-9_]*$",
+      "description": "Linux capability, with or without CAP_ prefix; the loader normalizes."
+    },
+    "absPath": { "type": "string", "pattern": "^/" },
+    "devPath": { "type": "string", "pattern": "^/dev/" },
+    "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "derivation": {
+      "description": "Per-dimension provenance. Distinct per dimension because csd derives each observer in a separate run with its own digest/confidence/window.",
+      "type": "object",
+      "required": [
+        "tool",
+        "tool_version",
+        "sidecar_schema_version",
+        "observer",
+        "validated_image",
+        "validated_date",
+        "duration_seconds",
+        "confidence",
+        "workload",
+        "workload_sha256",
+        "validated_via",
+        "observation_backend"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "tool": { "const": "container-sec-derive" },
+        "tool_version": { "type": "string", "minLength": 1 },
+        "sidecar_schema_version": {
+          "type": "string",
+          "pattern": "^1\\.",
+          "description": "csd sidecar schema (currently 1.x). Must be within the major the loader supports."
+        },
+        "observer": { "enum": ["caps", "fs", "devices", "privileged", "capadd"] },
+        "validated_image": {
+          "type": "string",
+          "pattern": "@sha256:[a-f0-9]{64}$",
+          "description": "Full name@digest actually observed -- the exact artifact this dimension was derived against."
+        },
+        "validated_date": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "duration_seconds": {
+          "type": "integer",
+          "minimum": 300,
+          "description": "csd's 5-minute contribution floor; below this the dimension is exploratory-only."
+        },
+        "confidence": {
+          "enum": ["high", "moderate", "low"],
+          "description": "low is only permitted when the document status is exploratory (enforced by the loader/CI, not this schema)."
+        },
+        "workload": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Repo-relative path to the committed exerciser script that produced this run."
+        },
+        "workload_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "Hash of the workload script -- makes the entry reproducible and tamper-evident."
+        },
+        "validated_via": {
+          "type": "array",
+          "items": { "enum": ["bpf-observation", "ci-smoke"] },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "csd emits [bpf-observation]; compose-lint CI appends ci-smoke after the smoke gate. Both required for status=validated (enforced by the loader/CI)."
+        },
+        "observation_backend": {
+          "description": "How the kernel signal was captured -- forward-compat for csd's gadget transition. A profile derived with a csd-authored gadget is only reproducible if the gadget image+digest is recorded here, not just the ig version.",
+          "type": "object",
+          "required": ["ig_version"],
+          "additionalProperties": false,
+          "properties": {
+            "ig_version": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Pinned upstream Inspektor Gadget release."
+            },
+            "gadgets": {
+              "description": "csd-authored gadgets used (empty/absent for built-in-gadget-only runs).",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name", "image", "digest"],
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "type": "string", "minLength": 1 },
+                  "image": { "type": "string", "minLength": 1 },
+                  "digest": { "$ref": "#/$defs/digest" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
