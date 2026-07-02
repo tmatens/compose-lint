@@ -1,0 +1,26 @@
+# Fixture profile for loader tests. Placeholder digests/hashes -- not a real
+# csd derivation.
+schema_version: "1.0"
+image: docker.io/library/postgres
+applies_to:
+  tags: ["16", "16.*"]
+status: validated
+dimensions:
+  capabilities:
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    derivation:
+      tool: container-sec-derive
+      tool_version: "0.6.0"
+      sidecar_schema_version: "1.5"
+      observer: caps
+      validated_image: docker.io/library/postgres@sha256:a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4
+      validated_date: "2026-07-02"
+      duration_seconds: 600
+      confidence: high
+      workload: profiles/workloads/postgres.sh
+      workload_sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      validated_via: [bpf-observation, ci-smoke]
+      observation_backend:
+        ig_version: v0.51.0
+        gadgets: []

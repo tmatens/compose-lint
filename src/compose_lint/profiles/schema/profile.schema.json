@@ -183,8 +183,8 @@
         },
         "duration_seconds": {
           "type": "integer",
-          "minimum": 300,
-          "description": "csd's 5-minute contribution floor; below this the dimension is exploratory-only."
+          "minimum": 1,
+          "description": "Observation window. csd's 5-minute (>=300s) contribution floor is a validated-status gate enforced by the loader/CI, not this schema -- exploratory profiles legitimately run shorter."
         },
         "confidence": {
           "enum": ["high", "moderate", "low"],

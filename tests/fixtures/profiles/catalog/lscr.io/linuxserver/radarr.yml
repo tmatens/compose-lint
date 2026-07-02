@@ -1,0 +1,27 @@
+# Fixture profile pinned to specific digests (staleness test). Placeholder
+# digests/hashes -- not a real csd derivation.
+schema_version: "1.0"
+image: lscr.io/linuxserver/radarr
+applies_to:
+  digests:
+    - sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+status: validated
+dimensions:
+  filesystem:
+    read_only: true
+    tmpfs: [/run, /tmp]
+    derivation:
+      tool: container-sec-derive
+      tool_version: "0.6.0"
+      sidecar_schema_version: "1.5"
+      observer: fs
+      validated_image: lscr.io/linuxserver/radarr@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+      validated_date: "2026-07-02"
+      duration_seconds: 600
+      confidence: moderate
+      workload: profiles/workloads/radarr.sh
+      workload_sha256: fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210
+      validated_via: [bpf-observation, ci-smoke]
+      observation_backend:
+        ig_version: v0.51.0
+        gadgets: []
