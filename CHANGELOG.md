@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Profile schema **1.2** (ADR-017 §9): an optional `derivation.run_config` block
+  recording the invocation a minimum was derived under — `user`, `command`,
+  `entrypoint`, `network`, `pid`, `devices`, `security_opt`, `mounts`, and `env`
+  (keys only, never values). A derived minimum is only valid for its invocation
+  (postgres run with `user:` set skips the root→user drop and needs none of the
+  startup caps a default-invocation profile lists), so a consumer can diff a
+  target service against it and downgrade to a hint on divergence. Emitted by
+  csd's drop-test producer, not hand-authored. Additive — all 1.0/1.1 documents
+  remain valid.
 - Opt-in profile enrichment (ADR-017). Set `profiles.enabled: true` and point
   `profiles.path` at a catalog of container-sec-derive (csd) profiles you trust;
   findings from CL-0006/0007/0002/0011/0016 then gain image-specific fix guidance

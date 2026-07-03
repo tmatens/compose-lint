@@ -62,9 +62,10 @@ def test_schema_is_valid_draft202012(schema: dict[str, Any]) -> None:
 
 
 def test_schema_version_is_pinned(schema: dict[str, Any]) -> None:
-    # 1.0 is the baseline; 1.1 adds drop-test as a derivation source. Both remain
-    # valid so existing 1.0 documents are not invalidated.
-    assert schema["properties"]["schema_version"]["enum"] == ["1.0", "1.1"]
+    # 1.0 is the baseline; 1.1 adds drop-test as a derivation source; 1.2 adds
+    # the optional derivation.run_config block. All remain valid so existing
+    # documents are not invalidated.
+    assert schema["properties"]["schema_version"]["enum"] == ["1.0", "1.1", "1.2"]
 
 
 def test_example_validates(
@@ -142,3 +143,34 @@ def test_gadget_provenance_shape(
         }
     ]
     assert validator.is_valid(example), list(validator.iter_errors(example))
+
+
+def test_run_config_accepted(
+    validator: Draft202012Validator, example: dict[str, Any]
+) -> None:
+    # The derivation may record the invocation the minimum was derived under.
+    # It is optional (existing documents omit it) and tool-emitted.
+    derivation = example["dimensions"]["capabilities"]["derivation"]
+    derivation["run_config"] = {
+        "user": "",
+        "command": [],
+        "entrypoint": "",
+        "network": "",
+        "pid": "",
+        "devices": [],
+        "security_opt": [],
+        "mounts": [],
+        "env": ["POSTGRES_PASSWORD"],
+    }
+    assert validator.is_valid(example), list(validator.iter_errors(example))
+
+
+def test_run_config_rejects_unknown_key(
+    validator: Draft202012Validator, example: dict[str, Any]
+) -> None:
+    # additionalProperties closure: run_config carries a fixed set of axes.
+    example["dimensions"]["capabilities"]["derivation"]["run_config"] = {
+        "user": "",
+        "cap_add": ["SYS_ADMIN"],
+    }
+    assert not validator.is_valid(example)
