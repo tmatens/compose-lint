@@ -81,7 +81,15 @@ Excluded services still produce **SUPPRESSED** findings, with the per-service re
 - **Global `enabled: false` wins** over per-service exclusions: if a rule is disabled globally, every service is suppressed regardless of `exclude_services`.
 - **No inline suppression syntax** — there is no `# compose-lint: disable` comment form. Suppressions are tracked in config so reviewers can audit them.
 
-## Profile enrichment
+## Profile enrichment (experimental)
+
+> **Experimental preview.** Off by default and opt-in. Profile fix
+> recommendations are **advisory only**: a derived minimum is valid for the exact
+> invocation it was produced under (image digest, `user:`, `command:`, mounts,
+> …), and compose-lint does static analysis — it can't see your runtime, so it
+> can't confirm the recommendation fits your deployment. Treat a hint as a
+> pointer to verify, not a validated fact. When enrichment is active, compose-lint
+> prints a one-line reminder to stderr.
 
 Opt into image-specific fix guidance derived by
 [container-sec-derive](https://github.com/tmatens/container-sec-derive) (csd).

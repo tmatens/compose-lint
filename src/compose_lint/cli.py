@@ -343,6 +343,16 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         profile_lookup = functools.partial(
             load_profile, catalog_root=Path(profiles_path)
         )
+        # Profile enrichment is an experimental preview. It's already opt-in
+        # (profiles.enabled, off by default); this makes the provisional status
+        # explicit whenever it's active, so no one mistakes an advisory,
+        # invocation-specific hint for a validated fact about their deployment.
+        print(
+            "Note: profile fix recommendations are experimental — advisory only, "
+            "derived for a specific invocation, and not validated against your "
+            "runtime. Verify before applying.",
+            file=sys.stderr,
+        )
     elif profiles_enabled:
         print(
             "Warning: profiles.enabled is set but profiles.path is unset; "
