@@ -443,3 +443,57 @@ def test_format_summary_escapes_bidi_in_path() -> None:
     out = format_summary([], f"compose{_RLO}.yml")
     assert _RLO not in out
     assert "\\u202e" in out
+
+
+def test_fix_dedup_keys_on_fix_not_rule_id() -> None:
+    # Profile enrichment makes a rule's fix image-specific, so two services
+    # flagged by the same rule can carry genuinely different guidance. The dedup
+    # must not collapse the second into "(see fix above)" pointing at the first
+    # service's (wrong-image) fix.
+    findings = [
+        Finding(
+            "CL-0006",
+            Severity.MEDIUM,
+            "db",
+            "caps not dropped",
+            line=2,
+            fix="cap_drop: [ALL]\nhint: cap_add: [CHOWN, DAC_OVERRIDE, SETGID, SETUID]",
+        ),
+        Finding(
+            "CL-0006",
+            Severity.MEDIUM,
+            "proxy",
+            "caps not dropped",
+            line=6,
+            fix="cap_drop: [ALL]\nprofile hint: cap_add: [NET_BIND_SERVICE]",
+        ),
+    ]
+    out = format_findings(findings, "compose.yml")
+    assert "CHOWN" in out
+    assert "NET_BIND_SERVICE" in out  # the second, distinct hint is not collapsed
+    assert "(see fix above)" not in out
+
+
+def test_fix_dedup_collapses_identical_fixes() -> None:
+    # Same rule + identical fix (no enrichment) still dedups to a single block.
+    findings = [
+        Finding(
+            "CL-0003",
+            Severity.MEDIUM,
+            "web",
+            "nnp",
+            line=2,
+            fix="- no-new-privileges:true",
+        ),
+        Finding(
+            "CL-0003",
+            Severity.MEDIUM,
+            "api",
+            "nnp",
+            line=5,
+            fix="- no-new-privileges:true",
+        ),
+    ]
+    out = format_findings(findings, "compose.yml")
+    assert out.count("- no-new-privileges:true") == 1
+    assert "(see fix above)" in out
