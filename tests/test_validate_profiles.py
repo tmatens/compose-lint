@@ -116,6 +116,12 @@ def test_drop_test_validated_passes(tmp_path: Path) -> None:
             observer="drop-test",
             validated_via=["drop-test", "ci-smoke"],
             duration_seconds=5,  # well under the 300s floor; waived for drop-test
+            drop_test={
+                "checks": [
+                    {"removed": "CHOWN", "required": False, "observed": "ok"},
+                    {"removed": "SETUID", "required": True, "observed": "ran as root"},
+                ]
+            },
         )
 
     _mutate(tree, to_drop_test)
@@ -132,12 +138,31 @@ def test_drop_test_missing_source_fails(tmp_path: Path) -> None:
         d["dimensions"]["capabilities"]["derivation"].update(
             observer="drop-test",
             validated_via=["bpf-observation", "ci-smoke"],
+            drop_test={"checks": [{"removed": "X", "required": True, "observed": "y"}]},
         )
 
     _mutate(tree, bad)
     result = _run(tree / "catalog", tree)
     assert result.returncode == 1
     assert "validated_via" in result.stdout and "drop-test" in result.stdout
+
+
+def test_drop_test_missing_evidence_fails(tmp_path: Path) -> None:
+    # observer=drop-test but no derivation.drop_test evidence block -> not validated.
+    tree = _copy_good(tmp_path)
+
+    def bad(d: dict) -> None:
+        d["schema_version"] = "1.1"
+        d["dimensions"]["capabilities"]["derivation"].update(
+            observer="drop-test",
+            validated_via=["drop-test", "ci-smoke"],
+            duration_seconds=5,
+        )
+
+    _mutate(tree, bad)
+    result = _run(tree / "catalog", tree)
+    assert result.returncode == 1
+    assert "drop_test" in result.stdout and "evidence" in result.stdout
 
 
 def test_missing_criteria_fails(tmp_path: Path) -> None:

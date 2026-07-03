@@ -217,7 +217,7 @@ lifetime, so it is the authoritative source for `cap_add`, especially startup
 caps. Schema 1.1 makes it first-class:
 
 - `derivation.observer: drop-test` marks a dimension derived (or verified) by
-  drop-test. A dimension may be observed *and* bisected — drop-test is the
+  drop-test. A dimension may be observed *and* drop-tested — drop-test is the
   authoritative source, so it takes the `observer` slot.
 - `validated_via` gains `drop-test`. A drop-test dimension asserts
   `[drop-test, ci-smoke]` (the drop-and-restart verification plus compose-lint's
@@ -226,6 +226,13 @@ caps. Schema 1.1 makes it first-class:
   `confidence: high` (the kernel validated each capability by making the
   container fail or succeed without it). It is exempt from the observation-window
   `duration_seconds ≥ 300` floor — drop-test is not a timed observation.
+- **The evidence is mandatory.** A drop-test dimension must carry a
+  `derivation.drop_test` block — a non-empty `checks` list of
+  `{removed, required, observed}` (which candidate was removed, whether it proved
+  required, and the predicate's observed outcome). It cannot merely *claim* the
+  source; it must record what was tested and what happened, so the trust-critical
+  profiles that override observation are self-justifying. Emitted by csd's
+  drop-test producer; enforced for `observer: drop-test` by the loader/CI.
 
 All other `validated` requirements are unchanged (digest-pinned
 `validated_image`, committed hash-verified workload — the exerciser used to judge
