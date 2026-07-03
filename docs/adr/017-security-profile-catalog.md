@@ -193,3 +193,36 @@ compose-lint fact.
 - Cross-field rules the JSON Schema cannot express (e.g. `status: validated` ⇒
   every dimension's `confidence` ≠ `low` and `validated_via` contains both
   sources) are enforced by the loader/CI, not the schema, and are noted there.
+
+### 8. Bisection as a derivation source (schema 1.1, amendment 2026-07-03)
+
+Runtime observation (the `caps`/`capadd` observers) sees only what a container
+exercises **during the observation window**. It is blind to **startup-only**
+capabilities — a container that starts as root and drops to an unprivileged user
+uses `SETUID`/`SETGID` exactly once, at init, and never again; observation
+records them as unused. Acting on that is dangerous: the field case that
+motivated this (netdata) observed `SETUID`/`SETGID` as removable, but dropping
+them leaves the container **healthy while silently running as root** — a
+health-check gate does not catch it.
+
+**Bisection** is the derivation that does: drop a capability, restart the
+container, and verify it still behaves *correctly* (not merely "is healthy" —
+e.g. that it still dropped to its intended user). It covers the full container
+lifetime, so it is the authoritative source for `cap_add`, especially startup
+caps. Schema 1.1 makes it first-class:
+
+- `derivation.observer: bisection` marks a dimension derived (or verified) by
+  bisection. A dimension may be observed *and* bisected — bisection is the
+  authoritative source, so it takes the `observer` slot.
+- `validated_via` gains `bisection`. A bisection dimension asserts
+  `[bisection, ci-smoke]` (the drop-and-restart verification plus compose-lint's
+  gate) in place of `[bpf-observation, ci-smoke]`.
+- **Bisection is kernel-authoritative**, so a bisection dimension carries
+  `confidence: high` (the kernel validated each capability by making the
+  container fail or succeed without it). It is exempt from the observation-window
+  `duration_seconds ≥ 300` floor — bisection is not a timed observation.
+
+All other `validated` requirements are unchanged (digest-pinned
+`validated_image`, committed hash-verified workload — the exerciser used to judge
+health during bisection — `ci-smoke`, and criteria per #359). `1.0` documents
+remain valid; `bisection` is opt-in under `1.1`.
