@@ -104,40 +104,40 @@ def test_low_confidence_validated_fails(tmp_path: Path) -> None:
     assert "confidence" in result.stdout
 
 
-def test_bisection_validated_passes(tmp_path: Path) -> None:
-    # A bisection-derived dimension (schema 1.1) is validated on
-    # [bisection, ci-smoke] and is exempt from the observation-window duration
-    # floor -- bisection covers the full lifetime and is not a timed observation.
+def test_drop_test_validated_passes(tmp_path: Path) -> None:
+    # A drop-test-derived dimension (schema 1.1) is validated on
+    # [drop-test, ci-smoke] and is exempt from the observation-window duration
+    # floor -- drop-test covers the full lifetime and is not a timed observation.
     tree = _copy_good(tmp_path)
 
-    def to_bisection(d: dict) -> None:
+    def to_drop_test(d: dict) -> None:
         d["schema_version"] = "1.1"
         d["dimensions"]["capabilities"]["derivation"].update(
-            observer="bisection",
-            validated_via=["bisection", "ci-smoke"],
-            duration_seconds=5,  # well under the 300s floor; waived for bisection
+            observer="drop-test",
+            validated_via=["drop-test", "ci-smoke"],
+            duration_seconds=5,  # well under the 300s floor; waived for drop-test
         )
 
-    _mutate(tree, to_bisection)
+    _mutate(tree, to_drop_test)
     result = _run(tree / "catalog", tree)
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_bisection_missing_bisection_source_fails(tmp_path: Path) -> None:
-    # observer=bisection but validated_via lacks `bisection` -> not validated.
+def test_drop_test_missing_source_fails(tmp_path: Path) -> None:
+    # observer=drop-test but validated_via lacks `drop-test` -> not validated.
     tree = _copy_good(tmp_path)
 
     def bad(d: dict) -> None:
         d["schema_version"] = "1.1"
         d["dimensions"]["capabilities"]["derivation"].update(
-            observer="bisection",
+            observer="drop-test",
             validated_via=["bpf-observation", "ci-smoke"],
         )
 
     _mutate(tree, bad)
     result = _run(tree / "catalog", tree)
     assert result.returncode == 1
-    assert "validated_via" in result.stdout and "bisection" in result.stdout
+    assert "validated_via" in result.stdout and "drop-test" in result.stdout
 
 
 def test_missing_criteria_fails(tmp_path: Path) -> None:
