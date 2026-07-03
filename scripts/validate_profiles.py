@@ -32,9 +32,11 @@ _PROFILES = REPO_ROOT / "src" / "compose_lint" / "profiles"
 DEFAULT_CATALOG = REPO_ROOT / "profiles" / "catalog"
 DEFAULT_SCHEMA = _PROFILES / "schema" / "profile.schema.json"
 
-# Both sources are required for a validated profile: csd emits bpf-observation,
-# and this gate backs the ci-smoke half.
+# Sources required for a validated profile, by derivation. Runtime observation
+# emits bpf-observation; bisection (observer=bisection, schema 1.1) emits
+# bisection. This gate backs the ci-smoke half in both cases.
 VALIDATED_VIA_REQUIRED = frozenset({"bpf-observation", "ci-smoke"})
+BISECTION_VIA_REQUIRED = frozenset({"bisection", "ci-smoke"})
 MIN_DURATION_SECONDS = 300
 VALIDATED_CONFIDENCE = frozenset({"high", "moderate"})
 
@@ -75,20 +77,27 @@ def check_document(
 
 def _check_validated_dimension(name: str, derivation: dict) -> list[str]:
     errors: list[str] = []
+    # Bisection (drop-a-cap/restart/verify) is a distinct, kernel-authoritative
+    # derivation: it covers the full container lifetime, so it needs neither the
+    # observation-window duration floor (it is not a timed observation) nor the
+    # bpf-observation source. It asserts [bisection, ci-smoke] instead. The
+    # confidence gate still applies (a bisection dimension carries `high`).
+    bisection = derivation.get("observer") == "bisection"
     confidence = derivation.get("confidence")
     if confidence not in VALIDATED_CONFIDENCE:
         errors.append(
             f"{name}: validated requires confidence high/moderate, got {confidence!r}"
         )
-    if derivation.get("duration_seconds", 0) < MIN_DURATION_SECONDS:
+    if not bisection and derivation.get("duration_seconds", 0) < MIN_DURATION_SECONDS:
         errors.append(
             f"{name}: validated requires duration_seconds >= {MIN_DURATION_SECONDS}"
         )
-    missing = VALIDATED_VIA_REQUIRED - set(derivation.get("validated_via", []))
+    required = BISECTION_VIA_REQUIRED if bisection else VALIDATED_VIA_REQUIRED
+    missing = required - set(derivation.get("validated_via", []))
     if missing:
         errors.append(
             f"{name}: validated requires validated_via to include "
-            f"{sorted(VALIDATED_VIA_REQUIRED)}, missing {sorted(missing)}"
+            f"{sorted(required)}, missing {sorted(missing)}"
         )
     return errors
 

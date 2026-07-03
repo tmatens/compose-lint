@@ -104,6 +104,42 @@ def test_low_confidence_validated_fails(tmp_path: Path) -> None:
     assert "confidence" in result.stdout
 
 
+def test_bisection_validated_passes(tmp_path: Path) -> None:
+    # A bisection-derived dimension (schema 1.1) is validated on
+    # [bisection, ci-smoke] and is exempt from the observation-window duration
+    # floor -- bisection covers the full lifetime and is not a timed observation.
+    tree = _copy_good(tmp_path)
+
+    def to_bisection(d: dict) -> None:
+        d["schema_version"] = "1.1"
+        d["dimensions"]["capabilities"]["derivation"].update(
+            observer="bisection",
+            validated_via=["bisection", "ci-smoke"],
+            duration_seconds=5,  # well under the 300s floor; waived for bisection
+        )
+
+    _mutate(tree, to_bisection)
+    result = _run(tree / "catalog", tree)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_bisection_missing_bisection_source_fails(tmp_path: Path) -> None:
+    # observer=bisection but validated_via lacks `bisection` -> not validated.
+    tree = _copy_good(tmp_path)
+
+    def bad(d: dict) -> None:
+        d["schema_version"] = "1.1"
+        d["dimensions"]["capabilities"]["derivation"].update(
+            observer="bisection",
+            validated_via=["bpf-observation", "ci-smoke"],
+        )
+
+    _mutate(tree, bad)
+    result = _run(tree / "catalog", tree)
+    assert result.returncode == 1
+    assert "validated_via" in result.stdout and "bisection" in result.stdout
+
+
 def test_workload_hash_mismatch_fails(tmp_path: Path) -> None:
     tree = _copy_good(tmp_path)
     workload = tree / "profiles" / "workloads" / "postgres.sh"

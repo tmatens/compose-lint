@@ -62,7 +62,9 @@ def test_schema_is_valid_draft202012(schema: dict[str, Any]) -> None:
 
 
 def test_schema_version_is_pinned(schema: dict[str, Any]) -> None:
-    assert schema["properties"]["schema_version"]["const"] == "1.0"
+    # 1.0 is the baseline; 1.1 adds bisection as a derivation source. Both remain
+    # valid so existing 1.0 documents are not invalidated.
+    assert schema["properties"]["schema_version"]["enum"] == ["1.0", "1.1"]
 
 
 def test_example_validates(
