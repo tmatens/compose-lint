@@ -8,9 +8,9 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "description": "Catalog profile schema version (independent of csd's sidecar schema_version, which is recorded per-dimension under derivation.sidecar_schema_version). 1.1 adds drop-test as a derivation source (observer=drop-test, validated_via=drop-test); 1.0 documents remain valid.",
+      "description": "Catalog profile schema version (independent of csd's sidecar schema_version, which is recorded per-dimension under derivation.sidecar_schema_version). 1.1 adds drop-test as a derivation source (observer=drop-test, validated_via=drop-test); 1.2 adds the optional derivation.run_config block (the invocation the minimum was derived under). All earlier documents remain valid.",
       "type": "string",
-      "enum": ["1.0", "1.1"]
+      "enum": ["1.0", "1.1", "1.2"]
     },
     "image": {
       "description": "Canonical repository reference WITHOUT tag or digest -- the match key. Registry and namespace normalized (docker.io/library/postgres, lscr.io/linuxserver/radarr).",
@@ -267,6 +267,54 @@
                   }
                 }
               }
+            }
+          }
+        },
+        "run_config": {
+          "description": "The invocation the minimum was derived under -- the orthogonal run context, NOT the derived dimension itself. Emitted by the derivation tool (a byproduct of the run), not hand-authored. A minimum is only valid for its invocation, so a consumer may diff a target service against this and downgrade to a hint when a load-bearing axis (user, mounts, network/pid mode) diverges: e.g. postgres run with `user:` set skips the root->user drop and needs none of the startup caps a default-invocation profile lists. `env` is keys only (no values), so a secret never lands in committed evidence.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "user": {
+              "type": "string",
+              "description": "The container user (`--user` / compose `user:`). Empty means the image default (for postgres, root, which triggers the root->user privilege drop)."
+            },
+            "command": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Command override (`docker run ... <cmd>` / compose `command:`). Empty means the image default CMD -- a different command profiles a different program, so the minimum does not carry over."
+            },
+            "entrypoint": {
+              "type": "string",
+              "description": "Entrypoint override (`--entrypoint` / compose `entrypoint:`). Empty means the image default."
+            },
+            "network": {
+              "type": "string",
+              "description": "Network mode (`--network` / compose `network_mode:`). Empty means the default."
+            },
+            "pid": {
+              "type": "string",
+              "description": "PID mode (`--pid` / compose `pid:`). Empty means the default."
+            },
+            "devices": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Device mappings (`--device` / compose `devices:`) present during derivation."
+            },
+            "security_opt": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "security_opt entries the derivation ran with (e.g. apparmor=unconfined)."
+            },
+            "mounts": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Bind/volume mounts present during derivation (source:dest[:opts])."
+            },
+            "env": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Environment variable KEYS set during derivation (no values -- values are never emitted)."
             }
           }
         }

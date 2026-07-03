@@ -238,3 +238,33 @@ All other `validated` requirements are unchanged (digest-pinned
 `validated_image`, committed hash-verified workload — the exerciser used to judge
 health during drop-test — `ci-smoke`, and criteria per #359). `1.0` documents
 remain valid; `drop-test` is opt-in under `1.1`.
+
+### 9. run_config — the invocation a minimum was derived under (schema 1.2, amendment 2026-07-03)
+
+A derived minimum is a function of **how the container was run**, not just the
+image. The same postgres image needs `[DAC_OVERRIDE, SETGID, SETUID]` under the
+default (root-then-`gosu`-drop) invocation and **none** of them when run with
+`user:` set — the entrypoint sees it is already non-root and skips the privilege
+drop. `caddy`'s `/data` is `tmpfs`-droppable for a static file server but a
+load-bearing persistent volume for a reverse proxy doing automatic HTTPS. A
+profile is only valid for the invocation it was produced under, and nothing in
+the schema recorded that invocation.
+
+Schema 1.2 adds an **optional** `derivation.run_config` block capturing it:
+`user`, `command`, `entrypoint`, `network`, `pid`, `devices`, `security_opt`,
+`mounts`, and `env` (**keys only** — values are never emitted, so a secret cannot
+land in committed evidence). It is **emitted by the derivation tool as a
+byproduct of the run, not hand-authored** (csd's drop-test producer builds it
+from the spec's `run:` block). A consumer applying the profile can diff a target
+service against `run_config` and downgrade to a hint when a load-bearing axis
+diverges, rather than misapplying a minimum derived under different conditions.
+
+`run_config` is optional and additive: it enlarges no existing constraint, so
+all `1.0`/`1.1` documents remain valid. It is descriptive, not causal — it
+records the *whole* invocation, not a minimal "which axes matter"; conservative
+consumers treat any security-relevant divergence as a warning. Conditions
+*outside* the invocation that also bound a minimum — the container runtime's
+default cap/seccomp baseline, host LSM enforcement, architecture, fresh-vs-
+initialized data state, and above all **workload coverage** (a minimum is only
+valid for what the workload exercised) — remain scope stated in each image's
+criteria doc (#359), not schema fields.
