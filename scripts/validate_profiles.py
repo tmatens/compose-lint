@@ -33,10 +33,11 @@ DEFAULT_CATALOG = REPO_ROOT / "profiles" / "catalog"
 DEFAULT_SCHEMA = _PROFILES / "schema" / "profile.schema.json"
 
 # Sources required for a validated profile, by derivation. Runtime observation
-# emits bpf-observation; bisection (observer=bisection, schema 1.1) emits
-# bisection. This gate backs the ci-smoke half in both cases.
+# emits bpf-observation; drop-test (observer=drop-test, schema 1.1) — remove each
+# candidate and verify the container breaks without it — emits drop-test. This
+# gate backs the ci-smoke half in both cases.
 VALIDATED_VIA_REQUIRED = frozenset({"bpf-observation", "ci-smoke"})
-BISECTION_VIA_REQUIRED = frozenset({"bisection", "ci-smoke"})
+DROP_TEST_VIA_REQUIRED = frozenset({"drop-test", "ci-smoke"})
 MIN_DURATION_SECONDS = 300
 VALIDATED_CONFIDENCE = frozenset({"high", "moderate"})
 
@@ -80,22 +81,23 @@ def check_document(
 
 def _check_validated_dimension(name: str, derivation: dict) -> list[str]:
     errors: list[str] = []
-    # Bisection (drop-a-cap/restart/verify) is a distinct, kernel-authoritative
-    # derivation: it covers the full container lifetime, so it needs neither the
-    # observation-window duration floor (it is not a timed observation) nor the
-    # bpf-observation source. It asserts [bisection, ci-smoke] instead. The
-    # confidence gate still applies (a bisection dimension carries `high`).
-    bisection = derivation.get("observer") == "bisection"
+    # drop-test (remove a candidate, restart, verify it breaks) is a distinct,
+    # kernel-authoritative derivation: it covers the full container lifetime, so
+    # it needs neither the observation-window duration floor (it is not a timed
+    # observation) nor the bpf-observation source. It asserts [drop-test,
+    # ci-smoke] instead. The confidence gate still applies (a drop-test dimension
+    # carries `high`).
+    drop_test = derivation.get("observer") == "drop-test"
     confidence = derivation.get("confidence")
     if confidence not in VALIDATED_CONFIDENCE:
         errors.append(
             f"{name}: validated requires confidence high/moderate, got {confidence!r}"
         )
-    if not bisection and derivation.get("duration_seconds", 0) < MIN_DURATION_SECONDS:
+    if not drop_test and derivation.get("duration_seconds", 0) < MIN_DURATION_SECONDS:
         errors.append(
             f"{name}: validated requires duration_seconds >= {MIN_DURATION_SECONDS}"
         )
-    required = BISECTION_VIA_REQUIRED if bisection else VALIDATED_VIA_REQUIRED
+    required = DROP_TEST_VIA_REQUIRED if drop_test else VALIDATED_VIA_REQUIRED
     missing = required - set(derivation.get("validated_via", []))
     if missing:
         errors.append(

@@ -8,7 +8,7 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "description": "Catalog profile schema version (independent of csd's sidecar schema_version, which is recorded per-dimension under derivation.sidecar_schema_version). 1.1 adds bisection as a derivation source (observer=bisection, validated_via=bisection); 1.0 documents remain valid.",
+      "description": "Catalog profile schema version (independent of csd's sidecar schema_version, which is recorded per-dimension under derivation.sidecar_schema_version). 1.1 adds drop-test as a derivation source (observer=drop-test, validated_via=drop-test); 1.0 documents remain valid.",
       "type": "string",
       "enum": ["1.0", "1.1"]
     },
@@ -171,8 +171,8 @@
           "description": "csd sidecar schema (currently 1.x). Must be within the major the loader supports."
         },
         "observer": {
-          "enum": ["caps", "fs", "devices", "privileged", "capadd", "bisection"],
-          "description": "The csd observer that derived this dimension, OR `bisection` — a drop-a-cap/restart/verify derivation that covers the full container lifetime (schema 1.1). Bisection is kernel-authoritative: it is the only source that captures startup-only capabilities (e.g. SETUID/SETGID for a root->user privilege drop) that runtime observation cannot see."
+          "enum": ["caps", "fs", "devices", "privileged", "capadd", "drop-test"],
+          "description": "The csd observer that derived this dimension, OR `drop-test` — a drop-a-cap/restart/verify derivation that covers the full container lifetime (schema 1.1). drop-test is kernel-authoritative: it is the only source that captures startup-only capabilities (e.g. SETUID/SETGID for a root->user privilege drop) that runtime observation cannot see."
         },
         "validated_image": {
           "type": "string",
@@ -205,10 +205,10 @@
         },
         "validated_via": {
           "type": "array",
-          "items": { "enum": ["bpf-observation", "bisection", "ci-smoke"] },
+          "items": { "enum": ["bpf-observation", "drop-test", "ci-smoke"] },
           "minItems": 1,
           "uniqueItems": true,
-          "description": "Derivation source(s) plus the ci-smoke gate. Runtime observation emits [bpf-observation]; a bisection-derived dimension emits [bisection] (schema 1.1); compose-lint CI appends ci-smoke after the smoke gate. For status=validated the loader/CI requires ci-smoke plus the dimension's source (bpf-observation, or bisection for observer=bisection)."
+          "description": "Derivation source(s) plus the ci-smoke gate. Runtime observation emits [bpf-observation]; a drop-test-derived dimension emits [drop-test] (schema 1.1); compose-lint CI appends ci-smoke after the smoke gate. For status=validated the loader/CI requires ci-smoke plus the dimension's source (bpf-observation, or drop-test for observer=drop-test)."
         },
         "observation_backend": {
           "description": "How the kernel signal was captured -- forward-compat for csd's gadget transition. A profile derived with a csd-authored gadget is only reproducible if the gadget image+digest is recorded here, not just the ig version.",

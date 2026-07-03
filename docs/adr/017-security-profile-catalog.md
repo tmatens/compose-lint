@@ -196,7 +196,7 @@ compose-lint fact.
   every dimension's `confidence` ≠ `low` and `validated_via` contains both
   sources) are enforced by the loader/CI, not the schema, and are noted there.
 
-### 8. Bisection as a derivation source (schema 1.1, amendment 2026-07-03)
+### 8. drop-test as a derivation source (schema 1.1, amendment 2026-07-03)
 
 Runtime observation (the `caps`/`capadd` observers) sees only what a container
 exercises **during the observation window**. It is blind to **startup-only**
@@ -207,24 +207,27 @@ motivated this (netdata) observed `SETUID`/`SETGID` as removable, but dropping
 them leaves the container **healthy while silently running as root** — a
 health-check gate does not catch it.
 
-**Bisection** is the derivation that does: drop a capability, restart the
+**drop-test** is the derivation that does: drop a capability, restart the
 container, and verify it still behaves *correctly* (not merely "is healthy" —
-e.g. that it still dropped to its intended user). It covers the full container
+e.g. that it still dropped to its intended user). (The method is *leave-one-out*
+elimination — each candidate is removed individually and the container
+re-tested; the name follows `git bisect`'s colloquial "change-and-test to
+isolate" sense, not strict binary search.) It covers the full container
 lifetime, so it is the authoritative source for `cap_add`, especially startup
 caps. Schema 1.1 makes it first-class:
 
-- `derivation.observer: bisection` marks a dimension derived (or verified) by
-  bisection. A dimension may be observed *and* bisected — bisection is the
+- `derivation.observer: drop-test` marks a dimension derived (or verified) by
+  drop-test. A dimension may be observed *and* bisected — drop-test is the
   authoritative source, so it takes the `observer` slot.
-- `validated_via` gains `bisection`. A bisection dimension asserts
-  `[bisection, ci-smoke]` (the drop-and-restart verification plus compose-lint's
+- `validated_via` gains `drop-test`. A drop-test dimension asserts
+  `[drop-test, ci-smoke]` (the drop-and-restart verification plus compose-lint's
   gate) in place of `[bpf-observation, ci-smoke]`.
-- **Bisection is kernel-authoritative**, so a bisection dimension carries
+- **drop-test is kernel-authoritative**, so a drop-test dimension carries
   `confidence: high` (the kernel validated each capability by making the
   container fail or succeed without it). It is exempt from the observation-window
-  `duration_seconds ≥ 300` floor — bisection is not a timed observation.
+  `duration_seconds ≥ 300` floor — drop-test is not a timed observation.
 
 All other `validated` requirements are unchanged (digest-pinned
 `validated_image`, committed hash-verified workload — the exerciser used to judge
-health during bisection — `ci-smoke`, and criteria per #359). `1.0` documents
-remain valid; `bisection` is opt-in under `1.1`.
+health during drop-test — `ci-smoke`, and criteria per #359). `1.0` documents
+remain valid; `drop-test` is opt-in under `1.1`.
