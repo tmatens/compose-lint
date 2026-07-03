@@ -69,8 +69,9 @@ def test_empty_catalog_passes(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stdout
 
 
-def test_bundled_catalog_passes() -> None:
-    # The real (currently empty) bundled catalog must validate with defaults.
+def test_default_catalog_absent_passes() -> None:
+    # No bundled catalog (ADR-017 §7): a default run with no catalog present is a
+    # clean no-op, not an error.
     result = subprocess.run(
         [sys.executable, str(SCRIPT)], capture_output=True, text=True, check=False
     )

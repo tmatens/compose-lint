@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import functools
 import json
 import os
 import stat
@@ -13,7 +14,7 @@ from pathlib import Path
 from typing import NoReturn
 
 from compose_lint import __version__
-from compose_lint.config import ConfigError, load_config, load_profiles_enabled
+from compose_lint.config import ConfigError, load_config, load_profiles_config
 from compose_lint.config_emit import render_config
 from compose_lint.engine import filter_findings, run_rules
 from compose_lint.explain import UnknownRuleError, load_rule_doc
@@ -332,12 +333,22 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
 
     try:
         disabled_rules, severity_overrides, excluded_services = load_config(args.config)
-        profiles_enabled = load_profiles_enabled(args.config)
+        profiles_enabled, profiles_path = load_profiles_config(args.config)
     except ConfigError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(2)
 
-    profile_lookup = load_profile if profiles_enabled else None
+    profile_lookup = None
+    if profiles_enabled and profiles_path:
+        profile_lookup = functools.partial(
+            load_profile, catalog_root=Path(profiles_path)
+        )
+    elif profiles_enabled:
+        print(
+            "Warning: profiles.enabled is set but profiles.path is unset; "
+            "no catalog to enrich from",
+            file=sys.stderr,
+        )
 
     if not args.files:
         args.files = _discover_compose_files()

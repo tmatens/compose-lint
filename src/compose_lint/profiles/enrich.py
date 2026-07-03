@@ -42,7 +42,7 @@ def enrich_fix(finding: Finding, match: ProfileMatch) -> Finding:
     if guidance is None:
         return finding
 
-    note = f"csd profile: {guidance} {_provenance(dimension, match)}"
+    note = f"profile hint ({_provenance(dimension, match)}): {guidance}"
     new_fix = f"{finding.fix}\n{note}" if finding.fix else note
     return replace(finding, fix=new_fix)
 
@@ -99,7 +99,10 @@ def _provenance(dim: dict[str, Any], match: ProfileMatch) -> str:
     derivation = derivation if isinstance(derivation, dict) else {}
     confidence = derivation.get("confidence", "unknown")
     image = _short_image(str(derivation.get("validated_image") or match.image))
-    return f"[confidence {confidence}, from {image}, {match.precision.value} match]"
+    return (
+        f"csd-derived, confidence {confidence}, from {image}, "
+        f"{match.precision.value} match — not independently verified here"
+    )
 
 
 def _short_image(image: str) -> str:

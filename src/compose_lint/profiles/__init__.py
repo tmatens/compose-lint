@@ -1,9 +1,9 @@
-"""Security profile catalog (see docs/adr/017-security-profile-catalog.md).
+"""Security profile machinery (see docs/adr/017-security-profile-catalog.md).
 
-Holds the canonical profile JSON Schema (``schema/``), the derived-profile
-catalog (``catalog/``), and the loader that matches a service image to a
-profile. Enrichment wiring into the rules is a follow-up PR; nothing here is
-called at lint time yet.
+Holds the canonical profile JSON Schema (``schema/``) and the loader that
+matches a service image to a profile. Per ADR-017 §7 there is **no bundled
+catalog** — profiles come from a user-configured external source
+(``profiles.path``); compose-lint ships the machinery, not the data.
 """
 
 from __future__ import annotations

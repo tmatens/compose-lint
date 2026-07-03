@@ -26,7 +26,10 @@ from jsonschema import Draft202012Validator
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 _PROFILES = REPO_ROOT / "src" / "compose_lint" / "profiles"
-DEFAULT_CATALOG = _PROFILES / "catalog"
+# No bundled catalog (ADR-017 §7): the catalog is an external, user/automation
+# -owned checkout. Default to a repo-relative `profiles/catalog` for a local run;
+# the catalog's own CI passes --catalog-dir explicitly. The schema stays shipped.
+DEFAULT_CATALOG = REPO_ROOT / "profiles" / "catalog"
 DEFAULT_SCHEMA = _PROFILES / "schema" / "profile.schema.json"
 
 # Both sources are required for a validated profile: csd emits bpf-observation,
