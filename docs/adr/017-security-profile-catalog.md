@@ -177,18 +177,19 @@ compose-lint fact.
 - Superseded by §7: the **bundled catalog** from the loader/packaging PR. The
   loader must instead read from a configured external `profiles.path` (default
   none); the empty in-package catalog is removed. (Follow-up.)
-- Follow-ups from §7 (each its own PR/issue): (a) decouple the loader from the
-  in-package catalog → configured `profiles.path`; (b) reword enrichment as
-  attributed/advisory (§7); (c) gate externally-contributed profiles to
-  `exploratory` only; (d) stand up the maintainer **derivation automation** —
+- Follow-ups from §7 (tracked): **#358** (a) decouple the loader from the
+  in-package catalog → configured `profiles.path` + (b) reword enrichment as
+  attributed/advisory; **#359** (e) per-image test-criteria convention + gate;
+  **#360** (c) gate externally-contributed profiles to `exploratory` only + (d)
+  the maintainer **derivation automation** —
   a scheduled `derive → validate → update` loop on a BPF-capable host (`csd`'s
   self-hosted runner), seeded from `csd`'s postgres/caddy reference workloads,
   re-deriving on digest bumps, with the representative-workload requirement as an
-  explicit precondition; (e) per-image **test-criteria convention + gate** — each
-  profile references a committed criteria doc (scenarios + pass criteria) beside
-  its workload, and `validate_profiles.py` fails a `validated` profile that lacks
+  explicit precondition. The **#359** criteria gate requires each profile to
+  reference a committed criteria doc (scenarios + pass criteria) beside its
+  workload, so `validate_profiles.py` fails a `validated` profile that lacks
   reviewable criteria. In `csd`: reconcile the `compose-lint-profile` formatter
-  to this schema (tracked in csd issue #218).
+  to this schema (tracked in **csd#218**).
 - Cross-field rules the JSON Schema cannot express (e.g. `status: validated` ⇒
   every dimension's `confidence` ≠ `low` and `validated_via` contains both
   sources) are enforced by the loader/CI, not the schema, and are noted there.
