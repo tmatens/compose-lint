@@ -54,9 +54,9 @@ def test_every_fixture_is_schema_valid(
         assert not errors, (image, errors)
 
 
-def test_bundled_catalog_loads_without_error() -> None:
-    # Ships empty today, but the resource traversal (and packaging) must work.
-    assert isinstance(load_catalog(), dict)
+def test_no_catalog_configured_returns_empty() -> None:
+    # No bundled catalog (ADR-017 §7): a None root yields an empty catalog.
+    assert load_catalog(None) == {}
 
 
 def test_match_by_repo_when_unpinned_service(catalog: Catalog) -> None:
@@ -109,13 +109,9 @@ def test_dimensions_surfaced(catalog: Catalog) -> None:
     assert "CHOWN" in match.dimensions["capabilities"]["cap_add"]
 
 
-def test_load_profile_returns_validated_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "compose_lint.profiles.loader.load_catalog",
-        lambda: load_catalog(FIXTURE_CATALOG),
-    )
+def test_load_profile_returns_validated_only() -> None:
     # validated postgres resolves...
-    assert load_profile("postgres:16") is not None
+    assert load_profile("postgres:16", FIXTURE_CATALOG) is not None
     # ...but the exploratory nginx profile is never surfaced for enrichment.
     assert match_profile("nginx", load_catalog(FIXTURE_CATALOG)) is not None
-    assert load_profile("nginx") is None
+    assert load_profile("nginx", FIXTURE_CATALOG) is None

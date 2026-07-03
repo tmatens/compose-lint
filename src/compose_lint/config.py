@@ -16,7 +16,7 @@ from compose_lint.models import Severity
 _KNOWN_TOP_LEVEL_KEYS = frozenset({"rules", "profiles"})
 
 # Recognized keys inside the `profiles` block (ADR-017).
-_KNOWN_PROFILES_KEYS = frozenset({"enabled"})
+_KNOWN_PROFILES_KEYS = frozenset({"enabled", "path"})
 
 # Recognized keys inside a per-rule block. A key outside this set (a typo'd
 # `severty:` or a `reason:` with no `enabled: false`) is silently inert today;
@@ -120,16 +120,18 @@ def _read_raw_config(path: str | Path | None) -> dict[str, Any] | None:
     return data
 
 
-def load_profiles_enabled(path: str | Path | None = None) -> bool:
-    """Return whether profile enrichment is opted in (``profiles.enabled``).
+def load_profiles_config(path: str | Path | None = None) -> tuple[bool, str | None]:
+    """Return ``(enabled, catalog_path)`` for profile enrichment (ADR-017 §7).
 
-    Off by default (ADR-017). Reads the same file as ``load_config``; the
-    top-level key-validation warning is emitted there, so this only validates
-    the ``profiles`` block itself.
+    Off by default, and with **no built-in catalog**: enrichment is a no-op
+    unless the user both enables it and points ``profiles.path`` at a catalog
+    they trust. Reads the same file as ``load_config``; the top-level
+    key-validation warning is emitted there, so this only validates the
+    ``profiles`` block itself.
     """
     data = _read_raw_config(path)
     if data is None:
-        return False
+        return False, None
 
     profiles = data.get("profiles", {})
     if not isinstance(profiles, dict):
@@ -147,7 +149,13 @@ def load_profiles_enabled(path: str | Path | None = None) -> bool:
         raise ConfigError(
             f"Config: profiles.enabled must be true or false, not {enabled!r}"
         )
-    return enabled
+
+    catalog_path = profiles.get("path")
+    if catalog_path is not None and not isinstance(catalog_path, str):
+        raise ConfigError(
+            f"Config: profiles.path must be a string, not {catalog_path!r}"
+        )
+    return enabled, catalog_path
 
 
 def _parse_rules(

@@ -86,21 +86,29 @@ Excluded services still produce **SUPPRESSED** findings, with the per-service re
 Opt into image-specific fix guidance derived by
 [container-sec-derive](https://github.com/tmatens/container-sec-derive) (csd).
 When enabled, a finding from a rule that a derived profile covers
-(CL-0002/0006/0007/0011/0016) gains a `csd profile:` line in its fix text stating
+(CL-0002/0006/0007/0011/0016) gains a `profile hint` line in its fix text stating
 the observed minimum for that image — for example, the exact `cap_add` a service
 actually needs.
 
+compose-lint **ships no catalog of its own** (ADR-017 §7). You point `profiles.path`
+at a catalog you trust — your own derived profiles, or an external
+automation-maintained catalog you opt into. Both keys are required for enrichment;
+with `enabled` set but no `path`, compose-lint warns and enriches nothing.
+
 ```yaml
 profiles:
-  enabled: true   # default: false
+  enabled: true            # default: false
+  path: ./security-profiles  # directory of profile YAML documents (no default)
 ```
 
 Enrichment is **advisory and additive only**: it never creates, drops, or
 reclassifies a finding, so turning it on cannot change your pass/fail result — it
-only makes existing guidance more specific. It matches a service's `image:` to a
-profile in the bundled catalog; the catalog ships empty until derived profiles
-land, so with no matching profile the option is a no-op. See
-[ADR-017](adr/017-security-profile-catalog.md) for the profile model.
+only makes existing guidance more specific, and the hint is **attributed and
+marked unverified** (it names its source and that compose-lint did not
+independently reproduce it). It matches a service's `image:` to a profile in your
+configured catalog; with no matching profile it is a no-op. See
+[ADR-017](adr/017-security-profile-catalog.md) for the profile model and the
+trust rationale (§7).
 
 ## Validation
 
@@ -108,7 +116,7 @@ A `.compose-lint.yml` that silently fails to take effect is a security risk — 
 
 - **Unknown rule IDs warn.** `rules:` keys are checked against the registered rule set. A typo (`CL-001`) or a retired ID (`CL-9999`) prints a stderr warning so the override isn't silently dropped.
 - **Unknown top-level keys warn.** Only `rules` and `profiles` are recognized at the top level. A misplaced CLI flag (e.g. a top-level `fail_on:`) or any other key warns instead of being ignored.
-- **Unknown `profiles` keys warn, and `profiles.enabled` must be a real boolean.** Only `enabled` is recognized in the `profiles` block; a non-boolean `enabled` is a hard error (exit 2), like the per-rule `enabled`.
+- **Unknown `profiles` keys warn; `profiles.enabled` must be a real boolean and `profiles.path` a string.** Only `enabled` and `path` are recognized in the `profiles` block; a non-boolean `enabled` or non-string `path` is a hard error (exit 2), like the per-rule `enabled`.
 - **Unknown per-rule keys warn.** Inside a rule block, only `enabled`, `reason`, `severity`, and `exclude_services` are recognized. A typo'd `severty:` warns.
 - **`enabled` must be a real boolean.** A quoted `'false'`, `0`, or any non-boolean is a **hard error** (exit 2), not a silent no-op that would leave the rule on. YAML's boolean keywords (`true`/`false`, `yes`/`no`, `on`/`off`) all parse to a real boolean and work as expected.
 

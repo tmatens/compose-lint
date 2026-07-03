@@ -1,21 +1,19 @@
-"""Load and match security profiles from the catalog (ADR-017).
+"""Load and match security profiles from a catalog (ADR-017 §7).
 
-The catalog is a set of YAML documents (one per image) bundled under
-``compose_lint/profiles/catalog/``. ``load_profile`` is the consumer entry
-point used by enrichment: it returns only *validated* matches, because
-exploratory profiles are review material and must never drive guidance
-(ADR-017). ``match_profile`` and ``load_catalog`` are lower-level and surface
-any status, for tooling and tests.
+There is **no built-in catalog**: compose-lint ships the machinery, not the
+data. Profiles come from a directory the user configures (``profiles.path``) and
+trusts — see ADR-017 §7. ``load_profile`` is the consumer entry point used by
+enrichment: it returns only *validated* matches, because exploratory profiles
+are review material and must never drive guidance. ``match_profile`` and
+``load_catalog`` are lower-level and surface any status, for tooling and tests.
 
 Runtime dependency stays PyYAML only; documents are trusted to be schema-valid
-because CI validates every catalog file (see tests/test_profile_schema.py and
-the profile-validation workflow).
+because the catalog's own CI validates them (see ``scripts/validate_profiles.py``).
 """
 
 from __future__ import annotations
 
 import fnmatch
-import importlib.resources
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -43,17 +41,16 @@ def _read_catalog_dir(root: Path) -> Catalog:
     return catalog
 
 
-def load_catalog(root: Path | None = None) -> Catalog:
-    """Load all catalog documents, indexed by their canonical ``image`` key.
+def load_catalog(root: Path | None) -> Catalog:
+    """Load all catalog documents under ``root``, indexed by canonical ``image``.
 
-    ``root`` defaults to the bundled ``compose_lint/profiles/catalog`` directory;
-    tests pass a fixture directory.
+    Returns ``{}`` when ``root`` is ``None`` (no catalog configured) or not a
+    directory. There is no bundled default — the catalog is a user-configured,
+    external source (ADR-017 §7).
     """
-    if root is not None:
-        return _read_catalog_dir(root)
-    resource = importlib.resources.files("compose_lint.profiles") / "catalog"
-    with importlib.resources.as_file(resource) as path:
-        return _read_catalog_dir(path)
+    if root is None:
+        return {}
+    return _read_catalog_dir(root)
 
 
 def _precision(ref: ImageRef, doc: Mapping[str, Any]) -> MatchPrecision | None:
@@ -100,13 +97,14 @@ def match_profile(image: str, catalog: Catalog) -> ProfileMatch | None:
     )
 
 
-def load_profile(image: str) -> ProfileMatch | None:
-    """Return the *validated* catalog profile for ``image``, or None.
+def load_profile(image: str, catalog_root: Path | None) -> ProfileMatch | None:
+    """Return the *validated* profile for ``image`` from the catalog at
+    ``catalog_root``, or None.
 
     Exploratory profiles are intentionally not surfaced here (ADR-017); they are
     below-bar review material and must not drive enrichment.
     """
-    match = match_profile(image, load_catalog())
+    match = match_profile(image, load_catalog(catalog_root))
     if match is None or not match.is_validated:
         return None
     return match

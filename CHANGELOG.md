@@ -9,12 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Opt-in profile enrichment (ADR-017). When `profiles.enabled: true` is set in
-  `.compose-lint.yml`, findings from CL-0006/0007/0002/0011/0016 gain
-  image-specific fix guidance from a matching container-sec-derive (csd) profile
+- Opt-in profile enrichment (ADR-017). Set `profiles.enabled: true` and point
+  `profiles.path` at a catalog of container-sec-derive (csd) profiles you trust;
+  findings from CL-0006/0007/0002/0011/0016 then gain image-specific fix guidance
   — e.g. the observed minimum `cap_add` for that image. Enrichment is advisory
-  and additive only: it never creates, drops, or reclassifies a finding. Off by
-  default; the bundled profile catalog ships empty until derived profiles land.
+  and additive only (it never creates, drops, or reclassifies a finding) and the
+  hint is attributed and marked unverified. Off by default. Per ADR-017 §7,
+  compose-lint ships **no catalog of its own** — the catalog is a user-configured
+  external source, so the linter neither grows nor endorses profile data.
 - Profile contribution path (ADR-017): `scripts/validate_profiles.py` (the
   ci-smoke gate — schema, validated/exploratory invariants, and workload-hash
   verification), a `profile-validate` CI job that runs it on catalog changes, and
