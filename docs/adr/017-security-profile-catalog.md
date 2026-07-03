@@ -1,6 +1,7 @@
 # ADR-017: Security Profile Catalog
 
-**Status:** Accepted (extends [ADR-002](002-rule-grounding.md), [ADR-014](014-fix-remediation.md))
+**Status:** Accepted (extends [ADR-002](002-rule-grounding.md), [ADR-014](014-fix-remediation.md)).
+Amended 2026-07-03 — see [§7 Trust model and distribution](#7-trust-model-and-distribution-amendment-2026-07-03), which supersedes the bundled-catalog assumption in §1 and the "ci-smoke = validated" framing in §4–§5.
 
 **Context:** compose-lint's rules are static and image-agnostic. CL-0006 knows a
 service should drop capabilities; it cannot know that *this* image (say
@@ -101,6 +102,57 @@ and is **never** used for enrichment or (future) conformance — advisory review
 material only. The schema enforces the status/violations coupling with a
 conditional.
 
+### 7. Trust model and distribution (amendment 2026-07-03)
+
+Sections 1–6 defined the profile *format* and *consumption*. They left a hole:
+they conflated the `profile-validate` gate ("ci-smoke") with verification, and
+assumed the catalog ships inside the compose-lint package. Both are wrong for a
+public tool. This section is the correction.
+
+**Integrity is not authenticity.** The gate verifies that a profile is
+*well-formed* — schema-valid, digest-pinned, its `workload_sha256` matches the
+committed script, its confidence/duration meet the bar. Every one of those fields
+is **self-asserted by whoever wrote the file.** The gate never re-runs `csd`,
+never confirms the observation happened, and cannot tell whether the workload was
+*representative*. So `validated_via: [ci-smoke]` means "passed compose-lint's
+structural validation," **not** "compose-lint reproduced this." A profile from an
+untrusted source is therefore **not endorsable on the strength of the gate alone.**
+
+**Endorsement rests on maintainer-owned reproducible automation, not third-party
+claims.** compose-lint endorses (enriches from) only profiles that its own
+automation derived and can re-derive — turning "trust a stranger's YAML" into
+"trust a CI job we own." Consequences:
+
+- **Externally contributed profiles land `exploratory` only** (never enrich, never
+  fail a lint) until the maintainer automation can reproduce them. Reproduction
+  promotes them to `validated`; nothing else does.
+- **Representative-workload requirement (hard gate).** A profile is promotable to
+  `validated`/endorsed only when produced by automation whose workload
+  **represents real use of the service(s)** — not a token liveness poke. An
+  observation-derived profile is only as good as what the workload exercised; a
+  thin workload yields a confident-looking but under-scoped profile that
+  reproduces perfectly while being wrong. So the bar is **reproducible + current +
+  representative**, and representativeness is a per-service human judgment that
+  does **not** scale. The endorsed set is therefore deliberately **small**, and
+  grows only as the derivation automation matures — never by accepting unverified
+  submissions.
+
+**Distribution: compose-lint core ships no catalog data.** Bundling the catalog in
+the wheel (the §1 assumption) is reversed: it grows the package unboundedly,
+couples profile updates to linter releases, and makes shipping equal endorsing.
+Instead the linter ships only the *machinery* (schema, loader, validator,
+enrichment) and reads profiles from a source the user configures
+(`profiles.path`, default none). The endorsed catalog is a **separate,
+independently-versioned artifact** (its own repo/package) that the maintainer
+automation owns and updates; users opt into it explicitly, and can point at their
+own instead. This bounds the linter, decouples profile cadence, and scopes
+endorsement to a source the user consciously trusts.
+
+**Enrichment wording is attributed, not asserted.** Guidance names its source and
+its unverified-for-you nature (e.g. "derived by \<source\>, confidence X, digest
+Y — not independently verified here") rather than stating the minimum as
+compose-lint fact.
+
 **Consequences:**
 
 - Ships in this PR: the ADR, the JSON Schema, and a pytest guard
@@ -108,11 +160,21 @@ conditional.
   schema and validates the example fixture — matching the existing
   `test_corpus_snapshot_schema.py` pattern (validation via pytest, no new
   workflow, no runtime dep).
-- Follow-ups (each its own PR): the ref-normalizing loader + hatch packaging +
-  seed profiles derived from `csd`'s postgres/caddy reference workloads; the
-  enrichment wiring; the contributor docs + a `profiles/catalog/**` PR-validation
-  workflow that appends `ci-smoke`. In `csd`: reconcile the formatter to the
-  normalized `image` key, `workload_sha256`, and `observation_backend`.
+- Landed (PRs #353–#356): the JSON Schema + validation, the ref-normalizing
+  loader + packaging, opt-in enrichment, and the `profile-validate` (`validate_profiles.py`)
+  gate + contributor guide.
+- Superseded by §7: the **bundled catalog** from the loader/packaging PR. The
+  loader must instead read from a configured external `profiles.path` (default
+  none); the empty in-package catalog is removed. (Follow-up.)
+- Follow-ups from §7 (each its own PR/issue): (a) decouple the loader from the
+  in-package catalog → configured `profiles.path`; (b) reword enrichment as
+  attributed/advisory (§7); (c) gate externally-contributed profiles to
+  `exploratory` only; (d) stand up the maintainer **derivation automation** —
+  a scheduled `derive → validate → update` loop on a BPF-capable host (`csd`'s
+  self-hosted runner), seeded from `csd`'s postgres/caddy reference workloads,
+  re-deriving on digest bumps, with the representative-workload requirement as an
+  explicit precondition. In `csd`: reconcile the `compose-lint-profile` formatter
+  to this schema (tracked in csd issue #218).
 - Cross-field rules the JSON Schema cannot express (e.g. `status: validated` ⇒
   every dimension's `confidence` ≠ `low` and `validated_via` contains both
   sources) are enforced by the loader/CI, not the schema, and are noted there.

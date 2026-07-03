@@ -12,6 +12,19 @@ Profiles are **derived, never hand-authored.** A guessed cap list is exactly the
 mistake compose-lint exists to catch; the value of a profile is that its numbers
 came from real observation and are reproducible.
 
+> **Trust model (ADR-017 §7, 2026-07-03).** The `profile-validate` gate checks a
+> profile is *well-formed* — it does **not** re-run `csd` or confirm the
+> observation happened or was representative. So compose-lint **endorses only
+> profiles its own maintainer automation derived and can re-derive.** A profile
+> you contribute is accepted as **`exploratory` only** (advisory, never used to
+> enrich) until that automation reproduces it. Promotion additionally requires
+> the run's **workload to represent real use of the service** — a token liveness
+> poke under-scopes the profile. The endorsed catalog is a small, external,
+> automation-maintained artifact the user opts into (`profiles.path`), **not**
+> data bundled in the linter; the loader decoupling and the automation loop are
+> in progress. The rest of this guide describes the derivation mechanics, which
+> are unchanged.
+
 ## What a profile is
 
 One YAML document per image, conforming to
