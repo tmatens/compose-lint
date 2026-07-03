@@ -104,6 +104,14 @@ def _check_validated_dimension(name: str, derivation: dict) -> list[str]:
             f"{name}: validated requires validated_via to include "
             f"{sorted(required)}, missing {sorted(missing)}"
         )
+    # A drop-test dimension must carry its evidence: it can't just *claim* the
+    # source, it has to record what was removed and what happened. The schema
+    # enforces the block's shape; this makes it mandatory for observer=drop-test.
+    if drop_test and not derivation.get("drop_test"):
+        errors.append(
+            f"{name}: observer=drop-test requires a derivation.drop_test evidence "
+            f"block (the removed/required/observed checks)"
+        )
     return errors
 
 

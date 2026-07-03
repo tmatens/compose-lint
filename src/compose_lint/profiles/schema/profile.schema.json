@@ -236,6 +236,39 @@
               }
             }
           }
+        },
+        "drop_test": {
+          "description": "Evidence for a drop-test-derived dimension (observer=drop-test): the leave-one-out checks that established the required minimum. Emitted by csd's drop-test producer; required by the loader/CI when observer=drop-test.",
+          "type": "object",
+          "required": ["checks"],
+          "additionalProperties": false,
+          "properties": {
+            "checks": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["removed", "required", "observed"],
+                "additionalProperties": false,
+                "properties": {
+                  "removed": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The candidate removed and re-tested -- a capability (e.g. SETUID) or a config element (e.g. /run/postgresql)."
+                  },
+                  "required": {
+                    "type": "boolean",
+                    "description": "true if removing it broke correctness (so it is in the minimum); false if the container stayed correct without it."
+                  },
+                  "observed": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The correctness predicate's observed outcome, e.g. 'daemon running as ROOT (privilege drop failed)' or 'postgres did not become ready in 60s'."
+                  }
+                }
+              }
+            }
+          }
         }
       }
     }
