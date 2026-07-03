@@ -47,6 +47,8 @@ def check_document(
     validator: Draft202012Validator,
     repo_root: Path,
     exploratory_dir: Path,
+    catalog_dir: Path,
+    criteria_dir: Path,
 ) -> list[str]:
     """Return a list of human-readable violations for one profile document."""
     errors = [
@@ -66,6 +68,7 @@ def check_document(
             errors.append("validated profile must not live under catalog/exploratory/")
         for name, dim in dimensions.items():
             errors.extend(_check_validated_dimension(name, dim["derivation"]))
+        errors.extend(_check_criteria(path, catalog_dir, criteria_dir))
     elif status == "exploratory" and not under_exploratory:
         errors.append("exploratory profile must live under catalog/exploratory/")
 
@@ -117,6 +120,24 @@ def _check_workload(name: str, derivation: dict, repo_root: Path) -> list[str]:
     return []
 
 
+def _check_criteria(path: Path, catalog_dir: Path, criteria_dir: Path) -> list[str]:
+    """A validated profile must ship a committed per-image criteria doc (#359,
+    ADR-017 §7): the reviewable scenarios + pass criteria the derivation was
+    judged against. Convention: the doc mirrors the profile's catalog path —
+    ``catalog/<rel>.y*ml`` ⇒ ``criteria/<rel>.md`` — and must be non-empty."""
+    try:
+        rel = path.resolve().relative_to(catalog_dir)
+    except ValueError:
+        return []  # profile outside catalog_dir; no criteria path to derive
+    criteria_path = criteria_dir / rel.with_suffix(".md")
+    disp = f"criteria/{rel.with_suffix('.md')}"
+    if not criteria_path.is_file():
+        return [f"validated profile requires a committed criteria doc at {disp} (#359)"]
+    if not criteria_path.read_text(encoding="utf-8").strip():
+        return [f"criteria doc {disp} is empty (#359)"]
+    return []
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--catalog-dir", type=Path, default=DEFAULT_CATALOG)
@@ -127,6 +148,12 @@ def main(argv: list[str] | None = None) -> int:
         default=REPO_ROOT,
         help="root that workload paths resolve against",
     )
+    parser.add_argument(
+        "--criteria-dir",
+        type=Path,
+        default=None,
+        help="dir holding per-image criteria docs (default: <catalog-dir>/../criteria)",
+    )
     args = parser.parse_args(argv)
 
     schema = json.loads(args.schema.read_text(encoding="utf-8"))
@@ -134,6 +161,12 @@ def main(argv: list[str] | None = None) -> int:
     validator = Draft202012Validator(schema)
     exploratory_dir = (args.catalog_dir / "exploratory").resolve()
     repo_root = args.repo_root.resolve()
+    catalog_dir = args.catalog_dir.resolve()
+    criteria_dir = (
+        args.criteria_dir.resolve()
+        if args.criteria_dir is not None
+        else (catalog_dir.parent / "criteria")
+    )
 
     files = (
         sorted(args.catalog_dir.rglob("*.y*ml")) if args.catalog_dir.is_dir() else []
@@ -151,7 +184,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"FAIL {label}: top level is not a mapping")
             total += 1
             continue
-        errors = check_document(path, doc, validator, repo_root, exploratory_dir)
+        errors = check_document(
+            path, doc, validator, repo_root, exploratory_dir, catalog_dir, criteria_dir
+        )
         if errors:
             total += len(errors)
             for err in errors:

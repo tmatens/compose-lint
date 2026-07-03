@@ -140,6 +140,25 @@ def test_bisection_missing_bisection_source_fails(tmp_path: Path) -> None:
     assert "validated_via" in result.stdout and "bisection" in result.stdout
 
 
+def test_missing_criteria_fails(tmp_path: Path) -> None:
+    # A validated profile must ship a committed per-image criteria doc (#359).
+    tree = _copy_good(tmp_path)
+    (tree / "criteria" / "docker.io" / "library" / "postgres.md").unlink()
+    result = _run(tree / "catalog", tree)
+    assert result.returncode == 1
+    assert "criteria" in result.stdout
+
+
+def test_empty_criteria_fails(tmp_path: Path) -> None:
+    tree = _copy_good(tmp_path)
+    (tree / "criteria" / "docker.io" / "library" / "postgres.md").write_text(
+        "\n  \n", encoding="utf-8"
+    )
+    result = _run(tree / "catalog", tree)
+    assert result.returncode == 1
+    assert "empty" in result.stdout
+
+
 def test_workload_hash_mismatch_fails(tmp_path: Path) -> None:
     tree = _copy_good(tmp_path)
     workload = tree / "profiles" / "workloads" / "postgres.sh"

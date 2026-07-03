@@ -185,11 +185,13 @@ compose-lint fact.
   a scheduled `derive → validate → update` loop on a BPF-capable host (`csd`'s
   self-hosted runner), seeded from `csd`'s postgres/caddy reference workloads,
   re-deriving on digest bumps, with the representative-workload requirement as an
-  explicit precondition. The **#359** criteria gate requires each profile to
-  reference a committed criteria doc (scenarios + pass criteria) beside its
-  workload, so `validate_profiles.py` fails a `validated` profile that lacks
-  reviewable criteria. In `csd`: reconcile the `compose-lint-profile` formatter
-  to this schema (tracked in **csd#218**).
+  explicit precondition. The **#359** criteria gate (implemented) requires each
+  `validated` profile to ship a committed criteria doc (scenarios + pass
+  criteria) that mirrors its catalog path — `catalog/<rel>.y*ml` ⇒
+  `criteria/<rel>.md`, non-empty — so `validate_profiles.py` fails a `validated`
+  profile that lacks reviewable criteria (`exploratory` drafts are exempt). In
+  `csd`: reconcile the `compose-lint-profile` formatter to this schema (done,
+  csd#218).
 - Cross-field rules the JSON Schema cannot express (e.g. `status: validated` ⇒
   every dimension's `confidence` ≠ `low` and `validated_via` contains both
   sources) are enforced by the loader/CI, not the schema, and are noted there.
