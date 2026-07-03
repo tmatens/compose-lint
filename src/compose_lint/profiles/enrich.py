@@ -101,7 +101,8 @@ def _provenance(dim: dict[str, Any], match: ProfileMatch) -> str:
     image = _short_image(str(derivation.get("validated_image") or match.image))
     return (
         f"csd-derived, confidence {confidence}, from {image}, "
-        f"{match.precision.value} match — not independently verified here"
+        f"{match.precision.value} match — compose-lint can't see your runtime, "
+        f"confirm it fits your setup"
     )
 
 

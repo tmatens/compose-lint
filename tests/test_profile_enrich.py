@@ -77,9 +77,10 @@ def test_provenance_notes_confidence_and_precision() -> None:
     assert result.fix is not None
     assert "confidence high" in result.fix
     assert "tag match" in result.fix
-    # attributed, not asserted as compose-lint fact (ADR-017 §7)
+    # attributed, not asserted as compose-lint fact (ADR-017 §7): the caveat
+    # names the actual limit — a static linter can't see the runtime/invocation.
     assert "csd-derived" in result.fix
-    assert "not independently verified" in result.fix
+    assert "compose-lint can't see your runtime" in result.fix
     # digest is shortened, not the full 64 hex
     assert "a" * 64 not in result.fix
 

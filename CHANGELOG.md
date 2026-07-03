@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Profile-enrichment hints no longer collapse across services in text output.**
+  The fix-block dedup keyed on `rule_id` alone, so when two services were flagged
+  by the same rule but enrichment gave them **different** image-specific guidance
+  (e.g. postgres → `cap_add: [CHOWN, DAC_OVERRIDE, SETGID, SETUID]`, caddy →
+  `cap_add: [NET_BIND_SERVICE]`), the second service was rendered
+  `(see fix above)` — pointing at the *first* service's wrong-image recommendation.
+  The dedup now keys on `(rule_id, fix, references)`, so distinct hints each print
+  in full while identical fixes still collapse.
+
+### Changed
+
+- **Clearer profile-enrichment caveat.** The provenance tail `not independently
+  verified here` is replaced with `compose-lint can't see your runtime, confirm
+  it fits your setup` — it names the actual limit (a static linter reads the
+  compose text, not the running container, and can't confirm the recommendation
+  matches your invocation) rather than a vague disclaimer.
+
 ### Added
 
 - Profile schema **1.2** (ADR-017 §9): an optional `derivation.run_config` block

@@ -255,8 +255,12 @@ def format_findings(
     """Format findings as human-readable colored text grouped by file and service.
 
     The fix block and reference URL are printed only on the first occurrence
-    of each rule id within a file; subsequent occurrences get a brief
-    `(see fix above)` marker. ``verbose=True`` restores per-finding fix
+    of each *distinct* fix within a file; subsequent occurrences with the same
+    fix get a brief `(see fix above)` marker. The dedup key includes the fix
+    text, not just the rule id, so profile enrichment — which makes a rule's fix
+    image-specific (e.g. postgres vs caddy get different `cap_add` hints) — is
+    never collapsed into another service's recommendation. ``verbose=True``
+    restores per-finding fix
     repetition for IDE tooling or local fix-it-now workflows. ``quiet=True``
     does the opposite — one line per finding, dropping the fix block,
     reference URL, source excerpt, and suppression reason — for CI and repeat
@@ -279,7 +283,12 @@ def format_findings(
     out.append(_colorize(_sanitize(filepath), _BOLD))
     out.append("")
 
-    seen_rules: set[str] = set()
+    # Dedup on (rule_id, fix, references), not rule_id alone: profile enrichment
+    # makes a rule's fix image-specific, so two services flagged by the same rule
+    # can carry genuinely different guidance. Keying on rule_id alone would mark
+    # the second "(see fix above)" and point it at the first service's (wrong-
+    # image) recommendation.
+    seen_fixes: set[tuple[str, str, tuple[str, ...]]] = set()
 
     for service, group in services_in_order:
         svc_line = next((f.line for f in group if f.line is not None), None)
@@ -320,7 +329,8 @@ def format_findings(
             line_label = str(f.line) if f.line else "?"
             message = _sanitize(f.message)
 
-            already_shown = f.rule_id in seen_rules
+            fix_key = (f.rule_id, f.fix or "", tuple(f.references or ()))
+            already_shown = fix_key in seen_fixes
             show_fix = not quiet and (verbose or not already_shown)
             suffix = ""
             if not quiet and already_shown and not verbose and (f.fix or f.references):
@@ -349,7 +359,7 @@ def format_findings(
             if show_fix and f.references:
                 out.append(f"          {_colorize('ref:', _DIM)} {f.references[0]}")
 
-            seen_rules.add(f.rule_id)
+            seen_fixes.add(fix_key)
 
         out.append("")
 
