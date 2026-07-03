@@ -118,8 +118,8 @@ def test_drop_test_validated_passes(tmp_path: Path) -> None:
             duration_seconds=5,  # well under the 300s floor; waived for drop-test
             drop_test={
                 "checks": [
-                    {"removed": "CHOWN", "required": False, "observed": "ok without it"},
-                    {"removed": "SETUID", "required": True, "observed": "daemon ran as root"},
+                    {"removed": "CHOWN", "required": False, "observed": "ok"},
+                    {"removed": "SETUID", "required": True, "observed": "ran as root"},
                 ]
             },
         )
