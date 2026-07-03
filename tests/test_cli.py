@@ -192,6 +192,29 @@ class TestCLI:
         )
         assert by_service["empty_security_opt"]["suppressed"] is False
 
+    def test_profile_enrichment_prints_experimental_notice(
+        self, tmp_path: Path
+    ) -> None:
+        # Enrichment is experimental: when it's active (opt-in), a one-line
+        # stderr reminder makes the provisional, unvalidated status explicit.
+        compose = tmp_path / "docker-compose.yml"
+        compose.write_text("services:\n  db:\n    image: postgres:16\n")
+        catalog = tmp_path / "catalog"
+        catalog.mkdir()
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text(f"profiles:\n  enabled: true\n  path: {catalog}\n")
+        result = run_cli(str(compose), "--config", str(config))
+        assert "experimental" in result.stderr
+        assert "profile fix recommendations" in result.stderr
+
+    def test_no_experimental_notice_when_profiles_disabled(
+        self, tmp_path: Path
+    ) -> None:
+        compose = tmp_path / "docker-compose.yml"
+        compose.write_text("services:\n  db:\n    image: postgres:16\n")
+        result = run_cli(str(compose))
+        assert "experimental" not in result.stderr
+
     def test_explain_prints_rule_doc(self) -> None:
         result = run_cli("--explain", "CL-0003")
         assert result.returncode == 0

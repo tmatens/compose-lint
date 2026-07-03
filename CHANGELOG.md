@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Profile enrichment is now labeled experimental.** The feature is already
+  opt-in and off by default (`profiles.enabled`); this makes its provisional
+  status explicit. When enrichment is active, compose-lint prints a one-line
+  stderr reminder that fix recommendations are advisory, derived for a specific
+  invocation, and not validated against your runtime — and the config docs mark
+  the section experimental. No behavior change to the findings themselves.
 - **Clearer profile-enrichment caveat.** The provenance tail `not independently
   verified here` is replaced with `compose-lint can't see your runtime, confirm
   it fits your setup` — it names the actual limit (a static linter reads the
