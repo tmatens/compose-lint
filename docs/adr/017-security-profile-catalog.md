@@ -136,6 +136,17 @@ automation derived and can re-derive — turning "trust a stranger's YAML" into
   does **not** scale. The endorsed set is therefore deliberately **small**, and
   grows only as the derivation automation matures — never by accepting unverified
   submissions.
+- **Transparent, reviewable test criteria (per image).** Because
+  representativeness is a human judgment, the material behind it must be open to
+  audit: every endorsed image ships its derivation criteria *alongside the
+  profile* — the committed workload script (already hash-pinned via
+  `workload_sha256`) **and** a human-readable statement of the real-use scenarios
+  it exercises and the pass/representativeness criteria used to accept it.
+  Endorsement is only as credible as a reviewer's ability to inspect *how* the
+  profile was derived; a profile whose criteria are not published cannot be
+  `validated`. This makes "trust the automation" auditable rather than a bare
+  assertion, and is enforced by the gate (a profile must reference committed,
+  reviewable criteria).
 
 **Distribution: compose-lint core ships no catalog data.** Bundling the catalog in
 the wheel (the §1 assumption) is reversed: it grows the package unboundedly,
@@ -173,7 +184,10 @@ compose-lint fact.
   a scheduled `derive → validate → update` loop on a BPF-capable host (`csd`'s
   self-hosted runner), seeded from `csd`'s postgres/caddy reference workloads,
   re-deriving on digest bumps, with the representative-workload requirement as an
-  explicit precondition. In `csd`: reconcile the `compose-lint-profile` formatter
+  explicit precondition; (e) per-image **test-criteria convention + gate** — each
+  profile references a committed criteria doc (scenarios + pass criteria) beside
+  its workload, and `validate_profiles.py` fails a `validated` profile that lacks
+  reviewable criteria. In `csd`: reconcile the `compose-lint-profile` formatter
   to this schema (tracked in csd issue #218).
 - Cross-field rules the JSON Schema cannot express (e.g. `status: validated` ⇒
   every dimension's `confidence` ≠ `low` and `validated_via` contains both

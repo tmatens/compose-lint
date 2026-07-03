@@ -19,7 +19,11 @@ came from real observation and are reproducible.
 > you contribute is accepted as **`exploratory` only** (advisory, never used to
 > enrich) until that automation reproduces it. Promotion additionally requires
 > the run's **workload to represent real use of the service** — a token liveness
-> poke under-scopes the profile. The endorsed catalog is a small, external,
+> poke under-scopes the profile. Each image's **test criteria are public and
+> reviewable** — the committed workload script plus a statement of the real-use
+> scenarios it exercises — so anyone can audit *how* a profile was derived; a
+> profile without published criteria cannot be `validated`. The endorsed catalog
+> is a small, external,
 > automation-maintained artifact the user opts into (`profiles.path`), **not**
 > data bundled in the linter; the loader decoupling and the automation loop are
 > in progress. The rest of this guide describes the derivation mechanics, which
