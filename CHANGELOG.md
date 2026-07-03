@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   — e.g. the observed minimum `cap_add` for that image. Enrichment is advisory
   and additive only: it never creates, drops, or reclassifies a finding. Off by
   default; the bundled profile catalog ships empty until derived profiles land.
+- Profile contribution path (ADR-017): `scripts/validate_profiles.py` (the
+  ci-smoke gate — schema, validated/exploratory invariants, and workload-hash
+  verification), a `profile-validate` CI job that runs it on catalog changes, and
+  a contributor guide (`docs/profiles.md`).
 
 ## [0.12.2] - 2026-06-13
 

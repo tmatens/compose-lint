@@ -37,6 +37,7 @@ jobs:
       docker: ${{ steps.filter.outputs.docker }}
       workflows: ${{ steps.filter.outputs.workflows }}
       dockerfile: ${{ steps.filter.outputs.dockerfile }}
+      profiles: ${{ steps.filter.outputs.profiles }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -57,6 +58,7 @@ jobs:
               echo "docker=true"
               echo "workflows=true"
               echo "dockerfile=true"
+              echo "profiles=true"
             } >> "$GITHUB_OUTPUT"
             echo "push event — running all job groups."
             exit 0
@@ -65,7 +67,7 @@ jobs:
           echo "Changed files:"
           echo "${changed}"
           match() { echo "${changed}" | grep -qE "$1"; }
-          code=false; docker=false; workflows=false; dockerfile=false
+          code=false; docker=false; workflows=false; dockerfile=false; profiles=false
           # Python sources, tests, helper scripts, the package manifest,
           # hash-pinned lockfiles, and the action contract all warrant the
           # full lint/type/test/coverage/security/smoke suite.
@@ -81,11 +83,16 @@ jobs:
           if match '^Dockerfile$'; then
             dockerfile=true
           fi
+          # The profile catalog, its schema/loader, and the validator gate.
+          if match '^(src/compose_lint/profiles/|profiles/|scripts/validate_profiles\.py$)'; then
+            profiles=true
+          fi
           {
             echo "code=${code}"
             echo "docker=${docker}"
             echo "workflows=${workflows}"
             echo "dockerfile=${dockerfile}"
+            echo "profiles=${profiles}"
           } >> "$GITHUB_OUTPUT"
 
   lint:
@@ -636,6 +643,31 @@ jobs:
       - name: Validate each runtime rule's premise against a live container
         run: python scripts/validate_rule_premises.py
 
+  profile-validate:
+    name: Validate security profiles (ci-smoke gate)
+    needs: changes
+    if: needs.changes.outputs.profiles == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            requirements-dev.lock
+            requirements-build.lock
+      - name: Install pinned dev env
+        run: pip install --require-hashes -r requirements-dev.lock
+      - name: Validate every catalog profile (schema + provenance + workload)
+        run: python scripts/validate_profiles.py
+
   # Single rollup job for branch protection. Required-status-checks should
   # point at this job name instead of the individual ci.yml job names, so
   # adding/renaming/removing jobs doesn't require a protection-rule edit.
@@ -664,6 +696,7 @@ jobs:
       - docker-smoke
       - action-smoke
       - rule-premises
+      - profile-validate
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 1
