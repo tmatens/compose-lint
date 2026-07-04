@@ -104,6 +104,17 @@ def test_low_confidence_validated_fails(tmp_path: Path) -> None:
     assert "confidence" in result.stdout
 
 
+def test_mutable_tag_validated_fails(tmp_path: Path) -> None:
+    # A validated profile must declare immutable version tags: a mutable rolling
+    # tag (:latest) points to a different image over time, so the derivation can't
+    # be trusted to still apply (a profile derived against whatever :latest was).
+    tree = _copy_good(tmp_path)
+    _mutate(tree, lambda d: d.__setitem__("applies_to", {"tags": ["latest"]}))
+    result = _run(tree / "catalog", tree)
+    assert result.returncode == 1
+    assert "mutable" in result.stdout
+
+
 def test_drop_test_validated_passes(tmp_path: Path) -> None:
     # A drop-test-derived dimension (schema 1.1) is validated on
     # [drop-test, ci-smoke] and is exempt from the observation-window duration
