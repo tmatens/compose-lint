@@ -40,6 +40,14 @@ VALIDATED_VIA_REQUIRED = frozenset({"bpf-observation", "ci-smoke"})
 DROP_TEST_VIA_REQUIRED = frozenset({"drop-test", "ci-smoke"})
 MIN_DURATION_SECONDS = 300
 VALIDATED_CONFIDENCE = frozenset({"high", "moderate"})
+# A validated profile is derived against a specific image and published for others
+# to rely on. A mutable rolling tag points to a different image over time, so the
+# derivation cannot be trusted to still apply — a profile derived against whatever
+# `:latest` resolved to on derivation day may be wrong for the image a consumer
+# pulls tomorrow. Validated profiles must declare immutable, versioned tags.
+MUTABLE_TAGS = frozenset(
+    {"latest", "stable", "edge", "main", "master", "nightly", "rolling", "dev", "current"}
+)
 
 
 def check_document(
@@ -67,6 +75,17 @@ def check_document(
     if status == "validated":
         if under_exploratory:
             errors.append("validated profile must not live under catalog/exploratory/")
+        mutable = [
+            t for t in (doc.get("applies_to") or {}).get("tags", [])
+            if str(t).strip().lower() in MUTABLE_TAGS
+        ]
+        if mutable:
+            errors.append(
+                "validated profile applies_to.tags must be immutable version tags, "
+                f"not mutable rolling tags {sorted(set(mutable))}: such a tag points "
+                "to a different image over time, so the derivation cannot be trusted "
+                "to still apply (derive against a pinned version)"
+            )
         for name, dim in dimensions.items():
             errors.extend(_check_validated_dimension(name, dim["derivation"]))
         errors.extend(_check_criteria(path, catalog_dir, criteria_dir))
