@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Validated profiles must declare immutable version tags.** The profile ci-smoke
+  gate (`scripts/validate_profiles.py`) now rejects a `status: validated` profile
+  whose `applies_to.tags` includes a mutable rolling tag (`latest`, `stable`,
+  `edge`, `main`, `nightly`, …): such a tag points to a different image over time,
+  so a derivation done against it cannot be trusted to still apply to the image a
+  consumer later pulls. Exploratory profiles are unaffected, and no existing catalog
+  profile uses a mutable tag, so this guards against a future mistake without
+  changing current data.
 - **Profile schema 1.3: `app_tier_verified`.** An optional top-level block on a
   profile recording that the whole hardening was verified at the **service** level
   — the multi-container stack brought up with every dimension applied and a real
