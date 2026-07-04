@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Profile schema 1.3: `app_tier_verified`.** An optional top-level block on a
+  profile recording that the whole hardening was verified at the **service** level
+  — the multi-container stack brought up with every dimension applied and a real
+  service-level check passed — a stronger signal than the per-dimension workload,
+  which exercises only one container. Fields: `service`, `service_version`,
+  `method`, `check`, `verified_date`, `result`, and an optional `over_hardening`
+  (`applied` + `result`) that proves the check catches a too-tight config (not a
+  rubber stamp). Requires `status: validated` (schema) and `result: pass`
+  (ci-smoke gate). Optional and additive — all 1.0–1.2 documents remain valid, and
+  it never substitutes for the per-dimension `validated_via` evidence. ADR-017 §10.
+
 ### Fixed
 
 - **Profile-enrichment hints no longer collapse across services in text output.**

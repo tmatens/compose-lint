@@ -268,3 +268,29 @@ default cap/seccomp baseline, host LSM enforcement, architecture, fresh-vs-
 initialized data state, and above all **workload coverage** (a minimum is only
 valid for what the workload exercised) — remain scope stated in each image's
 criteria doc (#359), not schema fields.
+
+### 10. app_tier_verified — service-level verification of the whole profile (schema 1.3, amendment 2026-07-04)
+
+A per-dimension `derivation` is backed by a workload that exercises **that one
+container**. But many images ship as part of a **multi-container service** (a
+database + cache + app tiers), and a minimum that keeps the one container correct
+in isolation can still break the *service* when applied. The stronger evidence is
+to bring up the whole stack with the hardening applied and confirm the service
+does its real job — using the upstream project's own fixtures + API rather than a
+hand-rolled probe.
+
+Schema 1.3 adds an **optional top-level** `app_tier_verified` block recording that
+verification for the whole profile (not per-dimension, because the stack runs with
+every dimension applied at once): `service`, `service_version`, `method`, `check`
+(prose), `verified_date`, `result`, and an optional `over_hardening` object
+(`applied` + `result`). The `over_hardening` field is what earns the trust — "the
+check passed" is weak alone, but "…and a deliberately-too-tight config was shown to
+FAIL the same check" proves the gate is not a rubber stamp.
+
+`app_tier_verified` is only meaningful for a cleared profile, so the schema
+requires `status: validated` when it is present, and the ci-smoke gate additionally
+requires `result: pass`. It is optional and additive — all `1.0`–`1.2` documents
+remain valid, and it never substitutes for the per-dimension `validated_via`
+evidence (drop-test / bpf-observation / ci-smoke); it is *additional* evidence.
+csd's `scripts/apptier_verify.sh` produces it (worked example: immich's postgres
+and valkey, verified against immich's released stack and real REST API).

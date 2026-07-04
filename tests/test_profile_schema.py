@@ -63,9 +63,15 @@ def test_schema_is_valid_draft202012(schema: dict[str, Any]) -> None:
 
 def test_schema_version_is_pinned(schema: dict[str, Any]) -> None:
     # 1.0 is the baseline; 1.1 adds drop-test as a derivation source; 1.2 adds
-    # the optional derivation.run_config block. All remain valid so existing
-    # documents are not invalidated.
-    assert schema["properties"]["schema_version"]["enum"] == ["1.0", "1.1", "1.2"]
+    # the optional derivation.run_config block; 1.3 adds the optional top-level
+    # app_tier_verified block. All remain valid so existing documents are not
+    # invalidated.
+    assert schema["properties"]["schema_version"]["enum"] == [
+        "1.0",
+        "1.1",
+        "1.2",
+        "1.3",
+    ]
 
 
 def test_example_validates(
@@ -173,4 +179,59 @@ def test_run_config_rejects_unknown_key(
         "user": "",
         "cap_add": ["SYS_ADMIN"],
     }
+    assert not validator.is_valid(example)
+
+
+def _app_tier_verified() -> dict[str, Any]:
+    return {
+        "service": "immich",
+        "service_version": "v2.7.5",
+        "method": "container-sec-derive scripts/apptier_verify.sh",
+        "check": "immich REST API: sign-up, login, upload, read-back, search",
+        "verified_date": "2026-07-04",
+        "result": "pass",
+        "over_hardening": {
+            "applied": "dropped SETUID from the database",
+            "result": "database unhealthy -> immich never starts",
+        },
+    }
+
+
+def test_app_tier_verified_accepted(
+    validator: Draft202012Validator, example: dict[str, Any]
+) -> None:
+    # A validated profile may record a whole-service verification (schema 1.3).
+    # Optional and additive: existing documents omit it.
+    example["schema_version"] = "1.3"
+    example["app_tier_verified"] = _app_tier_verified()
+    assert validator.is_valid(example), list(validator.iter_errors(example))
+
+
+def test_app_tier_verified_requires_validated_status(
+    validator: Draft202012Validator, example: dict[str, Any]
+) -> None:
+    # An exploratory profile has not cleared the bar, so it cannot claim a
+    # service-level verification.
+    example["status"] = "exploratory"
+    example["acceptance_contract_violations"] = ["below the confidence bar"]
+    example["app_tier_verified"] = _app_tier_verified()
+    assert not validator.is_valid(example)
+
+
+def test_app_tier_verified_requires_result(
+    validator: Draft202012Validator, example: dict[str, Any]
+) -> None:
+    atv = _app_tier_verified()
+    del atv["result"]
+    example["app_tier_verified"] = atv
+    assert not validator.is_valid(example)
+
+
+def test_over_hardening_rejects_unknown_key(
+    validator: Draft202012Validator, example: dict[str, Any]
+) -> None:
+    # additionalProperties closure on the over_hardening evidence.
+    atv = _app_tier_verified()
+    atv["over_hardening"]["cap"] = "SETUID"
+    example["app_tier_verified"] = atv
     assert not validator.is_valid(example)

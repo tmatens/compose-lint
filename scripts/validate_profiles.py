@@ -70,6 +70,12 @@ def check_document(
         for name, dim in dimensions.items():
             errors.extend(_check_validated_dimension(name, dim["derivation"]))
         errors.extend(_check_criteria(path, catalog_dir, criteria_dir))
+        atv = doc.get("app_tier_verified")
+        if atv is not None and atv.get("result") != "pass":
+            errors.append(
+                "app_tier_verified.result must be 'pass' for a validated profile "
+                f"(got {atv.get('result')!r})"
+            )
     elif status == "exploratory" and not under_exploratory:
         errors.append("exploratory profile must live under catalog/exploratory/")
 

@@ -8,9 +8,9 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "description": "Catalog profile schema version (independent of csd's sidecar schema_version, which is recorded per-dimension under derivation.sidecar_schema_version). 1.1 adds drop-test as a derivation source (observer=drop-test, validated_via=drop-test); 1.2 adds the optional derivation.run_config block (the invocation the minimum was derived under). All earlier documents remain valid.",
+      "description": "Catalog profile schema version (independent of csd's sidecar schema_version, which is recorded per-dimension under derivation.sidecar_schema_version). 1.1 adds drop-test as a derivation source (observer=drop-test, validated_via=drop-test); 1.2 adds the optional derivation.run_config block (the invocation the minimum was derived under); 1.3 adds the optional top-level app_tier_verified block (service-level verification of the whole profile). All earlier documents remain valid.",
       "type": "string",
-      "enum": ["1.0", "1.1", "1.2"]
+      "enum": ["1.0", "1.1", "1.2", "1.3"]
     },
     "image": {
       "description": "Canonical repository reference WITHOUT tag or digest -- the match key. Registry and namespace normalized (docker.io/library/postgres, lscr.io/linuxserver/radarr).",
@@ -46,6 +46,7 @@
       "items": { "type": "string" },
       "minItems": 1
     },
+    "app_tier_verified": { "$ref": "#/$defs/appTierVerified" },
     "dimensions": {
       "description": "Per-security-dimension derived config. All optional and additive -- a caps-only profile is valid. Each maps to a compose-lint rule.",
       "type": "object",
@@ -133,6 +134,13 @@
         "properties": { "status": { "const": "validated" } }
       },
       "then": { "not": { "required": ["acceptance_contract_violations"] } }
+    },
+    {
+      "if": { "required": ["app_tier_verified"] },
+      "then": {
+        "required": ["status"],
+        "properties": { "status": { "const": "validated" } }
+      }
     }
   ],
   "$defs": {
@@ -144,6 +152,48 @@
     "absPath": { "type": "string", "pattern": "^/" },
     "devPath": { "type": "string", "pattern": "^/dev/" },
     "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "appTierVerified": {
+      "description": "1.3 (optional, top-level). The whole profile was additionally verified at the SERVICE level: the multi-container stack was brought up with this hardening applied and a real service-level check passed. Stronger than a per-dimension workload, which exercises only the one container. When present, status must be 'validated'.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["service", "method", "check", "verified_date", "result"],
+      "properties": {
+        "service": {
+          "type": "string",
+          "description": "The composed service verified end-to-end (e.g. immich)."
+        },
+        "service_version": {
+          "type": "string",
+          "description": "Version/tag of the stack it was verified against (e.g. v2.7.5)."
+        },
+        "method": {
+          "type": "string",
+          "description": "How the whole stack was brought up and driven (e.g. container-sec-derive scripts/apptier_verify.sh)."
+        },
+        "check": {
+          "type": "string",
+          "description": "What the service-level check exercised, in prose (e.g. the real API calls)."
+        },
+        "verified_date": { "type": "string", "format": "date" },
+        "result": { "enum": ["pass", "fail"] },
+        "over_hardening": {
+          "description": "Optional but recommended: proves the check catches a too-tight config (it is not a rubber stamp) by recording an over-restriction shown to FAIL the same service-level check.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["applied", "result"],
+          "properties": {
+            "applied": {
+              "type": "string",
+              "description": "The over-hardening applied, e.g. 'dropped SETUID from the database'."
+            },
+            "result": {
+              "type": "string",
+              "description": "What broke, e.g. 'database unhealthy (could not switch to the postgres user) -> immich never starts'."
+            }
+          }
+        }
+      }
+    },
     "derivation": {
       "description": "Per-dimension provenance. Distinct per dimension because csd derives each observer in a separate run with its own digest/confidence/window.",
       "type": "object",
