@@ -1,6 +1,6 @@
 # Roadmap
 
-As of v0.8.0, compose-lint ships 21 security rules, PyPI distribution, a published GitHub Action and Docker image, SARIF/JSON/text output, pre-commit support, per-service rule overrides, and `--explain`. The foundation is solid; the next milestone is the 1.0 stability commitment. Remaining investments make the tool more useful to the users already running it, not chase speculative distribution channels.
+As of v0.13.0, compose-lint ships 22 security rules, PyPI distribution, a published GitHub Action and Docker image, SARIF/JSON/text output, pre-commit support, per-service rule overrides, and `--explain`. The foundation is solid; the next milestone is the 1.0 stability commitment. Remaining investments make the tool more useful to the users already running it, not chase speculative distribution channels.
 
 ## Strategic framing
 
