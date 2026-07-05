@@ -130,6 +130,8 @@ A `.compose-lint.yml` that silently fails to take effect is a security risk — 
 
 Warnings never change the exit code; only the hard errors above do.
 
+Pass **`--strict-config`** to `check` or `fix` to promote every warning above (unknown rule id, unknown top-level/per-rule/`profiles` key) to a hard error (exit 2). Use it in CI, or wherever stderr is redirected, so a typo can't silently disable the wrong rule.
+
 ## Output formats
 
 `--format` selects the output (`text` default, `json`, `sarif`). Text writes a human banner, per-file summary, and verdict; `json` and `sarif` emit only the machine document on stdout so redirects stay clean.

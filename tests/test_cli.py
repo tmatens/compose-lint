@@ -192,6 +192,26 @@ class TestCLI:
         )
         assert by_service["empty_security_opt"]["suppressed"] is False
 
+    def test_strict_config_typoed_rule_id_exits_usage(self, tmp_path: Path) -> None:
+        # A typo'd rule id under --strict-config is a hard error (exit 2), not a
+        # stderr warning that could be lost in a redirect (#380).
+        compose = tmp_path / "docker-compose.yml"
+        compose.write_text("services:\n  db:\n    image: postgres:16\n")
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-001:\n    enabled: false\n")
+        result = run_cli("--strict-config", "--config", str(config), str(compose))
+        assert result.returncode == 2
+        assert "unknown rule id 'CL-001'" in result.stderr
+
+    def test_strict_config_absent_only_warns(self, tmp_path: Path) -> None:
+        compose = tmp_path / "docker-compose.yml"
+        compose.write_text("services:\n  db:\n    image: postgres:16\n")
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-001:\n    enabled: false\n")
+        result = run_cli("--config", str(config), str(compose))
+        assert result.returncode in (0, 1)
+        assert "unknown rule id 'CL-001'" in result.stderr
+
     def test_profile_enrichment_prints_experimental_notice(
         self, tmp_path: Path
     ) -> None:
