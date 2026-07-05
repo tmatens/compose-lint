@@ -93,8 +93,17 @@ def run_rules(
                 report_error(rule_id, service_name, exc)
                 continue
             for finding in rule_findings:
+                # A severity override only makes sense on a finding that will be
+                # reported: if the rule is globally suppressed the finding is
+                # already suppressed below, so re-grading its severity is moot.
                 if rule_id in overrides and not is_suppressed:
                     finding = replace(finding, severity=overrides[rule_id])
+                # Suppression precedence: a global disable (whole rule off) wins
+                # over a per-service exclusion. Both set suppressed=True, but the
+                # reason differs, so this must be if/elif, not two independent
+                # ifs — the broader, rule-level intent owns the reason string.
+                # A rule that is globally disabled is never also labeled with a
+                # narrower "excluded for service X" reason.
                 if is_suppressed:
                     reason = disabled[rule_id]
                     finding = replace(
@@ -112,6 +121,11 @@ def run_rules(
                         suppressed=True,
                         suppression_reason=reason or default,
                     )
+                # Profile enrichment is orthogonal to suppression: it only
+                # appends image-specific fix guidance, so it applies to
+                # suppressed findings too (the guidance is still useful if the
+                # suppression is later lifted). service_matches was resolved once
+                # above and is empty when no profile_lookup was supplied.
                 match = service_matches.get(service_name)
                 if match is not None:
                     finding = enrich_fix(finding, match)
