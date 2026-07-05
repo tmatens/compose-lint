@@ -9,7 +9,7 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
-from compose_lint.config import ConfigError, load_config
+from compose_lint.config import ConfigError, load_config, load_profiles_config
 from compose_lint.models import Severity
 
 
@@ -182,6 +182,52 @@ class TestConfigValidation:
         config.write_text("rules:\n  CL-0001:\n    enabled: true\n")
         disabled, _overrides, _excluded = load_config(config)
         assert "CL-0001" not in disabled
+
+
+class TestStrictConfig:
+    """strict=True escalates config diagnostics to errors (issue #380)."""
+
+    def test_unknown_rule_id_raises(self, tmp_path: Path) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-001:\n    enabled: false\n")
+        with pytest.raises(ConfigError, match="unknown rule id 'CL-001'"):
+            load_config(config, strict=True)
+
+    def test_unknown_top_level_key_raises(self, tmp_path: Path) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("fail_on: high\nrules:\n  CL-0001:\n    enabled: false\n")
+        with pytest.raises(ConfigError, match="unknown top-level key 'fail_on'"):
+            load_config(config, strict=True)
+
+    def test_unknown_rule_key_raises(self, tmp_path: Path) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0001:\n    severty: high\n")
+        with pytest.raises(ConfigError, match="unknown key 'severty'"):
+            load_config(config, strict=True)
+
+    def test_valid_config_still_loads_under_strict(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0001:\n    enabled: false\n")
+        disabled, _overrides, _excluded = load_config(config, strict=True)
+        assert "CL-0001" in disabled
+        assert capsys.readouterr().err == ""
+
+    def test_default_mode_still_warns_not_raises(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # Backward compatibility: without strict, an unknown id is a warning.
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-001:\n    enabled: false\n")
+        load_config(config)  # no raise
+        assert "unknown rule id 'CL-001'" in capsys.readouterr().err
+
+    def test_profiles_unknown_key_raises_under_strict(self, tmp_path: Path) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("profiles:\n  enabled: true\n  bogus: 1\n")
+        with pytest.raises(ConfigError, match="profiles has unknown key 'bogus'"):
+            load_profiles_config(config, strict=True)
 
 
 class TestExcludeServices:

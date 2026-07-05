@@ -129,6 +129,16 @@ def _add_check_subparser(
         help="path to .compose-lint.yml config file",
     )
     check.add_argument(
+        "--strict-config",
+        action="store_true",
+        default=False,
+        help=(
+            "treat config diagnostics (unknown/typo'd rule id, unknown key) as "
+            "errors instead of stderr warnings, so a malformed config fails "
+            "loudly rather than silently disabling the wrong rule"
+        ),
+    )
+    check.add_argument(
         "--skip-suppressed",
         action="store_true",
         default=False,
@@ -208,6 +218,15 @@ def _add_fix_subparser(
         "--config",
         metavar="PATH",
         help="path to .compose-lint.yml config file (suppressions are honored)",
+    )
+    fix.add_argument(
+        "--strict-config",
+        action="store_true",
+        default=False,
+        help=(
+            "treat config diagnostics (unknown/typo'd rule id, unknown key) as "
+            "errors instead of stderr warnings"
+        ),
     )
 
 
@@ -332,8 +351,12 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     config_path = _effective_config_path(args.config)
 
     try:
-        disabled_rules, severity_overrides, excluded_services = load_config(args.config)
-        profiles_enabled, profiles_path = load_profiles_config(args.config)
+        disabled_rules, severity_overrides, excluded_services = load_config(
+            args.config, strict=args.strict_config
+        )
+        profiles_enabled, profiles_path = load_profiles_config(
+            args.config, strict=args.strict_config
+        )
     except ConfigError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(2)
@@ -541,7 +564,9 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
     failure signal, so residual manual-only findings do not change the code.
     """
     try:
-        disabled_rules, severity_overrides, excluded_services = load_config(args.config)
+        disabled_rules, severity_overrides, excluded_services = load_config(
+            args.config, strict=args.strict_config
+        )
     except ConfigError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(2)

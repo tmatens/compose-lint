@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`check --strict-config` / `fix --strict-config`.** Opt-in strict mode that
+  turns config diagnostics that are normally stderr warnings — an unknown or
+  typo'd rule id (`CL-001` vs `CL-0001`), an unknown top-level or per-rule key,
+  an unknown `profiles` key — into hard errors (exit 2). Without it, a malformed
+  config's warning can be lost in a redirect and silently disable the wrong rule;
+  strict mode fails the run loudly instead. Default behavior is unchanged.
+
 ### Fixed
 
 - **`check --format sarif` and `fix` no longer abort a batch when a file becomes

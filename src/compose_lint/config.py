@@ -28,13 +28,18 @@ class ConfigError(Exception):
     """Raised when a config file is invalid."""
 
 
-def _warn(message: str) -> None:
-    """Emit a non-fatal config diagnostic to stderr.
+def _warn(message: str, strict: bool = False) -> None:
+    """Emit a config diagnostic — a stderr warning, or a hard error under strict.
 
     Mirrors the CLI's unknown-service warning (ADR-010): a misconfiguration that
     silently weakens a security control should be visible, but config and
-    Compose files evolve independently, so it must not hard-fail the run.
+    Compose files evolve independently, so by default it must not hard-fail the
+    run. Under strict-config (``--strict-config``, #380) the same diagnostics are
+    raised as ``ConfigError`` instead, so a typo'd rule id or key fails loudly
+    rather than silently no-op'ing where stderr may be suppressed.
     """
+    if strict:
+        raise ConfigError(message)
     print(f"Warning: {message}", file=sys.stderr)
 
 
@@ -61,6 +66,7 @@ ExcludedServices = dict[str, dict[str, str | None]]
 
 def load_config(
     path: str | Path | None = None,
+    strict: bool = False,
 ) -> tuple[dict[str, str | None], dict[str, Severity], ExcludedServices]:
     """Load a .compose-lint.yml config file.
 
@@ -70,6 +76,9 @@ def load_config(
     per-service reason (see ADR-010).
     If path is None, looks for .compose-lint.yml in the current directory.
     If no config file is found, returns empty defaults.
+    When strict is True, config diagnostics that are normally warnings (unknown
+    top-level key, unknown/typo'd rule id, unknown rule key) are raised as
+    ConfigError instead (#380).
     """
     data = _read_raw_config(path)
     if data is None:
@@ -79,10 +88,11 @@ def load_config(
         if str(key) not in _KNOWN_TOP_LEVEL_KEYS:
             _warn(
                 f"config: unknown top-level key '{key}' (recognized: "
-                f"{', '.join(sorted(_KNOWN_TOP_LEVEL_KEYS))}); it has no effect"
+                f"{', '.join(sorted(_KNOWN_TOP_LEVEL_KEYS))}); it has no effect",
+                strict,
             )
 
-    return _parse_rules(data.get("rules", {}))
+    return _parse_rules(data.get("rules", {}), strict)
 
 
 def _read_raw_config(path: str | Path | None) -> dict[str, Any] | None:
@@ -120,7 +130,10 @@ def _read_raw_config(path: str | Path | None) -> dict[str, Any] | None:
     return data
 
 
-def load_profiles_config(path: str | Path | None = None) -> tuple[bool, str | None]:
+def load_profiles_config(
+    path: str | Path | None = None,
+    strict: bool = False,
+) -> tuple[bool, str | None]:
     """Return ``(enabled, catalog_path)`` for profile enrichment (ADR-017 §7).
 
     Off by default, and with **no built-in catalog**: enrichment is a no-op
@@ -141,7 +154,8 @@ def load_profiles_config(path: str | Path | None = None) -> tuple[bool, str | No
         if str(key) not in _KNOWN_PROFILES_KEYS:
             _warn(
                 f"config: profiles has unknown key '{key}' (recognized: "
-                f"{', '.join(sorted(_KNOWN_PROFILES_KEYS))}); it has no effect"
+                f"{', '.join(sorted(_KNOWN_PROFILES_KEYS))}); it has no effect",
+                strict,
             )
 
     enabled = profiles.get("enabled", False)
@@ -160,6 +174,7 @@ def load_profiles_config(path: str | Path | None = None) -> tuple[bool, str | No
 
 def _parse_rules(
     rules: Any,
+    strict: bool = False,
 ) -> tuple[dict[str, str | None], dict[str, Severity], ExcludedServices]:
     """Parse the rules section of a config file."""
     if not isinstance(rules, dict):
@@ -179,14 +194,16 @@ def _parse_rules(
         if rule_id not in known_ids:
             _warn(
                 f"config: unknown rule id '{rule_id}'; the override has no effect "
-                "(check for a typo or a retired rule)"
+                "(check for a typo or a retired rule)",
+                strict,
             )
 
         for key in rule_config:
             if str(key) not in _KNOWN_RULE_KEYS:
                 _warn(
                     f"config: rule '{rule_id}' has unknown key '{key}' (recognized: "
-                    f"{', '.join(sorted(_KNOWN_RULE_KEYS))}); it has no effect"
+                    f"{', '.join(sorted(_KNOWN_RULE_KEYS))}); it has no effect",
+                    strict,
                 )
 
         if "enabled" in rule_config:
