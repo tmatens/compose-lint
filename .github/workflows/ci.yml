@@ -308,20 +308,35 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+      # Parse both versions structurally rather than by grep (#382): a commented
+      # "# version = ..." above the real line, or reformatting, would fool
+      # `grep '^version =' | head -1`. tomllib reads pyproject's [project].version
+      # and ast reads __init__.py's __version__ assignment — deterministic, no
+      # regex to drift.
       - name: Compare pyproject.toml and __init__.py
         run: |
-          pyproject=$(grep -E '^version = ' pyproject.toml | head -1 | cut -d'"' -f2)
-          init=$(grep '__version__' src/compose_lint/__init__.py | head -1 | cut -d'"' -f2)
-          echo "pyproject.toml: ${pyproject}"
-          echo "__init__.py:    ${init}"
-          if [ -z "${pyproject}" ] || [ -z "${init}" ]; then
-            echo "::error::Could not extract version from one or both files"
-            exit 1
-          fi
-          if [ "${pyproject}" != "${init}" ]; then
-            echo "::error::Version drift: pyproject.toml (${pyproject}) vs src/compose_lint/__init__.py (${init})"
-            exit 1
-          fi
+          python - <<'PY'
+          import ast, pathlib, sys, tomllib
+
+          pyproject = tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"]
+
+          init = None
+          for node in ast.walk(ast.parse(pathlib.Path("src/compose_lint/__init__.py").read_text())):
+              if isinstance(node, ast.Assign) and any(
+                  isinstance(t, ast.Name) and t.id == "__version__" for t in node.targets
+              ) and isinstance(node.value, ast.Constant):
+                  init = node.value.value
+
+          print(f"pyproject.toml: {pyproject}")
+          print(f"__init__.py:    {init}")
+          if not pyproject or not init:
+              sys.exit("::error::Could not extract version from one or both files")
+          if pyproject != init:
+              sys.exit(f"::error::Version drift: pyproject.toml ({pyproject}) vs src/compose_lint/__init__.py ({init})")
+          PY
 
   # If a PR bumps the `version` in pyproject.toml, CHANGELOG.md must already
   # contain a matching `## [X.Y.Z]` section. Without this, a release PR can
