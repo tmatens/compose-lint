@@ -518,6 +518,73 @@ class TestFixSubcommand:
             cli.main(["fix", "--apply", str(f)])
         assert exc.value.code == 2
         assert "added or removed a service" in capsys.readouterr().err
+
+    def test_sarif_second_read_failure_recorded_not_crash(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        # Regression (#381): the SARIF path re-reads the source after parsing to
+        # attach fix edits. If the file becomes unreadable between the parse and
+        # that second read, the batch must record the error and continue to the
+        # remaining files, not crash. load_compose reads through its own module,
+        # so patching cli.Path isolates the second read.
+        from compose_lint import cli
+
+        f1 = tmp_path / "a.yml"
+        f2 = tmp_path / "b.yml"
+        for f in (f1, f2):
+            f.write_text(_BARE_SERVICE)
+
+        class _UnreadableSecondRead:
+            def __init__(self, *a: object, **k: object) -> None:
+                self._p = Path(*a, **k)
+
+            def read_text(self, *a: object, **k: object) -> str:
+                raise OSError("simulated: file became unreadable")
+
+            def __getattr__(self, name: str) -> object:
+                return getattr(self._p, name)
+
+        monkeypatch.setattr(cli, "Path", _UnreadableSecondRead)
+        with pytest.raises(SystemExit) as exc:
+            cli.main(["--format", "sarif", str(f1), str(f2)])
+        assert exc.value.code == 2
+        err = capsys.readouterr().err
+        # Both files were reported; neither aborted the run.
+        assert str(f1) in err and str(f2) in err
+
+    def test_fix_second_read_failure_recorded_not_crash(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        # Regression (#381): `fix` re-reads the source after parsing to apply
+        # edits; an unreadable second read must be recorded and skipped (the read
+        # fails before any write), not crash the batch.
+        from compose_lint import cli
+
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(_BARE_SERVICE)
+
+        class _UnreadableSecondRead:
+            def __init__(self, *a: object, **k: object) -> None:
+                self._p = Path(*a, **k)
+
+            def read_text(self, *a: object, **k: object) -> str:
+                raise OSError("simulated: file became unreadable")
+
+            def __getattr__(self, name: str) -> object:
+                return getattr(self._p, name)
+
+        monkeypatch.setattr(cli, "Path", _UnreadableSecondRead)
+        with pytest.raises(SystemExit) as exc:
+            cli.main(["fix", "--apply", str(f)])
+        assert exc.value.code == 2
+        assert "simulated: file became unreadable" in capsys.readouterr().err
+        assert f.read_text() == _BARE_SERVICE  # nothing written
         assert f.read_text() == _BARE_SERVICE  # nothing written
 
 
