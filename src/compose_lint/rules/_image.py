@@ -1,6 +1,17 @@
-"""Shared parsing helpers for OCI image references."""
+"""Shared parsing helpers and constants for OCI image references."""
 
 from __future__ import annotations
+
+# Rolling/mutable tags that don't pin a real, immutable version. Shared by the
+# image-pinning rules (CL-0004 flags them as unpinned; CL-0019 skips them since
+# CL-0004 already covers them) so the set can't drift between the two.
+MUTABLE_TAGS = frozenset({"latest", "stable", "edge", "nightly", "dev", "test"})
+
+# The OWASP supply-chain cheatsheet rule both image-pinning rules cite.
+OWASP_IMAGE_REF = (
+    "https://cheatsheetseries.owasp.org/cheatsheets/"
+    "Docker_Security_Cheat_Sheet.html#rule-13-enhance-supply-chain-security"
+)
 
 
 def split_image_ref(image: str) -> tuple[str, str | None]:

@@ -6,18 +6,20 @@ from typing import TYPE_CHECKING, Any
 
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
-from compose_lint.rules._image import split_image_ref
+from compose_lint.rules._image import (
+    MUTABLE_TAGS as _MUTABLE_TAGS,
+)
+from compose_lint.rules._image import (
+    OWASP_IMAGE_REF,
+    split_image_ref,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-OWASP_REF = (
-    "https://cheatsheetseries.owasp.org/cheatsheets/"
-    "Docker_Security_Cheat_Sheet.html#rule-13-enhance-supply-chain-security"
-)
+OWASP_REF = OWASP_IMAGE_REF
 
-# Tags that CL-0004 already handles — we skip them to avoid overlap
-_MUTABLE_TAGS = {"latest", "stable", "edge", "nightly", "dev", "test"}
+# _MUTABLE_TAGS: tags CL-0004 already handles — we skip them to avoid overlap.
 
 
 @register_rule
