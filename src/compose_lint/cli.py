@@ -65,6 +65,22 @@ def _discover_compose_files() -> list[str]:
     return [name for name in _COMPOSE_FILENAMES if Path(name).is_file()]
 
 
+def _report_parse_error(filepath: str, exc: FileNotFoundError | ComposeError) -> str:
+    """Report a ``load_compose`` parse failure to stderr and return the reason.
+
+    Centralizes the canonical ``Error: <file>: <reason>`` line and the
+    ``FileNotFoundError`` -> ``"file not found"`` wording shared by ``check``,
+    ``fix`` and ``init``, so the three stay consistent. Callers keep their own
+    control flow (record / flag / exit); the returned reason is for callers
+    (``check``) that also collect it. Only the two true parse errors go through
+    here — ``ComposeNotApplicableError`` is not an error (ADR-013) and is
+    handled separately by each caller.
+    """
+    reason = "file not found" if isinstance(exc, FileNotFoundError) else str(exc)
+    print(f"Error: {filepath}: {reason}", file=sys.stderr)
+    return reason
+
+
 def _effective_config_path(explicit: str | None) -> Path | None:
     """Return the config file path that will be used, or None if no config."""
     if explicit:
@@ -419,19 +435,14 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     for filepath in args.files:
         try:
             data, lines = load_compose(filepath)
-        except FileNotFoundError:
-            msg = "file not found"
-            parse_errors.append((filepath, msg))
-            print(f"Error: {filepath}: {msg}", file=sys.stderr)
-            continue
         except ComposeNotApplicableError as e:
             # v1 / fragment file: not malformed, just outside what we lint.
-            # Per ADR-013 this is exit 0 (skipped, not a parse error).
+            # Per ADR-013 this is exit 0 (skipped, not a parse error). Must
+            # precede the ComposeError clause below — it is a subclass.
             print(f"{filepath}: {e}", file=sys.stderr)
             continue
-        except ComposeError as e:
-            parse_errors.append((filepath, str(e)))
-            print(f"Error: {filepath}: {e}", file=sys.stderr)
+        except (FileNotFoundError, ComposeError) as e:
+            parse_errors.append((filepath, _report_parse_error(filepath, e)))
             continue
 
         seen_services.update(data.get("services", {}).keys())
@@ -588,16 +599,13 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
     for filepath in args.files:
         try:
             data, lines = load_compose(filepath)
-        except FileNotFoundError:
-            print(f"Error: {filepath}: file not found", file=sys.stderr)
-            had_error = True
-            continue
         except ComposeNotApplicableError as e:
-            # v1 / fragment file: skipped, not an error (ADR-013).
+            # v1 / fragment file: skipped, not an error (ADR-013). Must precede
+            # the ComposeError clause below — it is a subclass.
             print(f"{filepath}: {e}", file=sys.stderr)
             continue
-        except ComposeError as e:
-            print(f"Error: {filepath}: {e}", file=sys.stderr)
+        except (FileNotFoundError, ComposeError) as e:
+            _report_parse_error(filepath, e)
             had_error = True
             continue
 
@@ -711,16 +719,14 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
     """
     try:
         data, lines = load_compose(args.file)
-    except FileNotFoundError:
-        print(f"Error: {args.file}: file not found", file=sys.stderr)
-        sys.exit(2)
     except ComposeNotApplicableError as e:
         # v1 / fragment file: skipped, not an error (ADR-013). Nothing to lint,
-        # so nothing to bootstrap.
+        # so nothing to bootstrap. Must precede the ComposeError clause below —
+        # it is a subclass.
         print(f"{args.file}: {e}", file=sys.stderr)
         sys.exit(0)
-    except ComposeError as e:
-        print(f"Error: {args.file}: {e}", file=sys.stderr)
+    except (FileNotFoundError, ComposeError) as e:
+        _report_parse_error(args.file, e)
         sys.exit(2)
 
     findings = run_rules(data, lines)
