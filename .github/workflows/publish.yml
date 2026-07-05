@@ -895,7 +895,13 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
           SHA: ${{ steps.sha.outputs.sha }}
-          GH_TOKEN: ${{ github.token }}
+          # Open the PR with the PAT (not GITHUB_TOKEN): a GITHUB_TOKEN-authored
+          # PR does not trigger pull_request/push workflows (GitHub's recursion
+          # guard), so the PR would land with zero checks and sit blocked until a
+          # human closed+reopened it (#342). The PAT is already required by this
+          # job for the workflow-file push above, so this reuses it — no new
+          # secret. Its user authors the PR, so the required checks run.
+          GH_TOKEN: ${{ secrets.MARKETPLACE_SMOKE_PAT }}
         run: |
           version="${TAG#v}"
           branch="chore/marketplace-smoke-${version}"

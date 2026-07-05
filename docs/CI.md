@@ -183,7 +183,12 @@ The `bump-marketplace-smoke-pin` job opens a post-release PR updating
 `marketplace-smoke.yml` to the SHA the tag pointed at. `GITHUB_TOKEN`
 can't push commits that modify `.github/workflows/*`, so this job
 uses a repo-scoped PAT stored in the `MARKETPLACE_SMOKE_PAT` secret.
-The job preflights that secret and fails early if it's unset.
+The job preflights that secret and fails early if it's unset. The PR is
+also *authored* with that PAT (not `GITHUB_TOKEN`): a `GITHUB_TOKEN`-
+authored PR does not trigger `pull_request`/`push` workflows (GitHub's
+recursion guard), so it would land with zero checks and sit blocked
+until someone closed and reopened it. Authoring it as the PAT user makes
+the required checks run automatically.
 
 ### Provisioning `MARKETPLACE_SMOKE_PAT`
 
@@ -211,6 +216,13 @@ to revoke and audit.
 (e.g. `0.3.8`). Opens the "Prepare X.Y.Z release" PR: bumps both version
 strings, renames the CHANGELOG `[Unreleased]` section, inserts a fresh
 empty one, and links to the manual tag-signing step in the PR body.
+
+Like the marketplace-pin job, this PR is authored with the
+`MARKETPLACE_SMOKE_PAT` secret so its checks run automatically. Unlike
+that job it falls back to `GITHUB_TOKEN` when the secret is absent
+(release-prep touches no `.github/workflows/*` file, so the token still
+works) — but the fallback PR lands check-less and needs a manual
+close+reopen, so keep the secret configured.
 
 The signed annotated tag is **not** created here. Tag creation stays
 manual because (a) `GITHUB_TOKEN`-created tags don't trigger downstream

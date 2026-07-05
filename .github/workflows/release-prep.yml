@@ -36,6 +36,12 @@ jobs:
           ref: main
           fetch-depth: 0
           persist-credentials: true
+          # Push the release branch as the PAT user so the PR it authors below
+          # triggers checks (#342). Falls back to GITHUB_TOKEN when the secret is
+          # absent: unlike the marketplace-pin job this workflow touches no
+          # .github/workflows/* file, so GITHUB_TOKEN still functions — it just
+          # yields a check-less PR that needs a manual close+reopen.
+          token: ${{ secrets.MARKETPLACE_SMOKE_PAT || github.token }}
 
       - name: Validate version input
         env:
@@ -134,7 +140,10 @@ jobs:
       - name: Commit, push, open PR
         env:
           VERSION: ${{ inputs.version }}
-          GH_TOKEN: ${{ github.token }}
+          # Author the PR with the PAT so its checks run automatically (#342);
+          # fall back to GITHUB_TOKEN when the secret is absent (the PR then
+          # needs a manual close+reopen to start checks, the prior behavior).
+          GH_TOKEN: ${{ secrets.MARKETPLACE_SMOKE_PAT || github.token }}
         run: |
           branch="release/${VERSION}"
           git config user.name "github-actions[bot]"
