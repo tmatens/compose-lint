@@ -97,3 +97,17 @@ class TestCapDropRule:
             )
         )
         assert len(findings) == 0
+
+    def test_safe_drop_all_no_add_no_findings(self) -> None:
+        # cap_drop: [ALL] with no cap_add — the most-hardened case, which must
+        # not trip CL-0006. (Surfaced by the fixture-coverage check, #379.)
+        data, lines = load_compose(FIXTURES / "safe_cap_hardened.yml")
+        findings = list(
+            self.rule.check(
+                "drop_all_no_add",
+                data["services"]["drop_all_no_add"],
+                data,
+                lines,
+            )
+        )
+        assert len(findings) == 0
