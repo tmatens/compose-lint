@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`check --format sarif` and `fix` no longer abort a batch when a file becomes
+  unreadable mid-run.** Both re-read the source after parsing (for SARIF fix
+  edits / to apply fixes); if the file was deleted, unmounted, or had its
+  permissions changed between the parse and that second read, the `OSError` is
+  now recorded per-file and the scan continues to the remaining files instead of
+  crashing the whole run.
+
 ## [0.13.0] - 2026-07-05
 
 ### Added

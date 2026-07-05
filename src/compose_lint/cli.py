@@ -452,7 +452,15 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             # auto-fixable finding carries its machine-applicable edit so GitHub
             # Code Scanning can render a suggested change. Findings with no safe
             # fixer keep the prose `properties.fix` only.
-            text = Path(filepath).read_text(encoding="utf-8")
+            try:
+                text = Path(filepath).read_text(encoding="utf-8")
+            except OSError as e:
+                # Parsed above, but unreadable before this second read (deleted,
+                # unmounted, permission change). Record it and move on so one bad
+                # file can't abort the rest of the batch.
+                parse_errors.append((filepath, str(e)))
+                print(f"Error: {filepath}: {e}", file=sys.stderr)
+                continue
             fixes = collect_edits(findings, data, lines, text).fixed_edits
             all_sarif.extend(format_sarif(findings, filepath, fixes=fixes))
         else:
@@ -568,7 +576,14 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             had_error = True
             continue
 
-        text = Path(filepath).read_text(encoding="utf-8")
+        try:
+            text = Path(filepath).read_text(encoding="utf-8")
+        except OSError as e:
+            # Parsed above, but unreadable now (deleted, unmounted, permission
+            # change) — record and continue so the rest of the batch still runs.
+            print(f"Error: {filepath}: {e}", file=sys.stderr)
+            had_error = True
+            continue
         findings = run_rules(
             data,
             lines,
