@@ -22,6 +22,7 @@ observe and are listed as intentionally out of scope.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from typing import TYPE_CHECKING
@@ -234,10 +235,37 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool, str]]]] = [
 ]
 
 
+def _docker_available() -> bool:
+    """Report whether a working Docker is reachable. Handles both the
+    daemon-down case (non-zero exit) and the not-installed case (the bare
+    ``subprocess.run`` would otherwise raise FileNotFoundError and crash)."""
+    try:
+        proc = subprocess.run(["docker", "version"], capture_output=True)
+    except FileNotFoundError:
+        return False
+    return proc.returncode == 0
+
+
 def main() -> int:
-    if subprocess.run(["docker", "version"], capture_output=True).returncode != 0:
-        print("SKIP: Docker not available", file=sys.stderr)
-        return 0
+    if not _docker_available():
+        # A silent skip (the old one-line message) let a contributor without
+        # Docker believe the premises were validated when they weren't — the gap
+        # would surface only in CI. Make the skip unmissable, and let a caller
+        # who *requires* the check demand it via CL_REQUIRE_DOCKER=1 (#378).
+        bar = "!" * 70
+        for line in (
+            "",
+            bar,
+            "!! rule-premise validation SKIPPED — Docker is not available.",
+            "!! The rules' runtime premises were NOT checked against a live",
+            "!! container, so a drifted premise passes here and surfaces only in",
+            "!! CI (the rule-premises job, which has Docker).",
+            "!! Set CL_REQUIRE_DOCKER=1 to treat this skip as a hard failure.",
+            bar,
+            "",
+        ):
+            print(line, file=sys.stderr)
+        return 1 if os.environ.get("CL_REQUIRE_DOCKER") == "1" else 0
 
     failures = []
     for rule_id, label, check in CHECKS:
