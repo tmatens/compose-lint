@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
-from compose_lint.fix import is_anchored_or_merged, line_indent
+from compose_lint._yaml_edit import is_anchored_or_merged, line_indent
 from compose_lint.models import Finding, RuleMetadata, Severity, TextEdit
 from compose_lint.rules import BaseRule, register_rule
 
