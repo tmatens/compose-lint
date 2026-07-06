@@ -251,9 +251,9 @@ charset-normalizer==3.4.7 \
     --hash=sha256:fbccdc05410c9ee21bbf16a35f4c1d16123dcdeb8a1d38f33654fa21d0234f79 \
     --hash=sha256:fea24543955a6a729c45a73fe90e08c743f0b3334bbf3201e6c4bc1b0c7fa464
     # via requests
-check-jsonschema==0.37.3 \
-    --hash=sha256:4d683589005c2b77a5f2dff41129ac5a6f92167e2f2ea0a8534446e3eddba239 \
-    --hash=sha256:9557287e4d8670fde9480740a6190f913724722062030a85bbf7d859c0f66a6f
+check-jsonschema==0.37.4 \
+    --hash=sha256:e4d1647992674d6b1ed2ca46eee6697760d17a5cc0c167ba09c5b503b883d041 \
+    --hash=sha256:f933521f14cbeaaf113270751185b01379f453ac9ce9fb01d6190ce1352ccaa6
     # via compose-lint (pyproject.toml)
 click==8.3.3 \
     --hash=sha256:398329ad4837b2ff7cbe1dd166a4c0f8900c3ca3a218de04466f38f6497f18a2 \
