@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from compose_lint.fix import (
+from compose_lint._yaml_edit import (
     first_child_indent,
     is_anchored_or_merged,
 )

@@ -6,14 +6,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from compose_lint.engine import run_rules
-from compose_lint.fix import (
-    FixResult,
-    OverlappingEditError,
-    _spans_conflict,
-    apply_edits,
+from compose_lint._yaml_edit import (
     block_span,
-    collect_edits,
     delete_lines,
     extends_targets,
     first_child_indent,
@@ -23,9 +17,17 @@ from compose_lint.fix import (
     line_indent,
     normalize_security_opt,
     opens_block_body,
+    replace_lines,
+)
+from compose_lint.engine import run_rules
+from compose_lint.fix import (
+    FixResult,
+    OverlappingEditError,
+    _spans_conflict,
+    apply_edits,
+    collect_edits,
     render_file_diff,
     reparse_or_error,
-    replace_lines,
     verify_apply,
 )
 from compose_lint.models import Finding, Severity, TextEdit
