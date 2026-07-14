@@ -23,7 +23,6 @@ class BaseRule(abc.ABC):
     @abc.abstractmethod
     def metadata(self) -> RuleMetadata:
         """Return the rule's metadata."""
-        ...
 
     @abc.abstractmethod
     def check(
@@ -37,7 +36,6 @@ class BaseRule(abc.ABC):
 
         Yields Finding objects for each issue detected.
         """
-        ...
 
     def fix(
         self,
