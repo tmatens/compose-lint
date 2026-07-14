@@ -14,11 +14,14 @@ identically from these files, so it can be refreshed against any release.
 | `Dockerfile`         | Toolchain: VHS + ttyd + ffmpeg + compose-lint + Pillow       |
 | `retime.py`          | Restores readable read-pauses (see below)                    |
 
-The demo lints `docker-compose.yml` (two findings: a HIGH exposed port and a
-MEDIUM unpinned image), then runs `compose-lint --explain CL-0005` to show the
-offline rule docs. The service is mostly hardened so only those two findings
-fire; severity-sort puts the HIGH exposed-port finding — the one with the
-box-drawing underline — at the top, leading the report above the `FAIL` verdict.
+The demo lints `docker-compose.yml` (three findings: a CRITICAL mounted Docker
+socket, a HIGH sensitive host mount, and a MEDIUM tag-only image pin), then runs
+`compose-lint --explain CL-0001` to show the offline rule docs. The service is
+mostly hardened so only those three findings fire; severity-sort puts the
+CRITICAL socket finding — the one with the box-drawing underline — at the top,
+leading the report above the `FAIL` verdict. `tests/test_demo_fixture.py` pins
+this finding set, so a rule or fixture change that would silently change the
+demo's story fails CI instead.
 
 ## Regenerate
 

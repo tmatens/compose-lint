@@ -9,7 +9,7 @@
 FROM ghcr.io/charmbracelet/vhs@sha256:9d5fc3dc0c160b0fb1d2212baff07e6bdf3fa9438c504a3237484567302fcf93
 
 # Pin to a released version so the recorded banner matches a real install.
-ARG COMPOSE_LINT_VERSION=0.10.0
+ARG COMPOSE_LINT_VERSION=0.13.0
 
 USER root
 RUN apt-get update \
