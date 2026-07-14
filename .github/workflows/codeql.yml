@@ -3,23 +3,24 @@ name: CodeQL
 on:
   push:
     branches: [main]
-    # Only re-analyze when something CodeQL actually scans changes. The
-    # matrix covers two languages: `python` (sources) and `actions`
-    # (workflow/composite-action YAML). A docs- or config-only change has
-    # nothing for either to analyze, so skip it and spare the wait. The
-    # weekly `schedule` run below still re-scans everything, catching new
-    # advisories on otherwise-unchanged code. CodeQL is not a required
-    # status check (only `ci-ok` is), so a skipped run never wedges a PR.
+    # Post-merge pushes only re-analyze when something CodeQL actually scans
+    # changes (`python` sources, `actions` workflow/composite-action YAML) —
+    # the PR run below has just analyzed the same tree, so a docs- or
+    # config-only push has nothing new for either language. The weekly
+    # `schedule` run still re-scans everything, catching new advisories on
+    # otherwise-unchanged code.
     paths:
       - "**/*.py"
       - "action.yml"
       - ".github/workflows/**"
+  # PRs run unfiltered, deliberately: Scorecard's SAST check counts a main
+  # commit as "checked" only if its PR head carries a successful CodeQL run,
+  # so path-filtering PRs turns every lockfile/digest/docs merge into a
+  # permanent miss in its 30-commit window (24->20 within a week of #346;
+  # alert #96). CodeQL is not a required status check (only `ci-ok` is), so
+  # unfiltered PR runs cost Actions minutes but add zero merge latency.
   pull_request:
     branches: [main]
-    paths:
-      - "**/*.py"
-      - "action.yml"
-      - ".github/workflows/**"
   schedule:
     # Weekly run catches new advisories on unchanged code.
     - cron: "27 4 * * 1"
