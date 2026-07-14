@@ -7,7 +7,11 @@ on:
   # `schedule` and the `branch_protection_rule` trigger that fires when the
   # posture actually changes. `publish_results` still works from the weekly
   # schedule run on the default branch, so the public badge keeps updating.
+  # `workflow_dispatch` lets a fix for a Scorecard alert be re-scanned on
+  # demand instead of waiting out the weekly cron (scorecard-action supports
+  # it, and publish_results works from the default branch either way).
   branch_protection_rule:
+  workflow_dispatch:
   schedule:
     - cron: "13 5 * * 1"
 
