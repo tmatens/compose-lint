@@ -8,13 +8,14 @@
 # manifest-list index). Bump via Renovate.
 FROM ghcr.io/charmbracelet/vhs@sha256:9d5fc3dc0c160b0fb1d2212baff07e6bdf3fa9438c504a3237484567302fcf93
 
-# Pin to a released version so the recorded banner matches a real install.
-ARG COMPOSE_LINT_VERSION=0.13.0
-
+# Python deps (compose-lint + retime.py's pillow/numpy) are hash-pinned in
+# requirements.lock (uv-compiled from requirements.in; see README.md). The
+# compose-lint pin doubles as the recorded version — keep it in step with the
+# banner the committed GIF shows.
 USER root
+COPY requirements.lock /tmp/demo-requirements.lock
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3-pip \
     && rm -rf /var/lib/apt/lists/* \
-    && pip3 install --no-cache-dir --break-system-packages \
-        "compose-lint==${COMPOSE_LINT_VERSION}" \
-        pillow numpy  # retime.py re-times the rendered GIF (see render.sh)
+    && pip3 install --no-cache-dir --break-system-packages --require-hashes \
+        -r /tmp/demo-requirements.lock

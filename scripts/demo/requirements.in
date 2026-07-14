@@ -1,0 +1,6 @@
+# Demo toolchain Python deps (see Dockerfile). compose-lint is pinned to the
+# released version the committed GIF was recorded on — bump it only as part of
+# a demo regeneration (docs/RELEASING.md); a Renovate rule leaves it alone.
+compose-lint==0.13.0
+pillow
+numpy
