@@ -12,6 +12,8 @@ identically from these files, so it can be refreshed against any release.
 | `demo.tape`          | [VHS](https://github.com/charmbracelet/vhs) recording script |
 | `docker-compose.yml` | The small, ordinary-looking file the demo lints              |
 | `Dockerfile`         | Toolchain: VHS + ttyd + ffmpeg + compose-lint + Pillow       |
+| `requirements.in`    | Toolchain Python deps (compose-lint pin = recorded version)  |
+| `requirements.lock`  | uv-compiled, hash-pinned resolve of `requirements.in`        |
 | `retime.py`          | Restores readable read-pauses (see below)                    |
 
 The demo lints `docker-compose.yml` (three findings: a CRITICAL mounted Docker
@@ -35,9 +37,19 @@ This builds the toolchain image, records `demo.tape` to `scripts/demo/demo.gif`
 (a gitignored intermediate), then re-times it into the committed asset at
 `docs/assets/demo.gif`.
 
-To record a newer compose-lint, bump `COMPOSE_LINT_VERSION` in the `Dockerfile`
-(or pass `--build-arg COMPOSE_LINT_VERSION=X.Y.Z` to `docker build`). Keep the
-banner version the cast shows in step with the README's example output.
+To record a newer compose-lint, bump the `compose-lint==` pin in
+`requirements.in` and recompile the lock (the exact command is in the lock
+file's header):
+
+```bash
+uv pip compile scripts/demo/requirements.in --python-version=3.13 \
+    --generate-hashes --output-file=scripts/demo/requirements.lock
+```
+
+Keep the banner version the cast shows in step with the README's example
+output. Renovate keeps pillow/numpy fresh in the lock but deliberately never
+touches the compose-lint pin — it records which release the committed GIF was
+rendered on.
 
 Bump the digest-pinned VHS base image via Renovate, same as any other base
 image (see CLAUDE.md).

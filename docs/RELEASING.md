@@ -301,11 +301,12 @@ After approval, `publish` and `docker-publish` run in parallel.
 - [ ] **README demo GIF** — only if this release changed the text-output
       appearance (finding layout, verdict line, colors) or you want the
       banner to show the new version. The demo toolchain installs
-      compose-lint from PyPI, so this is **post-publish**: bump
-      `COMPOSE_LINT_VERSION` in `scripts/demo/Dockerfile` to `X.Y.Z`, run
-      `scripts/demo/render.sh`, and open a follow-up PR with the updated
-      `docs/assets/demo.gif` and its README alt text. Output-only or
-      docs-only releases can skip this.
+      compose-lint from PyPI, so this is **post-publish**: bump the
+      `compose-lint==` pin in `scripts/demo/requirements.in`, recompile
+      `scripts/demo/requirements.lock` (exact `uv pip compile` command in
+      the lock's header), run `scripts/demo/render.sh`, and open a
+      follow-up PR with the updated `docs/assets/demo.gif` and its README
+      alt text. Output-only or docs-only releases can skip this.
 - [ ] **Fresh `[Unreleased]` section** — already inserted by
       `release-prep.yml` as part of the release bump PR. No follow-up
       PR needed.
