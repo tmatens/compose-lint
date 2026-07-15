@@ -67,6 +67,7 @@ CIS reference numbers in rule docs are pinned to **CIS Docker Benchmark v1.7.0**
 | CL-0018 (Explicit root user) | Hardening gap | Single container | MEDIUM |
 | CL-0019 (Image tag without digest) | Supply chain* | Host | MEDIUM |
 | CL-0015 (Healthcheck disabled) | Hardening gap | Single container | LOW |
+| CL-0022 (tmpfs re-enables exec/suid/dev) | Hardening gap | Single container | LOW |
 
 *CL-0004 and CL-0019 are supply chain risks that don't fit the runtime exploitation model cleanly. They are scored MEDIUM based on the combination of an unlikely-but-uncontrollable attack vector (upstream registry compromise) and a host-level blast radius. CL-0019 is the stronger guarantee of the two; CL-0004 catches the obvious mutable-tag cases.
 
@@ -95,6 +96,7 @@ These rules trigger only when a developer wrote something specifically dangerous
 - **CL-0015** — `healthcheck.disable: true` or `test: ["NONE"]`
 - **CL-0016** — `devices:` mapping a sensitive host device (e.g. `/dev/mem`, `/dev/kmem`)
 - **CL-0017** — `volumes:` using `:rshared` (shared mount propagation)
+- **CL-0022** — `tmpfs` mount passing `exec`, `suid`, or `dev` (re-enabling Docker's default `noexec,nosuid,nodev`)
 
 Other rules (CL-0005, CL-0008, CL-0009, CL-0010, CL-0011, CL-0013, CL-0018) are also presence-based but target patterns common enough in real compose files that they do not need this caveat.
 

@@ -163,10 +163,10 @@ per-channel contract in [`DISTRIBUTION.md`](DISTRIBUTION.md). Summary:
 in parallel → `create-release` → `bump-marketplace-smoke-pin`.
 
 `verify-tag` is the first gate: it asserts the tag is annotated (not
-lightweight) and the tag commit is reachable from `origin/main`. Every
-downstream job inherits the check via `needs:`. Full SSH signature
-verification is not yet wired — it would require committing an
-allowed-signers file listing the maintainer's SSH signing key.
+lightweight), that the tag commit is reachable from `origin/main`, and
+that the tag's SSH signature verifies against `.github/allowed_signers`
+via `git verify-tag` — the cryptographic root of the release provenance
+chain. Every downstream job inherits the check via `needs:`.
 
 `release-gate` is the single human-in-the-loop gate: one approval on the
 `release` environment covers every channel. Per-channel environments

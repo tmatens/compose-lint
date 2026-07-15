@@ -57,7 +57,7 @@ snippet.
 | # | Attacker goal                                                   | Mechanism                                                       | Mitigation                                                                                                       |
 |---|-----------------------------------------------------------------|-----------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
 | 1 | Execute attacker code in the linter process                     | YAML deserialization gadget; embedded Python tag                | All YAML is parsed via `yaml.SafeLoader` (compose) or `yaml.safe_load` (config). No `yaml.load`, no `eval`/`exec` on parsed values. Custom `LineLoader` is asserted to subclass `SafeLoader` at import time. |
-| 2 | Crash the linter or hang it indefinitely                        | Pathological YAML structures (deep nesting, billion-laughs)     | Parser traversals are iterative, not recursive (fix for #61). Continuous fuzzing on parser + engine via ClusterFuzzLite (`cflite-pr.yml` per-PR, `cflite-batch.yml` weekly).                |
+| 2 | Crash the linter or hang it indefinitely                        | Pathological YAML structures (deep nesting, billion-laughs)     | Parser traversals are iterative, not recursive (fix for #61). Continuous fuzzing on parser + engine via ClusterFuzzLite (`cflite-pr.yml` per-PR, `cflite-batch.yml` daily).                |
 | 3 | Cause a false negative — slip a real misconfig past the linter  | Hardened-but-unusual syntax, alternate-form constructs          | Every rule ships positive *and* negative tests; `tests/compose_files/safe_*.yml` enforces hardened-but-unusual fixtures (CONTRIBUTING.md §"Adding a new rule"). Corpus snapshot (`tests/corpus_snapshot.json.gz`) locks output across 1,500+ real-world Compose files; PRs that change findings show the diff. Rule-loader test catches mutation-untested code paths via `mutmut`. |
 | 4 | Cause a false positive — make the linter fail benign files      | Adjacent-but-clean configs (named volumes, sub-form syntax)     | Same negative-test discipline as #3, plus the corpus snapshot regression gate.                                    |
 | 5 | Exfiltrate data from the linter or its host                     | Make the linter open a network connection                       | Product code performs no network I/O. Documented hardened `docker run` recipe pins `--network none` and is exercised in CI (`docker-smoke` matrix).                                            |
@@ -120,9 +120,9 @@ prompting:
   hard gate before any artifact is built.
 - **Static analysis**: CodeQL (security-and-quality queries) on push,
   PR, and weekly schedule; Bandit per push.
-- **Fuzzing**: ClusterFuzzLite per-PR (`cflite-pr.yml`) and weekly
+- **Fuzzing**: ClusterFuzzLite per-PR (`cflite-pr.yml`) and daily
   batch (`cflite-batch.yml`) against the parser and engine.
-- **Supply-chain scoring**: OpenSSF Scorecard on push and weekly.
+- **Supply-chain scoring**: OpenSSF Scorecard weekly and on branch-protection changes.
 - **Release-time gates** (`publish.yml`): annotated-tag check, tag-
   reachable-from-main check, SSH tag-signature verification (via
   `.github/allowed_signers`), TestPyPI smoke, multi-arch Docker smoke
