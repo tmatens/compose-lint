@@ -24,10 +24,14 @@ pipeline, this is the page to read.
    `--network none`, and CI runs the full smoke battery under that flag
    set on every release.
 
-3. **It will not modify your Compose files.** compose-lint only reads
-   its inputs. There is no `--fix`, no rewrite mode, no in-place edit.
-   (A future `--fix` mode would be additive and opt-in, never the
-   default — see [docs/ROADMAP.md](ROADMAP.md).)
+3. **It will not modify your Compose files unless you ask.** `check`
+   (the default command) only reads its inputs. The `fix` command is
+   dry-run by default — it prints a unified diff and writes nothing;
+   only `fix --apply` rewrites in place, via an atomic swap that
+   preserves permission bits. It applies only safe, mechanical edits,
+   never touches suppressed findings, and re-parses and re-lints every
+   change before writing — see [docs/ROADMAP.md](ROADMAP.md) and the
+   Fixing findings section of the README.
 
 4. **Released artifacts are signed.** Every release ships:
    - PyPI wheel + sdist with PEP 740 trusted-publisher attestations and
