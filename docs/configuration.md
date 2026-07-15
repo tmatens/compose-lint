@@ -91,8 +91,9 @@ Excluded services still produce **SUPPRESSED** findings, with the per-service re
 > pointer to verify, not a validated fact. When enrichment is active, compose-lint
 > prints a one-line reminder to stderr.
 
-Opt into image-specific fix guidance derived by
-[container-sec-derive](https://github.com/tmatens/container-sec-derive) (csd).
+Opt into image-specific fix guidance derived by container-sec-derive (csd), a
+runtime derivation tool (not yet published; every catalog profile carries the
+evidence to audit it without the tool).
 When enabled, a finding from a rule that a derived profile covers
 (CL-0002/0006/0007/0011/0016) gains a `profile hint` line in its fix text stating
 the observed minimum for that image — for example, the exact `cap_add` a service
@@ -100,8 +101,13 @@ actually needs.
 
 compose-lint **ships no catalog of its own** (ADR-017 §7). You point `profiles.path`
 at a catalog you trust — your own derived profiles, or an external
-automation-maintained catalog you opt into. Both keys are required for enrichment;
-with `enabled` set but no `path`, compose-lint warns and enriches nothing.
+automation-maintained catalog you opt into. The reference catalog is
+[container-security-profiles](https://github.com/tmatens/container-security-profiles)
+(browsable at
+[tmatens.github.io/container-security-profiles](https://tmatens.github.io/container-security-profiles/)):
+clone it and point `profiles.path` at its `catalog/` directory. Both keys are
+required for enrichment; with `enabled` set but no `path`, compose-lint warns and
+enriches nothing.
 
 ```yaml
 profiles:
