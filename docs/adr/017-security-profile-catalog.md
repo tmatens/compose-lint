@@ -9,8 +9,8 @@ service should drop capabilities; it cannot know that *this* image (say
 image-specific minimum is not statically derivable — it is a property of what the
 container does at runtime, observable only by watching a live container.
 
-Our sibling tool [container-sec-derive](https://github.com/tmatens/container-sec-derive)
-(`csd`) derives exactly that: it observes a running container via eBPF and emits a
+Our sibling tool container-sec-derive
+(`csd`, not publicly published) derives exactly that: it observes a running container via eBPF and emits a
 minimum-security config (caps, `read_only`/tmpfs, devices, minimized `cap_add`,
 privileged decomposition). It already ships a `--format compose-lint-profile`
 formatter that emits a per-image YAML entry "for the compose-lint catalog,"
