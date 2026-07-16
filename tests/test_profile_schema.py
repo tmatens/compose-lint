@@ -64,13 +64,14 @@ def test_schema_is_valid_draft202012(schema: dict[str, Any]) -> None:
 def test_schema_version_is_pinned(schema: dict[str, Any]) -> None:
     # 1.0 is the baseline; 1.1 adds drop-test as a derivation source; 1.2 adds
     # the optional derivation.run_config block; 1.3 adds the optional top-level
-    # app_tier_verified block. All remain valid so existing documents are not
-    # invalidated.
+    # app_tier_verified block; 1.4 adds the optional derivation.run_config.sysctls
+    # field. All remain valid so existing documents are not invalidated.
     assert schema["properties"]["schema_version"]["enum"] == [
         "1.0",
         "1.1",
         "1.2",
         "1.3",
+        "1.4",
     ]
 
 
@@ -178,6 +179,28 @@ def test_run_config_rejects_unknown_key(
     example["dimensions"]["capabilities"]["derivation"]["run_config"] = {
         "user": "",
         "cap_add": ["SYS_ADMIN"],
+    }
+    assert not validator.is_valid(example)
+
+
+def test_run_config_sysctls_accepted(
+    validator: Draft202012Validator, example: dict[str, Any]
+) -> None:
+    # Schema 1.4: the kernel sysctl posture a posture-dependent minimum was
+    # pinned under (the canonical case is ip_unprivileged_port_start for
+    # NET_BIND_SERVICE). Optional array of "key=value" strings.
+    example["schema_version"] = "1.4"
+    example["dimensions"]["capabilities"]["derivation"]["run_config"] = {
+        "sysctls": ["net.ipv4.ip_unprivileged_port_start=1024"],
+    }
+    assert validator.is_valid(example), list(validator.iter_errors(example))
+
+
+def test_run_config_sysctls_must_be_array(
+    validator: Draft202012Validator, example: dict[str, Any]
+) -> None:
+    example["dimensions"]["capabilities"]["derivation"]["run_config"] = {
+        "sysctls": "net.ipv4.ip_unprivileged_port_start=1024",
     }
     assert not validator.is_valid(example)
 

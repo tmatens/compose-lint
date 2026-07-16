@@ -294,3 +294,35 @@ remain valid, and it never substitutes for the per-dimension `validated_via`
 evidence (drop-test / bpf-observation / ci-smoke); it is *additional* evidence.
 csd's `scripts/apptier_verify.sh` produces it (worked example: immich's postgres
 and valkey, verified against immich's released stack and real REST API).
+
+### 11. run_config.sysctls — the kernel posture a posture-dependent minimum assumes (schema 1.4, amendment 2026-07-16)
+
+A capability minimum can be valid **only under a specific kernel sysctl**, and
+until 1.4 the schema had nowhere to record it — so the condition lived in prose in
+the profile's criteria doc, where a consumer could not act on it.
+
+The canonical case is **NET_BIND_SERVICE**. Whether binding a low port (`:80`,
+`:53`) needs a capability is not a property of the image but of
+`net.ipv4.ip_unprivileged_port_start` in the container's network namespace:
+
+- **Docker** defaults it to `0` (all ports unprivileged) → the bind needs **no**
+  capability, and NET_BIND_SERVICE reads *falsely-removable*.
+- The **kernel** default is `1024` → the bind **requires** the capability. Non-Docker
+  runtimes and hardened hosts commonly sit here (containerd/CRI-O, and therefore much
+  of Kubernetes, typically leave the kernel default unless configured), which is the
+  classic "works on my Docker, breaks in k8s" divergence.
+
+So the correct minimum is posture-dependent. csd derives under the **stricter**
+posture (pins `net.ipv4.ip_unprivileged_port_start=1024`) — the conservative,
+portable answer ("the cap is needed") — and already emits a `sysctls` list in its
+`run_config`. Schema 1.4 adds the matching optional
+`derivation.run_config.sysctls` field (an array of `"key=value"` strings) so the
+profile can state which posture its minimum assumes. A consumer (or compose-lint's
+consumer side) then reconciles: on default Docker the profile is *over-permissioned*
+for the low-port cap; on a `1024` host it is exactly right and dropping the cap
+would break the bind.
+
+The field is optional and additive — all `1.0`–`1.3` documents remain valid, and an
+absent/empty `sysctls` means no sysctl was pinned (the minimum holds under Docker's
+defaults). It records only what the derivation was pinned under; it does not, by
+itself, cause compose-lint to require that posture of a target.

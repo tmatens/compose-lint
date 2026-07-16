@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Profile schema 1.4: optional `derivation.run_config.sysctls`.** Records the
+  kernel sysctl posture a *posture-dependent* capability minimum was derived under.
+  The canonical case is `net.ipv4.ip_unprivileged_port_start`: Docker defaults it
+  to 0 (all ports unprivileged, so a low-port bind needs no cap and NET_BIND_SERVICE
+  reads falsely-removable), while the kernel default of 1024 makes the cap required —
+  the "works on my Docker, breaks in k8s" divergence. csd already pins the hardened
+  posture and emits the `sysctls` list; this field lets the published profile state
+  which posture its minimum assumes, so a consumer can reconcile against their own
+  runtime instead of guessing. Optional and additive — all 1.0–1.3 documents remain
+  valid; absent/empty means no sysctl was pinned. See ADR-017 §11.
 - **`check --strict-config` / `fix --strict-config`.** Opt-in strict mode that
   turns config diagnostics that are normally stderr warnings — an unknown or
   typo'd rule id (`CL-001` vs `CL-0001`), an unknown top-level or per-rule key,
