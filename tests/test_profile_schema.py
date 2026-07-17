@@ -65,8 +65,9 @@ def test_schema_version_is_pinned(schema: dict[str, Any]) -> None:
     # 1.0 is the baseline; 1.1 adds drop-test as a derivation source; 1.2 adds
     # the optional derivation.run_config block; 1.3 adds the optional top-level
     # app_tier_verified block; 1.4 adds the optional derivation.run_config.sysctls
-    # field; 1.5 adds the optional top-level reference_url field. All remain
-    # valid so existing documents are not invalidated.
+    # field; 1.5 adds the optional top-level reference_url field; 1.6 adds the
+    # optional derivation.features feature ledger. All remain valid so existing
+    # documents are not invalidated.
     assert schema["properties"]["schema_version"]["enum"] == [
         "1.0",
         "1.1",
@@ -74,6 +75,7 @@ def test_schema_version_is_pinned(schema: dict[str, Any]) -> None:
         "1.3",
         "1.4",
         "1.5",
+        "1.6",
     ]
 
 
@@ -122,6 +124,40 @@ def test_unknown_observer_rejected(
 ) -> None:
     example["dimensions"]["capabilities"]["derivation"]["observer"] = "egress"
     assert not validator.is_valid(example)
+
+
+def test_feature_ledger_accepted(
+    validator: Draft202012Validator, example: dict[str, Any]
+) -> None:
+    # 1.6: the optional per-dimension feature ledger — which privilege-relevant
+    # features the workload did and did not drive.
+    example["dimensions"]["capabilities"]["derivation"]["features"] = [
+        {
+            "name": "per-container network metrics",
+            "driven": True,
+            "why": "verified collecting via the host-side veth fallback",
+        },
+        {
+            "name": "ebpf collectors",
+            "driven": False,
+            "why": "image ships no ebpf.plugin",
+        },
+    ]
+    assert validator.is_valid(example), list(validator.iter_errors(example))
+
+
+def test_feature_ledger_entries_require_why(
+    validator: Draft202012Validator, example: dict[str, Any]
+) -> None:
+    # An entry without its evidence/excuse is exactly the silent-skip the
+    # ledger exists to prevent.
+    example["dimensions"]["capabilities"]["derivation"]["features"] = [
+        {"name": "ping monitors", "driven": False}
+    ]
+    assert not validator.is_valid(example)
+
+    example["dimensions"]["capabilities"]["derivation"]["features"] = []
+    assert not validator.is_valid(example)  # empty ledger: omit instead
 
 
 def test_reference_url_accepted(
