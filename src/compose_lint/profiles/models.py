@@ -35,6 +35,9 @@ class ProfileMatch:
     dimensions: dict[str, Any]
     """Raw per-dimension blocks (capabilities, filesystem, ...)."""
 
+    reference_url: str | None = None
+    """The profile's rendered human-readable page (schema 1.5), if published."""
+
     @property
     def is_validated(self) -> bool:
         return self.status == "validated"

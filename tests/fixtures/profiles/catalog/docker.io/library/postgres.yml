@@ -1,10 +1,11 @@
 # Fixture profile for loader tests. Placeholder digests/hashes -- not a real
 # csd derivation.
-schema_version: "1.0"
+schema_version: "1.5"
 image: docker.io/library/postgres
 applies_to:
   tags: ["16", "16.*"]
 status: validated
+reference_url: https://example.com/profiles/docker.io/library/postgres.html
 dimensions:
   capabilities:
     cap_drop: [ALL]

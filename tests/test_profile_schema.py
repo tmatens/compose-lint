@@ -65,13 +65,15 @@ def test_schema_version_is_pinned(schema: dict[str, Any]) -> None:
     # 1.0 is the baseline; 1.1 adds drop-test as a derivation source; 1.2 adds
     # the optional derivation.run_config block; 1.3 adds the optional top-level
     # app_tier_verified block; 1.4 adds the optional derivation.run_config.sysctls
-    # field. All remain valid so existing documents are not invalidated.
+    # field; 1.5 adds the optional top-level reference_url field. All remain
+    # valid so existing documents are not invalidated.
     assert schema["properties"]["schema_version"]["enum"] == [
         "1.0",
         "1.1",
         "1.2",
         "1.3",
         "1.4",
+        "1.5",
     ]
 
 
@@ -119,6 +121,26 @@ def test_unknown_observer_rejected(
     validator: Draft202012Validator, example: dict[str, Any]
 ) -> None:
     example["dimensions"]["capabilities"]["derivation"]["observer"] = "egress"
+    assert not validator.is_valid(example)
+
+
+def test_reference_url_accepted(
+    validator: Draft202012Validator, example: dict[str, Any]
+) -> None:
+    # 1.5: optional top-level pointer to the profile's rendered page. Optional
+    # regardless of the document's declared version (additive, like the rest).
+    example["reference_url"] = (
+        "https://example.com/profiles/docker.io/library/postgres.html"
+    )
+    assert validator.is_valid(example), list(validator.iter_errors(example))
+
+
+def test_reference_url_must_be_https(
+    validator: Draft202012Validator, example: dict[str, Any]
+) -> None:
+    example["reference_url"] = (
+        "http://example.com/profiles/docker.io/library/postgres.html"
+    )
     assert not validator.is_valid(example)
 
 

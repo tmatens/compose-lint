@@ -8,9 +8,9 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "description": "Catalog profile schema version (independent of csd's sidecar schema_version, which is recorded per-dimension under derivation.sidecar_schema_version). 1.1 adds drop-test as a derivation source (observer=drop-test, validated_via=drop-test); 1.2 adds the optional derivation.run_config block (the invocation the minimum was derived under); 1.3 adds the optional top-level app_tier_verified block (service-level verification of the whole profile); 1.4 adds the optional derivation.run_config.sysctls field (the kernel sysctl posture a posture-dependent minimum was derived under). All earlier documents remain valid.",
+      "description": "Catalog profile schema version (independent of csd's sidecar schema_version, which is recorded per-dimension under derivation.sidecar_schema_version). 1.1 adds drop-test as a derivation source (observer=drop-test, validated_via=drop-test); 1.2 adds the optional derivation.run_config block (the invocation the minimum was derived under); 1.3 adds the optional top-level app_tier_verified block (service-level verification of the whole profile); 1.4 adds the optional derivation.run_config.sysctls field (the kernel sysctl posture a posture-dependent minimum was derived under); 1.5 adds the optional top-level reference_url field (the profile's rendered human-readable page). All earlier documents remain valid.",
       "type": "string",
-      "enum": ["1.0", "1.1", "1.2", "1.3", "1.4"]
+      "enum": ["1.0", "1.1", "1.2", "1.3", "1.4", "1.5"]
     },
     "image": {
       "description": "Canonical repository reference WITHOUT tag or digest -- the match key. Registry and namespace normalized (docker.io/library/postgres, lscr.io/linuxserver/radarr).",
@@ -45,6 +45,11 @@
       "type": "array",
       "items": { "type": "string" },
       "minItems": 1
+    },
+    "reference_url": {
+      "description": "1.5 (optional). HTTPS URL of this profile's rendered, human-readable page -- the full derivation context (evidence table, invocation, criteria prose, provenance) that a one-line enrichment hint cannot carry. Set by the catalog publisher; compose-lint surfaces it verbatim as a reference on enriched findings so the reader can judge applicability themselves.",
+      "type": "string",
+      "pattern": "^https://"
     },
     "app_tier_verified": { "$ref": "#/$defs/appTierVerified" },
     "dimensions": {

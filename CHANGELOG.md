@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Profile schema 1.5: optional top-level `reference_url`.** An HTTPS link to the
+  profile's rendered, human-readable page — the full derivation context (evidence
+  table, invocation, criteria prose, provenance) that a one-line enrichment hint
+  cannot carry. When present, enrichment surfaces it on the enriched finding's
+  `references` (first, so the text formatter's `ref:` line shows the image-specific
+  page rather than the rule's generic citation; JSON carries all references). The
+  reference catalog publishes these pages at
+  [tmatens.github.io/container-security-profiles](https://tmatens.github.io/container-security-profiles/).
+  Optional and additive — all 1.0–1.4 documents remain valid. See ADR-017 §12.
+
 - **Profile schema 1.4: optional `derivation.run_config.sysctls`.** Records the
   kernel sysctl posture a *posture-dependent* capability minimum was derived under.
   The canonical case is `net.ipv4.ip_unprivileged_port_start`: Docker defaults it

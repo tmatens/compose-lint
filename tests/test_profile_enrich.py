@@ -16,13 +16,16 @@ def _match(image: str):  # type: ignore[no-untyped-def]
     return match_profile(image, load_catalog(FIXTURE_CATALOG))
 
 
-def _finding(rule_id: str, fix: str | None = None) -> Finding:
+def _finding(
+    rule_id: str, fix: str | None = None, references: list[str] | None = None
+) -> Finding:
     return Finding(
         rule_id=rule_id,
         severity=Severity.MEDIUM,
         service="db",
         message="finding",
         fix=fix,
+        references=references or [],
     )
 
 
@@ -83,6 +86,33 @@ def test_provenance_notes_confidence_and_precision() -> None:
     assert "compose-lint can't see your runtime" in result.fix
     # digest is shortened, not the full 64 hex
     assert "a" * 64 not in result.fix
+
+
+def test_reference_url_prepended_to_references() -> None:
+    # The postgres fixture carries reference_url (schema 1.5); an enriched
+    # finding gains it FIRST (text output shows only the first reference, and
+    # the image-specific page outranks the rule's generic references).
+    match = _match("postgres:16")
+    assert match is not None
+    rule_ref = "https://owasp.org/some-generic-guidance"
+    result = enrich_fix(_finding("CL-0006", references=[rule_ref]), match)
+    assert result.references == [
+        "https://example.com/profiles/docker.io/library/postgres.html",
+        rule_ref,
+    ]
+
+
+def test_no_reference_url_leaves_references_untouched() -> None:
+    # The radarr fixture has no reference_url.
+    digest = "sha256:" + "c" * 64
+    match = match_profile(
+        f"lscr.io/linuxserver/radarr@{digest}", load_catalog(FIXTURE_CATALOG)
+    )
+    assert match is not None
+    rule_ref = "https://owasp.org/some-generic-guidance"
+    result = enrich_fix(_finding("CL-0007", references=[rule_ref]), match)
+    assert result.fix is not None  # still enriched
+    assert result.references == [rule_ref]
 
 
 def test_engine_enriches_when_lookup_supplied() -> None:

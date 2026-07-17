@@ -44,7 +44,16 @@ def enrich_fix(finding: Finding, match: ProfileMatch) -> Finding:
 
     note = f"profile hint ({_provenance(dimension, match)}): {guidance}"
     new_fix = f"{finding.fix}\n{note}" if finding.fix else note
-    return replace(finding, fix=new_fix)
+
+    # Surface the profile's rendered page (schema 1.5 reference_url) alongside
+    # the hint: the one-line note is inherently under-qualified, and the page
+    # carries the full derivation context. Prepended, because the image-specific
+    # evidence outranks the rule's generic references (text output shows only
+    # the first reference).
+    references = finding.references
+    if match.reference_url and match.reference_url not in references:
+        references = [match.reference_url, *references]
+    return replace(finding, fix=new_fix, references=references)
 
 
 def _flow(items: list[Any]) -> str:

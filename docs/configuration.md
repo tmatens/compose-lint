@@ -120,7 +120,10 @@ reclassifies a finding, so turning it on cannot change your pass/fail result —
 only makes existing guidance more specific, and the hint is **attributed and
 marked unverified** (it names its source and that compose-lint did not
 independently reproduce it). It matches a service's `image:` to a profile in your
-configured catalog; with no matching profile it is a no-op. See
+configured catalog; with no matching profile it is a no-op. When a profile carries
+a `reference_url` (schema 1.5) — the reference catalog points each profile at its
+rendered page on the site above — the enriched finding's `ref:` line links there,
+so the full evidence behind the hint is one click away. See
 [ADR-017](adr/017-security-profile-catalog.md) for the profile model and the
 trust rationale (§7).
 
