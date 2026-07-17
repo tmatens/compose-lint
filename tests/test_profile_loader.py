@@ -109,6 +109,20 @@ def test_dimensions_surfaced(catalog: Catalog) -> None:
     assert "CHOWN" in match.dimensions["capabilities"]["cap_add"]
 
 
+def test_reference_url_surfaced(catalog: Catalog) -> None:
+    # postgres carries reference_url (schema 1.5); radarr does not.
+    match = match_profile("postgres:16", catalog)
+    assert match is not None
+    assert (
+        match.reference_url
+        == "https://example.com/profiles/docker.io/library/postgres.html"
+    )
+
+    unset = match_profile("lscr.io/linuxserver/radarr", catalog)
+    assert unset is not None
+    assert unset.reference_url is None
+
+
 def test_load_profile_returns_validated_only() -> None:
     # validated postgres resolves...
     assert load_profile("postgres:16", FIXTURE_CATALOG) is not None

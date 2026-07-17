@@ -89,11 +89,13 @@ def match_profile(image: str, catalog: Catalog) -> ProfileMatch | None:
         return None
 
     dimensions = doc.get("dimensions")
+    reference_url = doc.get("reference_url")
     return ProfileMatch(
         image=ref.repository,
         status=str(doc.get("status", "")),
         precision=precision,
         dimensions=dimensions if isinstance(dimensions, dict) else {},
+        reference_url=reference_url if isinstance(reference_url, str) else None,
     )
 
 

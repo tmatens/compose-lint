@@ -326,3 +326,28 @@ The field is optional and additive — all `1.0`–`1.3` documents remain valid,
 absent/empty `sysctls` means no sysctl was pinned (the minimum holds under Docker's
 defaults). It records only what the derivation was pinned under; it does not, by
 itself, cause compose-lint to require that posture of a target.
+
+### 12. reference_url — the rendered page behind the hint (schema 1.5, amendment 2026-07-17)
+
+A derived minimum is a function of **(image digest × exact invocation × workload
+coverage)**, but an enrichment hint is one line appended to a finding's fix text.
+It cannot carry the evidence table, the invocation it was derived under, the
+criteria prose, or the re-derive-if conditions — the context a reader needs to
+judge whether the minimum applies to *their* service. The honest resolution of
+"advisory, not authoritative" is not a smarter hint; it is a **link** to a page
+that carries what the hint cannot.
+
+Schema 1.5 adds the optional top-level `reference_url`: an HTTPS URL to the
+profile's rendered, human-readable page, set by the **catalog publisher** (the
+reference catalog generates one page per profile on GitHub Pages from the same
+YAML + criteria doc + manifest — no second source of truth). compose-lint stays
+data-free (§7): it never constructs or assumes a URL shape, it only surfaces the
+field verbatim on enriched findings' `references` — first, so the text
+formatter's single `ref:` line shows the image-specific evidence page rather
+than the rule's generic citation. JSON output carries the full list.
+
+The field is optional and additive — all `1.0`–`1.4` documents remain valid, and
+a profile without it enriches exactly as before. Because enrichment only ever
+consumes *validated* profiles from a catalog the user explicitly configured and
+trusts (§7), the URL inherits that trust decision; the https-only pattern is a
+floor, not a substitute for it.
