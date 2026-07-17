@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Profile schema 1.6: optional per-dimension `derivation.features` — the
+  feature ledger.** A drop-test proves the minimum only for what its correctness
+  check exercises; the ledger records, as structured data instead of criteria-doc
+  prose, which of the image's *privilege-relevant* features the workload did
+  (`driven: true` + evidence) and did not (`driven: false` + the honest reason)
+  drive. Human-authored, bounded by asking "what is each requested privilege
+  FOR?" (1–3 entries per image in practice). Opt-in evidence, not a tax: with no
+  ledger a profile's workload-coverage claim simply stays `partial` (ADR-018).
+  Optional and additive — all 1.0–1.5 documents remain valid. See ADR-017 §13.
 - **Profile schema 1.5: optional top-level `reference_url`.** An HTTPS link to the
   profile's rendered, human-readable page — the full derivation context (evidence
   table, invocation, criteria prose, provenance) that a one-line enrichment hint

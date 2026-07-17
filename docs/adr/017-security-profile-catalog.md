@@ -351,3 +351,33 @@ a profile without it enriches exactly as before. Because enrichment only ever
 consumes *validated* profiles from a catalog the user explicitly configured and
 trusts (§7), the URL inherits that trust decision; the https-only pattern is a
 floor, not a substitute for it.
+
+### 13. features — the ledger of what the workload did and didn't drive (schema 1.6, amendment 2026-07-17)
+
+A drop-test proves the minimum for **what its correctness check exercises**. An
+image feature the workload never triggers is invisible to leave-one-out
+elimination by construction — its privilege reads *removable*, and the verdict
+looks exactly as confident as a fully-covered one. This is the incident class
+the project has actually paid for (the netdata `SYS_ADMIN`
+wrongly-removable-then-wrongly-required sequence), and until now the record of
+what a derivation did and didn't cover lived only as criteria-doc prose.
+
+Schema 1.6 adds the optional per-dimension `derivation.features` ledger:
+`[{name, driven, why}]`. Authoring stays human — nothing can mechanically
+enumerate an image's feature surface — but the burden is bounded because the
+list is generated *from the privileges, not the features*: for each grant the
+image requests, ask "what feature is this privilege FOR?" (typically 1–3
+entries per image; features needing no extra privilege can never change the
+profile and never belong in the ledger). `driven: true` entries carry their
+evidence; `driven: false` entries carry the honest reason (rule 8 of csd's
+correctness-authoring rules: judge the *feature's output*, not an isolated
+mechanism — production software often has a privilege-free fallback).
+
+The ledger is **opt-in evidence, not a tax**: ADR-018 already defaults the
+coverage axis to `partial`, and a profile with no ledger simply stays there. A
+ledger is what a profile must show to claim coverage *better* than partial —
+evidence for a claim, with a fail-safe default. (Validator enforcement of that
+gate lands when ADR-018's structured confidence block enters this schema; until
+then the ledger ships as data and the site renders it.)
+
+Optional and additive — all `1.0`–`1.5` documents remain valid.
