@@ -1,0 +1,150 @@
+name: Fixable vulnerability report
+
+# Surfaces every vulnerability that has a fix available, at ANY severity,
+# as a single rolling issue.
+#
+# Rationale: the blocking gates elsewhere are severity-scoped on purpose
+# (ci.yml's dependency-review at `high`, scout-scan.yml's gate at
+# `critical`) so a fixable low/medium never blocks unrelated work. That
+# leaves a visibility gap: a fixable MEDIUM in the published image is
+# real, actionable, and silent. This workflow closes the gap by
+# *reporting* on fixability rather than severity, without changing what
+# blocks.
+#
+# It also runs pip-audit with NO --ignore-vuln suppressions, so an
+# advisory that is filtered out of the CI/release gates still shows up
+# here. That is the anti-rot property: a suppression whose justification
+# has gone stale is otherwise invisible to pip-audit (filtered by ID) and
+# to Renovate (the existing pin is still satisfiable) simultaneously.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 30 min after scout-scan.yml's 06:00 sweep, so the image scan below
+    # sees the same day's advisory data.
+    - cron: "30 6 * * *"
+
+permissions: {}
+
+jobs:
+  report:
+    name: Report fixable vulnerabilities
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-dev.lock
+
+      - name: Install pinned env
+        run: |
+          pip install --require-hashes -r requirements-dev.lock
+          pip install --no-deps -e .
+
+      # No --ignore-vuln flags: this report is the un-suppressed view.
+      # continue-on-error because pip-audit exits non-zero when it finds
+      # anything, which is the normal case we want to report on — the
+      # report script fails the job if the JSON is missing or malformed.
+      - name: pip-audit (no suppressions)
+        continue-on-error: true
+        run: pip-audit --skip-editable --format json --output pip-audit.json
+
+      - uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Scan published image for fixable CVEs (all severities)
+        uses: docker/scout-action@2688993af7bafd6ba8c6a74ec652442be91dd82b # v1.23.1
+        with:
+          command: cves
+          image: composelint/compose-lint:latest
+          # Fixability is the filter — deliberately no `only-severities`.
+          only-fixed: true
+          exit-code: false
+          sarif-file: scout-fixable.sarif
+          # Same OpenVEX document the image attestation carries, so CVEs
+          # already marked not_affected don't page. See scout-scan.yml
+          # for why vex-author must be `.*`.
+          vex-location: .vex/compose-lint.openvex.json
+          vex-author: .*
+
+      - name: Build report body
+        id: build
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python scripts/vuln_report.py \
+            --pip-audit pip-audit.json \
+            --scout-sarif scout-fixable.sarif \
+            --image composelint/compose-lint:latest \
+            --run-url "${RUN_URL}" \
+            --out body.md
+
+      # Rolling issue: one issue, rewritten in place, closed when clean.
+      # An OPEN issue with this label means "there is something fixable
+      # right now" — there is no triage backlog to maintain.
+      - name: Reconcile rolling issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COUNT: ${{ steps.build.outputs.count }}
+          HAS_FINDINGS: ${{ steps.build.outputs.has_findings }}
+          LABEL: fixable-vulns
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          gh label create "${LABEL}" \
+            --description "Rolling report: vulnerabilities with an available fix" \
+            --color B60205 --force
+
+          existing=$(gh issue list --state open --label "${LABEL}" \
+            --json number --jq '.[0].number // empty')
+
+          if [ "${HAS_FINDINGS}" = "true" ]; then
+            title="Fixable vulnerabilities (${COUNT})"
+            if [ -n "${existing}" ]; then
+              echo "Updating issue #${existing} (${COUNT} fixable)"
+              gh issue edit "${existing}" --title "${title}" --body-file body.md
+            else
+              echo "Opening new issue (${COUNT} fixable)"
+              gh issue create --title "${title}" --body-file body.md \
+                --label "${LABEL}"
+            fi
+          elif [ -n "${existing}" ]; then
+            echo "No fixable vulnerabilities left; closing #${existing}"
+            gh issue close "${existing}" --reason completed --comment \
+              "All previously reported vulnerabilities now have no available fix or are resolved. Verified by ${RUN_URL}."
+          else
+            echo "No fixable vulnerabilities and no open issue. Nothing to do."
+          fi
+
+      - name: Report scheduled failure as issue
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          WORKFLOW: ${{ github.workflow }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="Scheduled run failed: ${WORKFLOW}"
+          body=$(printf -- '- Workflow: **%s**\n- Run: %s\n- Commit: %s\n\nThe vulnerability report did not complete, so the rolling issue may be stale.' \
+            "${WORKFLOW}" "${RUN_URL}" "${GITHUB_SHA}")
+          existing=$(gh issue list --state open --search "\"${title}\" in:title" \
+            --json number --jq '.[0].number // empty')
+          if [ -n "${existing}" ]; then
+            gh issue comment "${existing}" --body "${body}"
+          else
+            gh issue create --title "${title}" --body "${body}"
+          fi

@@ -14,6 +14,7 @@ per-channel publish contract see [`DISTRIBUTION.md`](DISTRIBUTION.md).
 | `codeql.yml`              | Every PR + weekly (Mon 04:27 UTC)          | Static analysis, results in Code Scanning              |
 | `scorecard.yml`           | Branch-protection change + weekly          | OpenSSF Scorecard, results in Code Scanning            |
 | `scout-scan.yml`          | Daily (06:00 UTC) + manual                 | Docker Scout CVE scan against the published image      |
+| `vuln-report.yml`         | Daily (06:30 UTC) + manual                 | Rolling issue listing every vulnerability with a fix   |
 | `publish.yml`             | `v*` tag push                              | Release pipeline — see `RELEASING.md`                  |
 | `release-prep.yml`        | Manual (`workflow_dispatch`, maintainer)   | Opens the "Prepare X.Y.Z release" PR                   |
 | `publish-channel.yml`     | Manual (`workflow_dispatch`, maintainer)   | Emergency single-channel publish                       |
@@ -158,6 +159,46 @@ digest, which ships in the next patch release.
 
 ---
 
+## Fixable-vulnerability report — `vuln-report.yml`
+
+Runs daily (06:30 UTC), just after the Scout sweep. It answers one
+question: **is there anything with an available fix right now?**
+
+The blocking gates elsewhere are severity-scoped on purpose — the
+dependency review fails at `high`, the Scout gate at `critical` — so a
+fixable low or medium never blocks unrelated work. That leaves a
+visibility gap, because a fixable MEDIUM in the published image is real
+and actionable but silent. This workflow closes the gap by reporting on
+**fixability rather than severity**, without changing what blocks.
+
+Output is a single **rolling issue** labelled `fixable-vulns`:
+
+- The body is rewritten in place on every run — one issue, never a
+  stream of per-CVE issues.
+- It **closes itself** when nothing fixable is left. An open issue
+  therefore means "there is something to fix right now"; there is no
+  triage backlog to groom.
+- Advisories with **no** available fix are listed in a collapsed section
+  and deliberately do not open or close the issue.
+
+Two properties are worth preserving if you edit it:
+
+**It applies no `--ignore-vuln` suppressions.** An advisory filtered out
+of the `ci.yml` / `publish.yml` gates still appears here. This is the
+anti-rot property: a suppression whose written justification has gone
+stale is otherwise invisible to pip-audit (filtered by ID) *and* to
+Renovate (the existing pin is already satisfiable) at the same time. That
+is not hypothetical — the `tuf` ignore claimed "no fix is installable
+under current constraints" for months after `sigstore` relaxed the pin
+that made it true.
+
+**A scanner failure fails the job.** `scripts/vuln_report.py` errors out
+if either report is missing or has an unexpected shape rather than
+rendering an empty body, because a reporting job that silently reports
+clean is worse than no reporting job at all.
+
+---
+
 ## Release pipeline — `publish.yml`
 
 Tag-triggered. Full detail in [`RELEASING.md`](RELEASING.md) and the
@@ -276,9 +317,19 @@ still works weeks after release).
 | CodeQL alert                        | Security → Code Scanning, PR review comments           |
 | Scorecard finding                   | Security → Code Scanning (`scorecard` category)        |
 | Docker Scout CVE                    | Security → Code Scanning (`docker-scout` category)     |
+| Vulnerability with an available fix | Rolling issue labelled `fixable-vulns`                 |
 | Scheduled workflow failure          | Email to workflow author + red X on Actions tab        |
 | Renovate PR                         | Opens a PR tagged accordingly                          |
 
 The Security tab is the single pane of glass for everything except
 PR-gating failures (which stay on the PR) and Renovate bumps (which
 open their own PRs).
+
+The two security surfaces are complementary rather than redundant: the
+Security tab is the **passive** record — deduplicated, auto-resolving,
+and complete across severities — while the `fixable-vulns` issue is the
+**active** channel that actually notifies, filtered to what is
+actionable today. Note that the Security tab covers image and code
+findings only; Python dependency advisories reach it through no path at
+all, since `pip-audit` emits no SARIF. For those, the rolling issue is
+the *only* standing surface.
