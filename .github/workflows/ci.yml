@@ -271,21 +271,19 @@ jobs:
         # for the local install path); PyYAML and any future runtime
         # deps are still scanned.
         #
-        # --ignore-vuln PYSEC-2025-183: disputed advisory against pyjwt
-        # claiming "weak encryption". The pyjwt maintainers dispute it
-        # because the encryption key length is chosen by the application
-        # consuming the library, not the library itself. There is no
-        # fix version. pyjwt is a transitive dev/publish dependency
-        # (via sigstore/tuf/twine) and not part of the runtime image.
-        # Remove this ignore if the OSV record is withdrawn or a fix
-        # release is published.
-        #
-        # An ignore is only for advisories with NO installable fix. If a
-        # fix exists, take it — bump the lockfile instead of suppressing.
+        # There are deliberately NO --ignore-vuln entries. An ignore is
+        # only ever justified for an advisory with no installable fix,
+        # and every such entry rots: its justification depends on facts
+        # (someone else's pin, an unfixed upstream) that change without
+        # notice, while the suppression stays. A rotted ignore is
+        # invisible to pip-audit, which filters it by ID, and to
+        # Renovate, whose pin is still satisfiable, at the same time —
+        # see the tuf/GHSA-qp9x-wp8f-qgjj case. Prefer bumping the
+        # lockfile. If an unfixable advisory ever genuinely needs
+        # suppressing, add it here AND to publish.yml, and expect
+        # vuln-report.yml to keep listing it.
         continue-on-error: true
-        run: >-
-          pip-audit --skip-editable
-          --ignore-vuln PYSEC-2025-183
+        run: pip-audit --skip-editable
 
   # Fails the PR if `pyproject.toml` and `src/compose_lint/__init__.py`
   # disagree about the project version. The two strings drifted silently

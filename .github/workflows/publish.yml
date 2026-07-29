@@ -109,10 +109,12 @@ jobs:
         # live and a CVE newly disclosed against an unchanged pinned dep
         # must not block unrelated work. At publish those deps actually
         # run and touch release integrity, so a known advisory must stop
-        # the release. Keep the --ignore-vuln set identical to ci.yml's.
-        run: >-
-          pip-audit --skip-editable
-          --ignore-vuln PYSEC-2025-183
+        # the release. Keep the --ignore-vuln set identical to ci.yml's,
+        # which currently means: none at all. See ci.yml for why an
+        # ignore is a last resort. If this gate ever blocks a release on
+        # an advisory with no fix, the escape hatch is to add the ignore
+        # to BOTH files in a PR — not to bypass the tag.
+        run: pip-audit --skip-editable
       - run: python -m build
       - name: Verify dist contents
         run: |
