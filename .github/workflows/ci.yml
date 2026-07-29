@@ -338,6 +338,41 @@ jobs:
               sys.exit(f"::error::Version drift: pyproject.toml ({pyproject}) vs src/compose_lint/__init__.py ({init})")
           PY
 
+  # Docker Hub's repository API rejects a `full_description` over 25000 bytes
+  # with HTTP 400, which is what README.md is synced into by the
+  # `dockerhub-description` job in publish.yml. Without this guard the limit is
+  # only discovered at release time, as a red — but by then cosmetic — job long
+  # after the tag is cut (v0.14.0 hit exactly that at 25319 bytes). Check it at
+  # edit time instead, where the fix is cheap.
+  #
+  # 25000 is the real ceiling, not a padded one: Docker Hub counts bytes and so
+  # does `wc -c`, and v0.14.0's rejection reported `actual 25319` for a README
+  # that measured 25319 here. A lower "safety" threshold would only invent a
+  # second, fictional limit — the headroom line below gives early warning
+  # instead.
+  readme-size:
+    name: README fits Docker Hub description limit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check README.md byte size
+        env:
+          LIMIT: "25000"
+        run: |
+          set -euo pipefail
+          size=$(wc -c < README.md)
+          echo "README.md: ${size} / ${LIMIT} bytes"
+          if [ "${size}" -gt "${LIMIT}" ]; then
+            echo "::error file=README.md::README.md is $((size - LIMIT)) bytes over the ${LIMIT}-byte Docker Hub description limit (${size}). Docker Hub will reject the overview sync with HTTP 400. Shorten it, or convert repeated inline links to reference-style links."
+            exit 1
+          fi
+          echo "Headroom: $((LIMIT - size)) bytes"
+
   # If a PR bumps the `version` in pyproject.toml, CHANGELOG.md must already
   # contain a matching `## [X.Y.Z]` section. Without this, a release PR can
   # merge with no release notes and the Publish workflow's `create-release`
@@ -702,6 +737,7 @@ jobs:
       - coverage
       - security
       - version-consistency
+      - readme-size
       - changelog-gate
       - dco
       - no-ai-attribution
