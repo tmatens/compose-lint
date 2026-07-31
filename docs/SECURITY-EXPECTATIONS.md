@@ -28,10 +28,13 @@ pipeline, this is the page to read.
    (the default command) only reads its inputs. The `fix` command is
    dry-run by default — it prints a unified diff and writes nothing;
    only `fix --apply` rewrites in place, via an atomic swap that
-   preserves permission bits. It applies only safe, mechanical edits,
-   never touches suppressed findings, and re-parses and re-lints every
-   change before writing — see [docs/ROADMAP.md](ROADMAP.md) and the
-   Fixing findings section of the README.
+   preserves permission bits. It applies only mechanically unambiguous
+   edits, never touches suppressed findings, and re-parses and re-lints
+   every change before writing. That guarantee covers the *edit*, not
+   the *outcome*: a fix can still change how your stack behaves, and
+   every such edit is labelled `⚠ behavior-changing` in the diff rather
+   than withheld — see [docs/ROADMAP.md](ROADMAP.md) and the Fixing
+   findings section of the README.
 
 4. **Released artifacts are signed.** Every release ships:
    - PyPI wheel + sdist with PEP 740 trusted-publisher attestations and

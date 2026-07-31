@@ -1,6 +1,6 @@
 # compose-lint
 
-**Security-focused linter for Docker Compose files.** Catches dangerous misconfigurations before they reach production — and auto-fixes the safe ones, dry-run first. Grounded in OWASP and the CIS Docker Benchmark.
+**Security-focused linter for Docker Compose files.** Catches dangerous misconfigurations before they reach production — and auto-fixes the unambiguous ones, dry-run first. Grounded in OWASP and the CIS Docker Benchmark.
 
 [![CI](https://github.com/tmatens/compose-lint/actions/workflows/ci.yml/badge.svg)](https://github.com/tmatens/compose-lint/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/compose-lint)](https://pypi.org/project/compose-lint/)
@@ -68,7 +68,7 @@ Or pass files explicitly:
 compose-lint docker-compose.yml docker-compose.prod.yml
 ```
 
-Preview the safe auto-fixes as a unified diff, then apply them (see [Fixing findings](#fixing-findings)):
+Preview the auto-fixable findings as a unified diff, then apply them — reading the `⚠ behavior-changing` labels first (see [Fixing findings](#fixing-findings)):
 
 ```bash
 compose-lint fix              # dry-run diff, writes nothing
@@ -221,7 +221,7 @@ See [docs/configuration.md](https://github.com/tmatens/compose-lint/blob/main/do
 
 ```
 compose-lint [check] [OPTIONS] [FILE ...]   Lint files (default; bare invocation works)
-compose-lint fix [OPTIONS] [FILE ...]       Auto-remediate safe findings
+compose-lint fix [OPTIONS] [FILE ...]       Auto-remediate auto-fixable findings
 compose-lint init [OPTIONS] FILE            Generate a starter .compose-lint.yml
 
 check options:
@@ -249,11 +249,29 @@ init options:
 
 ## Fixing findings
 
-`compose-lint fix` auto-remediates the findings that have a safe, unambiguous
-edit — adding `read_only: true` or `no-new-privileges:true`, binding a
-published port to `127.0.0.1`, restoring a disabled logging driver, seccomp
-profile, or healthcheck, and similar. It is
-**dry-run by default**: it prints a unified diff and writes nothing.
+`compose-lint fix` auto-remediates the findings whose edit is **mechanically
+unambiguous** — one correct value, in one place, with no collateral change to
+the rest of the file: adding `read_only: true` or `no-new-privileges:true`,
+binding a published port to `127.0.0.1`, restoring a disabled logging driver,
+seccomp profile, or healthcheck, and similar. It is **dry-run by default**: it
+prints a unified diff and writes nothing.
+
+> **Auto-fixable does not mean harmless.** The guarantee is about the *edit*,
+> not the *outcome*. `fix` will not corrupt your file, reflow it, or guess at a
+> value it cannot derive — but it will happily change how your stack behaves.
+> `read_only: true` breaks a container that writes to its root filesystem;
+> rebinding a published port to `127.0.0.1` cuts off every client outside the
+> host. Those edits are still offered, because withholding them would hide a
+> real finding. Instead each one is labelled `⚠ behavior-changing` in the diff
+> with the specific breakage named:
+>
+> ```
+> ⚠ behavior-changing · CL-0007: read_only: true breaks the container if it
+>   writes to its root filesystem; declare writable paths via tmpfs/volumes first.
+> ```
+>
+> Read those lines before you `--apply`, and roll the result out to a staging
+> stack before production. Treat `fix` as a patch author, not an approver.
 
 ```bash
 compose-lint fix docker-compose.yml            # preview the diff, write nothing
@@ -264,12 +282,18 @@ compose-lint fix --only CL-0007 --apply .      # restrict to one rule
 - **Dry-run by default; `--apply` writes in place** via an atomic swap that
   preserves the file's permission bits — an interrupted write never corrupts the
   Compose file.
-- **Only safe, mechanical fixes are applied.** Findings whose remediation is
-  context-dependent (e.g. CL-0006 capability lists, CL-0001 socket mounts) are
-  reported as needing manual review, never auto-edited.
+- **Only mechanically unambiguous fixes are applied.** Findings whose
+  remediation is context-dependent (e.g. CL-0006 capability lists, CL-0001
+  socket mounts) are reported as needing manual review, never auto-edited — the
+  tool refuses rather than guess at a value only you can choose.
+- **Behavior-changing edits are labelled, not withheld.** Every edit that alters
+  runtime behavior emits a `⚠ behavior-changing` line naming what breaks, on the
+  dry-run *and* on `--apply`, so the warning reaches you on whichever path you
+  took. The label is the mitigation; there is no severity gate that quietly
+  drops risky fixes.
 - **Suppressed findings are never touched** — `.compose-lint.yml` disables and
   per-service excludes are honored.
-- **Refuses unsafe edits.** Files using YAML anchors, merge keys, or `${VAR}`
+- **Refuses rather than risk a wrong rewrite.** Files using YAML anchors, merge keys, or `${VAR}`
   interpolation in the affected region are skipped rather than risk a wrong
   rewrite, and every apply is re-parsed and re-linted before it is written —
   anything that wouldn't round-trip clean is refused with the diff surfaced for

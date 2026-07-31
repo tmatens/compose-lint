@@ -1,6 +1,6 @@
 # compose-lint
 
-**Security-focused linter for Docker Compose files.** Catches dangerous misconfigurations before they reach production — and auto-fixes the safe ones, dry-run first. Grounded in the [OWASP Docker Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html) and [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker).
+**Security-focused linter for Docker Compose files.** Catches dangerous misconfigurations before they reach production — and auto-fixes the unambiguous ones, dry-run first. Grounded in the [OWASP Docker Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html) and [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker).
 
 In a scan of 6,444 public Docker Compose files on GitHub, **91% of those that parse had at least one security finding** — 68% had a finding rated HIGH or CRITICAL. [Read the full *State of Docker Compose Security* report →](https://github.com/tmatens/compose-lint/blob/main/docs/state-of-compose.md)
 
@@ -21,7 +21,7 @@ docker run --rm -v "$(pwd):/src" composelint/compose-lint fix        # preview a
 docker run --rm -v "$(pwd):/src" composelint/compose-lint --explain CL-0001
 ```
 
-Auto-detects `compose.yml` / `docker-compose.yml` variants; pass filenames to lint specific files. `fix --apply` writes the safe, mechanical fixes in place (atomic, re-parsed and re-linted before writing); context-dependent findings are reported for manual review, never auto-edited. Also on PyPI: `pip install compose-lint` (Python 3.10+).
+Auto-detects `compose.yml` / `docker-compose.yml` variants; pass filenames to lint specific files. `fix --apply` writes the mechanically unambiguous fixes in place (atomic, re-parsed and re-linted before writing); context-dependent findings are reported for manual review, never auto-edited. Unambiguous is not harmless — the guarantee is about the edit, not the outcome, so edits that change runtime behavior (e.g. `read_only: true`) are labelled `⚠ behavior-changing` in the diff. Read those before `--apply`. Also on PyPI: `pip install compose-lint` (Python 3.10+).
 
 ## Exit codes
 

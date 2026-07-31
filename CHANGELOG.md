@@ -24,6 +24,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   opened failed its own required check on every release and needed a
   hand-pushed fixup commit.
 
+### Changed
+
+- Documentation no longer describes auto-fixable findings as "safe". `README.md`,
+  `docs/dockerhub-overview.md`, and `docs/SECURITY-EXPECTATIONS.md` said `fix`
+  applies "safe, mechanical edits", which invites the reading that applying them
+  is harmless. Per ADR-014 the guarantee is a property of the *edit* — one
+  unambiguous value, no collateral change, still-valid YAML — not of the
+  outcome: `read_only: true` and the `127.0.0.1` port rebind both change runtime
+  behavior by design, and are surfaced with a `⚠ behavior-changing` caveat
+  rather than withheld. The docs now say "mechanically unambiguous", state the
+  edit/outcome distinction explicitly, and show the caveat line a user will see.
+
 ## [0.14.1] - 2026-07-31
 
 ### Fixed
