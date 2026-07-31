@@ -876,20 +876,28 @@ jobs:
             echo "succeeded, so the pinned SHA points at a release that actually"
             echo "shipped to PyPI, Docker Hub, and GitHub Releases."
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Update .github/workflows/marketplace-smoke.yml
+      # README.md carries the same `uses: tmatens/compose-lint@<sha> # vX.Y.Z`
+      # form in its copy-paste GitHub Action snippet. It is the one
+      # self-referencing pin CI cannot enforce (the tag's SHA does not exist
+      # until the tag is pushed), so it is bumped here alongside the smoke
+      # workflow. Without this it silently stayed a release behind — v0.14.1
+      # shipped with the README snippet still pinned to v0.14.0.
+      - name: Update marketplace-smoke.yml and the README action pin
         env:
           TAG: ${{ github.ref_name }}
           SHA: ${{ steps.sha.outputs.sha }}
         run: |
           version="${TAG#v}"
+          targets=(.github/workflows/marketplace-smoke.yml README.md)
           sed -i -E \
             "s|uses: tmatens/compose-lint@[0-9a-f]+ # v[0-9.]+|uses: tmatens/compose-lint@${SHA} # v${version}|g" \
-            .github/workflows/marketplace-smoke.yml
-          if git diff --quiet .github/workflows/marketplace-smoke.yml; then
+            "${targets[@]}"
+          if git diff --quiet "${targets[@]}"; then
             echo "no_changes=1" >> "$GITHUB_ENV"
-            echo "::notice::marketplace-smoke.yml already points at ${SHA}; nothing to do."
+            echo "::notice::action pins already point at ${SHA}; nothing to do."
           else
-            echo "marketplace-smoke.yml updated to ${SHA} (${TAG})."
+            echo "action pins updated to ${SHA} (${TAG}):"
+            git diff --name-only "${targets[@]}"
           fi
       - name: Commit, push, open PR
         if: env.no_changes != '1'
@@ -909,7 +917,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "${branch}"
-          git add .github/workflows/marketplace-smoke.yml
+          # Subject and PR title below are kept verbatim across releases: the
+          # release skill locates this PR by searching that exact string.
+          git add .github/workflows/marketplace-smoke.yml README.md
           git commit -m "Bump marketplace-smoke pin to ${TAG}"
           git push -u origin "${branch}"
           cat > /tmp/pr-body.md <<EOF
@@ -922,6 +932,8 @@ jobs:
           - \`create-release\` created the GitHub Release \`${TAG}\`
 
           So the pinned SHA \`${SHA}\` is guaranteed to correspond to a release that actually shipped through every channel.
+
+          Bumps the pin in \`.github/workflows/marketplace-smoke.yml\` **and** the copy-paste GitHub Action snippet in \`README.md\` — both use the \`@<sha> # vX.Y.Z\` form that CI cannot check pre-tag.
 
           **After merging this PR**, trigger **Actions → Marketplace smoke test → Run workflow** to verify the published Action end-to-end against the new tag.
           EOF

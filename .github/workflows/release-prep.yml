@@ -1,9 +1,11 @@
 name: Release prep
 
 # Maintainer-triggered. Opens the "Prepare X.Y.Z release" PR for you:
-# bumps pyproject.toml + src/compose_lint/__init__.py, renames the
-# CHANGELOG [Unreleased] section to [X.Y.Z] - <today>, inserts a fresh
-# empty [Unreleased] above it, updates the CHANGELOG compare-link footer,
+# bumps pyproject.toml + src/compose_lint/__init__.py, bumps the
+# self-referencing version pins in README.md + docs/ that the
+# version-consistency job enforces (#443), renames the CHANGELOG
+# [Unreleased] section to [X.Y.Z] - <today>, inserts a fresh empty
+# [Unreleased] above it, updates the CHANGELOG compare-link footer,
 # commits on a release/X.Y.Z branch, and opens a PR against main.
 #
 # The signed annotated tag is NOT created here. After the PR merges,
@@ -73,6 +75,66 @@ jobs:
         run: |
           sed -i -E "s/^__version__ = \"[^\"]+\"/__version__ = \"${VERSION}\"/" src/compose_lint/__init__.py
           grep '__version__' src/compose_lint/__init__.py
+
+      # The version-consistency job's "self-referencing version pins" step
+      # (#443) requires every `compose-lint==X.Y.Z`,
+      # `composelint/compose-lint:X.Y.Z`, and `rev: vX.Y.Z` pin in README.md
+      # and docs/ to equal pyproject's version. Bumping only pyproject +
+      # __init__ therefore opened a PR that failed its own required check on
+      # every release — 0.14.1 had to have the bump pushed by hand. Rewrite
+      # the same three forms here, over the same file set and exclusions, so
+      # the prep PR is green by construction.
+      #
+      # The `tmatens/compose-lint@<sha> # vX.Y.Z` action-pin form is
+      # deliberately NOT handled here: the new tag's commit SHA does not exist
+      # until the tag is pushed, so publish.yml's bump-marketplace-smoke-pin
+      # job owns that one post-release.
+      - name: Bump self-referencing version pins in README and docs
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          python - <<'PY'
+          import os, pathlib, re, sys
+
+          version = os.environ["VERSION"]
+          # Keep these patterns and exclusions in lockstep with the
+          # "self-referencing version pins" step in .github/workflows/ci.yml.
+          patterns = [
+              re.compile(r"(compose-lint==)(\d+\.\d+\.\d+)"),
+              re.compile(r"(composelint/compose-lint:)(\d+\.\d+\.\d+)"),
+              re.compile(r"(rev: v)(\d+\.\d+\.\d+)"),
+          ]
+          exclude = ("docs/adr/", "docs/publishing/", "docs/state-of-compose.md")
+
+          def targets():
+              for f in [pathlib.Path("README.md"), *sorted(pathlib.Path("docs").rglob("*.md"))]:
+                  if not f.as_posix().startswith(exclude):
+                      yield f
+
+          changed = []
+          for f in targets():
+              original = f.read_text()
+              updated = original
+              for pat in patterns:
+                  updated = pat.sub(rf"\g<1>{version}", updated)
+              if updated != original:
+                  f.write_text(updated)
+                  changed.append(f.as_posix())
+          print("bumped:", ", ".join(changed) if changed else "nothing (already current)")
+
+          # Re-scan so this workflow fails loudly here rather than as a red
+          # required check on the PR it just opened.
+          stale = [
+              f"{f.as_posix()}:{i}: {m.group(0)}"
+              for f in targets()
+              for i, line in enumerate(f.read_text().splitlines(), 1)
+              for pat in patterns
+              for m in pat.finditer(line)
+              if m.group(2) != version
+          ]
+          if stale:
+              sys.exit("::error::pins still stale after bump: " + "; ".join(stale))
+          PY
 
       - name: Rename CHANGELOG [Unreleased] and insert fresh header
         env:
@@ -149,7 +211,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "${branch}"
-          git add pyproject.toml src/compose_lint/__init__.py CHANGELOG.md
+          # `-u` stages every tracked file the steps above modified — the two
+          # version files, CHANGELOG.md, and whichever README/docs carried a
+          # self-referencing pin. Listing paths explicitly would silently drop
+          # a pin in a doc added later, which is the failure #443 guards
+          # against. `-u` cannot add untracked files, so nothing stray is swept in.
+          git add -u
           git commit -m "Prepare ${VERSION} release"
           git push -u origin "${branch}"
           cat > /tmp/pr-body.md <<EOF

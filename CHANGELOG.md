@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The GitHub Action snippet in `README.md` now pins the current release.
+  `publish.yml`'s `bump-marketplace-smoke-pin` job rewrote the
+  `tmatens/compose-lint@<sha> # vX.Y.Z` pin only in
+  `.github/workflows/marketplace-smoke.yml`, so the copy-paste snippet users
+  actually take from the README stayed a release behind every time — it was
+  still on v0.14.0 after v0.14.1 shipped. The job now rewrites both files,
+  and the stale pin is corrected.
+- `release-prep.yml` now bumps the self-referencing version pins in
+  `README.md` and `docs/` as part of the version-bump commit. The
+  `version-consistency` job has required those pins to match
+  `pyproject.toml` since #443, but release-prep only touched
+  `pyproject.toml`, `__init__.py`, and `CHANGELOG.md` — so the release PR it
+  opened failed its own required check on every release and needed a
+  hand-pushed fixup commit.
+
 ## [0.14.1] - 2026-07-31
 
 ### Fixed

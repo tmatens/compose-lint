@@ -182,28 +182,39 @@ four before opening the bump PR.
 - [ ] `README.md` + `docs/hardening.md` — version references in
       copy-paste integration snippets. All need bumping each release;
       otherwise users land on a stale version (v0.14.0 shipped with all
-      of them stale — this step was skipped). Four forms exist:
+      of them stale). Four forms exist:
       - `tmatens/compose-lint@<sha> # v0.X.Y` (README — GitHub Action snippet)
       - `rev: v0.X.Y` (README — pre-commit snippet)
       - `compose-lint==0.X.Y` (README — Forgejo Actions snippet, pip pin)
       - `:0.X.Y` image tags (docs/hardening.md — hardened `docker run`
         snippet, plus the digest-lookup prose below it; NOT in README)
 
-      CI enforces the first three forms (`version-consistency` job,
-      "self-referencing version pins" step): any `compose-lint==X.Y.Z`,
+      **All four are automated — nothing to do by hand here.** The first
+      three are rewritten by `release-prep.yml` in the bump commit itself,
+      and CI enforces them (`version-consistency` job, "self-referencing
+      version pins" step): any `compose-lint==X.Y.Z`,
       `composelint/compose-lint:X.Y.Z`, or `rev: vX.Y.Z` anywhere in
       `README.md` or `docs/` (historical files excluded) must equal
-      `pyproject.toml`'s version, so the bump PR fails CI until they all
-      move together — including pins in docs this list doesn't know
-      about yet. The action-SHA form is the exception (the new tag's
-      SHA exists only post-release; bump it in the marketplace-smoke
-      follow-up PR).
+      `pyproject.toml`'s version, so the prep PR fails CI if the rewrite
+      ever misses one — including pins in docs this list doesn't know
+      about yet. The action-SHA form cannot be checked pre-tag (the new
+      tag's SHA exists only post-release), so `publish.yml`'s
+      `bump-marketplace-smoke-pin` job rewrites it in both
+      `marketplace-smoke.yml` and `README.md` in the post-release
+      follow-up PR.
+
+      This used to be manual, and drifted: the prep PR failed its own
+      required check on every release after #443 added the gate (0.14.1
+      needed a hand-pushed pin-bump commit), and the README action pin
+      stayed a release behind because only `marketplace-smoke.yml` was
+      rewritten. Verify rather than re-do — if the prep PR is green and
+      the follow-up PR touches `README.md`, this item is satisfied.
 - [ ] `.github/workflows/marketplace-smoke.yml` — two
-      `uses: tmatens/compose-lint@<sha> # vX.Y.Z` lines. Update both
-      the full commit SHA and the trailing `# vX.Y.Z` comment. Get
-      the new SHA with `git rev-parse vX.Y.Z^{commit}` **after** you
-      push the signed tag in a later step, then open a follow-up PR
-      to bump the pin.
+      `uses: tmatens/compose-lint@<sha> # vX.Y.Z` lines. Automated by
+      the same `bump-marketplace-smoke-pin` job as the README pin above:
+      it resolves `git rev-parse vX.Y.Z^{commit}` **after** the signed
+      tag is pushed and opens the follow-up PR for you. Review and merge
+      that PR; only bump by hand if the job failed.
 
 Verify the first two match:
 
