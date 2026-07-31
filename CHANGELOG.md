@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `fix --apply` now prints the `⚠ behavior-changing` caveats for the fixes it
+  applied, in the same form the dry-run diff uses. Previously the caveats were
+  rendered only on the dry-run path, so a one-shot `compose-lint fix --apply`
+  (the CI and script-pipeline case) wrote behavior-changing edits and printed
+  only `applied N fix(es)` — the warning never reached the user at the moment
+  it mattered. Runs whose edits all carry no caveat print no banner; stdout
+  stays data-clean. Reported from the r/selfhosted feedback thread (#425,
+  #428).
+
 ## [0.14.0] - 2026-07-29
 
 ### Added
