@@ -289,15 +289,18 @@ After approval, `publish` and `docker-publish` run in parallel.
       `uses: tmatens/compose-lint@<sha> # vX.Y.Z` lines. Review and
       squash-merge, then trigger **Actions → Marketplace smoke test →
       Run workflow** to verify the published Action end-to-end.
-- [ ] **Docker Hub overview (README) sync** — runs automatically in
+- [ ] **Docker Hub overview sync** — runs automatically in
       `publish.yml`'s `dockerhub-description` job after `docker-publish`,
       via the first-party composite action at
       `.github/actions/update-dockerhub-description` (which just forwards
-      to `scripts/update-dockerhub-description.sh`). Requires
-      `DOCKERHUB_TOKEN` to have **Read, Write, Delete** scope — Read &
-      Write is not enough for the description PATCH endpoint. Verify
+      to `scripts/update-dockerhub-description.sh`). Syncs
+      `docs/dockerhub-overview.md` (NOT `README.md` — the Hub overview is
+      a separate, trimmed, version-free file, so it needs no per-release
+      bump). Requires `DOCKERHUB_TOKEN` to have **Read, Write, Delete**
+      scope — Read & Write is not enough for the description PATCH
+      endpoint. Verify
       `https://hub.docker.com/r/composelint/compose-lint` reflects the
-      current README.
+      current overview file.
 - [ ] **README demo GIF** — only if this release changed the text-output
       appearance (finding layout, verdict line, colors) or you want the
       banner to show the new version. The demo toolchain installs

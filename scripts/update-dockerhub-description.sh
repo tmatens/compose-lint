@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Sync a Docker Hub repository's long-description (overview) and short
-# description from README.md. First-party replacement for
+# description from docs/dockerhub-overview.md (the trimmed, byte-capped
+# Hub-facing overview — not README.md). First-party replacement for
 # peter-evans/dockerhub-description; invoked from CI via
 # `.github/actions/update-dockerhub-description` and also runnable locally
 # for ad-hoc description refreshes.
@@ -10,7 +11,7 @@
 #     [SHORT_DESCRIPTION="..."] \
 #     scripts/update-dockerhub-description.sh [repo] [readme-path]
 #
-# Defaults: repo=composelint/compose-lint, readme-path=./README.md,
+# Defaults: repo=composelint/compose-lint, readme-path=./docs/dockerhub-overview.md,
 # short-description="Security-focused linter for Docker Compose files".
 #
 # Requires: curl, jq
@@ -20,7 +21,7 @@
 set -euo pipefail
 
 repo="${1:-composelint/compose-lint}"
-readme="${2:-./README.md}"
+readme="${2:-./docs/dockerhub-overview.md}"
 short_description="${SHORT_DESCRIPTION:-Security-focused linter for Docker Compose files}"
 
 : "${DOCKERHUB_USERNAME:?DOCKERHUB_USERNAME must be set}"

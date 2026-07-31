@@ -664,7 +664,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           token: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: composelint/compose-lint
-          readme-filepath: ./README.md
+          readme-filepath: ./docs/dockerhub-overview.md
 
   # Create the GitHub Release only after both production channels
   # (PyPI + Docker Hub) have published successfully. `needs:` gating

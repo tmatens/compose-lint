@@ -1,7 +1,9 @@
 name: 'Update Docker Hub description'
 description: >
   Sync a Docker Hub repository's overview (long description) and short
-  description from a local README.md file. First-party replacement for
+  description from a local markdown file (default: the trimmed
+  docs/dockerhub-overview.md, kept under Docker Hub's 25000-byte cap —
+  NOT README.md, which is uncapped). First-party replacement for
   peter-evans/dockerhub-description — no third-party Node bundle holds the
   delete-capable Docker Hub PAT. Implementation is a single bash script
   invoking the Docker Hub v2 API; review diff before bumping.
@@ -21,9 +23,9 @@ inputs:
     description: Docker Hub repository in `<namespace>/<name>` form.
     required: true
   readme-filepath:
-    description: Path to the README whose contents become the overview.
+    description: Path to the markdown file whose contents become the overview.
     required: false
-    default: './README.md'
+    default: './docs/dockerhub-overview.md'
   short-description:
     description: One-line short description shown under the repo title.
     required: false
