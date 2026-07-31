@@ -348,7 +348,7 @@ Or install from PyPI directly:
 
 ### Forgejo Actions
 
-Forgejo Actions runs GitHub-Actions-compatible workflows via `act_runner`, with two practical differences: cross-instance action refs need full URLs (`https://code.forgejo.org/...`), and most default runner configs don't support `container:` jobs — so install via `apt` + `pip` rather than a Python base image:
+Forgejo Actions runs GitHub-Actions-compatible workflows via `act_runner`, with two practical differences: cross-instance action refs need full URLs (`https://code.forgejo.org/...`), and JS actions like `checkout` need `node` inside the job container ([act#107](https://github.com/nektos/act/issues/107)) — `container:` jobs run fine, but a node-less Python image fails at checkout, so install via `apt` + `pip` on the default image instead:
 
 ```yaml
 # .forgejo/workflows/validate.yml
@@ -372,7 +372,7 @@ jobs:
         run: compose-lint --fail-on high
 ```
 
-Forgejo has no SARIF UI today — `--format sarif` still produces a valid document, but there's no security-tab equivalent to render it. Verified on Forgejo 11.0.12, April 2026.
+Forgejo has no SARIF UI today — `--format sarif` still produces a valid document, but there's no security-tab equivalent to render it. Verified on Forgejo 15.0.2, runner 12.9.0, July 2026.
 
 ### SARIF output
 
