@@ -1,6 +1,6 @@
 # compose-lint
 
-**Security-focused linter for Docker Compose files.** Catches dangerous misconfigurations before they reach production. Grounded in OWASP and the CIS Docker Benchmark.
+**Security-focused linter for Docker Compose files.** Catches dangerous misconfigurations before they reach production — and auto-fixes the safe ones, dry-run first. Grounded in OWASP and the CIS Docker Benchmark.
 
 [![CI](https://github.com/tmatens/compose-lint/actions/workflows/ci.yml/badge.svg)](https://github.com/tmatens/compose-lint/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/compose-lint)](https://pypi.org/project/compose-lint/)
@@ -66,6 +66,13 @@ Or pass files explicitly:
 
 ```bash
 compose-lint docker-compose.yml docker-compose.prod.yml
+```
+
+Preview the safe auto-fixes as a unified diff, then apply them (see [Fixing findings](#fixing-findings)):
+
+```bash
+compose-lint fix              # dry-run diff, writes nothing
+compose-lint fix --apply      # write the fixes in place
 ```
 
 Don't recognize a rule ID in the output? `--explain` prints the full rule doc — what it catches, why it matters, the fix, and the OWASP/CIS reference — without leaving the terminal:
@@ -144,14 +151,16 @@ Exit code is `1` (two findings at or above the default `--fail-on high` threshol
 
 ## How it compares
 
-| Tool | Compose security rules | Scope | Zero config |
-|------|----------------------|-------|-------------|
-| **compose-lint** | Yes | Docker Compose | Yes |
-| **KICS** | Yes | Broad IaC (Terraform, K8s, Compose, ...) | No |
-| **Hadolint** | No — Dockerfile only | Dockerfile | Yes |
-| **dclint** | Yes — schema/structure only | Docker Compose | Yes |
-| **Trivy** | No — image/CVE + IaC misconfig scanning, no dedicated Compose ruleset | Dockerfiles, images, IaC | Yes |
-| **Checkov** | No — no dedicated Compose ruleset | Broad IaC (Terraform, K8s, ...) | No |
+| Tool | Compose security rules | Auto-fix | Scope | Zero config |
+|------|----------------------|----------|-------|-------------|
+| **compose-lint** | Yes | Yes — dry-run diff first | Docker Compose | Yes |
+| **KICS** | Yes | Yes (`remediate` command) | Broad IaC (Terraform, K8s, Compose, ...) | No |
+| **Hadolint** | No — Dockerfile only | No | Dockerfile | Yes |
+| **dclint** | Yes — schema/structure only | Style/formatting only | Docker Compose | Yes |
+| **Trivy** | No — image/CVE + IaC misconfig scanning, no dedicated Compose ruleset | No | Dockerfiles, images, IaC | Yes |
+| **Checkov** | No — no dedicated Compose ruleset | No | Broad IaC (Terraform, K8s, ...) | No |
+
+*Competitor capabilities verified July 2026.*
 
 If you need broad IaC coverage across Terraform, Kubernetes, and more, KICS covers Docker Compose and is worth evaluating. If you want a lightweight, focused tool with zero config and actionable fix guidance for Compose files specifically, this is it.
 
@@ -241,8 +250,9 @@ init options:
 ## Fixing findings
 
 `compose-lint fix` auto-remediates the findings that have a safe, unambiguous
-edit — adding `read_only: true`, `no-new-privileges:true`, dropping a bare
-`latest` tag, binding a published port to `127.0.0.1`, and similar. It is
+edit — adding `read_only: true` or `no-new-privileges:true`, binding a
+published port to `127.0.0.1`, restoring a disabled logging driver, seccomp
+profile, or healthcheck, and similar. It is
 **dry-run by default**: it prints a unified diff and writes nothing.
 
 ```bash
@@ -331,7 +341,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: tmatens/compose-lint@76a831a46ae7165a57c7ff4a8b9e08f7b9a63e6c # v0.13.0
+      - uses: tmatens/compose-lint@67ce85772f5631a53a616d294c1b3dc654dd2c40 # v0.14.0
         with:
           sarif-file: results.sarif
 ```
@@ -367,7 +377,7 @@ jobs:
         run: |
           apt-get update -qq
           apt-get install -yqq --no-install-recommends python3-pip
-          pip3 install --break-system-packages --no-cache-dir compose-lint==0.13.0
+          pip3 install --break-system-packages --no-cache-dir compose-lint==0.14.0
       - name: Run compose-lint
         run: compose-lint --fail-on high
 ```
@@ -386,7 +396,7 @@ compose-lint --format sarif docker-compose.yml > results.sarif
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/tmatens/compose-lint
-    rev: v0.13.0
+    rev: v0.14.0
     hooks:
       - id: compose-lint
 ```

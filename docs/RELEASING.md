@@ -179,17 +179,18 @@ four before opening the bump PR.
 
 - [ ] `pyproject.toml` — `version = "X.Y.Z"` under `[project]`
 - [ ] `src/compose_lint/__init__.py` — `__version__ = "X.Y.Z"`
-- [ ] `README.md` — version references in copy-paste integration
-      snippets. All need bumping each release; otherwise users land
-      on a stale version. Four forms exist:
-      - `tmatens/compose-lint@<sha> # v0.X.Y` (GitHub Action snippet)
-      - `rev: v0.X.Y` (pre-commit snippet)
-      - `compose-lint==0.X.Y` (Forgejo Actions snippet — pip pin)
-      - `composelint/compose-lint:0.X.Y` (hardened `docker run` snippet
-        and the digest-lookup hint immediately below it)
+- [ ] `README.md` + `docs/hardening.md` — version references in
+      copy-paste integration snippets. All need bumping each release;
+      otherwise users land on a stale version (v0.14.0 shipped with all
+      of them stale — this step was skipped). Four forms exist:
+      - `tmatens/compose-lint@<sha> # v0.X.Y` (README — GitHub Action snippet)
+      - `rev: v0.X.Y` (README — pre-commit snippet)
+      - `compose-lint==0.X.Y` (README — Forgejo Actions snippet, pip pin)
+      - `:0.X.Y` image tags (docs/hardening.md — hardened `docker run`
+        snippet, plus the digest-lookup prose below it; NOT in README)
 
       Verify all four with:
-      `grep -nE 'v0\.[0-9]+\.[0-9]+|compose-lint==0\.[0-9]+\.[0-9]+|composelint/compose-lint:0\.[0-9]+\.[0-9]+' README.md`.
+      `grep -nE 'v0\.[0-9]+\.[0-9]+|compose-lint==0\.[0-9]+\.[0-9]+|:0\.[0-9]+\.[0-9]+' README.md docs/hardening.md`.
 - [ ] `.github/workflows/marketplace-smoke.yml` — two
       `uses: tmatens/compose-lint@<sha> # vX.Y.Z` lines. Update both
       the full commit SHA and the trailing `# vX.Y.Z` comment. Get
