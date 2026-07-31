@@ -31,7 +31,7 @@ Disables still produce suppressed findings. `reason` flows to `suppression_reaso
 
 ## Quality checks
 
-`ruff check`, `ruff format --check`, `mypy src/` (strict), `pytest`. All four must pass. CI test matrix: Python 3.10–3.14 on ubuntu-24.04.
+`ruff check src/ tests/`, `ruff format --check src/ tests/`, `mypy src/` (strict), `pytest`. All four must pass, scoped exactly as written — CI lints only `src/` and `tests/`, and a bare `ruff check` also sweeps `scripts/`, which has known, accepted violations. CI test matrix: Python 3.10–3.14 on ubuntu-24.04.
 
 ## Adding a rule
 
@@ -84,6 +84,10 @@ is non-fatal — it's ignored, and extraction still succeeds.
 ## Publishing
 
 Trusted Publishers (OIDC) only — no manual `twine upload`. Sigstore attestations enabled. Wheel must not contain `.env`, `.git/`, `AGENTS.md`, `CLAUDE.md`, memory/session/IDE files.
+
+## Docs surfaces
+
+`docs/dockerhub-overview.md` is the Docker Hub description — hard 25000-byte cap (CI-enforced by the `readme-size` job; Docker Hub 400s over it) and deliberately version-free so it never needs a per-release bump. `README.md` is GitHub/PyPI-facing, not synced anywhere, and has no byte cap — but its integration snippets carry version pins that the RELEASING.md checklist bumps each release (as does `docs/hardening.md`).
 
 ## Things to avoid
 
