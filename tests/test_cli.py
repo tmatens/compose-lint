@@ -458,6 +458,28 @@ class TestFixSubcommand:
         assert stat.S_IMODE(f.stat().st_mode) == 0o640
         assert "read_only: true" in f.read_text()
 
+    def test_apply_prints_behavior_changing_caveats(self, tmp_path: Path) -> None:
+        # Regression (#428): the caveat banner must surface on the apply path
+        # too, not only in the dry-run diff — nothing forces a dry run first,
+        # so a one-shot `fix --apply` would otherwise mutate files silently.
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(_BARE_SERVICE)
+        result = run_cli("fix", "--apply", str(f))
+        assert result.returncode == 0
+        assert "⚠ behavior-changing · CL-0007" in result.stderr
+        # Caveats are human status: stderr only, stdout stays data-clean.
+        assert result.stdout == ""
+
+    def test_apply_hardening_only_prints_no_caveat(self, tmp_path: Path) -> None:
+        # CL-0003 (no-new-privileges) is hardening-only; an apply run whose
+        # edits all carry no caveat must not print a behavior-changing line.
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(_BARE_SERVICE)
+        result = run_cli("fix", "--apply", "--only", "CL-0003", str(f))
+        assert result.returncode == 0
+        assert "behavior-changing" not in result.stderr
+        assert "applied 1 fix(es)" in result.stderr
+
     def test_only_restricts_to_named_rule(self, tmp_path: Path) -> None:
         f = tmp_path / "docker-compose.yml"
         f.write_text(_BARE_SERVICE)

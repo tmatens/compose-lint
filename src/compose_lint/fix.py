@@ -439,10 +439,19 @@ def render_file_diff(
     diff = "".join(chunks)
     if not diff:
         return ""
-    banner = "".join(
+    return render_caveat_banner(caveats) + diff
+
+
+def render_caveat_banner(caveats: list[tuple[str, str]]) -> str:
+    """Render one ``⚠ behavior-changing`` line per caveat, newline-terminated.
+
+    Shared by the dry-run diff header and the ``--apply`` summary (issue #428):
+    the caveat must reach the user on whichever path they took, in the same
+    form, so the warning cannot be bypassed by skipping the dry run.
+    """
+    return "".join(
         f"⚠ behavior-changing · {rule_id}: {caveat}\n" for rule_id, caveat in caveats
     )
-    return banner + diff
 
 
 def reparse_or_error(patched: str) -> str | None:

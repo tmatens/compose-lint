@@ -21,6 +21,7 @@ from compose_lint.explain import UnknownRuleError, load_rule_doc
 from compose_lint.fix import (
     apply_edits,
     collect_edits,
+    render_caveat_banner,
     render_file_diff,
     reparse_or_error,
     verify_apply,
@@ -687,6 +688,14 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
 
         if args.apply:
             _atomic_write(Path(filepath), patched)
+            # The behavior-changing caveats must surface here too, not only on
+            # the dry run — nothing forces a dry run first, so a one-shot
+            # `fix --apply` would otherwise mutate files silently (issue #428).
+            print(
+                render_caveat_banner(result.caveats),
+                end="",
+                file=sys.stderr,
+            )
             print(
                 f"{filepath}: applied {len(result.edits)} fix(es) across "
                 f"{len(result.fixed)} finding(s)",
