@@ -35,6 +35,13 @@ Use it if you ship Compose to production, want defense in depth in a homelab, or
 pip install compose-lint
 ```
 
+That resolves the newest release at install time. For a reproducible install (CI, production tooling), pin the version and install the dependency set from the repo's hash-pinned lockfile, which release automation keeps current:
+
+```bash
+pip install --require-hashes -r requirements.lock   # dependencies, hash-pinned
+pip install --no-deps compose-lint==X.Y.Z           # the tool, version-pinned
+```
+
 **Docker** — [composelint/compose-lint](https://hub.docker.com/r/composelint/compose-lint)
 
 ```bash
