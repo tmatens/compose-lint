@@ -40,7 +40,7 @@ ShellCheck, and ruff. A file that is clean on `1.2.0` may report new findings on
 
 Two escape hatches keep a pipeline deterministic:
 
-- **Pin the version** (`compose-lint==1.2.0`, or the digest-pinned Action /
+- **Pin the version** (`==1.2.0` in this example, or the digest-pinned Action /
   image) for identical results across runs.
 - **Use `--fail-on`** to gate CI on a severity threshold, so new lower-severity
   findings surface without failing the build.

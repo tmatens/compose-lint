@@ -330,6 +330,45 @@ jobs:
           if pyproject != init:
               sys.exit(f"::error::Version drift: pyproject.toml ({pyproject}) vs src/compose_lint/__init__.py ({init})")
           PY
+      # Self-referencing version pins in living docs (README integration
+      # snippets, docs/hardening.md) must equal the current version. A
+      # hand-maintained checklist can't self-discover new references — v0.14.0
+      # shipped with every doc pin stale despite RELEASING.md listing them —
+      # so any new doc that pins our own artifacts is covered from its first
+      # commit. Historical records (ADRs, CHANGELOG-adjacent reports) are
+      # excluded. The `tmatens/compose-lint@<sha>` action-pin form is also
+      # excluded: the new tag's SHA exists only after the release, so it is
+      # structurally a post-release follow-up (RELEASING.md pairs it with the
+      # marketplace-smoke bump, and the smoke test exercises it end-to-end).
+      - name: Check self-referencing version pins in docs
+        run: |
+          python - <<'PY'
+          import pathlib, re, sys, tomllib
+
+          version = tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"]
+
+          patterns = [
+              re.compile(r"compose-lint==(\d+\.\d+\.\d+)"),
+              re.compile(r"composelint/compose-lint:(\d+\.\d+\.\d+)"),
+              re.compile(r"rev: v(\d+\.\d+\.\d+)"),
+          ]
+          exclude = ("docs/adr/", "docs/publishing/", "docs/state-of-compose.md")
+          stale = []
+          for f in [pathlib.Path("README.md"), *sorted(pathlib.Path("docs").rglob("*.md"))]:
+              p = f.as_posix()
+              if p.startswith(exclude):
+                  continue
+              for i, line in enumerate(f.read_text().splitlines(), 1):
+                  for pat in patterns:
+                      for m in pat.finditer(line):
+                          if m.group(1) != version:
+                              stale.append(f"{p}:{i}: {m.group(0)} (current: {version})")
+          print(f"current version: {version}")
+          if stale:
+              print("\n".join(stale))
+              sys.exit(f"::error::{len(stale)} stale self-referencing version pin(s) — bump to {version} (docs/RELEASING.md, 'version references' item)")
+          print("all self-referencing version pins in README/docs match")
+          PY
 
   # Docker Hub's repository API rejects a `full_description` over 25000 bytes
   # with HTTP 400, which is what docs/dockerhub-overview.md is synced into by

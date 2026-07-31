@@ -189,8 +189,15 @@ four before opening the bump PR.
       - `:0.X.Y` image tags (docs/hardening.md — hardened `docker run`
         snippet, plus the digest-lookup prose below it; NOT in README)
 
-      Verify all four with:
-      `grep -nE 'v0\.[0-9]+\.[0-9]+|compose-lint==0\.[0-9]+\.[0-9]+|:0\.[0-9]+\.[0-9]+' README.md docs/hardening.md`.
+      CI enforces the first three forms (`version-consistency` job,
+      "self-referencing version pins" step): any `compose-lint==X.Y.Z`,
+      `composelint/compose-lint:X.Y.Z`, or `rev: vX.Y.Z` anywhere in
+      `README.md` or `docs/` (historical files excluded) must equal
+      `pyproject.toml`'s version, so the bump PR fails CI until they all
+      move together — including pins in docs this list doesn't know
+      about yet. The action-SHA form is the exception (the new tag's
+      SHA exists only post-release; bump it in the marketplace-smoke
+      follow-up PR).
 - [ ] `.github/workflows/marketplace-smoke.yml` — two
       `uses: tmatens/compose-lint@<sha> # vX.Y.Z` lines. Update both
       the full commit SHA and the trailing `# vX.Y.Z` comment. Get
