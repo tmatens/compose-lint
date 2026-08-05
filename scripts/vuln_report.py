@@ -152,10 +152,12 @@ def build_body(
         MARKER,
         f"**{total} fixable {noun}**{tail}",
         "",
-        "This issue is maintained automatically: the body is rewritten on "
-        "each run and the issue **closes itself** when the fixable list is "
-        "empty. An open issue therefore means there is something to fix "
-        "right now.",
+        (
+            "This issue is maintained automatically: the body is rewritten on "
+            "each run and the issue **closes itself** when the fixable list is "
+            "empty. An open issue therefore means there is something to fix "
+            "right now."
+        ),
         "",
     ]
 
@@ -218,12 +220,14 @@ def build_body(
     parts += [
         "---",
         "",
-        "This report applies **no `--ignore-vuln` suppressions**, so an "
-        "advisory suppressed in `ci.yml` or `publish.yml` still appears "
-        "here. That is deliberate — a suppression whose justification has "
-        "gone stale is otherwise invisible to pip-audit (it is filtered by "
-        "ID) *and* to Renovate (the pin is already satisfiable) at the same "
-        "time.",
+        (
+            "This report applies **no `--ignore-vuln` suppressions**, so an "
+            "advisory suppressed in `ci.yml` or `publish.yml` still appears "
+            "here. That is deliberate — a suppression whose justification has "
+            "gone stale is otherwise invisible to pip-audit (it is filtered by "
+            "ID) *and* to Renovate (the pin is already satisfiable) at the same "
+            "time."
+        ),
         "",
         f"[Workflow run]({run_url})" if run_url else "",
     ]
