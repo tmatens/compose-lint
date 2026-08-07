@@ -60,7 +60,7 @@ security = [
 ]
 publish = [
     "build==1.5.1",
-    "twine==6.2.0",
+    "twine==7.0.0",
     # Used by the post-release canary in publish.yml to verify the
     # Sigstore bundles attached to the GitHub Release. Matches the
     # version bundled by sigstore/gh-action-sigstore-python v3.3.0 so
