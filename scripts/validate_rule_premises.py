@@ -13,7 +13,12 @@ This gate runs a short ``docker run`` per runtime-testable rule and asserts the
 premise holds. It is the runtime arm of the rule-grounding bar: a new rule must
 either cite a container-context source or pass a check here.
 
-Usage: ``python scripts/validate_rule_premises.py`` (needs a working Docker).
+Usage: ``python scripts/validate_rule_premises.py`` (needs a working **rootful**
+Docker). Under rootless Docker several checks fail spuriously: the kernel
+authorizes SYS_NICE/SYS_TIME/IPC_LOCK in the *init* user namespace, so their
+allow legs fail even with the capability granted, and the socket-mount and
+/dev/kmsg checks assume rootful paths. CI runs rootful; treat rootless-local
+failures as environmental.
 Exits 0 if every premise holds (or Docker is unavailable → skipped), 1 on any
 failure. Rules that describe image/supply-chain or config-only concerns
 (CL-0004, CL-0014, CL-0015, CL-0019, CL-0020, CL-0021) have no runtime state to
@@ -296,7 +301,16 @@ def _t_net_bind_service() -> tuple[bool, str]:
     # 20.10+ defaults the sysctl to 0 in each container's own network
     # namespace, so the loose leg must bind :80 with NO capability at all —
     # that default going away (or the hardened leg passing capless) is drift.
-    bind = ["sh", "-c", "nc -l -p 80 -w 1 & sleep 0.3; netstat -tln | grep -q :80"]
+    # Poll for the listening socket instead of a fixed sleep — on a loaded
+    # runner the fork-to-bind can exceed any single guess, and nc's own exit
+    # status is swallowed by the backgrounding.
+    bind = [
+        "sh",
+        "-c",
+        "nc -l -p 80 -w 3 & i=0; while [ $i -lt 20 ]; do "
+        "netstat -tln | grep -q ':80 ' && exit 0; "
+        "i=$((i+1)); sleep 0.1; done; exit 1",
+    ]
     hard = ["--sysctl", "net.ipv4.ip_unprivileged_port_start=1024"]
     rc_loose, _ = _run_err(["--cap-drop", "ALL"], bind)
     rc_deny, err = _run_err(["--cap-drop", "ALL", *hard], bind)
@@ -353,13 +367,40 @@ def _t_sys_nice() -> tuple[bool, str]:
     )
 
 
+_SETTIME_PROBE = (
+    "import ctypes,os,sys\n"
+    "libc=ctypes.CDLL(None,use_errno=True)\n"
+    "class TS(ctypes.Structure):\n"
+    "    _fields_=[('tv_sec',ctypes.c_long),('tv_nsec',ctypes.c_long)]\n"
+    "ts=TS()\n"
+    "libc.clock_gettime(0,ctypes.byref(ts))\n"
+    "if libc.clock_settime(0,ctypes.byref(ts))!=0:\n"
+    "    print('clock_settime: '+os.strerror(ctypes.get_errno()),file=sys.stderr)\n"
+    "    sys.exit(1)\n"
+)
+
+
 def _t_sys_time() -> tuple[bool, str]:
-    # The allow leg sets the clock to the current epoch second — a sub-second
-    # no-op step, harmless on CI's ephemeral runner and NTP-synced hosts.
-    return _mapping(
-        ["SYS_TIME"],
-        ["sh", "-c", "date -s @$(date +%s)"],
-        "date: can't set date: Operation not permitted",
+    # Deny leg: busybox `date -s`, keyed on the quoted message rather than the
+    # exit code — busybox builds differ on whether a settime failure is fatal
+    # (ours exits 1; upstream has shipped variants that print and exit 0).
+    # Allow leg: a clock_gettime→clock_settime round-trip of the same timespec.
+    # CLOCK_REALTIME is not namespaced, so proving the grant touches the HOST
+    # clock — the round-trip bounds that to microseconds of drift instead of
+    # `date -s`'s up-to-a-second backward step.
+    # Set-to-now even on the deny leg: if a broken engine ever let it through,
+    # the "failure" must still be a harmless no-op, never a step to epoch 0.
+    rc_deny, err = _run_err(["--cap-drop", "ALL"], ["sh", "-c", "date -s @$(date +%s)"])
+    rc_allow, allow_err = _run_err(
+        ["--cap-drop", "ALL", "--cap-add", "SYS_TIME"],
+        ["python", "-c", _SETTIME_PROBE],
+        image=PY_IMAGE,
+    )
+    msg = "date: can't set date: Operation not permitted"
+    ok = msg in err and rc_allow == 0
+    return ok, (
+        f"denied msg={err!r}; settime round-trip with SYS_TIME "
+        f"rc={rc_allow} {allow_err!r}"
     )
 
 
@@ -368,7 +409,7 @@ def _t_kill() -> tuple[bool, str]:
     # (inheriting the container's dropped caps) signals it — EPERM without
     # CAP_KILL even for root.
     def attempt(extra: list[str]) -> tuple[int, str]:
-        cid = subprocess.run(
+        create = subprocess.run(
             [
                 "docker",
                 "run",
@@ -384,7 +425,12 @@ def _t_kill() -> tuple[bool, str]:
             ],
             capture_output=True,
             text=True,
-        ).stdout.strip()
+            timeout=90,
+        )
+        cid = create.stdout.strip()
+        if create.returncode != 0 or not cid:
+            # Surface as an environment error, not a premise verdict.
+            raise RuntimeError(f"container create failed: {create.stderr.strip()!r}")
         try:
             proc = subprocess.run(
                 ["docker", "exec", "-u", "0", cid, "kill", "-TERM", "1"],
@@ -493,6 +539,24 @@ def main() -> int:
             print(line, file=sys.stderr)
         return 1 if os.environ.get("CL_REQUIRE_DOCKER") == "1" else 0
 
+    # Pre-pull the pinned images so a registry failure (network outage, Docker
+    # Hub rate limit) fails loudly HERE as infrastructure, instead of surfacing
+    # inside a check's 90s timeout and being misread as premise drift.
+    for image in (IMAGE, PY_IMAGE):
+        pull = subprocess.run(
+            ["docker", "pull", "-q", image],
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        if pull.returncode != 0:
+            print(
+                f"IMAGE PULL FAILED (infrastructure, not premise drift): {image}\n"
+                f"{pull.stderr.strip()}",
+                file=sys.stderr,
+            )
+            return 1
+
     failures = []
     for rule_id, label, check in CHECKS:
         try:
@@ -502,7 +566,9 @@ def main() -> int:
         mark = "PASS" if ok else "FAIL"
         print(f"  [{mark}] {rule_id}  {label}\n          {detail}")
         if not ok:
-            failures.append(rule_id)
+            # Include the label: 12 rows share rule_id CL-0006, and a bare
+            # "CL-0006, CL-0006" summary hides which mapping broke.
+            failures.append(f"{rule_id} ({label})")
 
     print()
     print(f"not runtime-testable (grounded by source): {', '.join(_NON_RUNTIME)}")

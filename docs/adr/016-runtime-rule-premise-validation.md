@@ -51,10 +51,22 @@ Concretely:
   underlying container behavior the rule warns about is real, independent of how
   the rule reads the Compose file.
 - The suite runs in CI as the `rule-premises` job (`.github/workflows/ci.yml`),
-  feeds the `ci-ok` rollup gate, and uses a manifest-list-digest-pinned busybox
-  image so it carries no mutable ref. Locally it needs a working Docker; with no
+  feeds the `ci-ok` rollup gate, and uses manifest-list-digest-pinned images so
+  it carries no mutable ref. Locally it needs a working rootful Docker; with no
   Docker it skips (exit 0) rather than failing, so contributors without Docker
   are not blocked but CI still enforces it.
+
+**Amendment (issue #468):** the suite gained a second check class — *symptom
+mapping* checks that prove each row of the CL-0006 determination table
+(`docs/rules/CL-0006.md`): the operation fails under `cap_drop: [ALL]` emitting
+the quoted busybox message and succeeds with only the mapped capability added.
+Same admissibility spirit (a documented claim about container runtime behavior
+must be proven against a live container), applied to doc tables rather than
+rule predicates. With it, "reducible to an observable busybox check" is
+preferred, not required: a second digest-pinned image (`python:3.13-alpine`) is
+admitted where busybox cannot exercise the syscall (`mlockall`,
+`clock_settime`). Checks in this class key failure detection on the quoted
+stderr message where tool exit codes are build-dependent.
 
 **Rationale:**
 
