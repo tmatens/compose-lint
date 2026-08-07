@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The CL-0006 symptom → capability table now covers 11 mappings — added
+  `NET_ADMIN`, `SYS_NICE`, `SYS_TIME`, `FOWNER`, `KILL`, and `IPC_LOCK` — and
+  quotes the verbatim error messages real tools emit, captured from live
+  container runs (issue #468). Every tool-level row is re-proven on each CI
+  run by new checks in `scripts/validate_rule_premises.py`: the operation must
+  fail under `cap_drop: [ALL]` with the quoted message and succeed with only
+  the mapped capability added, so an engine default change that invalidates a
+  row (as Docker 20.10's `ip_unprivileged_port_start=0` did for the old
+  "low ports need `NET_BIND_SERVICE`" folklore) fails CI instead of aging
+  silently in the docs.
+
 - CL-0006's fix guidance now teaches how to *determine* an image's required
   capability set instead of stopping at a `<SPECIFIC_CAP>` placeholder
   (issue #4). The finding's `fix` text gains the drop-and-observe method and
