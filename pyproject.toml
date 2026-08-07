@@ -165,7 +165,45 @@ select = [
     "TCH", # flake8-type-checking
 ]
 
+# The sdist is built from an ALLOWLIST because a denylist cannot defend
+# against a path nobody anticipated. Hatchling ships everything the *root*
+# .gitignore does not exclude, and it does not read nested .gitignore files
+# — so a stray directory in a maintainer's working tree is invisible to
+# `git status` yet still lands in the archive. A virtualenv is the case that
+# bites: uv writes `.gitignore: *` inside the venv, which silences git but
+# not the build, and the venv's `bin/python` is an absolute symlink into the
+# build machine's filesystem. An sdist carrying those is not merely untidy,
+# it is unusable — uv rejects it outright as an invalid tar, and neither
+# `twine check` (metadata only) nor the wheel guard in publish.yml looks at
+# sdist contents. `exclude` below is kept as defence in depth for paths that
+# would otherwise match an `include` entry.
 [tool.hatch.build.targets.sdist]
+# Every pattern is root-anchored with a leading slash. These are
+# gitignore-style patterns, so an unanchored `LICENSE` matches a file of
+# that name at ANY depth — which silently re-admits
+# `.demo-venv/lib/python3.13/site-packages/*/licenses/LICENSE` and defeats
+# the allowlist. Anchor anything added here.
+include = [
+    "/src/",
+    "/tests/",
+    "/docs/",
+    "/scripts/",
+    "/.github/",
+    "/.githooks/",
+    "/.vex/",
+    "/action.yml",
+    "/pyproject.toml",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/CONTRIBUTING.md",
+    "/GOVERNANCE.md",
+    "/MAINTAINERS.md",
+    "/LICENSE",
+    "/LICENSE-corpus.md",
+    "/requirements-build.lock",
+    "/.pre-commit-hooks.yaml",
+    "/.gitignore",
+]
 exclude = [
     "AGENTS.md",
     "CLAUDE.md",

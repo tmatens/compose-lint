@@ -23,6 +23,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pyproject.toml`, `__init__.py`, and `CHANGELOG.md` — so the release PR it
   opened failed its own required check on every release and needed a
   hand-pushed fixup commit.
+- The sdist no longer ships whatever happens to sit in the maintainer's
+  working tree. `[tool.hatch.build.targets.sdist]` was a denylist of nine
+  known paths, but hatchling ships everything the *root* `.gitignore` does
+  not exclude and does not read nested `.gitignore` files — so a local
+  virtualenv, which writes its own `.gitignore: *` and is therefore
+  invisible to `git status`, was swept in: 158 of 445 entries, 35% of a
+  3.5 MB archive, including `bin/python` as an absolute symlink into the
+  build machine's filesystem. Such an archive is not merely untidy but
+  unusable — uv rejects it as an invalid tar — and nothing caught it:
+  `twine check` validates metadata, not contents, and `publish.yml`'s
+  content guard inspects the wheel alone. The sdist target is now a
+  root-anchored allowlist, and `publish.yml` gates the sdist on symlinks
+  and virtualenv markers. Published artifacts were never affected: release
+  builds run from a clean checkout, and the wheel packages `src/` only.
 
 ### Changed
 

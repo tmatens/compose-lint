@@ -124,6 +124,22 @@ jobs:
             echo "::error::Wheel contains forbidden files"
             exit 1
           fi
+          # The sdist needs its own check: `twine check` only validates
+          # metadata, and the wheel guard above cannot see the sdist. The
+          # sdist allowlist in pyproject.toml is the primary defence; this
+          # is the gate that proves it held. A virtualenv swept in from a
+          # maintainer's working tree is the motivating case — it is
+          # invisible to `git status` (venvs write their own `.gitignore`)
+          # and its absolute `bin/python` symlink makes the archive
+          # unusable, so fail closed on symlinks and venv markers.
+          if tar tzvf dist/*.tar.gz | grep -E ' -> '; then
+            echo "::error::sdist contains symlinks"
+            exit 1
+          fi
+          if tar tzf dist/*.tar.gz | grep -E '(pyvenv\.cfg|AGENTS\.md|CLAUDE\.md|/\.env$|/\.git/|/\.claude/|site-packages/)'; then
+            echo "::error::sdist contains forbidden files"
+            exit 1
+          fi
       # Sign dists with Sigstore so we can attach .sigstore bundles to the
       # GitHub Release. PyPI gets its own PEP 740 attestations via the
       # trusted-publisher flow in the `publish` job — this is an independent
