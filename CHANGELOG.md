@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Documentation site at <https://tmatens.github.io/compose-lint/> (issue
+  #470) — the rule docs, configuration guide, severity model, hardening
+  walkthrough, and State of Compose report, built by mkdocs from the same
+  `docs/` markdown that `--explain` prints (single source, no duplicated
+  pages) and deployed to GitHub Pages by the new `docs` workflow on every
+  push to `main`. The docs toolchain is hash-pinned in
+  `requirements-docs.lock` (new `docs` extra).
+
 ### Changed
 
 - The CL-0006 symptom → capability table now covers 11 mappings — added

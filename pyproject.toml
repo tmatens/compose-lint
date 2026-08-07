@@ -81,6 +81,12 @@ container = [
 corpus = [
     "matplotlib==3.11.1",
 ]
+# Docs-site build (mkdocs.yml → GitHub Pages via .github/workflows/docs.yml).
+# Locked in requirements-docs.lock; the site is a build artifact of docs/*.md,
+# never a second copy of them.
+docs = [
+    "mkdocs-material==9.7.7",
+]
 dev = [
     # Self-reference so the ruff pin lives only in [lint]; no drift.
     "compose-lint[lint]",
