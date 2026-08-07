@@ -182,6 +182,12 @@ commits with `git commit --amend --signoff` or `git rebase --signoff main`.
 
 All changes to `main` go through a PR — including maintainer changes.
 
+**External contributors:** you won't have push access to this repository.
+[Fork it](https://github.com/tmatens/compose-lint/fork), create your branch on
+the fork, and open the PR from that branch back to `main` here. Everything
+below applies the same way; the DCO and commit-signing checks run on fork PRs
+too, so set those up before your first commit.
+
 1. **Create a branch** from `main`. Name it descriptively:
    `docs/contributor-workflow`, `rules/CL-0011-user-namespaces`,
    `fix/parser-merge-keys`.
