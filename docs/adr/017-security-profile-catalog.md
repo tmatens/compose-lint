@@ -1,6 +1,8 @@
 # ADR-017: Security Profile Catalog
 
-**Status:** Accepted (extends [ADR-002](002-rule-grounding.md), [ADR-014](014-fix-remediation.md)).
+**Status:** **Superseded** by [ADR-019](019-withdraw-security-profile-catalog.md) (2026-08-07). The profile-enrichment pipeline this ADR describes was removed in 0.15.0; compose-lint no longer consumes a security profile catalog. This record is retained for the reasoning, not as a description of current behaviour.
+
+Previously: Accepted (extends [ADR-002](002-rule-grounding.md), [ADR-014](014-fix-remediation.md)).
 Amended 2026-07-03 — see [§7 Trust model and distribution](#7-trust-model-and-distribution-amendment-2026-07-03), which supersedes the bundled-catalog assumption in §1 and the "ci-smoke = validated" framing in §4–§5.
 
 **Context:** compose-lint's rules are static and image-agnostic. CL-0006 knows a

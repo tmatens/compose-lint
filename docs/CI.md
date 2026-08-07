@@ -40,7 +40,6 @@ cancels in-progress runs when you push new commits to the same PR.
 | `docker-smoke`            | Builds `linux/amd64` from the Dockerfile and runs it against fixtures (only when build inputs change) |
 | `action-smoke`            | Runs `./action.yml` against clean and insecure fixtures; asserts exit codes               |
 | `rule-premises`           | Runs `scripts/validate_rule_premises.py` in a live container to prove each rule's premise  |
-| `profile-validate`        | Validates security profiles against the schema (the `ci-smoke` gate)                      |
 | `version-consistency`     | Fails if `pyproject.toml` and `src/compose_lint/__init__.py` disagree on the version      |
 | `changelog-gate`          | If a PR bumps the `version`, `CHANGELOG.md` must have a matching `## [X.Y.Z]` section     |
 | `dco`                     | Every commit must carry a `Signed-off-by` trailer (Developer Certificate of Origin)       |

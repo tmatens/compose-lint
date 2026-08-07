@@ -9,7 +9,7 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
-from compose_lint.config import ConfigError, load_config, load_profiles_config
+from compose_lint.config import ConfigError, load_config
 from compose_lint.models import Severity
 
 
@@ -222,12 +222,6 @@ class TestStrictConfig:
         config.write_text("rules:\n  CL-001:\n    enabled: false\n")
         load_config(config)  # no raise
         assert "unknown rule id 'CL-001'" in capsys.readouterr().err
-
-    def test_profiles_unknown_key_raises_under_strict(self, tmp_path: Path) -> None:
-        config = tmp_path / ".compose-lint.yml"
-        config.write_text("profiles:\n  enabled: true\n  bogus: 1\n")
-        with pytest.raises(ConfigError, match="profiles has unknown key 'bogus'"):
-            load_profiles_config(config, strict=True)
 
 
 class TestExcludeServices:

@@ -6,7 +6,7 @@ compose-lint today ships 22 security rules, PyPI distribution, a published GitHu
 
 compose-lint's differentiation is depth in Compose-specific security, not distribution breadth. Competitors (KICS, Checkov, Trivy) cover Compose as one format among many; they are wide and shallow per-format. Compose-lint wins by being the one tool that tells you exactly what's wrong with a Compose file and exactly how to fix it. Roadmap priorities are ordered around that thesis.
 
-Open issues #4 (CL-0006 capability profiles) and #111 (real-world examples library) are the live signal from real-world usage now that #5 is closed. Distribution items beyond the already-shipped Docker image have no demand signal and are deprioritized accordingly.
+Open issues #4 (CL-0006 capability guidance) and #111 (real-world examples library) are the live signal from real-world usage now that #5 is closed. Distribution items beyond the already-shipped Docker image have no demand signal and are deprioritized accordingly.
 
 ---
 
@@ -26,10 +26,10 @@ Per-service rule overrides shipped in v0.4.0 (issue #5, [ADR-010](adr/010-per-se
 
 The leftover Milestone 2 items, plus the new real-world examples ask. All additive over 0.4.0; no breaking changes.
 
-**CL-0006 capability profiles** _(issue #4)_
-- Ship known capability profiles for popular base images (PostgreSQL, Redis, Caddy, Netdata, etc.) so the finding's `fix` field names the specific `cap_add` list instead of a generic `<SPECIFIC_CAP>` placeholder.
-- Data-driven: ships as a profile table in the rule, no engine changes.
-- Scope-limit: data + docs only. A `--suggest-caps` CLI flag is out of scope here; revisit if the profiles land well.
+**CL-0006 capability guidance** _(issue #4)_
+- Make the generic `<SPECIFIC_CAP>` placeholder actionable by teaching users how to *determine* the capabilities an image needs, rather than shipping a per-image answer.
+- Fix guidance gains: how to read an `Operation not permitted` failure, `docker diff` and the `capable` BPF tool for auditing, and the "if the entrypoint switches users, you likely need SETUID + SETGID" heuristic.
+- Docs only, no engine changes. Superseding history: shipping derived per-image profiles was attempted as the profile-enrichment preview and **withdrawn** in 0.15.0 — see [ADR-019](adr/019-withdraw-security-profile-catalog.md). Do not reintroduce a bundled capability table without revisiting that decision.
 
 **Real-world examples library** _(issue #111)_
 - `examples/real-world/` with one subdirectory per project (Traefik, Vaultwarden, Immich, Pi-hole, Portainer, Gitea). Each shows upstream Compose file → raw `compose-lint` output → hardened version → suppression config for unfixable findings, with per-finding narrative.
@@ -126,7 +126,7 @@ Python 3.10 is scheduled to age out of the matrix when it reaches upstream EOL i
 |-----------|---------|--------|
 | Rule Coverage (19 rules) | v0.3 | complete |
 | Per-service rule overrides | v0.4 | complete |
-| CL-0006 profiles + real-world examples + Homebrew tap | v0.4.x | in progress |
+| CL-0006 capability guidance + real-world examples + Homebrew tap | v0.4.x | in progress |
 | Remediation (`--explain`, `fix`, SARIF fixes, shellcheck) | v0.5–0.11 | `fix` GA in 0.11.0; shellcheck pending |
 | GA / 1.0 — stable contract + `fix` + upgrade policy | v1.0 | next |
 | Ecosystem integrations (VS Code, custom rules) | v1.x | |

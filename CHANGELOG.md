@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **Profile enrichment has been withdrawn** ([ADR-019](docs/adr/019-withdraw-security-profile-catalog.md),
+  superseding ADR-017 and ADR-018). The `compose_lint.profiles` package, the
+  `scripts/validate_profiles.py` validator, the `profile-validate` CI gate, the
+  `profiles` config block, and `run_rules`' `profile_lookup` parameter are all
+  gone — roughly 2,200 lines across source, tests and docs.
+
+  The feature matched a service's `image:` against a catalog of csd-derived
+  security profiles and appended an image-specific hint to a finding's `fix`
+  text. It shipped as an opt-in experimental preview, and the automation that
+  ADR-017 §7 requires before any profile may be endorsed as `validated` (issue
+  #360) was never built — it depends on csd emitting the catalog schema and on a
+  BPF-capable runner. compose-lint was therefore carrying a complete consumer of
+  a catalog that does not exist, behind a flag whose only honest setting was off.
+
+  **Upgrade impact is limited to configuration.** A leftover `profiles:` block in
+  `.compose-lint.yml` is now simply an unrecognized top-level key: it takes the
+  standard warn-and-continue path, printing a stderr warning and leaving the exit
+  code unchanged, so ordinary runs keep working. Under `--strict-config` it is a
+  hard error (exit 2), as any unrecognized key is. No finding, severity, exit
+  code, or output format changes — enrichment was additive-only, so nothing that
+  was reported before is reported differently now.
+
+  `CL-0009` ("Security profile disabled") is **unaffected**: it covers seccomp
+  and AppArmor `security_opt` settings and is unrelated to this catalog.
+
 ### Fixed
 
 - The GitHub Action snippet in `README.md` now pins the current release.

@@ -81,65 +81,18 @@ Excluded services still produce **SUPPRESSED** findings, with the per-service re
 - **Global `enabled: false` wins** over per-service exclusions: if a rule is disabled globally, every service is suppressed regardless of `exclude_services`.
 - **No inline suppression syntax** — there is no `# compose-lint: disable` comment form. Suppressions are tracked in config so reviewers can audit them.
 
-## Profile enrichment (experimental)
-
-> **Experimental preview.** Off by default and opt-in. Profile fix
-> recommendations are **advisory only**: a derived minimum is valid for the exact
-> invocation it was produced under (image digest, `user:`, `command:`, mounts,
-> …), and compose-lint does static analysis — it can't see your runtime, so it
-> can't confirm the recommendation fits your deployment. Treat a hint as a
-> pointer to verify, not a validated fact. When enrichment is active, compose-lint
-> prints a one-line reminder to stderr.
-
-Opt into image-specific fix guidance derived by container-sec-derive (csd), a
-runtime derivation tool (not yet published; every catalog profile carries the
-evidence to audit it without the tool).
-When enabled, a finding from a rule that a derived profile covers
-(CL-0002/0006/0007/0011/0016) gains a `profile hint` line in its fix text stating
-the observed minimum for that image — for example, the exact `cap_add` a service
-actually needs.
-
-compose-lint **ships no catalog of its own** (ADR-017 §7). You point `profiles.path`
-at a catalog you trust — your own derived profiles, or an external
-automation-maintained catalog you opt into. The reference catalog is
-[container-security-profiles](https://github.com/tmatens/container-security-profiles)
-(browsable at
-[tmatens.github.io/container-security-profiles](https://tmatens.github.io/container-security-profiles/)):
-clone it and point `profiles.path` at its `catalog/` directory. Both keys are
-required for enrichment; with `enabled` set but no `path`, compose-lint warns and
-enriches nothing.
-
-```yaml
-profiles:
-  enabled: true            # default: false
-  path: ./security-profiles  # directory of profile YAML documents (no default)
-```
-
-Enrichment is **advisory and additive only**: it never creates, drops, or
-reclassifies a finding, so turning it on cannot change your pass/fail result — it
-only makes existing guidance more specific, and the hint is **attributed and
-marked unverified** (it names its source and that compose-lint did not
-independently reproduce it). It matches a service's `image:` to a profile in your
-configured catalog; with no matching profile it is a no-op. When a profile carries
-a `reference_url` (schema 1.5) — the reference catalog points each profile at its
-rendered page on the site above — the enriched finding's `ref:` line links there,
-so the full evidence behind the hint is one click away. See
-[ADR-017](adr/017-security-profile-catalog.md) for the profile model and the
-trust rationale (§7).
-
 ## Validation
 
 A `.compose-lint.yml` that silently fails to take effect is a security risk — the user believes a rule is suppressed or re-tuned when it is not. compose-lint validates the file on load:
 
 - **Unknown rule IDs warn.** `rules:` keys are checked against the registered rule set. A typo (`CL-001`) or a retired ID (`CL-9999`) prints a stderr warning so the override isn't silently dropped.
-- **Unknown top-level keys warn.** Only `rules` and `profiles` are recognized at the top level. A misplaced CLI flag (e.g. a top-level `fail_on:`) or any other key warns instead of being ignored.
-- **Unknown `profiles` keys warn; `profiles.enabled` must be a real boolean and `profiles.path` a string.** Only `enabled` and `path` are recognized in the `profiles` block; a non-boolean `enabled` or non-string `path` is a hard error (exit 2), like the per-rule `enabled`.
+- **Unknown top-level keys warn.** Only `rules` is recognized at the top level. A misplaced CLI flag (e.g. a top-level `fail_on:`) or any other key warns instead of being ignored. This is also the path a leftover `profiles:` block now takes — the profile-enrichment preview was withdrawn in 0.15.0 ([ADR-019](adr/019-withdraw-security-profile-catalog.md)), so the key is simply unrecognized and warns like any other.
 - **Unknown per-rule keys warn.** Inside a rule block, only `enabled`, `reason`, `severity`, and `exclude_services` are recognized. A typo'd `severty:` warns.
 - **`enabled` must be a real boolean.** A quoted `'false'`, `0`, or any non-boolean is a **hard error** (exit 2), not a silent no-op that would leave the rule on. YAML's boolean keywords (`true`/`false`, `yes`/`no`, `on`/`off`) all parse to a real boolean and work as expected.
 
 Warnings never change the exit code; only the hard errors above do.
 
-Pass **`--strict-config`** to `check` or `fix` to promote every warning above (unknown rule id, unknown top-level/per-rule/`profiles` key) to a hard error (exit 2). Use it in CI, or wherever stderr is redirected, so a typo can't silently disable the wrong rule.
+Pass **`--strict-config`** to `check` or `fix` to promote every warning above (unknown rule id, unknown top-level or per-rule key) to a hard error (exit 2). Use it in CI, or wherever stderr is redirected, so a typo can't silently disable the wrong rule.
 
 ## Output formats
 

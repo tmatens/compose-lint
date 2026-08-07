@@ -1,6 +1,8 @@
 # ADR-018: Confidence as a multi-axis score, not a single scalar
 
-**Status:** Accepted (amends [ADR-017 §4 Confidence](017-security-profile-catalog.md)).
+**Status:** **Superseded** by [ADR-019](019-withdraw-security-profile-catalog.md) (2026-08-07). This ADR refines the confidence model of [ADR-017](017-security-profile-catalog.md), which was itself withdrawn in 0.15.0 — with no profile catalog there is no `derivation.confidence` to score. Retained for the reasoning.
+
+Previously: Accepted (amends [ADR-017 §4 Confidence](017-security-profile-catalog.md)).
 
 **Context:** A profile's `derivation.confidence` is today a single scalar —
 `high | moderate | low`. In practice that one word was being asked to answer four

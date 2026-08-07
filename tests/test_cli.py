@@ -212,28 +212,20 @@ class TestCLI:
         assert result.returncode in (0, 1)
         assert "unknown rule id 'CL-001'" in result.stderr
 
-    def test_profile_enrichment_prints_experimental_notice(
+    def test_withdrawn_profiles_key_warns_but_does_not_fail(
         self, tmp_path: Path
     ) -> None:
-        # Enrichment is experimental: when it's active (opt-in), a one-line
-        # stderr reminder makes the provisional, unvalidated status explicit.
+        # The profile-enrichment preview was withdrawn. A config left over from
+        # it must not hard-fail an ordinary run: `profiles` is now just an
+        # unrecognized top-level key, so it takes the standard warn-and-continue
+        # path (and still raises under --strict-config, like any other typo).
         compose = tmp_path / "docker-compose.yml"
         compose.write_text("services:\n  db:\n    image: postgres:16\n")
-        catalog = tmp_path / "catalog"
-        catalog.mkdir()
         config = tmp_path / ".compose-lint.yml"
-        config.write_text(f"profiles:\n  enabled: true\n  path: {catalog}\n")
+        config.write_text("profiles:\n  enabled: true\n  path: ./catalog\n")
         result = run_cli(str(compose), "--config", str(config))
-        assert "experimental" in result.stderr
-        assert "profile fix recommendations" in result.stderr
-
-    def test_no_experimental_notice_when_profiles_disabled(
-        self, tmp_path: Path
-    ) -> None:
-        compose = tmp_path / "docker-compose.yml"
-        compose.write_text("services:\n  db:\n    image: postgres:16\n")
-        result = run_cli(str(compose))
-        assert "experimental" not in result.stderr
+        assert result.returncode in (0, 1)
+        assert "unknown top-level key 'profiles'" in result.stderr
 
     def test_explain_prints_rule_doc(self) -> None:
         result = run_cli("--explain", "CL-0003")

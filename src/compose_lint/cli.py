@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import functools
 import json
 import os
 import stat
@@ -14,7 +13,7 @@ from pathlib import Path
 from typing import NoReturn
 
 from compose_lint import __version__
-from compose_lint.config import ConfigError, load_config, load_profiles_config
+from compose_lint.config import ConfigError, load_config
 from compose_lint.config_emit import render_config
 from compose_lint.engine import filter_findings, run_rules
 from compose_lint.explain import UnknownRuleError, load_rule_doc
@@ -39,7 +38,6 @@ from compose_lint.formatters.text import (
 from compose_lint.formatters.text import format_findings as format_text
 from compose_lint.models import Finding, Severity
 from compose_lint.parser import ComposeError, ComposeNotApplicableError, load_compose
-from compose_lint.profiles.loader import load_profile
 
 
 def _severity_type(value: str) -> Severity:
@@ -371,34 +369,9 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         disabled_rules, severity_overrides, excluded_services = load_config(
             args.config, strict=args.strict_config
         )
-        profiles_enabled, profiles_path = load_profiles_config(
-            args.config, strict=args.strict_config
-        )
     except ConfigError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(2)
-
-    profile_lookup = None
-    if profiles_enabled and profiles_path:
-        profile_lookup = functools.partial(
-            load_profile, catalog_root=Path(profiles_path)
-        )
-        # Profile enrichment is an experimental preview. It's already opt-in
-        # (profiles.enabled, off by default); this makes the provisional status
-        # explicit whenever it's active, so no one mistakes an advisory,
-        # invocation-specific hint for a validated fact about their deployment.
-        print(
-            "Note: profile fix recommendations are experimental — advisory only, "
-            "derived for a specific invocation, and not validated against your "
-            "runtime. Verify before applying.",
-            file=sys.stderr,
-        )
-    elif profiles_enabled:
-        print(
-            "Warning: profiles.enabled is set but profiles.path is unset; "
-            "no catalog to enrich from",
-            file=sys.stderr,
-        )
 
     if not args.files:
         args.files = _discover_compose_files()
@@ -468,7 +441,6 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             severity_overrides=severity_overrides,
             excluded_services=excluded_services,
             on_error=_record_rule_error,
-            profile_lookup=profile_lookup,
         )
 
         if args.skip_suppressed:
