@@ -257,9 +257,10 @@ def format_findings(
     The fix block and reference URL are printed only on the first occurrence
     of each *distinct* fix within a file; subsequent occurrences with the same
     fix get a brief `(see fix above)` marker. The dedup key includes the fix
-    text, not just the rule id, so profile enrichment — which makes a rule's fix
-    image-specific (e.g. postgres vs caddy get different `cap_add` hints) — is
-    never collapsed into another service's recommendation. ``verbose=True``
+    text, not just the rule id, because one rule's fix can differ per service —
+    CL-0009 names the particular profile a service disables, CL-0011 the
+    particular capability it adds — so one service's guidance is never collapsed
+    into another's. ``verbose=True``
     restores per-finding fix
     repetition for IDE tooling or local fix-it-now workflows. ``quiet=True``
     does the opposite — one line per finding, dropping the fix block,
@@ -283,11 +284,12 @@ def format_findings(
     out.append(_colorize(_sanitize(filepath), _BOLD))
     out.append("")
 
-    # Dedup on (rule_id, fix, references), not rule_id alone: profile enrichment
-    # makes a rule's fix image-specific, so two services flagged by the same rule
+    # Dedup on (rule_id, fix, references), not rule_id alone: one rule's fix can
+    # differ per service (CL-0009 names the profile that service disables,
+    # CL-0011 the capability it adds), so two services flagged by the same rule
     # can carry genuinely different guidance. Keying on rule_id alone would mark
-    # the second "(see fix above)" and point it at the first service's (wrong-
-    # image) recommendation.
+    # the second "(see fix above)" and point it at the first service's
+    # recommendation, which may not apply.
     seen_fixes: set[tuple[str, str, tuple[str, ...]]] = set()
 
     for service, group in services_in_order:

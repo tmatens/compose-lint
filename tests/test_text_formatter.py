@@ -446,36 +446,36 @@ def test_format_summary_escapes_bidi_in_path() -> None:
 
 
 def test_fix_dedup_keys_on_fix_not_rule_id() -> None:
-    # Profile enrichment makes a rule's fix image-specific, so two services
-    # flagged by the same rule can carry genuinely different guidance. The dedup
-    # must not collapse the second into "(see fix above)" pointing at the first
-    # service's (wrong-image) fix.
+    # One rule's fix can differ per service: CL-0009 names the specific profile
+    # that service disables, so two services flagged by it carry genuinely
+    # different guidance. The dedup must not collapse the second into
+    # "(see fix above)" pointing at the first service's inapplicable fix.
     findings = [
         Finding(
-            "CL-0006",
-            Severity.MEDIUM,
+            "CL-0009",
+            Severity.HIGH,
             "db",
-            "caps not dropped",
+            "security profile disabled",
             line=2,
-            fix="cap_drop: [ALL]\nhint: cap_add: [CHOWN, DAC_OVERRIDE, SETGID, SETUID]",
+            fix="Remove `seccomp:unconfined` from security_opt.",
         ),
         Finding(
-            "CL-0006",
-            Severity.MEDIUM,
+            "CL-0009",
+            Severity.HIGH,
             "proxy",
-            "caps not dropped",
+            "security profile disabled",
             line=6,
-            fix="cap_drop: [ALL]\nprofile hint: cap_add: [NET_BIND_SERVICE]",
+            fix="Remove `apparmor:unconfined` from security_opt.",
         ),
     ]
     out = format_findings(findings, "compose.yml")
-    assert "CHOWN" in out
-    assert "NET_BIND_SERVICE" in out  # the second, distinct hint is not collapsed
+    assert "seccomp:unconfined" in out
+    assert "apparmor:unconfined" in out  # the second, distinct fix is not collapsed
     assert "(see fix above)" not in out
 
 
 def test_fix_dedup_collapses_identical_fixes() -> None:
-    # Same rule + identical fix (no enrichment) still dedups to a single block.
+    # Same rule + identical fix still dedups to a single block.
     findings = [
         Finding(
             "CL-0003",
