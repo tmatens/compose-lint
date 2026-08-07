@@ -70,7 +70,16 @@ class CapDropRule(BaseRule):
                     "  cap_drop:\n"
                     "    - ALL\n"
                     "  cap_add:\n"
-                    "    - <SPECIFIC_CAP>"
+                    "    - <SPECIFIC_CAP>\n"
+                    "To find the required set, start with cap_drop: [ALL] and\n"
+                    "no cap_add — many services need none — then review the\n"
+                    "logs and test all functionality, background features\n"
+                    "included: capability failures are often non-fatal and\n"
+                    "degrade a feature silently. Map each 'Operation not\n"
+                    "permitted' to a capability: chown -> CHOWN, su-exec/gosu\n"
+                    "user switch -> SETUID + SETGID, port < 1024 under host\n"
+                    "networking -> NET_BIND_SERVICE.\n"
+                    "Full guide: compose-lint --explain CL-0006"
                 ),
                 references=[OWASP_REF, CIS_REF],
             )

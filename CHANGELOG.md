@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- CL-0006's fix guidance now teaches how to *determine* an image's required
+  capability set instead of stopping at a `<SPECIFIC_CAP>` placeholder
+  (issue #4). The finding's `fix` text gains the drop-and-observe method and
+  the common `Operation not permitted` → capability mappings, and
+  `docs/rules/CL-0006.md` (also served by `--explain CL-0006`) gains a full
+  "Determining required capabilities" section covering the symptom→capability
+  table, the `capable` BPF tool, `docker diff`, and entrypoint inspection.
+  Both stress verifying *function*, not just startup: capability failures are
+  often non-fatal, silently degrading a feature (e.g. DHCP device discovery
+  under a dropped `NET_RAW`) while the container stays "healthy" — so review
+  logs and exercise background behaviors after every change.
+  Guidance-only per [ADR-019](docs/adr/019-withdraw-security-profile-catalog.md):
+  no per-image capability data is bundled.
+
 ## [0.15.0] - 2026-08-07
 
 ### Removed
