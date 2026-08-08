@@ -62,7 +62,9 @@ class PrivilegedModeRule(BaseRule):
                     "  cap_drop:\n"
                     "    - ALL\n"
                     "  cap_add:\n"
-                    "    - <SPECIFIC_CAP>"
+                    "    - <SPECIFIC_CAP>\n"
+                    "Devices need explicit devices: entries; to determine the\n"
+                    "capability set, see: compose-lint --explain CL-0006"
                 ),
                 references=[OWASP_REF, CIS_REF],
             )

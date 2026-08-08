@@ -554,6 +554,91 @@ def _t7_volume_writable() -> tuple[bool, str]:
     return ok, f"volume write rc={rc_vol}; rootfs write rc={rc_root} msg={err!r}"
 
 
+# --- CL-0012 / CL-0018 / CL-0022 symptom-table mappings (#479) --------------
+#
+# Same contract as the CL-0006/CL-0007 mapping checks (ADR-016 amendment).
+
+
+def _t12_fork_limit() -> tuple[bool, str]:
+    # 40 background forks against a pids limit of 10 must fail; the same storm
+    # under a sane limit must not. The busybox wording is the doc's quoted row.
+    fork_script = "for i in $(seq 1 40); do sleep 2 & done"
+    return _remedy(
+        ["--pids-limit", "10"],
+        ["--pids-limit", "100"],
+        ["sh", "-c", fork_script],
+        "can't fork: Resource temporarily unavailable",
+    )
+
+
+def _t22_exec_tmpfs() -> tuple[bool, str]:
+    # Exec from a default (noexec) tmpfs fails even though the file has the x
+    # bit; :exec permits it — which is exactly the option CL-0022 flags, so
+    # the doc frames the remedy as relocate-first, :exec-with-reason last.
+    exec_script = "cp /bin/busybox /scratch/busybox && /scratch/busybox true"
+    return _remedy(
+        ["--tmpfs", "/scratch"],
+        ["--tmpfs", "/scratch:exec"],
+        ["sh", "-c", exec_script],
+        "/scratch/busybox: Permission denied",
+    )
+
+
+def _t18_rootfs_write() -> tuple[bool, str]:
+    # Non-root write to a root-owned image path fails EACCES; the remedy row
+    # is a tmpfs with uid= — see _t18_tmpfs_inherits for why bare tmpfs isn't
+    # enough here.
+    return _remedy(
+        ["--user", "1000"],
+        ["--user", "1000", "--tmpfs", "/etc:uid=1000"],
+        ["touch", "/etc/app.lock"],
+        "touch: /etc/app.lock: Permission denied",
+    )
+
+
+def _t18_tmpfs_inherits() -> tuple[bool, str]:
+    # The doc's tmpfs gotcha, both halves: a tmpfs over an EXISTING image dir
+    # inherits that dir's root ownership (still unwritable for uid 1000),
+    # while a tmpfs at a path ABSENT from the image defaults to mode 1777.
+    rc_inherit, err = _run_err(
+        ["--user", "1000", "--tmpfs", "/etc"], ["touch", "/etc/app.lock"]
+    )
+    rc_fresh, _ = _run_err(
+        ["--user", "1000", "--tmpfs", "/newpath"], ["touch", "/newpath/x"]
+    )
+    ok = rc_inherit != 0 and "Permission denied" in err and rc_fresh == 0
+    return ok, (
+        f"tmpfs over /etc rc={rc_inherit} msg={err!r}; tmpfs at absent path "
+        f"rc={rc_fresh}"
+    )
+
+
+def _t18_volume_ownership() -> tuple[bool, str]:
+    # The doc's named-volume rows: a fresh volume at a path absent from the
+    # image is root-owned (non-root write fails), while a volume mounted over
+    # an existing image dir copies that dir's contents AND ownership on first
+    # use (busybox's /tmp is 1777, so the copy-up makes it writable).
+    def attempt(vol: str, mountpoint: str, path: str) -> tuple[int, str]:
+        subprocess.run(
+            ["docker", "volume", "create", vol], capture_output=True, timeout=90
+        )
+        try:
+            return _run_err(
+                ["--user", "1000", "-v", f"{vol}:{mountpoint}"], ["touch", path]
+            )
+        finally:
+            subprocess.run(
+                ["docker", "volume", "rm", vol], capture_output=True, timeout=90
+            )
+
+    rc_fresh, err = attempt("clpremise-cl0018-fresh", "/data", "/data/x")
+    rc_copyup, _ = attempt("clpremise-cl0018-copyup", "/tmp", "/tmp/x")
+    ok = rc_fresh != 0 and "Permission denied" in err and rc_copyup == 0
+    return ok, (
+        f"fresh volume rc={rc_fresh} msg={err!r}; copy-up volume rc={rc_copyup}"
+    )
+
+
 CHECKS: list[tuple[str, str, Callable[[], tuple[bool, str]]]] = [
     ("CL-0001", "docker socket mount is root-equivalent", _cl0001),
     ("CL-0002", "privileged grants full caps", _cl0002),
@@ -588,6 +673,12 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool, str]]]] = [
     ("CL-0007", "map: mkdir EROFS -> tmpfs", _t7_mkdir_tmpfs),
     ("CL-0007", "map: masked ENOENT -> tmpfs mountpoint", _t7_tmpfs_creates_mountpoint),
     ("CL-0007", "premise: named volume writable under read_only", _t7_volume_writable),
+    # CL-0012 / CL-0018 / CL-0022 symptom-table mappings (#479).
+    ("CL-0012", "map: fork failure at pids limit", _t12_fork_limit),
+    ("CL-0022", "map: exec from noexec tmpfs", _t22_exec_tmpfs),
+    ("CL-0018", "map: non-root write to root-owned path", _t18_rootfs_write),
+    ("CL-0018", "premise: tmpfs inherits image-dir ownership", _t18_tmpfs_inherits),
+    ("CL-0018", "premise: named-volume initial ownership", _t18_volume_ownership),
 ]
 
 

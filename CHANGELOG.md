@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- CL-0012, CL-0018, and CL-0022 get the symptom → remedy treatment
+  (issue #479, same pattern as CL-0006/CL-0007): each rule doc gains a
+  "Reading the failure" table quoting verbatim, live-captured error messages.
+  CL-0012 maps the fork-failure wordings (chronically misattributed to
+  `ulimit -u`) to the pids cgroup with a `pids.max`/`pids.current`
+  confirmation step; CL-0018 maps non-root `Permission denied` writes by
+  mount type, backed by two CI-proven facts — a tmpfs over an existing image
+  directory inherits its root ownership (use `uid=`/`gid=`), and named-volume
+  initial ownership follows Docker's copy-up rules; CL-0022 frames the
+  `noexec` exec failure as relocate-first, `:exec`-with-documented-reason
+  last, since the naive fix is the finding. Six new CI premise checks prove
+  the busybox rows live. CL-0002's fix text now points at CL-0006's
+  capability-determination guide instead of stopping at `<SPECIFIC_CAP>`.
+
 ## [0.15.1] - 2026-08-08
 
 ### Added
