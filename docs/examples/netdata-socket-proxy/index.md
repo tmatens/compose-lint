@@ -142,11 +142,55 @@ The instinct is to add one. That would be wrong twice: it would not help the dae
 
 `0770` rather than the tmpfs default `1777`, since exactly one uid needs it. Afterwards: `netdatacli ping` → `pong`, and zero command-server failures across restarts.
 
+## The requirements are a property of your configuration, not of the image
+
+Everything above is specific to how *this* deployment uses this image. That is not a disclaimer, it is the most transferable thing on the page.
+
+This agent's config turns two features off:
+
+```
+network-viewer = no                                    # would setns() into other containers' namespaces
+script to get cgroup network interfaces = /bin/true    # per-container network charts, also via setns()
+```
+
+Both features work by entering other containers' network namespaces. With them off, the privilege they would have required is not needed — which is a large part of why the capability set here is four and not more, and why `SYS_ADMIN` could be dropped. Turn either back on and the minimum changes, and a hardened file copied from this page would be wrong for that deployment.
+
+The same holds in the other direction. Two of the suppressions on this page were tested and turned out to say the wrong thing:
+
+- **Host networking was justified as "required to monitor all network interfaces".** It isn't. A bridged container with the same config collects the physical interfaces with real data, because the agent reads `/host/proc/1/net/dev` — PID 1's network namespace. That resolves to the host's namespace only because `pid: host` is set. Bind-mounting `/proc` does not help by itself, since `/proc/net` is namespace-relative and `/host/proc/net/dev` shows the container's own `lo` and `eth0`. So `pid: host` was quietly supplying the host network metrics all along, and host networking is really serving the dashboard's bind address — an access-path decision, not a metrics one.
+- **`apparmor:unconfined` was justified as needed for `/proc` and `/sys` access.** It is needed, but not for the stated reason, and the way it fails is covered below.
+
+Neither error was detectable from the Compose file, and neither was detectable from the image. They were properties of one deployment's configuration, and they only surfaced when someone re-derived them against that deployment.
+
+This is also why a "security profile for image X" is a harder artifact than it sounds, and why [ADR-019](../../adr/019-withdraw-security-profile-catalog.md) withdrew the attempt to publish one. The minimum privilege for an image is not a function of the image. It is a function of the image *plus the features you turned on*, and the second half does not fit in a catalog.
+
+## A second false green, from a different cause
+
+Dropping `SYS_PTRACE` breaks per-process metrics while the healthcheck stays green. So does running under Docker's default AppArmor profile — and that one is stranger, because the capability is present and effective:
+
+```
+container health:  healthy
+apps.plugin:       "Cannot process /host/proc/1/io (command 'systemd')"   errno 13
+                   259 permission-denied lines
+apps.cpu:          "No metrics where matched to query"
+apps.plugin caps:  Uid: 201 0 0 0    CapEff: 00000000000800c2   <- SYS_PTRACE present
+```
+
+`SYS_PTRACE` is granted, the plugin is setuid-root and holds it effectively, and the read is refused anyway, because mandatory access control is evaluated independently of capabilities. Two different mechanisms, one indistinguishable symptom: a healthy container with missing data.
+
+### The posture you test in decides the answer you get
+
+The same AppArmor test run without `pid: host` reports **zero denials** and a perfectly healthy agent. Nothing is wrong, because with no host processes visible there is nothing to be refused access to.
+
+A drop-test run in that posture returns "`apparmor:unconfined` is removable" — confidently, reproducibly, and wrongly. The capability minimum you derive is only valid for the posture you derived it in, and the posture includes the namespace sharing, the mounts, and the enabled feature set. A derived minimum also inherits any bug present at derivation time: `DAC_OVERRIDE` here was re-tested on the suspicion that it was only masking the runtime-directory problem described above, and survived — removing it fails startup on a different directory entirely — but that suspicion was reasonable, and the way to settle it was to run it again rather than to reason about it.
+
 ### What this means for the linter
 
 compose-lint cannot find this one. Every fact that matters — that the daemon drops its capabilities, that a directory inside the image is root-owned, that a plugin is setuid-root — is a property of the running container, not of the Compose file. The file was, and still is, clean.
 
 That is worth stating plainly rather than leaving implied. A Compose linter checks the configuration you declare. It does not check that the process you launched can use what you declared, and a green run is not evidence that your capability grants are reaching the code that needs them. This example exists partly to mark that boundary.
+
+The same limit applies to the suppression reasons. compose-lint will faithfully carry a justification that is completely false — as two of the ones on this page were — because a reason is prose, and nothing checks prose against reality. The linter can tell you a waiver exists. Only re-testing tells you whether it is still true.
 
 ## The suppressions
 
