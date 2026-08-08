@@ -475,6 +475,86 @@ def _t_ipc_lock() -> tuple[bool, str]:
     )
 
 
+# --- CL-0007 symptom-table mappings (docs/rules/CL-0007.md) -----------------
+#
+# Same contract as the CL-0006 mapping checks (ADR-016 amendment): each row of
+# the rule doc's "Reading the failure" table is proven live — the write fails
+# under ``--read-only`` emitting the quoted busybox message, and succeeds with
+# the mapped remedy applied.
+
+
+def _remedy(
+    deny_args: list[str],
+    allow_args: list[str],
+    cmd: list[str],
+    msg: str,
+) -> tuple[bool, str]:
+    """Prove one symptom→remedy row (fails under ``deny_args`` with ``msg``;
+    works under ``allow_args``)."""
+    rc_deny, err = _run_err(deny_args, cmd)
+    rc_allow, _ = _run_err(allow_args, cmd)
+    ok = rc_deny != 0 and msg in err and rc_allow == 0
+    return ok, f"denied rc={rc_deny} msg={err!r}; remedied rc={rc_allow}"
+
+
+def _t7_touch_tmpfs() -> tuple[bool, str]:
+    return _remedy(
+        ["--read-only"],
+        ["--read-only", "--tmpfs", "/tmp"],
+        ["touch", "/tmp/scratch"],
+        "touch: /tmp/scratch: Read-only file system",
+    )
+
+
+def _t7_mkdir_tmpfs() -> tuple[bool, str]:
+    # busybox mkdir -p reports the first missing parent it fails to create.
+    return _remedy(
+        ["--read-only"],
+        ["--read-only", "--tmpfs", "/var/cache"],
+        ["mkdir", "-p", "/var/cache/app"],
+        "mkdir: can't create directory '/var/cache/': Read-only file system",
+    )
+
+
+def _t7_tmpfs_creates_mountpoint() -> tuple[bool, str]:
+    # The doc's masked-symptom row: /run is absent from the busybox image, so
+    # under read_only the write fails ENOENT (not EROFS) — and a tmpfs entry
+    # both creates the mount point and makes it writable.
+    return _remedy(
+        ["--read-only"],
+        ["--read-only", "--tmpfs", "/run"],
+        ["touch", "/run/app.pid"],
+        "touch: /run/app.pid: No such file or directory",
+    )
+
+
+def _t7_volume_writable() -> tuple[bool, str]:
+    # The doc's persistent-data row: a named volume stays writable under
+    # read_only while the rootfs is locked — the load-bearing fact behind
+    # "persistent data -> named volume, never tmpfs".
+    vol = "clpremise-cl0007-vol"
+    subprocess.run(["docker", "volume", "create", vol], capture_output=True, timeout=90)
+    try:
+        rc_vol, _ = _run_err(
+            ["--read-only", "-v", f"{vol}:/data"],
+            [
+                "touch",
+                "/data/persist",
+            ],
+        )
+        rc_root, err = _run_err(
+            ["--read-only", "-v", f"{vol}:/data"],
+            [
+                "touch",
+                "/tmp/x",
+            ],
+        )
+    finally:
+        subprocess.run(["docker", "volume", "rm", vol], capture_output=True, timeout=90)
+    ok = rc_vol == 0 and rc_root != 0 and "Read-only file system" in err
+    return ok, f"volume write rc={rc_vol}; rootfs write rc={rc_root} msg={err!r}"
+
+
 CHECKS: list[tuple[str, str, Callable[[], tuple[bool, str]]]] = [
     ("CL-0001", "docker socket mount is root-equivalent", _cl0001),
     ("CL-0002", "privileged grants full caps", _cl0002),
@@ -504,6 +584,11 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool, str]]]] = [
     ("CL-0006", "map: set clock -> SYS_TIME", _t_sys_time),
     ("CL-0006", "map: cross-uid signal -> KILL", _t_kill),
     ("CL-0006", "map: mlockall -> IPC_LOCK", _t_ipc_lock),
+    # CL-0007 symptom-table mappings — one per row of the rule doc's table.
+    ("CL-0007", "map: touch EROFS -> tmpfs", _t7_touch_tmpfs),
+    ("CL-0007", "map: mkdir EROFS -> tmpfs", _t7_mkdir_tmpfs),
+    ("CL-0007", "map: masked ENOENT -> tmpfs mountpoint", _t7_tmpfs_creates_mountpoint),
+    ("CL-0007", "premise: named volume writable under read_only", _t7_volume_writable),
 ]
 
 

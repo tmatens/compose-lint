@@ -71,8 +71,12 @@ class ReadOnlyFilesystemRule(BaseRule):
                     "  tmpfs:\n"
                     "    - /tmp\n"
                     "    - /run\n"
-                    "Note: run once without read_only and check "
-                    "`docker diff` first."
+                    "To find the paths, run once without read_only and check\n"
+                    "`docker diff`; then map each 'Read-only file system'\n"
+                    "error by path type: ephemeral (PID files, sockets,\n"
+                    "caches, /tmp) -> a tmpfs entry; persistent data -> a\n"
+                    "named volume, NEVER tmpfs (erased on every restart).\n"
+                    "Full guide: compose-lint --explain CL-0007"
                 ),
                 references=[OWASP_REF, CIS_REF],
             )

@@ -26,6 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- CL-0007's guidance gets the same symptom → remedy treatment as CL-0006
+  (issue #474): the rule doc gains a "Reading the failure" table mapping
+  verbatim `Read-only file system` errors to remedies **by path type** —
+  ephemeral paths to `tmpfs:`, persistent data to a named volume (never
+  `tmpfs`, which silently erases it on restart), plus the masked
+  `No such file or directory` symptom when the image lacks the directory.
+  The finding's `fix` text carries the path-type rule and points at
+  `--explain CL-0007`. Four new CI premise checks prove the busybox rows
+  live, including that named volumes stay writable under `read_only`.
+
 - The CL-0006 symptom → capability table now covers 11 mappings — added
   `NET_ADMIN`, `SYS_NICE`, `SYS_TIME`, `FOWNER`, `KILL`, and `IPC_LOCK` — and
   quotes the verbatim error messages real tools emit, captured from live
