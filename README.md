@@ -5,6 +5,7 @@
 [![CI](https://github.com/tmatens/compose-lint/actions/workflows/ci.yml/badge.svg)](https://github.com/tmatens/compose-lint/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/compose-lint)](https://pypi.org/project/compose-lint/)
 [![Docker](https://img.shields.io/badge/docker-composelint%2Fcompose--lint-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/composelint/compose-lint)
+[![Docs](https://img.shields.io/badge/docs-tmatens.github.io-blue)](https://tmatens.github.io/compose-lint/)
 [![Python](https://img.shields.io/pypi/pyversions/compose-lint)](https://pypi.org/project/compose-lint/)
 [![License](https://img.shields.io/github/license/tmatens/compose-lint)](https://github.com/tmatens/compose-lint/blob/main/LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/tmatens/compose-lint/badge)](https://scorecard.dev/viewer/?uri=github.com/tmatens/compose-lint)
@@ -13,7 +14,7 @@
 
 Static-analysis checks for `docker-compose.yml` and `compose.yaml`, covering privileged containers, unpinned images, host-network sharing, sensitive bind mounts, hard-coded credentials, and more. Full rule documentation lives at **[tmatens.github.io/compose-lint](https://tmatens.github.io/compose-lint/)** (the same pages `--explain` prints offline).
 
-In a scan of 6,444 public Docker Compose files on GitHub, **91% of those that parse had at least one security finding** — and 68% had a finding rated HIGH or CRITICAL. Nearly all skip basic capability restrictions, 52% run images without a pinned digest, and 58% bind ports to all interfaces. compose-lint catches these in CI before they ship. **[Read the full *State of Docker Compose Security* report →](docs/state-of-compose.md)**
+In a scan of 6,444 public Docker Compose files on GitHub, **91% of those that parse had at least one security finding** — and 68% had a finding rated HIGH or CRITICAL. Nearly all skip basic capability restrictions, 52% run images without a pinned digest, and 58% bind ports to all interfaces. compose-lint catches these in CI before they ship. **[Read the full *State of Docker Compose Security* report →](https://tmatens.github.io/compose-lint/state-of-compose/)**
 
 <!-- Demo GIF. Regenerate with scripts/demo/ — see scripts/demo/README.md. -->
 ![compose-lint scanning a docker-compose.yml: three severity-sorted findings — a CRITICAL mounted Docker socket (CL-0001) leading, with a box-drawing underline, fix block, and reference URL, above a HIGH sensitive host mount (CL-0013) and a MEDIUM image pinned to a tag but not a digest (CL-0019) — then the FAIL verdict, and `compose-lint --explain CL-0001` printing the offline rule docs.](https://raw.githubusercontent.com/tmatens/compose-lint/main/docs/assets/demo.gif)
@@ -52,7 +53,7 @@ The Docker image is distroless, multi-arch, and runs nonroot — see [Security p
 
 ### Running with full hardening
 
-Want to dogfood compose-lint's own rules against the container that runs it? See [docs/hardening.md](https://github.com/tmatens/compose-lint/blob/main/docs/hardening.md) for the fully-hardened `docker run` invocation, the flag-to-rule mapping, and digest-pinning instructions.
+Want to dogfood compose-lint's own rules against the container that runs it? See [the hardening guide](https://tmatens.github.io/compose-lint/hardening/) for the fully-hardened `docker run` invocation, the flag-to-rule mapping, and digest-pinning instructions.
 
 ## Quick Start
 
@@ -170,28 +171,28 @@ If you need broad IaC coverage across Terraform, Kubernetes, and more, KICS cove
 
 | ID | Severity | Description | OWASP | CIS |
 |----|----------|-------------|-------|-----|
-| [CL-0001](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0001.md) | CRITICAL | Container runtime socket mounted | [Rule #1](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-1-do-not-expose-the-docker-daemon-socket-even-to-the-containers) | 5.32 |
-| [CL-0002](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0002.md) | CRITICAL | Privileged mode enabled | [Rule #3][owasp3] | 5.5 |
-| [CL-0003](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0003.md) | MEDIUM | Privilege escalation not blocked | [Rule #4](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-4-prevent-in-container-privilege-escalation) | 5.26 |
-| [CL-0004](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0004.md) | MEDIUM | Image not pinned to version | [Rule #13][owasp13] | 5.28 |
-| [CL-0005](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0005.md) | HIGH | Ports bound to all interfaces | [Rule #5a](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5a-be-careful-when-mapping-container-ports-to-the-host-with-firewalls-like-ufw) | 5.14 |
-| [CL-0006](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0006.md) | MEDIUM | No capability restrictions | [Rule #3][owasp3] | 5.4 |
-| [CL-0007](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0007.md) | MEDIUM | Filesystem not read-only | [Rule #8][owasp8] | 5.13 |
-| [CL-0008](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0008.md) | HIGH | Host network mode | [Rule #5](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5-be-mindful-of-inter-container-connectivity) | 5.10 |
-| [CL-0009](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0009.md) | HIGH | Security profile disabled | [Rule #6](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-6-use-linux-security-module-seccomp-apparmor-or-selinux-for-runtime-security) | 5.2, 5.3, 5.22 |
-| [CL-0010](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0010.md) | HIGH | Host namespace sharing | [Rule #3][owasp3] | 5.16, 5.17, 5.21, 5.31 |
-| [CL-0011](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0011.md) | HIGH | Dangerous capabilities added | [Rule #3][owasp3] | 5.4 |
-| [CL-0012](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0012.md) | MEDIUM | PIDs cgroup limit disabled | — | 5.29 |
-| [CL-0013](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0013.md) | HIGH | Sensitive host path mounted | [Rule #8][owasp8] | 5.6 |
-| [CL-0014](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0014.md) | MEDIUM | Logging driver disabled | — | — |
-| [CL-0015](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0015.md) | LOW | Healthcheck disabled | — | 4.6, 5.27 |
-| [CL-0016](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0016.md) | HIGH | Dangerous host device exposed | — | 5.18 |
-| [CL-0017](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0017.md) | MEDIUM | Shared mount propagation | — | 5.20 |
-| [CL-0018](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0018.md) | MEDIUM | Explicit root user | [Rule #2](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-2-set-a-user) | — |
-| [CL-0019](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0019.md) | MEDIUM | Image tag without digest | [Rule #13][owasp13] | — |
-| [CL-0020](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0020.md) | HIGH | Credential-shaped env key with literal value | [Rule #12][owasp12] | — |
-| [CL-0021](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0021.md) | HIGH | Credential embedded in connection-string env value | [Rule #12][owasp12] | — |
-| [CL-0022](https://github.com/tmatens/compose-lint/blob/main/docs/rules/CL-0022.md) | LOW | tmpfs mount re-enables exec/suid/dev | [Rule #8][owasp8] | — |
+| [CL-0001](https://tmatens.github.io/compose-lint/rules/CL-0001/) | CRITICAL | Container runtime socket mounted | [Rule #1](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-1-do-not-expose-the-docker-daemon-socket-even-to-the-containers) | 5.32 |
+| [CL-0002](https://tmatens.github.io/compose-lint/rules/CL-0002/) | CRITICAL | Privileged mode enabled | [Rule #3][owasp3] | 5.5 |
+| [CL-0003](https://tmatens.github.io/compose-lint/rules/CL-0003/) | MEDIUM | Privilege escalation not blocked | [Rule #4](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-4-prevent-in-container-privilege-escalation) | 5.26 |
+| [CL-0004](https://tmatens.github.io/compose-lint/rules/CL-0004/) | MEDIUM | Image not pinned to version | [Rule #13][owasp13] | 5.28 |
+| [CL-0005](https://tmatens.github.io/compose-lint/rules/CL-0005/) | HIGH | Ports bound to all interfaces | [Rule #5a](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5a-be-careful-when-mapping-container-ports-to-the-host-with-firewalls-like-ufw) | 5.14 |
+| [CL-0006](https://tmatens.github.io/compose-lint/rules/CL-0006/) | MEDIUM | No capability restrictions | [Rule #3][owasp3] | 5.4 |
+| [CL-0007](https://tmatens.github.io/compose-lint/rules/CL-0007/) | MEDIUM | Filesystem not read-only | [Rule #8][owasp8] | 5.13 |
+| [CL-0008](https://tmatens.github.io/compose-lint/rules/CL-0008/) | HIGH | Host network mode | [Rule #5](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5-be-mindful-of-inter-container-connectivity) | 5.10 |
+| [CL-0009](https://tmatens.github.io/compose-lint/rules/CL-0009/) | HIGH | Security profile disabled | [Rule #6](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-6-use-linux-security-module-seccomp-apparmor-or-selinux-for-runtime-security) | 5.2, 5.3, 5.22 |
+| [CL-0010](https://tmatens.github.io/compose-lint/rules/CL-0010/) | HIGH | Host namespace sharing | [Rule #3][owasp3] | 5.16, 5.17, 5.21, 5.31 |
+| [CL-0011](https://tmatens.github.io/compose-lint/rules/CL-0011/) | HIGH | Dangerous capabilities added | [Rule #3][owasp3] | 5.4 |
+| [CL-0012](https://tmatens.github.io/compose-lint/rules/CL-0012/) | MEDIUM | PIDs cgroup limit disabled | — | 5.29 |
+| [CL-0013](https://tmatens.github.io/compose-lint/rules/CL-0013/) | HIGH | Sensitive host path mounted | [Rule #8][owasp8] | 5.6 |
+| [CL-0014](https://tmatens.github.io/compose-lint/rules/CL-0014/) | MEDIUM | Logging driver disabled | — | — |
+| [CL-0015](https://tmatens.github.io/compose-lint/rules/CL-0015/) | LOW | Healthcheck disabled | — | 4.6, 5.27 |
+| [CL-0016](https://tmatens.github.io/compose-lint/rules/CL-0016/) | HIGH | Dangerous host device exposed | — | 5.18 |
+| [CL-0017](https://tmatens.github.io/compose-lint/rules/CL-0017/) | MEDIUM | Shared mount propagation | — | 5.20 |
+| [CL-0018](https://tmatens.github.io/compose-lint/rules/CL-0018/) | MEDIUM | Explicit root user | [Rule #2](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-2-set-a-user) | — |
+| [CL-0019](https://tmatens.github.io/compose-lint/rules/CL-0019/) | MEDIUM | Image tag without digest | [Rule #13][owasp13] | — |
+| [CL-0020](https://tmatens.github.io/compose-lint/rules/CL-0020/) | HIGH | Credential-shaped env key with literal value | [Rule #12][owasp12] | — |
+| [CL-0021](https://tmatens.github.io/compose-lint/rules/CL-0021/) | HIGH | Credential embedded in connection-string env value | [Rule #12][owasp12] | — |
+| [CL-0022](https://tmatens.github.io/compose-lint/rules/CL-0022/) | LOW | tmpfs mount re-enables exec/suid/dev | [Rule #8][owasp8] | — |
 
 ## Severity Levels
 

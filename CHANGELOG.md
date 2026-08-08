@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   push to `main`. The docs toolchain is hash-pinned in
   `requirements-docs.lock` (new `docs` extra).
 
+### Fixed
+
+- The README's *State of Compose* report link was relative, so it 404'd in
+  the PyPI rendering of the project description; it now points at the docs
+  site, as do the rule-table and hardening-guide links (previously GitHub
+  blob URLs).
+
 ### Changed
 
 - The CL-0006 symptom → capability table now covers 11 mappings — added
