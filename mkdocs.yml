@@ -40,28 +40,28 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Rules:
-      - CL-0001 Container runtime socket mounted: rules/CL-0001.md
-      - CL-0002 Privileged mode enabled: rules/CL-0002.md
-      - CL-0003 no-new-privileges privilege escalation: rules/CL-0003.md
-      - CL-0004 Image not pinned to version: rules/CL-0004.md
-      - CL-0005 Ports bound to all interfaces: rules/CL-0005.md
-      - CL-0006 No capability restrictions: rules/CL-0006.md
-      - CL-0007 Filesystem not read-only: rules/CL-0007.md
-      - CL-0008 Host network mode: rules/CL-0008.md
-      - CL-0009 Security profile disabled: rules/CL-0009.md
-      - CL-0010 Host namespace sharing: rules/CL-0010.md
-      - CL-0011 Dangerous capabilities added: rules/CL-0011.md
-      - CL-0012 PIDs cgroup limit disabled: rules/CL-0012.md
-      - CL-0013 Sensitive host path mounted: rules/CL-0013.md
-      - CL-0014 Logging driver disabled: rules/CL-0014.md
-      - CL-0015 Healthcheck disabled: rules/CL-0015.md
-      - CL-0016 Dangerous host device exposed: rules/CL-0016.md
-      - CL-0017 Shared mount propagation: rules/CL-0017.md
-      - CL-0018 Explicit root user: rules/CL-0018.md
-      - CL-0019 Image tag without digest: rules/CL-0019.md
-      - CL-0020 Credential-shaped env key: rules/CL-0020.md
-      - CL-0021 Credential in connection string: rules/CL-0021.md
-      - CL-0022 tmpfs re-enables exec/suid/dev: rules/CL-0022.md
+      - "CL-0001 Docker socket (docker.sock) mounts": rules/CL-0001.md
+      - "CL-0002 privileged: true — grants and replacement": rules/CL-0002.md
+      - "CL-0003 no-new-privileges — privilege escalation": rules/CL-0003.md
+      - "CL-0004 Unpinned image tags (:latest)": rules/CL-0004.md
+      - "CL-0005 Ports published on 0.0.0.0": rules/CL-0005.md
+      - "CL-0006 cap_drop — Operation not permitted to capabilities": rules/CL-0006.md
+      - "CL-0007 read_only — Read-only file system errors": rules/CL-0007.md
+      - "CL-0008 network_mode: host": rules/CL-0008.md
+      - "CL-0009 Disabled seccomp / AppArmor profiles": rules/CL-0009.md
+      - "CL-0010 Host PID / IPC / UTS namespaces": rules/CL-0010.md
+      - "CL-0011 Dangerous cap_add capabilities": rules/CL-0011.md
+      - "CL-0012 pids_limit — fork failures": rules/CL-0012.md
+      - "CL-0013 Sensitive host bind mounts": rules/CL-0013.md
+      - "CL-0014 Logging driver none": rules/CL-0014.md
+      - "CL-0015 Healthcheck disabled": rules/CL-0015.md
+      - "CL-0016 Dangerous host devices": rules/CL-0016.md
+      - "CL-0017 Shared mount propagation": rules/CL-0017.md
+      - "CL-0018 user: root and non-root permission fixes": rules/CL-0018.md
+      - "CL-0019 Digest pinning (@sha256)": rules/CL-0019.md
+      - "CL-0020 Credential-shaped env keys": rules/CL-0020.md
+      - "CL-0021 Credentials in connection strings": rules/CL-0021.md
+      - "CL-0022 tmpfs exec — running from tmpfs": rules/CL-0022.md
   - Guides:
       - Configuration: configuration.md
       - Severity levels: severity.md

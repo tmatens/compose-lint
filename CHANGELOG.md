@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Rule-doc headings are now phrased for the queries users actually search
+  (issue #471): every `docs/rules/` H1 leads with the rule id then names the
+  directive and the symptom it produces (e.g. "CL-0007: read_only — fixing
+  'Read-only file system' errors"), and the docs-site nav labels — which set
+  each page's `<title>` — are synced to match. Affects the site, the GitHub
+  view, and `--explain` output; rule ids and content are unchanged.
+
 ### Fixed
 
 - CL-0003's compatibility guidance claimed root-dropping entrypoints
