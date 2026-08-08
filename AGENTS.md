@@ -60,21 +60,6 @@ CONTRIBUTING.md is the source of truth for commits, signing, and PRs. Key points
   GitHub Pages). `docs/google*.html` is the Search Console verification file and
   must stay in place permanently.
 
-## Rule docs (docs/rules/)
-
-- H1 format: `# CL-XXXX: <directive> — <symptom phrasing>` (query-phrased, id first).
-  The docs-site `<title>` comes from the matching nav label in `mkdocs.yml` — keep
-  both in sync. `tests/test_cli.py` pins CL-0003's H1; update it if that changes.
-- "Reading the failure" symptom tables quote **verbatim, live-captured** error
-  strings. Busybox wordings must be re-proven by a mapping check in
-  `scripts/validate_rule_premises.py` (see the ADR-016 amendment); other wordings
-  (coreutils/bash/application) are captured-but-not-asserted and labeled as such.
-  Mechanism claims are observed against a live container, never reasoned from docs.
-- **Never add front matter** to any `docs/*.md` — `--explain` prints files raw.
-- The docs site builds from `docs/` on every main push (`docs` workflow →
-  GitHub Pages). `docs/google*.html` is the Search Console verification file and
-  must stay in place permanently.
-
 ## Dependency pinning
 
 Pin everything to an immutable ref. Renovate bumps the pins.
