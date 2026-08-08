@@ -1,161 +1,97 @@
 #!/usr/bin/env python3
-"""Re-time the VHS demo GIF so the read-pauses are readable and visibly alive.
+"""Compact a VHS demo GIF by collapsing static frame runs, preserving timing.
 
-VHS (v0.11.0) drops frames while rendering compose-lint's heavy colored output
-under load and assigns each surviving frame a fixed delay, which collapses the
-`Sleep` pauses — the whole cast ends up playing in ~4.5s with no time to read
-the findings. This script keeps the typing/reveal animation, then rebuilds each
-pause as a long hold with a *blinking cursor* so the GIF never looks frozen.
+VHS records the cast faithfully: 25 fps of 40ms frames whose total matches the
+tape's `Sleep` directives, with the terminal's own cursor blink captured in it
+(~600ms per phase, solid while typing, as a real terminal behaves). What it
+does not do is deduplicate — a multi-second read-pause is stored as ~150
+byte-identical frames.
 
-The blink is synthesized, not captured: VHS renders a steady block cursor and
-drops frames unpredictably, so relying on it to capture an on/off cursor is a
-lottery. Instead we detect the steady cursor block in the held frame (the most
-solidly filled character cell) and toggle it off and on ourselves.
+So this script does one thing: merge each run of visually identical frames into
+a single frame carrying the run's summed duration. That is lossless in both
+timing and appearance — the output plays for exactly as long as the input, and
+every frame shown is a frame VHS captured. On the README cast it turns 615
+frames into 75 with no visible difference.
 
-Structure detection is positional-free, so it survives a re-render against a
-newer compose-lint:
+The blink therefore comes from the recording rather than being synthesized, and
+pacing is controlled where it belongs: the `Sleep` values in the tape.
 
-* Static frames and near-duplicates are dropped from the animation.
-* A "reveal" is a frame whose change from the previous kept frame covers a large
-  share of the screen (command output painting in). The last frame of a reveal
-  burst is a "settled output" frame and gets a long hold.
+Historical note: this script used to drop frames and rebuild the pauses with a
+synthesized blink, on the premise that VHS collapsed `Sleep` timings and
+rendered a steady cursor. Measured against the current toolchain that premise
+does not hold, and the synthesis had a visible cost — a hold could land on the
+blink's off-phase and freeze a cursorless screen for ~2s.
 
-Usage: retime.py INPUT.gif OUTPUT.gif
+Usage: retime.py [--min-seconds S] INPUT.gif OUTPUT.gif
 """
 
 from __future__ import annotations
 
-import sys
+import argparse
 
-import numpy as np
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageChops
 
-# Durations (ms).
-LEAD = 1000  # initial prompt before typing starts
-TYPE = 55  # per typing / scroll frame
-PAUSE_BEFORE_RUN = 1900  # pause on the fully-typed command, before it runs
-HOLD_LINT = 8000  # read the findings
-HOLD_FINAL = 9000  # read the rule docs on the last frame
-BLINK = 530  # half the cursor-blink cycle within a hold
-
-# Thresholds as a fraction of total pixels.
-EPS = 0.00004  # below this a frame is "the same" (well under one typed character)
-BIG = 0.04  # above this an incoming change is a content "reveal" (sparse terminal
-# text reveals only ~6% of pixels, so this sits well below that but far above the
-# ~0.03% of a typed character)
-
-# Cursor cell geometry at FontSize 22 (px). The detector probes a window a little
-# inside the cell so only a fully-filled block (the cursor) scores ~1.0.
-CELL_W, CELL_H = 14, 30
-PROBE_W, PROBE_H = 10, 22
-CURSOR_FILL = 0.7  # min fill ratio for the probe window to count as the cursor
-
-
-def changed_mask(a: Image.Image, b: Image.Image) -> Image.Image:
-    """Binary mask of pixels that meaningfully differ between two RGB frames."""
-    diff = ImageChops.difference(a, b).convert("L")
-    return diff.point(lambda p: 255 if p > 40 else 0)
+# Below this fraction of changed pixels two frames are "the same". Well under a
+# single typed character (~0.03%) and an order of magnitude under the cursor
+# block (~0.05%), so neither typing nor the blink is ever merged away.
+EPS = 0.00004
 
 
 def changed_fraction(a: Image.Image, b: Image.Image, total: int) -> float:
     """Fraction of pixels that meaningfully differ between two RGB frames."""
-    return changed_mask(a, b).histogram()[255] / total
+    diff = ImageChops.difference(a, b).convert("L")
+    return diff.point(lambda p: 255 if p > 40 else 0).histogram()[255] / total
 
 
-def background_color(frame: Image.Image) -> tuple[int, int, int]:
-    """The most common color — the terminal background."""
-    colors = frame.getcolors(maxcolors=1 << 20) or [(1, (0, 0, 0))]
-    return max(colors)[1]
-
-
-def detect_cursor(frame: Image.Image):
-    """Bounding box of the block cursor (the most solidly filled cell), or None."""
-    bright = (np.asarray(frame.convert("L"), dtype=np.float32) > 120).astype(np.float32)
-    # Summed-area table for O(1) window sums.
-    sat = np.zeros((bright.shape[0] + 1, bright.shape[1] + 1), dtype=np.float32)
-    sat[1:, 1:] = bright.cumsum(0).cumsum(1)
-    h, w = bright.shape
-    window = (
-        sat[PROBE_H:, PROBE_W:]
-        - sat[:-PROBE_H, PROBE_W:]
-        - sat[PROBE_H:, :-PROBE_W]
-        + sat[:-PROBE_H, :-PROBE_W]
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    fill = window / (PROBE_W * PROBE_H)
-    y, x = np.unravel_index(int(fill.argmax()), fill.shape)
-    if fill[y, x] < CURSOR_FILL:
-        return None
-    # The probe sits inside the block; pad out to the full cell, clamped.
-    x0, y0 = max(0, int(x) - 3), max(0, int(y) - 4)
-    return (x0, y0, min(w, x0 + CELL_W + 4), min(h, y0 + CELL_H + 4))
+    p.add_argument("input", help="raw GIF recorded by VHS")
+    p.add_argument("output", help="compacted GIF to write")
+    p.add_argument(
+        "--min-seconds",
+        type=float,
+        default=0.0,
+        help="fail if the cast is shorter than this. Guards against a VHS "
+        "regression that collapses Sleep timings, which would otherwise ship a "
+        "GIF that flashes past unreadably.",
+    )
+    return p.parse_args()
 
 
 def main() -> int:
-    if len(sys.argv) != 3:
-        print(__doc__)
-        return 2
-    src = Image.open(sys.argv[1])
+    args = parse_args()
+    src = Image.open(args.input)
     n = src.n_frames
-    frames = []
+    frames: list[Image.Image] = []
+    durations: list[int] = []
     for i in range(n):
         src.seek(i)
         frames.append(src.convert("RGB"))
-    w, h = src.size
-    total = w * h
-    bg = background_color(frames[-1])
+        durations.append(src.info.get("duration") or 0)
+    total = src.size[0] * src.size[1]
 
-    # Drop static frames and near-duplicates from the animation.
-    kept = [0]
-    for i in range(1, n):
-        d_prev = changed_fraction(frames[i], frames[i - 1], total)
-        d_prev2 = changed_fraction(frames[i], frames[i - 2], total) if i >= 2 else 1.0
-        if d_prev > EPS and d_prev2 > EPS:
-            kept.append(i)
+    raw_seconds = sum(durations) / 1000
+    if raw_seconds < args.min_seconds:
+        print(
+            f"error: cast is {raw_seconds:.1f}s, expected at least "
+            f"{args.min_seconds:.1f}s. VHS did not honor the tape's Sleep "
+            f"timings; the GIF would be unreadable.",
+        )
+        return 1
 
-    incoming = [1.0]
-    for k in range(1, len(kept)):
-        incoming.append(changed_fraction(frames[kept[k]], frames[kept[k - 1]], total))
-
-    def hold(seq, base: Image.Image, ms: int):
-        """Fill `ms` by blinking the cursor in `base`, or hold it still."""
-        bbox = detect_cursor(base)
-        if bbox is None:
-            seq.append((base, ms))
-            return
-        off = base.copy()
-        ImageDraw.Draw(off).rectangle(bbox, fill=bg)
-        states, t, i = (base, off), 0, 0
-        while t < ms:
-            step = min(BLINK, ms - t)
-            seq.append((states[i % 2], step))
-            t, i = t + step, i + 1
-
-    # Pacing: a beat once a command is fully typed (the frame before a reveal),
-    # then two longer read-pauses — the first settled output (the lint findings)
-    # and the final frame (the rule docs). Only the first read-pause is held
-    # mid-cast; the explain output is covered by the final-frame hold.
-    seq: list[tuple[Image.Image, int]] = []
-    held_mid = False
-    for k in range(len(kept)):
-        ri = kept[k]
-        is_reveal = incoming[k] > BIG
-        next_is_reveal = (k + 1 < len(kept)) and incoming[k + 1] > BIG
-        if k == 0:
-            hold(seq, frames[0], LEAD)
-        elif k == len(kept) - 1:
-            hold(seq, frames[n - 1], HOLD_FINAL)  # last raw frame = settled prompt
-        elif is_reveal and not next_is_reveal and not held_mid:
-            # A settled frame after the reveal, not the reveal itself (whose
-            # cursor is still mid-output).
-            hold(seq, frames[min(ri + 2, n - 1)], HOLD_LINT)
-            held_mid = True
-        elif next_is_reveal and not is_reveal:
-            # Short beat on the fully-typed command. The cursor sits at the end
-            # of a long command line here, which the block detector can't pin
-            # down reliably, so hold it steady rather than blink the wrong cell.
-            seq.append((frames[ri], PAUSE_BEFORE_RUN))
+    # Merge each run of identical frames into its first frame, accumulating the
+    # run's duration. Comparing against the last *kept* frame (not the previous
+    # one) is what makes a long static run collapse to a single entry.
+    kept: list[int] = []
+    merged: list[int] = []
+    for i in range(n):
+        if kept and changed_fraction(frames[i], frames[kept[-1]], total) <= EPS:
+            merged[-1] += durations[i]
         else:
-            seq.append((frames[ri], TYPE))
+            kept.append(i)
+            merged.append(durations[i])
 
     # One global palette covering every color in the cast. Derive it from the
     # most colorful frame (the findings screen, with its red/yellow severity
@@ -168,27 +104,24 @@ def main() -> int:
     sample.paste(shown[-1], (0, richest.height))
     palette = sample.quantize(colors=256, method=Image.MEDIANCUT)
 
-    cache: dict[int, Image.Image] = {}
-
-    def quantized(img: Image.Image) -> Image.Image:
-        if id(img) not in cache:
-            pf = img.quantize(palette=palette, dither=Image.NONE)
-            pf.info.pop("transparency", None)  # avoid a Pillow GIF-save crash
-            cache[id(img)] = pf
-        return cache[id(img)]
-
-    pframes = [quantized(img) for img, _ in seq]
-    durations = [ms for _, ms in seq]
+    pframes = []
+    for img in shown:
+        pf = img.quantize(palette=palette, dither=Image.NONE)
+        pf.info.pop("transparency", None)  # avoid a Pillow GIF-save crash
+        pframes.append(pf)
 
     pframes[0].save(
-        sys.argv[2],
+        args.output,
         save_all=True,
         append_images=pframes[1:],
-        duration=durations,
+        duration=merged,
         loop=0,
         optimize=True,
     )
-    print(f"{len(seq)} frames  ·  total {sum(durations) / 1000:.1f}s")
+    print(
+        f"{n} -> {len(kept)} frames  ·  total {sum(merged) / 1000:.1f}s "
+        f"(unchanged from the recording)"
+    )
     return 0
 
 

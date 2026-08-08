@@ -1,0 +1,11 @@
+services:
+  api:
+    image: ghcr.io/acme/api:2.4.0
+    ports:
+      - "8080:8080"
+    cap_drop:
+      - ALL
+    environment:
+      DATABASE_URL: postgres://db:5432/acme
+    volumes:
+      - ./config:/etc/acme:ro

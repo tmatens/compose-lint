@@ -257,6 +257,9 @@ binding a published port to `127.0.0.1`, restoring a disabled logging driver,
 seccomp profile, or healthcheck, and similar. It is **dry-run by default**: it
 prints a unified diff and writes nothing.
 
+<!-- Fix demo GIF. Regenerate with scripts/demo/ — see scripts/demo/README.md. -->
+![compose-lint fix on a docker-compose.yml: the dry-run prints two `behavior-changing` caveat lines (CL-0007's read_only, CL-0005's rebind to 127.0.0.1) above a unified diff adding `read_only: true`, a `security_opt` block with `no-new-privileges:true`, and rebinding `"8080:8080"` to `"127.0.0.1:8080:8080"`, summarised as 3 fixes available with 1 finding needing manual review — then `fix --apply` writes the same three edits and `compose-lint check` re-lints to a PASS verdict, the un-auto-fixable tag-only image pin (CL-0019) still reported below the threshold.](https://raw.githubusercontent.com/tmatens/compose-lint/main/docs/assets/demo-fix.gif)
+
 > **Auto-fixable does not mean harmless.** The guarantee is about the *edit*,
 > not the *outcome*. `fix` will not corrupt your file, reflow it, or guess at a
 > value it cannot derive — but it will happily change how your stack behaves.

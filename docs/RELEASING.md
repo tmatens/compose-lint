@@ -320,15 +320,19 @@ After approval, `publish` and `docker-publish` run in parallel.
       endpoint. Verify
       `https://hub.docker.com/r/composelint/compose-lint` reflects the
       current overview file.
-- [ ] **README demo GIF** — only if this release changed the text-output
-      appearance (finding layout, verdict line, colors) or you want the
-      banner to show the new version. The demo toolchain installs
-      compose-lint from PyPI, so this is **post-publish**: bump the
-      `compose-lint==` pin in `scripts/demo/requirements.in`, recompile
+- [ ] **README demo GIFs** — only if this release changed the text-output
+      appearance (finding layout, verdict line, colors), changed what
+      `fix` emits, or you want the banner to show the new version. The
+      demo toolchain installs compose-lint from PyPI, so this is
+      **post-publish**: bump the `compose-lint==` pin in
+      `scripts/demo/requirements.in`, recompile
       `scripts/demo/requirements.lock` (exact `uv pip compile` command in
-      the lock's header), run `scripts/demo/render.sh`, and open a
-      follow-up PR with the updated `docs/assets/demo.gif` and its README
-      alt text. Output-only or docs-only releases can skip this.
+      the lock's header), run `scripts/demo/render.sh` (both casts), and
+      open a follow-up PR with the updated `docs/assets/demo.gif`,
+      `docs/assets/demo-fix.gif`, and their README alt text. Output-only
+      or docs-only releases can skip this. Each cast is sized to its
+      terminal in the tape — if a release adds a line to `check` or `fix`
+      output, check the render didn't scroll before committing it.
 - [ ] **Fresh `[Unreleased]` section** — already inserted by
       `release-prep.yml` as part of the release bump PR. No follow-up
       PR needed.
