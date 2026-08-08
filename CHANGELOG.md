@@ -28,10 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   claim cannot silently return.
 - Fixed file matching in `.pre-commit-hooks.yaml` that was incorrectly including
   `.compose-lint.yml` if present in the commits. This generated errors
-  meaning pre-commit will always fail (issue #465). **Note** this now only
-  matches compose files starting with `compose` and `docker-compose` but still
-  matches environment specific files, e.g. `compose-dev.yml`, but no longer
-  matches files with prefixes, e.g. `dev-compose.yml`.
+  meaning pre-commit will always fail (issue #465). The hook now matches only
+  names beginning `compose` or `docker-compose`, and an `exclude` pattern skips
+  compose-lint's own config in either spelling — `.compose-lint.yml` and the
+  dotless `compose-lint.yml` that `init -o` can write — with either extension.
+  **Note** environment specific files, e.g. `compose-dev.yml`, still match, but
+  files with prefixes, e.g. `dev-compose.yml`, no longer do.
 
 ### Changed
 

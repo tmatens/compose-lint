@@ -1,64 +1,97 @@
-"""Tests that the 'files' regex in .pre-commit-hooks.yaml does not match
-.compose-lint.yml (#465).
+"""Tests for the file-matching config in ``.pre-commit-hooks.yaml`` (#465).
 
-Errors if file a .pre-commit-hooks.yaml file is not found in the root of
-the repository.
-
-Checks that there at least one hook present in the config file. Allowing
-for additional to be added, e.g. using docker in the future.
-
-Reads the configured regexes and checks then against list of file paths that
-should/shouldn't match.
+The hook's effective selection is ``files`` minus ``exclude``, so both patterns
+are read here. Asserting against ``files`` alone would miss the dotless
+``compose-lint.yml`` spelling that ``exclude`` exists to catch: ``compose-lint
+init -o compose-lint.yml`` makes that a legal config filename, and linting our
+own config is what made the hook fail in #465.
 """
 
 from __future__ import annotations
 
 import re
+from typing import Any
 
 import pytest
 import yaml
 
+# pre-commit's defaults when a hook omits the key (its MANIFEST_HOOK_DICT):
+# an empty ``files`` matches every path, ``^$`` excludes nothing.
+DEFAULT_FILES = ""
+DEFAULT_EXCLUDE = "^$"
+
+# (path, is selected for linting by the hook)
 TEST_DATA = [
-    # (string, expected)
+    # compose-lint's own config is never a compose file — both spellings
+    # (dotted and dotless), both extensions, root and nested.
     (".compose-lint.yml", False),
     (".compose-lint.yaml", False),
     ("foo/.compose-lint.yml", False),
+    ("compose-lint.yml", False),
+    ("compose-lint.yaml", False),
+    ("foo/compose-lint.yml", False),
+    # Prefixed names are outside the pattern (documented narrowing).
     ("dev-compose.yml", False),
+    # Standard compose filenames, root and nested.
     ("docker-compose.yaml", True),
-    ("compose.yaml", True),
     ("docker-compose.yml", True),
+    ("compose.yaml", True),
     ("compose.yml", True),
     ("foo/docker-compose.yml", True),
     ("foo/bar/compose.yml", True),
+    # Environment-specific suffixes still match.
     ("foo/bar/baz/compose-test.yml", True),
     ("foo/bar/baz/docker-compose-test.yaml", True),
 ]
 
 
 @pytest.fixture(scope="module")
-def _load_patterns_from_config(pytestconfig):
-    precommit_file = pytestconfig.rootpath / ".pre-commit-hooks.yaml"
-    with open(precommit_file) as f:
-        config = yaml.safe_load(f)
-        return {item["id"]: re.compile(item["files"]) for item in config}
+def hooks(pytestconfig: pytest.Config) -> list[dict[str, Any]]:
+    """The parsed hook definitions from the repo's ``.pre-commit-hooks.yaml``."""
+    manifest = pytestconfig.rootpath / ".pre-commit-hooks.yaml"
+    with open(manifest) as f:
+        loaded: list[dict[str, Any]] = yaml.safe_load(f)
+    return loaded
 
 
-def test_precommit_config_has_at_least_one_entry(_load_patterns_from_config):
-    # Verifies that at least one hook is configured.
-    assert len(_load_patterns_from_config) > 0
+@pytest.fixture(scope="module")
+def hook_patterns(
+    hooks: list[dict[str, Any]],
+) -> dict[str, tuple[re.Pattern[str], re.Pattern[str]]]:
+    """Map each hook id to its compiled ``(files, exclude)`` pair."""
+    return {
+        hook["id"]: (
+            re.compile(hook.get("files", DEFAULT_FILES)),
+            re.compile(hook.get("exclude", DEFAULT_EXCLUDE)),
+        )
+        for hook in hooks
+    }
 
 
-@pytest.mark.parametrize("string, expected", TEST_DATA)
-def test_regex_only_match_valid_compose_files(
-    _load_patterns_from_config, string, expected
-):
-    # Verifies the extracted pre-commit regex against target file paths.
-    # Iterates over multiple hooks if more than one is configured.
-    for id, pattern in _load_patterns_from_config.items():
-        match = pattern.search(string)
-        is_match = match is not None
+def test_manifest_declares_at_least_one_hook(hooks: list[dict[str, Any]]) -> None:
+    # Guards the fixtures below against silently testing nothing.
+    assert hooks
 
-        assert is_match == expected, (
-            f"Linter '{id}' failed for path '{string}'. "
-            f"Expected match to be {expected}."
+
+def test_every_hook_declares_a_files_pattern(hooks: list[dict[str, Any]]) -> None:
+    # pre-commit defaults an absent ``files`` to "", which matches every path
+    # the ``types`` filter admits — every YAML file in the repo, for us.
+    for hook in hooks:
+        assert hook.get("files"), f"hook '{hook['id']}' has no 'files' pattern"
+
+
+@pytest.mark.parametrize("path, expected", TEST_DATA)
+def test_hook_selects_only_compose_files(
+    hook_patterns: dict[str, tuple[re.Pattern[str], re.Pattern[str]]],
+    path: str,
+    expected: bool,
+) -> None:
+    # Mirrors pre-commit's own filtering: a path is passed to the hook when
+    # ``files`` matches it and ``exclude`` does not.
+    for hook_id, (files, exclude) in hook_patterns.items():
+        selected = files.search(path) is not None and exclude.search(path) is None
+
+        assert selected == expected, (
+            f"Hook '{hook_id}' failed for path '{path}'. "
+            f"Expected selected to be {expected}."
         )
