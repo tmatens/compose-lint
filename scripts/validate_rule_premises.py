@@ -304,13 +304,12 @@ def _t_net_bind_service() -> tuple[bool, str]:
     # Poll for the listening socket instead of a fixed sleep — on a loaded
     # runner the fork-to-bind can exceed any single guess, and nc's own exit
     # status is swallowed by the backgrounding.
-    bind = [
-        "sh",
-        "-c",
+    bind_script = (
         "nc -l -p 80 -w 3 & i=0; while [ $i -lt 20 ]; do "
         "netstat -tln | grep -q ':80 ' && exit 0; "
-        "i=$((i+1)); sleep 0.1; done; exit 1",
-    ]
+        "i=$((i+1)); sleep 0.1; done; exit 1"
+    )
+    bind = ["sh", "-c", bind_script]
     hard = ["--sysctl", "net.ipv4.ip_unprivileged_port_start=1024"]
     rc_loose, _ = _run_err(["--cap-drop", "ALL"], bind)
     rc_deny, err = _run_err(["--cap-drop", "ALL", *hard], bind)
