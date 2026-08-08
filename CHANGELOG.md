@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- CI now smoke-tests `.pre-commit-hooks.yaml` with the real tool
+  (`precommit-smoke`). `action.yml`, the image, and the wheel each had an
+  end-to-end smoke job; the pre-commit hook had none, which is how issue
+  #465 — a `files` pattern that made the hook unable to pass — reached a
+  user. `pre-commit try-repo` runs the manifest from the working tree, so
+  `entry`, `language`, and hook installation are exercised on the PR that
+  changes them. Covers both directions (a clean stack passes, an insecure
+  one fails), asserts the hook actually matched files rather than passing
+  trivially on an empty set, and pins the #465 case directly by keeping a
+  config file in the test tree. `.pre-commit-hooks.yaml` was also missing
+  from the `code` path filter, so a manifest-only edit previously skipped
+  the very jobs that check it.
+
 ### Fixed
 
 - Handing compose-lint its own config file no longer fails the run

@@ -71,7 +71,11 @@ jobs:
           # Python sources, tests, helper scripts, the package manifest,
           # hash-pinned lockfiles, and the action contract all warrant the
           # full lint/type/test/coverage/security/smoke suite.
-          if match '^(src/|tests/|scripts/|pyproject\.toml$|requirements[.-].*lock$|action\.yml$)'; then
+          # `.pre-commit-hooks.yaml` is in here on purpose: it is the hook
+          # contract, and `precommit-smoke` (gated on this filter) is what
+          # guards it. Leaving it out meant a manifest-only edit — exactly
+          # the shape of issue #465 — skipped its own smoke test.
+          if match '^(src/|tests/|scripts/|pyproject\.toml$|requirements[.-].*lock$|action\.yml$|\.pre-commit-hooks\.yaml$)'; then
             code=true
           fi
           if match '^(Dockerfile$|\.dockerignore$|requirements\.lock$|requirements-build\.lock$|pyproject\.toml$|src/)'; then
@@ -762,6 +766,85 @@ jobs:
           echo "::error::Expected action to fail on insecure fixture, got '${{ steps.insecure.outcome }}'"
           exit 1
 
+  # The pre-commit arm of the integration-surface smoke set. `action-smoke`
+  # covers action.yml, `docker-smoke` the image, publish.yml's `testpypi-smoke`
+  # the wheel — `.pre-commit-hooks.yaml` had nothing, and issue #465 (a broken
+  # `files` pattern that made the hook unable to pass) reached a user because
+  # of it. tests/test_precommit.py asserts the patterns in isolation; this job
+  # runs the real tool so `entry`, `language`, and hook installation are
+  # exercised too. `try-repo` reads the manifest from the working tree, so a
+  # regression is caught on the PR that introduces it rather than after release.
+  precommit-smoke:
+    name: Smoke test .pre-commit-hooks.yaml
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-dev.lock
+      - name: Install pinned dev env
+        run: pip install --require-hashes -r requirements-dev.lock
+
+      # `try-repo` runs against the *current* directory's git repo, so each
+      # case builds a throwaway repo whose filenames match the hook's `files`
+      # pattern. Reusing tests/smoke/ fixtures keeps one source of truth for
+      # what "clean" and "insecure" mean across every smoke job.
+      - name: Clean stack with a config present should pass
+        env:
+          SMOKE: ${{ runner.temp }}/hook-pass
+        run: |
+          set -euo pipefail
+          mkdir -p "$SMOKE"
+          cp tests/smoke/clean.yml "$SMOKE/docker-compose.yml"
+          # A config in the tree is the issue #465 reproducer: the hook used
+          # to hand it to the linter, which exited 2 and could never pass.
+          printf 'rules:\n  CL-0004:\n    enabled: false\n    reason: "smoke"\n' \
+            > "$SMOKE/.compose-lint.yml"
+          git -C "$SMOKE" init -q
+          git -C "$SMOKE" add -A
+          cd "$SMOKE"
+          pre-commit try-repo "$GITHUB_WORKSPACE" compose-lint --all-files \
+            --verbose 2>&1 | tee out.txt
+          # A hook that matched no files "passes" trivially. Assert it ran.
+          if grep -q "no files to check" out.txt; then
+            echo "::error::Hook selected no files — the smoke test proved nothing."
+            exit 1
+          fi
+          grep -q "docker-compose.yml" out.txt \
+            || { echo "::error::Hook did not receive docker-compose.yml"; exit 1; }
+          # Not a bare grep for the config filename: the banner legitimately
+          # prints `config: .compose-lint.yml` when the linter *reads* it.
+          # Assert the symptom of it being *linted* instead — either the
+          # pre-#500 parse failure or the post-#500 skip line.
+          if grep -qE "appears to be a compose-lint config|could not be parsed" out.txt; then
+            echo "::error::Hook passed its own config to the linter (issue #465)."
+            exit 1
+          fi
+
+      - name: Insecure stack should fail the hook
+        env:
+          SMOKE: ${{ runner.temp }}/hook-fail
+        run: |
+          set -euo pipefail
+          mkdir -p "$SMOKE"
+          cp tests/smoke/insecure.yml "$SMOKE/docker-compose.yml"
+          git -C "$SMOKE" init -q
+          git -C "$SMOKE" add -A
+          cd "$SMOKE"
+          if pre-commit try-repo "$GITHUB_WORKSPACE" compose-lint --all-files; then
+            echo "::error::Expected the hook to fail on the insecure fixture."
+            exit 1
+          fi
+
   # Runtime arm of the rule-grounding bar: every rule that describes container
   # runtime state must demonstrate its premise against a live container (the
   # insecure state is the Docker default, or the flagged config produces the
@@ -814,6 +897,7 @@ jobs:
       - lockfiles
       - docker-smoke
       - action-smoke
+      - precommit-smoke
       - rule-premises
     if: always()
     runs-on: ubuntu-24.04
