@@ -32,9 +32,11 @@ The leftover Milestone 2 items, plus the new real-world examples ask. All additi
 - Docs only, no engine changes. Superseding history: shipping derived per-image profiles was attempted as the profile-enrichment preview and **withdrawn** in 0.15.0 — see [ADR-019](adr/019-withdraw-security-profile-catalog.md). Do not reintroduce a bundled capability table without revisiting that decision.
 
 **Real-world examples library** _(issue #111)_
-- `examples/real-world/` with one subdirectory per project (Traefik, Vaultwarden, Immich, Pi-hole, Portainer, Gitea). Each shows upstream Compose file → raw `compose-lint` output → hardened version → suppression config for unfixable findings, with per-finding narrative.
-- Doubles as the canonical teaching surface for ADR-010 suppression semantics — the interesting suppression cases only appear against real files.
-- **Gating prerequisite:** weekly drift-check job (re-fetch upstream files, open an issue on diff) before landing examples. Stale examples erode trust faster than no examples; ship the watchdog first, even as a stub.
+- `docs/examples/<name>/`, one directory per example: `index.md` for the narrative, the Compose files alongside it. mkdocs copies the non-Markdown files verbatim, so each example publishes to the docs site at `/examples/<name>/` with the exact files the narrative lints downloadable next to it. A `.compose-lint.yml` still ships for runnability, but mkdocs skips dotfiles — show the suppression config inline in the page too.
+- Each example shows upstream Compose file → raw `compose-lint` output → hardened version → suppression config for unfixable findings, with per-finding narrative.
+- Examples come from continuously deployed stacks rather than well-known upstream files, so every hardened value has an empirical basis (required post-[ADR-019](adr/019-withdraw-security-profile-catalog.md), which withdrew the derived profile catalog). Tier 1 walks CL-0001 up four escalating remediations — remove the service, re-architect so the socket is not needed, constrain it behind a GET-only socket proxy, suppress with a dated migration plan. Tier 2 adds a multi-service `cap_drop: ALL` case, a deliberately clean single-suppression edge proxy, and a CL-0007-versus-CL-0022 tension case.
+- Teaching surface for ADR-010 suppression semantics, and for *which* remediation a given finding actually allows — both only get interesting against real files.
+- Point-in-time by design: deployed files are sanitized before landing, re-linted locally after sanitizing (scrubbing paths and addresses can move CL-0005/CL-0013 findings), and stamped "last verified against `<version>`". Refreshes are manual; no drift-check automation.
 
 **Homebrew tap**
 - `brew install tmatens/tap/compose-lint` — works on macOS (Intel + Apple Silicon) and Linux via Homebrew-on-Linux.
