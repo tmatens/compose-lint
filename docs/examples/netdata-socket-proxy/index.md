@@ -97,6 +97,57 @@ Same message text. The benign one fires thousands of times a month because proce
 
 `SYS_ADMIN` was also dropped and deliberately stays absent: the image ships no eBPF plugin, so the config option that appears to require it is a no-op and the capability gated nothing.
 
+## A granted capability is not a held capability
+
+The stack ran for a month with a permission error at every startup that everyone had filed as harmless:
+
+```
+Runtime directory '/run/netdata' is not writable, falling back to '/tmp'
+```
+
+It looks self-resolving, it says so itself, and collection genuinely does keep working. The reading was that the agent had lost a capability somewhere and found another path.
+
+That is half right. Here is what the running processes actually showed:
+
+| | Uid | CapEff | CapBnd |
+|---|---|---|---|
+| the agent daemon | `201` | `0000000000000000` | `00000000000800c2` |
+| `apps.plugin` | `201 0 0 0` | `00000000000800c2` | `00000000000800c2` |
+
+`0x800c2` decodes to exactly `DAC_OVERRIDE + SETGID + SETUID + SYS_PTRACE` — the four capabilities in the Compose file above.
+
+**The daemon holds none of them.** `setuid()` from root to an unprivileged uid clears the permitted and effective capability sets unless the process opts out with `PR_SET_KEEPCAPS`, and this one doesn't. So `DAC_OVERRIDE` — granted, visible in the file, sitting right there in `cap_add` — is not in effect at the moment the daemon meets its own root-owned `0755` runtime directory.
+
+`apps.plugin` is the other half. It runs `Uid: 201 0 0 0`: real uid 201, *effective uid 0*, because it is setuid-root. On exec it re-acquires the full set bounded by `CapBnd`. That is the actual function of `cap_add` here — it is not configuring what the daemon holds, it is setting the ceiling that setuid-root plugin processes can climb back to. It is also exactly why `no-new-privileges` is genuinely incompatible with this service rather than merely inconvenient: `no_new_privs` blocks that escalation, so the suppression above is load-bearing.
+
+### Why the fallback was not harmless
+
+The `/tmp` fallback rescues the runtime directory. It does not rescue the control socket:
+
+```
+uv_pipe_bind(): permission denied
+Failed to initialize command server. The netdata cli tool will be unable to send commands.
+```
+
+Thirty days of logs: 32 runtime-directory fallbacks, 36 command-server failures. The agent's CLI had been non-functional on every restart for at least a month, on a host where it was working fine by every other measure.
+
+### The fix is not a capability
+
+The instinct is to add one. That would be wrong twice: it would not help the daemon, which drops whatever it is given, and it would widen the ceiling the plugins can reach. The defect is a directory-ownership mismatch, so the fix is a directory owned by the right uid:
+
+```yaml
+    tmpfs:
+      - /run/netdata:uid=201,gid=201,mode=0770
+```
+
+`0770` rather than the tmpfs default `1777`, since exactly one uid needs it. Afterwards: `netdatacli ping` → `pong`, and zero command-server failures across restarts.
+
+### What this means for the linter
+
+compose-lint cannot find this one. Every fact that matters — that the daemon drops its capabilities, that a directory inside the image is root-owned, that a plugin is setuid-root — is a property of the running container, not of the Compose file. The file was, and still is, clean.
+
+That is worth stating plainly rather than leaving implied. A Compose linter checks the configuration you declare. It does not check that the process you launched can use what you declared, and a green run is not evidence that your capability grants are reaching the code that needs them. This example exists partly to mark that boundary.
+
 ## The suppressions
 
 Every entry is scoped with `exclude_services` rather than globally disabled — including CL-0001, which is suppressed **only** for the proxy:

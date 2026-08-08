@@ -37,6 +37,12 @@ services:
       - docker-socket-proxy
     network_mode: host
     restart: unless-stopped
+    # The agent's runtime directory, owned by the uid the agent actually runs as.
+    # Without this the image creates it root-owned and the daemon — which by then
+    # holds no effective capabilities — cannot write it. See "A granted capability
+    # is not a held capability" on the page.
+    tmpfs:
+      - /run/netdata:uid=201,gid=201,mode=0770
     cap_drop:
       - ALL
     cap_add:
