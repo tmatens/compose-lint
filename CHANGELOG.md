@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   flag. The doc and fix text are rewritten around the verified semantics,
   and a CI premise check now pins the drop-unaffected fact so the wrong
   claim cannot silently return.
+- Fixed file matching in `.pre-commit-hooks.yaml` that was incorrectly including
+  `.compose-lint.yml` if present in the commits. This generated errors
+  meaning pre-commit will always fail (issue #465). **Note** this now only
+  matches compose files starting with `compose` and `docker-compose` but still
+  matches environment specific files, e.g. `compose-dev.yml`, but no longer
+  matches files with prefixes, e.g. `dev-compose.yml`.
 
 ### Changed
 

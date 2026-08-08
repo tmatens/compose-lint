@@ -4,4 +4,5 @@
   entry: compose-lint
   language: python
   types: [yaml]
-  files: (^|/)docker-compose[^/]*\.ya?ml$|compose[^/]*\.ya?ml$
+  files: (^|/)(docker-)?compose[^/]*\.ya?ml$
+  exclude: (^|/)\.?compose-lint\.ya?ml$
