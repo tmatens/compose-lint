@@ -1,0 +1,72 @@
+name: forge
+
+# A self-hosted Git forge with a CI runner attached.
+#
+# The runner mounts the Docker socket because that is how it starts job
+# containers: each CI job runs in its own container, and creating containers
+# means calling the Docker API. Unlike the other examples in this ladder, there
+# is no version of this that removes the requirement — it is what the runner
+# does.
+#
+# So this is the honest case: the finding stays, the suppression is written
+# down with a date and a plan, and the residual risk is stated rather than
+# argued away.
+
+services:
+  forge:
+    image: codeberg.org/forgejo/forgejo:15@sha256:db04c7114b656f896e206ba3873fe8d3a7adf2daa44907037f0274f4ba653fb9
+    container_name: forge
+    volumes:
+      - forge-data:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      - FORGEJO__server__DOMAIN=git.example.com
+      - FORGEJO__server__ROOT_URL=https://git.example.com/
+      - FORGEJO__service__DISABLE_REGISTRATION=true
+      # Block webhooks aimed at private and loopback addresses, so a repo
+      # webhook cannot be used to probe internal hosts from this container.
+      - FORGEJO__webhook__ALLOWED_HOST_LIST=external
+    ports:
+      - '2222:22'
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: curl -sf http://localhost:3000/api/v1/version || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  forge-runner:
+    image: code.forgejo.org/forgejo/runner:12.9.0@sha256:2860af6a7fa5521b2cdb26a14545c083ffd06b2528dbfc470cfec39a0b6bde39
+    container_name: forge-runner
+    depends_on:
+      - forge
+    volumes:
+      - forge-runner-data:/data
+      # The finding. Not fixable while this runner spawns job containers.
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    command: >-
+      sh -c '
+        if [ ! -f /data/.runner ]; then
+          forgejo-runner register --instance http://forge:3000 --token "$RUNNER_TOKEN" --no-interactive;
+        fi &&
+        forgejo-runner daemon
+      '
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    # Root, plus the host docker group, to open the socket. Worth being precise
+    # about what this does and does not buy: no-new-privileges above does not
+    # contain a process that can ask the daemon to start a privileged container
+    # for it. The user directive is not the boundary here — there isn't one.
+    user: "0:${DOCKER_GID}"
+
+volumes:
+  forge-data:
+  forge-runner-data:

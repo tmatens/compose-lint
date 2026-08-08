@@ -1,0 +1,37 @@
+name: portainer
+
+# The service this example is about — a container-management UI holding the
+# Docker socket. It is reproduced here as it actually ran, hardened in every
+# way except the one that mattered, so that the finding can be read against a
+# realistic file rather than a strawman.
+#
+# It is no longer deployed. See the page for what replaced it.
+
+services:
+  portainer:
+    image: portainer/portainer-ce:lts@sha256:1ae8e65d50ca5498cb2c33e617495a1e3ef245b0d2392b4a44c70ae09b822891
+    container_name: portainer
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      # cap_drop ALL, no-new-privileges and read_only above are all real
+      # hardening, and none of them constrain this line at all.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+      - /home/deploy/.local/bin/curl-static:/curl:ro
+    command: --trusted-origins portainer.example.com
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/curl", "-sfk", "https://localhost:9443"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  portainer_data:

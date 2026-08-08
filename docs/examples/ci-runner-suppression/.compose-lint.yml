@@ -1,0 +1,62 @@
+# A suppression written as a dated exception rather than a permanent silence.
+#
+# Three things distinguish it from the one in the portainer example:
+#
+#   1. It is scoped to the one service that needs it. CL-0001 stays enabled for
+#      the forge itself, so if the socket ever appears there it is a finding.
+#   2. It states the residual risk in the same breath as the justification, so
+#      a reader is not left thinking the suppression made the risk go away.
+#   3. It carries a review date. That is the part that is easy to skip and the
+#      part that decides whether this is an exception or an expiry-free waiver.
+#
+# Review date: 2027-02-08. On that date the question to answer is whether a
+# rootless or socket-proxy-backed runner has become viable for this workload,
+# not whether the requirement still exists — it will.
+
+rules:
+  CL-0001:
+    exclude_services:
+      forge-runner: >-
+        The runner creates a container per CI job, which requires the Docker
+        API; there is no filtered subset that permits container creation while
+        withholding host compromise, so a GET-only proxy cannot help here.
+        RESIDUAL RISK, ACCEPTED, NOT MITIGATED: anyone who can run CI on this
+        instance can reach the daemon and is effectively root on the host. This
+        is contained by restricting who can push to it, not by anything in this
+        file. Review 2027-02-08.
+
+  CL-0013:
+    exclude_services:
+      forge-runner: >-
+        The /var/run/docker.sock mount reported by the host-path rule is the
+        same finding as CL-0001 above.
+      forge: >-
+        /etc/timezone and /etc/localtime are read-only single files, mounted so
+        that timestamps in the UI and in commit metadata match the host.
+
+  CL-0018:
+    exclude_services:
+      forge-runner: >-
+        Runs as root plus the host docker group in order to open the socket.
+        Note that this is a consequence of the CL-0001 suppression above, not
+        an independent decision: fixing that one removes this one.
+
+  CL-0005:
+    exclude_services:
+      forge: >-
+        Git over SSH has to be reachable from every machine that pushes to this
+        forge, so the listener is deliberately not bound to loopback. Exposure
+        is bounded at the network edge instead — the port is not forwarded from
+        outside, and the forge's own SSH authentication is the access control.
+
+# Deliberately NOT suppressed: CL-0006 (cap_drop) and CL-0007 (read_only), which
+# both remain open as medium findings on both services.
+#
+# The honest reason is that neither fix has been tested against the forge's
+# first-boot behaviour or its backup path, and a suppression saying "pending
+# live-test" would be the same expiry-free waiver the portainer example in this
+# ladder exists to criticise. An open finding that is visible in every CI run is
+# a more accurate record of the state than a waiver that says the same thing
+# while turning the output green.
+#
+# Not every finding needs a suppression. Leaving one open is a valid answer.

@@ -1,0 +1,16 @@
+# The suppression that used to live alongside the service above.
+#
+# Kept here deliberately, as an artifact rather than a recommendation. It is a
+# realistic example of the most common way a CL-0001 suppression goes wrong:
+# it is not false, and it is not lazy — it names the requirement and commits to
+# a fix. It just has no date, no owner, and nothing that ever reopens it. A
+# suppression like this is indistinguishable from a permanent one after a few
+# months, because in practice that is what it is.
+#
+# The rule was eventually resolved by deleting the service, not by the migration
+# this file promised.
+
+rules:
+  CL-0001:
+    enabled: false
+    reason: "Portainer requires Docker socket to manage containers — socket proxy migration planned"

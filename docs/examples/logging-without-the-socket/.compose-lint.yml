@@ -1,0 +1,15 @@
+# One suppression for the whole stack, and it is not CL-0001 — because after
+# the re-architecture there is no socket mount left to suppress.
+#
+# Scoped to the one service it applies to, so the rule stays live for loki and
+# grafana. Neither of them mounts a host path today, and if one starts, this
+# config will not hide it.
+
+rules:
+  CL-0013:
+    exclude_services:
+      alloy: >-
+        The two host mounts are the log source itself and are both read-only:
+        /var/log/journal is the systemd journal this collector exists to read,
+        and /etc/machine-id is the single file journal entries need in order to
+        resolve which host they came from. No writable host path is exposed.

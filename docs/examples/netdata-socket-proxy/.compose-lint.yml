@@ -1,0 +1,68 @@
+# Suppressions for the hardened stack.
+#
+# Every entry uses `exclude_services` (ADR-010) rather than a global
+# `enabled: false`. That distinction is the point of this file: a global
+# disable would switch CL-0001 off for the whole stack, so a future edit that
+# bind-mounts the Docker socket straight into netdata again would lint clean.
+# Scoping the suppression to the one service that is *supposed* to hold the
+# socket keeps the rule live everywhere else.
+#
+# Suppressed findings still appear in output, marked SUPPRESSED and carrying
+# the reason below, so a reviewer can see what was waived and why.
+
+rules:
+  CL-0001:
+    exclude_services:
+      docker-socket-proxy: >-
+        This service exists to hold the socket. It is the mitigation, not the
+        risk: scratch image, read_only, cap_drop ALL, no-new-privileges, runs
+        as nobody, and exposes only a GET-filtered subset of the API. Netdata
+        itself no longer mounts the socket, so CL-0001 stays enabled for it.
+
+  CL-0013:
+    exclude_services:
+      netdata: >-
+        Read-only mounts of /proc, /sys, /etc/os-release, /etc/passwd and
+        /etc/group are what a host-metrics agent is for — they are how process
+        metrics get attributed to real users and host processes.
+      docker-socket-proxy: >-
+        The /var/run/docker.sock mount is the same finding as CL-0001 above,
+        reported by the path rule. Same justification.
+
+  CL-0008:
+    exclude_services:
+      netdata: >-
+        Host network mode is required to see host interface metrics. Without
+        it the agent reports only its own veth pair.
+
+  CL-0010:
+    exclude_services:
+      netdata: >-
+        Host PID namespace is required to attribute metrics to host processes
+        rather than only container-internal ones.
+
+  CL-0009:
+    exclude_services:
+      netdata: >-
+        AppArmor unconfined is required for the /proc and /sys read access the
+        agent depends on under the host's default profile.
+
+  CL-0011:
+    exclude_services:
+      netdata: >-
+        DAC_OVERRIDE and SYS_PTRACE are both load-bearing and both were
+        confirmed by drop-testing. SYS_PTRACE in particular is needed to read
+        /proc/<pid>/io for setuid and non-dumpable processes. SYS_ADMIN was
+        dropped and is deliberately absent.
+
+  CL-0003:
+    exclude_services:
+      netdata: >-
+        The agent's plugins rely on capability inheritance across the
+        privilege drop at startup, which no-new-privileges prevents.
+
+  CL-0007:
+    exclude_services:
+      netdata: >-
+        The agent writes to /etc/netdata and /var/lib/netdata during startup.
+        The socket proxy, which has no such requirement, does set read_only.

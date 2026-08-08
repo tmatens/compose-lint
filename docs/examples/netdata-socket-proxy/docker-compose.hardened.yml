@@ -1,0 +1,90 @@
+name: netdata
+
+# AFTER — netdata no longer holds the Docker socket. A path-filtered, GET-only
+# socket proxy holds it and publishes a restricted unix socket that netdata
+# consumes over DOCKER_HOST.
+#
+# Every capability and mount below is annotated with why it survived. The
+# capability set was reduced by drop-testing against this image on a host with
+# a matching configuration — remove one, restart, look for the failure.
+
+services:
+  netdata:
+    image: netdata/netdata:v2.10.3@sha256:bcc822ec685dd7ee488e9f99b957f479b66301be04f13f346df692ad7de94151
+    container_name: netdata
+    volumes:
+      - ./netdata.conf:/etc/netdata/netdata.conf:ro
+      - netdata_lib:/var/lib/netdata
+      - netdata_cache:/var/cache/netdata
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /etc/os-release:/host/etc/os-release:ro
+      - /var/log:/host/var/log:ro
+      - /etc/group:/host/etc/group:ro
+      - /etc/passwd:/host/etc/passwd:ro
+      # NO /var/run/docker.sock. Netdata reads the filtered socket the proxy
+      # publishes into this directory instead.
+      - ./sockets:/sock
+    environment:
+      # Puts netdata's user in the host docker group — here that is only what
+      # lets it connect to the proxy's socket (mode 0660, group docker), not
+      # to the real Docker socket, which this container can no longer reach.
+      - PGID=${DOCKER_GID}
+      # Netdata's collectors honour DOCKER_HOST; for a socket path they issue
+      # requests over that unix socket, and only ever GET.
+      - DOCKER_HOST=unix:///sock/docker.sock
+    depends_on:
+      - docker-socket-proxy
+    network_mode: host
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      # Container exits without it.
+      - DAC_OVERRIDE
+      # Used once at startup to drop from root to the netdata user. Drop these
+      # and the agent silently keeps running as root — and the healthcheck
+      # still reports healthy, so nothing catches it.
+      - SETUID
+      - SETGID
+      # Per-process metrics read /proc/<pid>/io and /proc/<pid>/fd. Reading
+      # those for setuid or non-dumpable processes needs this capability even
+      # as root. Dropping it produced a silent partial failure — see the page.
+      - SYS_PTRACE
+      # NOT granted: SYS_ADMIN. This image ships no eBPF plugin, so the config
+      # option that appears to require it is a no-op and the capability gates
+      # nothing.
+    pid: host
+    security_opt:
+      - apparmor:unconfined
+
+  # The only container in this stack that touches the real Docker socket.
+  docker-socket-proxy:
+    image: wollomatic/socket-proxy:1@sha256:74e770f5ed3cfc9ecb6350e177d2aa55873568c85bc953079834e68607dbf71b
+    container_name: netdata-socket-proxy
+    # nobody, plus the host docker gid — needed only to open the real socket.
+    user: "65534:${DOCKER_GID}"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./sockets:/sock
+    command:
+      - -loglevel=info
+      - -proxysocketendpoint=/sock/docker.sock
+      # 432 decimal = 0660 octal. The default (384 = 0600) leaves the socket
+      # owner-only and the consumer cannot connect.
+      - -proxysocketendpointfilemode=432
+      # Exactly the endpoints the consumer calls, and nothing else. Every other
+      # path answers 403; every write method answers 405.
+      - -allowGET=^(/v[0-9]+\.[0-9]+)?/(_ping|version|info|images/json(\?.*)?|containers/json(\?.*)?|containers/[a-zA-Z0-9_.-]+/json(\?.*)?)$$
+    restart: unless-stopped
+    # No healthcheck: this is a scratch image with no shell or HTTP client to
+    # run one with. Suppressed in .compose-lint.yml with that reason.
+
+volumes:
+  netdata_lib:
+  netdata_cache:

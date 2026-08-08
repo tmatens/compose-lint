@@ -1,0 +1,41 @@
+name: netdata
+
+# BEFORE — the arrangement this example replaces. Netdata mounts the Docker
+# socket directly, read-only, to collect container metrics.
+#
+# This file is here to be linted, not to be copied.
+
+services:
+  netdata:
+    image: netdata/netdata:v2.10.3@sha256:bcc822ec685dd7ee488e9f99b957f479b66301be04f13f346df692ad7de94151
+    container_name: netdata
+    volumes:
+      - ./netdata.conf:/etc/netdata/netdata.conf:ro
+      - netdata_lib:/var/lib/netdata
+      - netdata_cache:/var/cache/netdata
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /etc/os-release:/host/etc/os-release:ro
+      - /var/log:/host/var/log:ro
+      - /etc/group:/host/etc/group:ro
+      - /etc/passwd:/host/etc/passwd:ro
+      # The finding. `:ro` looks like it contains the risk. It does not.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - PGID=${DOCKER_GID}
+    network_mode: host
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_OVERRIDE
+      - SETUID
+      - SETGID
+      - SYS_PTRACE
+    pid: host
+    security_opt:
+      - apparmor:unconfined
+
+volumes:
+  netdata_lib:
+  netdata_cache:
