@@ -129,6 +129,29 @@ class TestCLI:
         assert "compose v1" in result.stderr.lower()
         assert "2023" in result.stderr
 
+    def test_own_config_skipped_with_exit_zero(self) -> None:
+        # ADR-013 / issue #499: handing the linter its own config is a skip,
+        # not a failure.
+        result = run_cli(str(FIXTURES / "compose_lint_config.yml"))
+        assert result.returncode == 0
+        assert "compose-lint config" in result.stderr.lower()
+
+    def test_init_then_lint_all_files_passes(self, tmp_path: Path) -> None:
+        # The exact issue #465 reproducer: `compose-lint init` writes
+        # .compose-lint.yml, then a pre-commit sweep hands both files to the
+        # linter. Before #499 the config exited 2 and the hook could never
+        # pass. Pinned end to end because that is the user-visible promise.
+        compose = tmp_path / "docker-compose.yml"
+        compose.write_text("services:\n  hello_world:\n    image: hello-world\n")
+        config = tmp_path / ".compose-lint.yml"
+        init = run_cli("init", str(compose), "-o", str(config))
+        assert init.returncode == 0
+        assert config.exists()
+
+        result = run_cli(str(config), str(compose))
+        assert result.returncode == 0
+        assert "could not be parsed" not in result.stdout.lower()
+
     def test_skipped_file_does_not_block_subsequent_lint(self) -> None:
         # The point of exit-0 skip: in `compose-lint a.yml b.yml c.yml`, a
         # fragment in the middle must not hide findings from the file after it.

@@ -48,7 +48,9 @@ non_meta = top-level keys, excluding `__lines__`, fragment-skeleton keys
            {version, name, volumes, networks, configs, secrets, include},
            and anything starting with `x-`
 
-if non_meta is empty                                  → fragment skip
+if non_meta is non-empty and every key is a
+     compose-lint config top-level key                → own-config skip
+elif non_meta is empty                                → fragment skip
 elif every non_meta value is a mapping containing
      at least one key from the v1 service-marker set  → v1 skip
 else                                                  → hard error
@@ -64,6 +66,9 @@ identify a top-level mapping value as a service definition (`image`,
 
 **Skip messages:**
 
+- Own config: `Skipped: file appears to be a compose-lint config (top-level
+  'rules' and no 'services:' key), not a Compose file. compose-lint reads
+  its config via --config; it is not a lint target.`
 - Fragment: `Skipped: file appears to be a Compose fragment (no 'services:'
   key; only top-level structural keys present). Fragments are typically
   merged via 'extends:' or '-f' overlays and have no services to lint on
@@ -144,3 +149,42 @@ identify a top-level mapping value as a service definition (`image`,
   obvious. The v1 side is broader because v1 files have visibly
   service-shaped top-level values, which gives a cleaner positive
   signal.
+
+**Amendment (2026-08-08, issue #499) — compose-lint's own config as a third
+not-applicable bucket:**
+
+The original heuristic recognised two not-applicable shapes. A third was
+found in the field: compose-lint's own config file. `.compose-lint.yml`
+carries a top-level `rules:` key, which is not fragment scaffolding, and
+its nested values are rule-id blocks (`enabled`, `reason`, `severity`,
+`exclude_services`) which carry no v1 service markers — so it fell through
+to the hard error and exited 2.
+
+That surfaced as issue #465: `compose-lint init` writes `.compose-lint.yml`,
+the pre-commit hook's `files` pattern then matched it, and the hook could
+never pass on a repo that had run `init`. It was mitigated at the hook layer
+in #495/#496 by narrowing `files` and adding an `exclude`, but that is a
+pattern workaround for a linter behaviour, and it is defeatable: pre-commit
+merges a user's hook settings over the manifest, so anyone who sets their
+own `exclude:` (excluding fixtures, carving out a legacy backlog, scoping a
+monorepo) drops ours and can reintroduce the failure with a dotless
+`compose-lint.yml`.
+
+The classifier now recognises a file whose non-meta top-level keys are a
+non-empty subset of `config.KNOWN_TOP_LEVEL_KEYS` as compose-lint's own
+config and skips it. This is a new bucket under the existing decision, not
+a change of policy: "not a v2/v3 Compose file" still skips, "broken Compose
+file" still exits 2.
+
+Deliberately narrow, for the same reason the fragment side is narrow. The
+check requires *every* non-meta key to be a config key, so a file mixing
+`rules:` with anything else is still a hard error — a blanket "skip any
+unrecognised YAML" would silently swallow a genuinely malformed Compose
+file, which is a worse failure than the one being fixed. `KNOWN_TOP_LEVEL_KEYS`
+is read from `config.py` rather than duplicated, so a future config key
+cannot drift out of this check.
+
+This leaves a known gap: a non-Compose YAML that merely *matches* a compose
+glob (a `compose-values.yml` Helm file, say) still exits 2, and no hook
+`exclude` covers it. Whether more buckets are worth recognising, or whether
+sweep users should scope their globs, is left open rather than settled here.

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Handing compose-lint its own config file no longer fails the run
+  (issue #499). `.compose-lint.yml` parses as YAML but has no `services:`
+  key, and its shape matched neither of ADR-013's not-applicable buckets,
+  so it fell through to `Not a valid Compose file` and exit 2. It is now
+  recognised as a third not-applicable shape and skipped with exit 0, like
+  fragments and Compose v1 files. This is the root cause behind issue #465:
+  `compose-lint init` followed by a pre-commit sweep could never pass. The
+  0.15.2 hook-pattern fix mitigated that at the config layer, but a user who
+  sets their own `exclude:` in `.pre-commit-config.yaml` replaces ours and
+  could reintroduce it — the linter is now robust regardless. Genuinely
+  malformed Compose files still exit 2; the check requires *every* non-meta
+  top-level key to be a config key, so it cannot swallow a broken file.
+
 ## [0.15.2] - 2026-08-08
 
 ### Changed

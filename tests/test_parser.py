@@ -298,6 +298,43 @@ class TestLoadCompose:
         with pytest.raises(ComposeNotApplicableError, match="Compose v1"):
             load_compose(FIXTURES / "legacy_v1_compose.yml")
 
+    def test_own_config_skipped_as_not_applicable(self) -> None:
+        # ADR-013 / issue #499: compose-lint's own config parses as YAML but is
+        # not a Compose file. Linting it used to exit 2, which broke the
+        # pre-commit hook after `compose-lint init` (issue #465).
+        with pytest.raises(ComposeNotApplicableError, match="compose-lint config"):
+            load_compose(FIXTURES / "compose_lint_config.yml")
+
+    def test_own_config_with_extension_keys_skipped(self, tmp_path: Path) -> None:
+        # `x-*` and structural keys are meta, so a config carrying them is
+        # still recognised rather than falling through to a hard error.
+        path = tmp_path / "compose-lint.yml"
+        path.write_text("x-note: scratch\nrules:\n  CL-0003:\n    enabled: false\n")
+        with pytest.raises(ComposeNotApplicableError, match="compose-lint config"):
+            load_compose(path)
+
+    def test_config_keys_mixed_with_unknown_keys_still_hard_errors(
+        self, tmp_path: Path
+    ) -> None:
+        # Only a file whose non-meta keys are *entirely* config keys is a
+        # config. A stray `foo:` alongside `rules:` is an unrecognised shape,
+        # so ADR-013's hard error still applies — the skip must not become a
+        # catch-all that swallows malformed Compose.
+        path = tmp_path / "mixed.yml"
+        path.write_text("rules:\n  CL-0003:\n    enabled: false\nfoo: bar\n")
+        with pytest.raises(ComposeError) as excinfo:
+            load_compose(path)
+        assert not isinstance(excinfo.value, ComposeNotApplicableError)
+        assert "missing 'services' key" in str(excinfo.value)
+
+    def test_compose_file_with_services_is_unaffected(self, tmp_path: Path) -> None:
+        # A real Compose file never reaches the classifier; guard against the
+        # config check shadowing a normal lint target.
+        path = tmp_path / "docker-compose.yml"
+        path.write_text("services:\n  web:\n    image: nginx:1.27\n")
+        data, _ = load_compose(path)
+        assert "web" in data["services"]
+
     def test_not_applicable_is_a_compose_error_subtype(self) -> None:
         # Callers that catch ComposeError still see fragment/v1 errors;
         # callers that want to special-case "skip" can catch the subtype.

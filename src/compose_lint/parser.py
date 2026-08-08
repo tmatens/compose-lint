@@ -8,6 +8,8 @@ from typing import Any
 
 import yaml
 
+from compose_lint.config import KNOWN_TOP_LEVEL_KEYS
+
 
 class _LinesKey:
     """Sentinel dict key under which a mapping's line map is stashed.
@@ -89,9 +91,9 @@ _V1_SERVICE_MARKERS = frozenset(
 def _classify_missing_services(data: dict[str, Any]) -> ComposeError:
     """Decide which error subtype to raise when `services:` is absent.
 
-    Returns either a fragment/v1 ComposeNotApplicableError (file parses
-    but the linter doesn't apply) or a plain ComposeError (file shape is
-    not recognisable as Compose at all). See ADR-013 for the heuristic.
+    Returns either a fragment/v1/own-config ComposeNotApplicableError (file
+    parses but the linter doesn't apply) or a plain ComposeError (file shape
+    is not recognisable as Compose at all). See ADR-013 for the heuristic.
     """
 
     def _is_meta(k: Any) -> bool:
@@ -102,6 +104,13 @@ def _classify_missing_services(data: dict[str, Any]) -> ComposeError:
         return k in _TOP_LEVEL_FRAGMENT_KEYS or k.startswith("x-")
 
     non_meta = [k for k in data if not _is_meta(k)]
+    if non_meta and all(k in KNOWN_TOP_LEVEL_KEYS for k in non_meta):
+        return ComposeNotApplicableError(
+            "Skipped: file appears to be a compose-lint config "
+            f"(top-level {', '.join(f'{k!r}' for k in sorted(non_meta))} and no "
+            "'services:' key), not a Compose file. compose-lint reads its config "
+            "via --config; it is not a lint target."
+        )
     if not non_meta:
         return ComposeNotApplicableError(
             "Skipped: file appears to be a Compose fragment "

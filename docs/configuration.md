@@ -127,7 +127,7 @@ JSON output is a versioned envelope (see [ADR-015](adr/015-machine-readable-outp
 
 - `version` is the envelope schema version. New top-level fields are added without bumping it; a bump signals a breaking change.
 - `findings[]` carries one object per finding; `suppression_reason` is present only on suppressed findings.
-- `errors[]` lists files that failed to parse (exit 2). Files skipped as not-applicable (Compose v1 / fragments, [ADR-013](adr/013-missing-services-key.md)) are not errors and do not appear here.
+- `errors[]` lists files that failed to parse (exit 2). Files skipped as not-applicable (Compose v1 / fragments / a compose-lint config, [ADR-013](adr/013-missing-services-key.md)) are not errors and do not appear here.
 
 ### SARIF
 

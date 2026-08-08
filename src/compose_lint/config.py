@@ -13,7 +13,11 @@ from compose_lint.models import Severity
 # Top-level keys the config schema defines today (docs/configuration.md).
 # Anything else is almost certainly a typo or a misplaced CLI flag (e.g. a
 # top-level `fail_on:`), so we warn rather than silently drop it (issue #279 G1).
-_KNOWN_TOP_LEVEL_KEYS = frozenset({"rules"})
+# Public because the parser reads it to recognise a compose-lint config that
+# was handed to the linter as if it were a Compose file (ADR-013, issue #499);
+# keeping one definition means a new config key can never drift out of that
+# check.
+KNOWN_TOP_LEVEL_KEYS = frozenset({"rules"})
 
 # Recognized keys inside a per-rule block. A key outside this set (a typo'd
 # `severty:` or a `reason:` with no `enabled: false`) is silently inert today;
@@ -82,10 +86,10 @@ def load_config(
         return {}, {}, {}
 
     for key in data:
-        if str(key) not in _KNOWN_TOP_LEVEL_KEYS:
+        if str(key) not in KNOWN_TOP_LEVEL_KEYS:
             _warn(
                 f"config: unknown top-level key '{key}' (recognized: "
-                f"{', '.join(sorted(_KNOWN_TOP_LEVEL_KEYS))}); it has no effect",
+                f"{', '.join(sorted(KNOWN_TOP_LEVEL_KEYS))}); it has no effect",
                 strict,
             )
 

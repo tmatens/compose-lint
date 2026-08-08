@@ -1,0 +1,13 @@
+# A compose-lint config file, not a Compose file. Named so it is reachable
+# as a fixture; the real-world spellings are `.compose-lint.yml` (the default
+# `init` writes) and the dotless `compose-lint.yml` (`init -o`). Handed to the
+# linter it must skip with exit 0, not fail the run (ADR-013, issue #499).
+rules:
+  CL-0003:
+    enabled: false
+    reason: "TODO: justify or fix"
+  CL-0006:
+    severity: low
+  CL-0007:
+    exclude_services:
+      web: "writes to /tmp at boot"
