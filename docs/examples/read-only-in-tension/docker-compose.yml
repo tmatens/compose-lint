@@ -1,0 +1,54 @@
+name: home_assistant
+
+# A home-automation server behind a reverse proxy. It runs its own s6 init as root
+# and cannot be pinned to a non-root user, so the hardening available here is
+# capabilities, no-new-privileges, a read-only root, and tight resource limits.
+#
+# The interesting line is the tmpfs. See the page.
+
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable@sha256:adb3341e31e03e0048e60d8c1cf952e118a381ae258bb921d3da12a3b27bf0c2
+    container_name: homeassistant
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      # The only capability the application core needs. It runs as root under s6
+      # with no privilege drop, and writes its database, .storage and logs into a
+      # bind mount owned by a different user, so it needs to bypass that
+      # directory's permission bits.
+      - DAC_OVERRIDE
+      # Required by the DHCP discovery integration, which opens an AF_PACKET
+      # socket. Without it the log shows "Cannot watch for dhcp packets:
+      # [Errno 1] Operation not permitted". Enabled because this install uses
+      # that integration — a different install would not need it.
+      - NET_RAW
+    read_only: true
+    # /run must permit execution. s6-overlay execs its init from there, and with
+    # Docker's default noexec the container dies before the application starts.
+    # /tmp is a plain tmpfs and keeps the secure default — only /run needs the
+    # exception, and narrowing it to one mount is the point.
+    tmpfs:
+      - "/run:exec"
+      - /tmp
+    volumes:
+      - ./config:/config
+    environment:
+      # Timezone by environment variable rather than a host bind of
+      # /etc/localtime — one fewer host path in the container.
+      - TZ=America/Chicago
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8123/manifest.json').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: '1.50'
+          pids: 512

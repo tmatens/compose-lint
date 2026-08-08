@@ -1,0 +1,20 @@
+# One rule, one service. The auth service is not listed anywhere in this file,
+# because it needs nothing waived.
+
+rules:
+  CL-0005:
+    exclude_services:
+      proxy: >-
+        Public ingress has to accept connections from the network, so 80 and 443
+        are published. Re-examined rather than assumed, because "must bind all
+        interfaces" is imprecise — it could bind a single address; the question
+        is whether that would close anything. On this host it would not. There
+        is exactly one routable interface, so 0.0.0.0 adds only loopback and the
+        docker bridge gateways over a specific bind, and both were probed from
+        containers: 443 is already unreachable via the host address, via a
+        bridge gateway, and from a fully isolated network, while 80 answers only
+        a redirect to HTTPS. Narrowing the bind would delete this finding
+        without closing a reachable path, while risking ingress for every
+        service behind the proxy. Certificates use the DNS-01 challenge, so port
+        80 is not needed for issuance either — it exists solely for the redirect
+        and is the thing to drop if this finding ever needs closing outright.

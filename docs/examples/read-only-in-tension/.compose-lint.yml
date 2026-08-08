@@ -1,0 +1,24 @@
+# Two waivers, and the first one exists *because* of a hardening decision rather
+# than in spite of one. That is the whole subject of this example.
+
+rules:
+  CL-0022:
+    exclude_services:
+      homeassistant: >-
+        Deliberate, and the price of read_only. s6-overlay execs its init from
+        /run, so under a read-only root that mount must permit execution; with
+        Docker's default noexec the container dies at
+        "/run/s6/basedir/bin/init: Permission denied" before the application
+        starts. Only /run carries :exec — /tmp is a plain tmpfs and keeps
+        noexec. This waiver REPLACED a CL-0007 one: a low finding in exchange
+        for a read-only root filesystem.
+
+  CL-0011:
+    exclude_services:
+      homeassistant: >-
+        Two capabilities added back after cap_drop ALL, both confirmed by
+        removing them and observing the failure. DAC_OVERRIDE: the application
+        runs as root with no privilege drop and writes into a bind mount owned
+        by another user. NET_RAW: required by the DHCP discovery integration,
+        which opens an AF_PACKET socket. The other twelve Docker defaults stay
+        dropped.

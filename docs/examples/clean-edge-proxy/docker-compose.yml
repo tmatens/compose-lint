@@ -1,0 +1,95 @@
+name: edge
+
+# The public entry point: a reverse proxy terminating TLS for every service
+# behind it, plus the forward-auth service that gates the private ones.
+#
+# This is the example with almost nothing to suppress. It is here because a
+# library of hardening stories is misleading if every entry needs six waivers.
+#
+# Excerpted: the proxy attaches to one docker network per backend stack; the
+# list is trimmed here to two for readability.
+
+services:
+  proxy:
+    build: .
+    container_name: proxy
+    cap_drop:
+      - ALL
+    cap_add:
+      # The only capability it needs, and only because it binds 80 and 443.
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - proxy_data:/data
+      - proxy_config:/config
+    environment:
+      # Certificates are issued over the DNS-01 challenge, so this token is the
+      # only inbound-facing credential and port 80 is never used for issuance.
+      - DNS_API_TOKEN=${DNS_API_TOKEN}
+    ports:
+      - '80:80'
+      - '443:443'
+    networks:
+      - backend_a
+      - backend_b
+      - auth-net
+    restart: unless-stopped
+    healthcheck:
+      test: curl -sf http://localhost:2019/config/ || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  auth:
+    image: authelia/authelia:4@sha256:1b363e9279e742397966333f364e0876ae02bf5c876de73e83af6d48c57ff51b
+    container_name: auth
+    # The image entrypoint chowns /config and drops privileges with su-exec,
+    # which needs CHOWN, SETUID and SETGID. Rather than grant those back, the
+    # binary is invoked directly: the process stays root but holds NO
+    # capabilities at all, under a read-only root. See the page.
+    entrypoint: ['authelia', '--config', '/config/configuration.yml']
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - ./auth/configuration.yml:/config/configuration.yml:ro
+      - ./auth/users_database.yml:/config/users_database.yml:ro
+      - auth_data:/data
+    environment:
+      - AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET=${AUTH_JWT_SECRET}
+      - AUTHELIA_SESSION_SECRET=${AUTH_SESSION_SECRET}
+      - AUTHELIA_STORAGE_ENCRYPTION_KEY=${AUTH_STORAGE_KEY}
+    networks:
+      # Only the proxy needs to reach it, so it joins one internal network and
+      # publishes no ports at all.
+      - auth-net
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--tries=1', '--spider', 'http://localhost:9091/api/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+networks:
+  backend_a:
+    external: true
+  backend_b:
+    external: true
+  auth-net:
+    driver: bridge
+
+volumes:
+  proxy_data:
+  proxy_config:
+  auth_data:

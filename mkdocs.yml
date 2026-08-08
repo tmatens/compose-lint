@@ -68,6 +68,9 @@ nav:
       - "2 — Re-architect so the socket isn't needed": examples/logging-without-the-socket/index.md
       - "3 — Constrain it when the need is real": examples/netdata-socket-proxy/index.md
       - "4 — Suppress it, with the risk written down": examples/ci-runner-suppression/index.md
+      - "Two rules in tension": examples/read-only-in-tension/index.md
+      - "A true premise and a false conclusion": examples/read-only-multi-service/index.md
+      - "The clean one": examples/clean-edge-proxy/index.md
   - Guides:
       - Configuration: configuration.md
       - Severity levels: severity.md

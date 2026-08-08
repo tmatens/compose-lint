@@ -1,0 +1,132 @@
+name: photos
+
+# A self-hosted photo library: application server, database, cache, and a
+# machine-learning worker. Every one of the four runs with a read-only root
+# filesystem. The data they write lives in volumes, which stay writable.
+#
+# Excerpted from a deployed stack; a tailnet sidecar unrelated to the story has
+# been left out.
+
+services:
+  database:
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
+    container_name: photos_db
+    cap_drop:
+      - ALL
+    cap_add:
+      # The data directory is a host bind owned by the database uid with mode
+      # 700. The entrypoint starts as root and cannot traverse it without this.
+      # Confirmed by removing it — see the page for why the obvious test of
+      # that claim gives the wrong answer.
+      - DAC_OVERRIDE
+      - CHOWN
+      - SETUID
+      - SETGID
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    # /etc/postgresql ships EMPTY in this image — the entrypoint copies a config
+    # template in at runtime — so a tmpfs here masks nothing.
+    tmpfs:
+      - /run
+      - /tmp
+      - /etc/postgresql
+    volumes:
+      - ${DB_DATA_LOCATION}:/var/lib/postgresql/data
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_DB: ${DB_DATABASE_NAME}
+      POSTGRES_INITDB_ARGS: '--data-checksums'
+    healthcheck:
+      test: pg_isready -d ${DB_DATABASE_NAME} -U ${DB_USERNAME}
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  cache:
+    image: docker.io/valkey/valkey:9@sha256:4963247afc4cd33c7d3b2d2816b9f7f8eeebab148d29056c2ca4d7cbc966f2d9
+    container_name: photos_cache
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    # Cache data is ephemeral by design, so it lives on a tmpfs rather than a
+    # volume — the strongest form of "this container writes nothing durable".
+    tmpfs:
+      - /data
+    # Requires a password: an unauthenticated co-tenant on the shared network
+    # otherwise had zero-auth reach to the cache's admin commands.
+    command: ["valkey-server", "--requirepass", "${CACHE_PASSWORD}"]
+    healthcheck:
+      # Auth-agnostic: a NOAUTH reply still proves the server is accepting
+      # connections, so the check works without putting the password in argv.
+      test: ["CMD-SHELL", "redis-cli ping 2>&1 | grep -qE 'PONG|NOAUTH'"]
+    restart: always
+
+  server:
+    image: ghcr.io/immich-app/immich-server:v3.1.0
+    container_name: photos_server
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
+    depends_on:
+      database:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+    volumes:
+      # Uploads, thumbnails and transcodes all land here. A volume, so it stays
+      # writable under read_only — which is the whole point of this example.
+      - ${UPLOAD_LOCATION}:/data
+    env_file:
+      - .env
+    restart: always
+    healthcheck:
+      disable: false
+
+  machine-learning:
+    image: ghcr.io/immich-app/immich-machine-learning:v3.1.0-openvino
+    container_name: photos_ml
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
+    volumes:
+      - model-cache:/cache
+    env_file:
+      - .env
+    environment:
+      # Under read_only a plotting library in the dependency tree cannot create
+      # its cache in the home directory and warns on every start before falling
+      # back to a random /tmp path. Pointing it at the tmpfs makes that explicit
+      # and keeps a recurring warning out of the logs.
+      MPLCONFIGDIR: /tmp/matplotlib
+    devices:
+      - /dev/dri:/dev/dri
+    restart: always
+    healthcheck:
+      disable: false
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+          cpus: '2.0'
+
+volumes:
+  model-cache:

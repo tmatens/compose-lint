@@ -1,8 +1,8 @@
 # Real-world examples
 
-Four Compose files that all trip the same rule — [CL-0001](../rules/CL-0001.md), the Docker socket mount — and four different correct answers.
+Compose files from stacks that are actually deployed and continuously linted, so the hardened versions are what runs rather than what a documentation author wished were running.
 
-The rule text can tell you that mounting `/var/run/docker.sock` is root-equivalent. What it cannot tell you is which of these you are allowed to do about it, because that depends on what the service is for. These examples are drawn from stacks that are actually deployed and continuously linted, so the hardened files are what runs, not what a documentation author wished were running.
+The library is in two parts. **The ladder** is four files that all trip the same rule — [CL-0001](../rules/CL-0001.md), the Docker socket mount — and four different correct answers to it, because the rule text can tell you a socket mount is root-equivalent but not which remediation your service is allowed. **Beyond the ladder** is three stacks chosen for lessons the ladder doesn't reach: two rules that cannot both be satisfied, a waiver whose premise was true and whose conclusion wasn't, and one stack that needed almost nothing waived at all.
 
 ## The ladder
 
@@ -15,6 +15,16 @@ The rule text can tell you that mounting `/var/run/docker.sock` is root-equivale
 
 Read in order, they answer a question the rule docs cannot: the first question is never "how do I silence this", it is "which rung am I on".
 
+## Beyond the ladder
+
+Three more stacks, each carrying a lesson the ladder doesn't.
+
+| Example | The lesson |
+|---|---|
+| [Two rules in tension](read-only-in-tension/index.md) | Satisfying one rule means violating another. Buying a read-only root by accepting a CL-0022 — a medium traded for a low. |
+| [A true premise and a false conclusion](read-only-multi-service/index.md) | A four-service stack whose waiver said read-only was impossible because the services write to volumes. True, and it doesn't follow: volumes stay writable. |
+| [The clean one](clean-edge-proxy/index.md) | The public entry point, with one waiver for the whole stack and a forward-auth service that holds *no capabilities at all*. |
+
 ## What the linter says about each
 
 Every example ships the Compose file and the `.compose-lint.yml` that goes with it, so you can reproduce these numbers:
@@ -24,6 +34,9 @@ portainer-removed            exit=1   2 high            1 suppressed
 logging-without-the-socket   exit=0   0 issues          1 suppressed
 netdata-socket-proxy         exit=0   0 issues         14 suppressed
 ci-runner-suppression        exit=0   4 medium          6 suppressed
+read-only-in-tension         exit=0   0 issues          2 suppressed
+read-only-multi-service      exit=0   0 issues          3 suppressed
+clean-edge-proxy             exit=0   0 issues          2 suppressed
 ```
 
 Two of these deserve comment, because they are the opposite of what a "findings went down" summary would suggest.
