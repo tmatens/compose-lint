@@ -37,6 +37,7 @@ jobs:
       docker: ${{ steps.filter.outputs.docker }}
       workflows: ${{ steps.filter.outputs.workflows }}
       dockerfile: ${{ steps.filter.outputs.dockerfile }}
+      locks: ${{ steps.filter.outputs.locks }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -57,6 +58,7 @@ jobs:
               echo "docker=true"
               echo "workflows=true"
               echo "dockerfile=true"
+              echo "locks=true"
             } >> "$GITHUB_OUTPUT"
             echo "push event — running all job groups."
             exit 0
@@ -65,7 +67,7 @@ jobs:
           echo "Changed files:"
           echo "${changed}"
           match() { echo "${changed}" | grep -qE "$1"; }
-          code=false; docker=false; workflows=false; dockerfile=false
+          code=false; docker=false; workflows=false; dockerfile=false; locks=false
           # Python sources, tests, helper scripts, the package manifest,
           # hash-pinned lockfiles, and the action contract all warrant the
           # full lint/type/test/coverage/security/smoke suite.
@@ -81,11 +83,16 @@ jobs:
           if match '^Dockerfile$'; then
             dockerfile=true
           fi
+          # pyproject.toml is the compile source; the locks are its outputs.
+          if match '^(pyproject\.toml$|requirements[.-].*lock$)'; then
+            locks=true
+          fi
           {
             echo "code=${code}"
             echo "docker=${docker}"
             echo "workflows=${workflows}"
             echo "dockerfile=${dockerfile}"
+            echo "locks=${locks}"
           } >> "$GITHUB_OUTPUT"
 
   lint:
@@ -277,6 +284,64 @@ jobs:
         # vuln-report.yml to keep listing it.
         continue-on-error: true
         run: pip-audit --skip-editable
+
+  # Fails the PR if any requirements*.lock has drifted from pyproject.toml —
+  # a dep added, removed, or re-pinned without regenerating the locks. CI
+  # otherwise only installs *from* the locks (`--require-hashes`) and never
+  # recompiles, so drift previously surfaced only as a downstream test failure
+  # for deps something imports, and not at all for tool pins nothing imports.
+  #
+  # Recompiling is safe to diff byte-for-byte: with the output file present,
+  # `uv pip compile` reuses its existing pins as preferences, so this does NOT
+  # chase new upstream releases and go red on unrelated PRs. Verified
+  # byte-identical under uv 0.11.19 and 0.12.3, and verified to exit 1 when a
+  # pyproject pin is changed without a regen.
+  #
+  # Commands must stay identical to the regen block in CLAUDE.md, including
+  # the `=`/`--output-file=` flag form that Renovate's pip-compile manager
+  # requires to parse these headers at all.
+  lockfiles:
+    name: Lockfiles match pyproject.toml
+    needs: changes
+    if: needs.changes.outputs.locks == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Pinned for a deterministic byte-diff. Bumping is safe — the lock output
+      # was verified stable across the 0.11 -> 0.12 span — but do it
+      # deliberately, not implicitly.
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.3"
+      - name: Recompile every lockfile from pyproject.toml
+        run: |
+          set -euo pipefail
+          uv pip compile pyproject.toml \
+            --universal --python-version=3.10 \
+            --generate-hashes --output-file=requirements.lock
+          uv pip compile pyproject.toml \
+            --extra=dev --extra=lint --extra=security --extra=publish \
+            --universal --python-version=3.10 \
+            --generate-hashes --output-file=requirements-dev.lock
+          uv pip compile pyproject.toml --extra=docs \
+            --universal --python-version=3.10 \
+            --generate-hashes --output-file=requirements-docs.lock
+          uv pip compile pyproject.toml --extra=container \
+            --universal --python-version=3.10 \
+            --generate-hashes --output-file=requirements-build.lock
+      - name: Fail if any lockfile drifted
+        run: |
+          set -euo pipefail
+          if ! git diff --exit-code -- 'requirements*.lock'; then
+            echo "::error::A lockfile is out of sync with pyproject.toml. Re-run the regen commands in CLAUDE.md and commit the result."
+            exit 1
+          fi
+          echo "All four lockfiles reproduce byte-for-byte."
 
   # Fails the PR if `pyproject.toml` and `src/compose_lint/__init__.py`
   # disagree about the project version. The two strings drifted silently
@@ -746,6 +811,7 @@ jobs:
       - dependency-review
       - actionlint
       - dockerfile-digests
+      - lockfiles
       - docker-smoke
       - action-smoke
       - rule-premises
