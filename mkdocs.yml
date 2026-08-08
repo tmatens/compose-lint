@@ -62,6 +62,12 @@ nav:
       - "CL-0020 Credential-shaped env keys": rules/CL-0020.md
       - "CL-0021 Credentials in connection strings": rules/CL-0021.md
       - "CL-0022 tmpfs exec — running from tmpfs": rules/CL-0022.md
+  - Examples:
+      - "Real-world examples": examples/index.md
+      - "1 — Delete the service": examples/portainer-removed/index.md
+      - "2 — Re-architect so the socket isn't needed": examples/logging-without-the-socket/index.md
+      - "3 — Constrain it when the need is real": examples/netdata-socket-proxy/index.md
+      - "4 — Suppress it, with the risk written down": examples/ci-runner-suppression/index.md
   - Guides:
       - Configuration: configuration.md
       - Severity levels: severity.md
