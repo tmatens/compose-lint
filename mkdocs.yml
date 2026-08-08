@@ -42,7 +42,7 @@ nav:
   - Rules:
       - CL-0001 Container runtime socket mounted: rules/CL-0001.md
       - CL-0002 Privileged mode enabled: rules/CL-0002.md
-      - CL-0003 Privilege escalation not blocked: rules/CL-0003.md
+      - CL-0003 no-new-privileges privilege escalation: rules/CL-0003.md
       - CL-0004 Image not pinned to version: rules/CL-0004.md
       - CL-0005 Ports bound to all interfaces: rules/CL-0005.md
       - CL-0006 No capability restrictions: rules/CL-0006.md

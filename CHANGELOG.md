@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- CL-0003's compatibility guidance claimed root-dropping entrypoints
+  (`gosu`/`su-exec`: postgres, redis, mysql, …) crash-loop under
+  `no-new-privileges` — **live-verified false**: nnp blocks privilege *gain*
+  at `execve` (sudo, setuid bits, file capabilities), not a root process's
+  downward `setuid()`, and a su-exec image (valkey) runs healthy under the
+  flag. The doc and fix text are rewritten around the verified semantics,
+  and a CI premise check now pins the drop-unaffected fact so the wrong
+  claim cannot silently return.
+
+### Changed
+
+- CL-0003 gains the "Reading the failure" treatment (the last rule from the
+  symptom-table survey): sudo's explicit nnp message (captured live), the
+  silent case — a setuid `execve` under nnp *succeeds* with privileges
+  unchanged (CI-proven: exit 0, euid intact), so failures surface later as
+  ordinary permission errors — the `NoNewPrivs` `/proc` confirmation step,
+  and an explicit warning not to confuse the crash-looping `cap_drop`
+  symptom (CL-0006's `SETUID` row) with this setting.
+
 ### Changed
 
 - CL-0012, CL-0018, and CL-0022 get the symptom → remedy treatment

@@ -39,8 +39,9 @@ if TYPE_CHECKING:
 IMAGE = (
     "busybox@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d"
 )
-# python:3.13-alpine — used only by the IPC_LOCK mapping check: proving the
-# mlockall(2) -> CAP_IPC_LOCK mapping needs a libc caller busybox doesn't ship.
+# python:3.13-alpine — for checks busybox can't express: syscalls needing a
+# libc caller (mlockall, clock_settime) and the CL-0003 setuid-interpreter
+# staging (python keeps its effective uid; busybox re-drops it).
 PY_IMAGE = (
     "python@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0"
 )
@@ -48,15 +49,15 @@ PY_IMAGE = (
 _NON_RUNTIME = ["CL-0004", "CL-0014", "CL-0015", "CL-0019", "CL-0020", "CL-0021"]
 
 
-def _run(args: list[str], cmd: list[str]) -> tuple[int, str]:
-    """``docker run --rm <args> IMAGE <cmd>`` → (returncode, stdout).
+def _run(args: list[str], cmd: list[str], image: str = IMAGE) -> tuple[int, str]:
+    """``docker run --rm <args> <image> <cmd>`` → (returncode, stdout).
 
     Returns *stdout only*: the container echoes the value each check inspects,
     and ``docker`` itself writes warnings to stderr — folding stderr in here
     corrupted exact/suffix matches (e.g. a stderr warning after ``SOCKET``).
     """
     proc = subprocess.run(
-        ["docker", "run", "--rm", *args, IMAGE, *cmd],
+        ["docker", "run", "--rm", *args, image, *cmd],
         capture_output=True,
         text=True,
         timeout=90,
@@ -639,6 +640,55 @@ def _t18_volume_ownership() -> tuple[bool, str]:
     )
 
 
+# --- CL-0003 symptom mappings (#471 follow-on) ------------------------------
+#
+# Both checks use PY_IMAGE: staging a setuid interpreter needs a real ELF that
+# keeps its effective uid (python does; busybox re-drops for non-suid applets),
+# and alpine's su provides the root->nobody drop.
+
+_SUID_GAIN_SCRIPT = (
+    "PY=$(readlink -f $(command -v python3)); cp $PY /tmp/suidpy && "
+    "chmod u+s /tmp/suidpy && "
+    "su nobody -s /bin/sh -c '/tmp/suidpy -c \"import os;print(os.geteuid())\"'"
+)
+
+
+def _t3_setuid_inert() -> tuple[bool, str]:
+    # The doc's silent-failure claim: without nnp the staged setuid python
+    # gives nobody euid 0; WITH nnp the same execve SUCCEEDS (rc 0) but the
+    # setuid bit is ignored — euid stays 65534, and nothing errors.
+    rc_gain, out_gain = _run([], ["sh", "-c", _SUID_GAIN_SCRIPT], image=PY_IMAGE)
+    rc_nnp, out_nnp = _run(
+        ["--security-opt", "no-new-privileges"],
+        ["sh", "-c", _SUID_GAIN_SCRIPT],
+        image=PY_IMAGE,
+    )
+    ok = (
+        rc_gain == 0
+        and out_gain.strip() == "0"
+        and rc_nnp == 0
+        and out_nnp.strip() == "65534"
+    )
+    return ok, (
+        f"without nnp euid={out_gain!r} rc={rc_gain}; "
+        f"with nnp euid={out_nnp!r} rc={rc_nnp} (exec still succeeds)"
+    )
+
+
+def _t3_drop_unaffected() -> tuple[bool, str]:
+    # The compatibility claim this page once got wrong: a root entrypoint
+    # dropping to an unprivileged user (the gosu/su-exec pattern) works fine
+    # under no-new-privileges — nnp blocks execve-time GAIN, not setuid()
+    # drops. This check exists so that claim can never silently regress.
+    rc, out = _run(
+        ["--security-opt", "no-new-privileges"],
+        ["su", "nobody", "-s", "/bin/sh", "-c", "id -u"],
+        image=PY_IMAGE,
+    )
+    ok = rc == 0 and out.strip() == "65534"
+    return ok, f"root->nobody drop under nnp rc={rc} uid={out!r}"
+
+
 CHECKS: list[tuple[str, str, Callable[[], tuple[bool, str]]]] = [
     ("CL-0001", "docker socket mount is root-equivalent", _cl0001),
     ("CL-0002", "privileged grants full caps", _cl0002),
@@ -679,6 +729,9 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool, str]]]] = [
     ("CL-0018", "map: non-root write to root-owned path", _t18_rootfs_write),
     ("CL-0018", "premise: tmpfs inherits image-dir ownership", _t18_tmpfs_inherits),
     ("CL-0018", "premise: named-volume initial ownership", _t18_volume_ownership),
+    # CL-0003 symptom mappings.
+    ("CL-0003", "map: setuid bit inert (and silent) under nnp", _t3_setuid_inert),
+    ("CL-0003", "premise: root privilege-drop unaffected by nnp", _t3_drop_unaffected),
 ]
 
 

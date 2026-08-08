@@ -80,8 +80,10 @@ class NoNewPrivilegesRule(BaseRule):
                     "Add to your service:\n"
                     "  security_opt:\n"
                     "    - no-new-privileges:true\n"
-                    "Note: breaks images that switch users via "
-                    "gosu/su-exec — test first."
+                    "Blocks privilege GAIN at execve (sudo, setuid binaries,\n"
+                    "file capabilities) - failures are often silent. Root\n"
+                    "entrypoints that DROP to a user (gosu/su-exec) are\n"
+                    "unaffected. Details: compose-lint --explain CL-0003"
                 ),
                 references=[OWASP_REF, CIS_REF],
             )

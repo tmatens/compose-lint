@@ -230,7 +230,10 @@ class TestCLI:
     def test_explain_prints_rule_doc(self) -> None:
         result = run_cli("--explain", "CL-0003")
         assert result.returncode == 0
-        assert "CL-0003: Privilege Escalation Not Blocked" in result.stdout
+        assert (
+            "CL-0003: no-new-privileges — blocking setuid/sudo privilege escalation"
+            in result.stdout
+        )
         assert "no-new-privileges:true" in result.stdout
 
     def test_explain_is_case_insensitive(self) -> None:
