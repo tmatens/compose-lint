@@ -32,8 +32,16 @@ rules:
   CL-0008:
     exclude_services:
       netdata: >-
-        Host network mode is required to see host interface metrics. Without
-        it the agent reports only its own veth pair.
+        Required so the agent can reach discovered application containers on
+        every docker network. It finds them through the socket proxy and then
+        connects to each at that network's address; host networking is what
+        routes to all of them. On a single bridge network discovery still
+        succeeds and every scrape times out — 21 redis contexts plus postgres
+        and mysql drop to zero while the container stays healthy and all
+        host-level charts keep working. NOT needed for interface metrics:
+        pid:host supplies those via /host/proc/1/net/dev. Do not remove without
+        re-testing application scraping specifically — host and network charts
+        look perfect either way.
 
   CL-0010:
     exclude_services:

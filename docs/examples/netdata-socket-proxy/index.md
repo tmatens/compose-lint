@@ -157,12 +157,44 @@ Both features work by entering other containers' network namespaces. With them o
 
 The same holds in the other direction. Two of the suppressions on this page were tested and turned out to say the wrong thing:
 
-- **Host networking was justified as "required to monitor all network interfaces".** It isn't. A bridged container with the same config collects the physical interfaces with real data, because the agent reads `/host/proc/1/net/dev` — PID 1's network namespace. That resolves to the host's namespace only because `pid: host` is set. Bind-mounting `/proc` does not help by itself, since `/proc/net` is namespace-relative and `/host/proc/net/dev` shows the container's own `lo` and `eth0`. So `pid: host` was quietly supplying the host network metrics all along, and host networking is really serving the dashboard's bind address — an access-path decision, not a metrics one.
+- **Host networking was justified as "required to monitor all network interfaces".** It isn't — and the correct answer took three attempts to find. That story is [below](#a-reason-that-was-wrong-twice), because it is the most useful thing on this page.
 - **`apparmor:unconfined` was justified as needed for `/proc` and `/sys` access.** It is needed, but not for the stated reason, and the way it fails is covered below.
 
 Neither error was detectable from the Compose file, and neither was detectable from the image. They were properties of one deployment's configuration, and they only surfaced when someone re-derived them against that deployment.
 
 This is also why a "security profile for image X" is a harder artifact than it sounds, and why [ADR-019](../../adr/019-withdraw-security-profile-catalog.md) withdrew the attempt to publish one. The minimum privilege for an image is not a function of the image. It is a function of the image *plus the features you turned on*, and the second half does not fit in a catalog.
+
+## A reason that was wrong twice
+
+The host-networking suppression on this stack carried this justification for a long time:
+
+> Host network required to monitor all network interfaces
+
+Testing it produced a correction. Testing the correction produced another correction. It is worth walking through all three, because the failure was not carelessness — each answer was reached by measuring something real, and the first two were still wrong.
+
+**Attempt 1 — "it's needed for interface metrics."** False. A bridged container with the same configuration collects the host's physical interfaces with real data. The agent reads `/host/proc/1/net/dev` — PID 1's network namespace — which resolves to the host's only because `pid: host` is set. Bind-mounting `/proc` does not help on its own: `/proc/net` is namespace-relative, so `/host/proc/net/dev` shows the container's own `lo` and `eth0`. `pid: host` had been supplying the network metrics all along.
+
+**Attempt 2 — "then it's for the dashboard's bind address."** True, and not why it is needed. This one was checked carefully: every network chart family was compared between host-network and bridge — bandwidth, operstate, carrier, speed, MTU, sockstat, conntrack — and all of them collected identically. A prediction that interface *state* would break, on the grounds that `/sys/class/net` is per-netns, turned out to be wrong too. The conclusion looked solid, and it was recorded as a decision.
+
+**Attempt 3 — what it is actually for.** The agent discovers application containers through the socket proxy and then connects to each at its own docker-network address. Host networking is what lets it route to every docker bridge. On a single bridge network, discovery still succeeds and *every scrape times out*:
+
+```
+service discovery:   works — finds postgres, redis, mysql across projects
+scrape result:       7 timeouts
+redis contexts:      21 with host networking  ->  0 on bridge
+```
+
+Twenty-one contexts of application monitoring, silently gone, while the container stays healthy and every host-level chart keeps working perfectly.
+
+### Why attempt 2 was so convincing
+
+The probe used to reach it was faithful in every way that seemed to matter — real config file, `pid: host`, the same mounts, a four-minute settle so no chart was judged before its first collection cycle. It omitted one thing: the socket-proxy mount. Without it, service discovery never ran, so the missing application contexts looked like an artifact of the probe rather than a finding.
+
+The posture you test in has to match production in the dimension that matters, and *which dimension matters is not knowable in advance*. Namespace sharing mattered for the AppArmor test. Configuration completeness mattered here. A probe that is faithful in four respects and incomplete in the fifth returns a clean, confident, wrong answer.
+
+### What this costs a reader
+
+Nothing about this deployment ever looked wrong. The dashboards were populated, the container was healthy, and CI was green — throughout the entire period the suppression carried a false justification. Nothing surfaces a wrong reason except deciding to test it.
 
 ## A second false green, from a different cause
 
@@ -190,7 +222,7 @@ compose-lint cannot find this one. Every fact that matters — that the daemon d
 
 That is worth stating plainly rather than leaving implied. A Compose linter checks the configuration you declare. It does not check that the process you launched can use what you declared, and a green run is not evidence that your capability grants are reaching the code that needs them. This example exists partly to mark that boundary.
 
-The same limit applies to the suppression reasons. compose-lint will faithfully carry a justification that is completely false — as two of the ones on this page were — because a reason is prose, and nothing checks prose against reality. The linter can tell you a waiver exists. Only re-testing tells you whether it is still true.
+The same limit applies to the suppression reasons. compose-lint will faithfully carry a justification that is completely false — as the host-networking one on this page was, twice — because a reason is prose, and nothing checks prose against reality. Every version of that file linted clean: the one with the false reason, the one with the better-but-still-wrong reason, and the correct one. The linter can tell you a waiver exists. Only re-testing tells you whether it is true.
 
 ## The suppressions
 
