@@ -8,6 +8,7 @@ from compose_lint._yaml_edit import (
     DISABLED_SECURITY_PROFILES,
     delete_lines,
     is_anchored_or_merged,
+    line_indent,
     normalize_security_opt,
     opens_block_body,
 )
@@ -24,6 +25,27 @@ _CAVEAT = (
     "profile; a workload that relies on a syscall the default profile blocks "
     "may fail."
 )
+
+
+def _item_is_multiline(source_lines: list[str], item_line: int) -> bool:
+    """True if the sequence item at ``item_line`` continues onto later lines.
+
+    A list item's continuation — a ``>-``/``|-`` block-scalar body or a wrapped
+    plain scalar — is indented deeper than the ``- `` marker, while a sibling
+    ``- ...`` sits at the marker's own indent and the next key/dedent sits
+    shallower. So a strictly deeper following non-blank line means the item is
+    multi-line, and deleting only its first line would orphan the continuation
+    into the previous entry (issue #508).
+    """
+    marker_indent = line_indent(source_lines[item_line - 1])
+    nxt = item_line  # 0-based index of the line after the 1-based item_line
+    if nxt >= len(source_lines):
+        return False
+    following = source_lines[nxt]
+    if not following.strip():
+        return False
+    return line_indent(following) > marker_indent
+
 
 OWASP_REF = (
     "https://cheatsheetseries.owasp.org/cheatsheets/"
@@ -175,6 +197,12 @@ class SecurityProfileRule(BaseRule):
             # A legitimate entry survives, so the list stays non-empty: remove
             # only this item's line.
             if not source_lines[item_line - 1].lstrip().startswith("- "):
+                return None
+            # A single-line delete is only safe when the item is one line. A
+            # multi-line item (`- >-` / `- |-` block scalar, or a wrapped value)
+            # would leave an orphaned continuation that silently merges into the
+            # previous entry (issue #508); refuse and leave it for the user.
+            if _item_is_multiline(source_lines, item_line):
                 return None
             return [delete_lines(source_lines, item_line, item_line, caveat=_CAVEAT)]
         # legit_remaining == 0: emptying the block would leave CL-0003 to

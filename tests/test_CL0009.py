@@ -304,6 +304,22 @@ class TestSecurityProfileFix:
         )
         assert self._fix(tmp_path, content) is None
 
+    def test_refuses_block_scalar_item(self, tmp_path: Path) -> None:
+        # A `>-` block-scalar list item spans two lines; a single-line delete
+        # would orphan the continuation into the previous entry, destroying it
+        # and leaving seccomp:unconfined in place (issue #508). Refuse instead.
+        content = (
+            "services:\n"
+            "  web:\n"
+            "    image: nginx\n"
+            "    security_opt:\n"
+            "      - no-new-privileges:true\n"
+            "      - label:user:USER\n"
+            "      - >-\n"
+            "        seccomp:unconfined\n"
+        )
+        assert self._fix(tmp_path, content) is None
+
     def test_refuses_merge_key_service(self, tmp_path: Path) -> None:
         content = (
             "x-base: &base\n"
