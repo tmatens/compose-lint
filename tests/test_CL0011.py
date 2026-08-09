@@ -42,10 +42,15 @@ class TestDangerousCapAddRule:
         assert findings[0].severity == Severity.HIGH
         assert "SYS_BOOT" in findings[0].message
 
-    def test_detects_dac_override(self) -> None:
-        findings = self._check_cap("DAC_OVERRIDE")
-        assert len(findings) == 1
-        assert "DAC_OVERRIDE" in findings[0].message
+    def test_ignores_dac_override(self) -> None:
+        # DAC_OVERRIDE is one of Docker's 14 default capabilities, so adding it
+        # back after cap_drop: [ALL] is not an escalation above the baseline —
+        # the container holds it either way. Flagging it inverted the gate:
+        # `cap_drop: [ALL]` + `cap_add: [DAC_OVERRIDE]` (one capability) failed
+        # at --fail-on high while no cap_drop at all (fourteen, DAC_OVERRIDE
+        # among them) passed. Same reasoning already excludes MKNOD and
+        # SYS_CHROOT; DAC_OVERRIDE was missed (issue #492).
+        assert self._check_cap("DAC_OVERRIDE") == []
 
     def test_detects_bpf(self) -> None:
         findings = self._check_cap("BPF")

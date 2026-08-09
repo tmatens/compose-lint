@@ -34,7 +34,6 @@ DANGEROUS_CAPS: dict[str, str] = {
     "SYS_TIME": "change system clock, affecting all containers and the host",
     "SYS_BOOT": "reboot the host or load a new kernel via kexec",
     "DAC_READ_SEARCH": "bypass file read permission checks on the host",
-    "DAC_OVERRIDE": "bypass all file read, write, and execute permission checks",
     "BPF": "load BPF programs — arbitrary kernel read/write on modern kernels",
     "PERFMON": (
         "performance-monitoring access (perf_event_open) — enables timing and "

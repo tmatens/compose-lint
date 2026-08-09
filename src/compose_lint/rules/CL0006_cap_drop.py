@@ -33,8 +33,9 @@ class CapDropRule(BaseRule):
             name="No capability restrictions",
             description=(
                 "Containers retain ~14 default Linux capabilities unless explicitly "
-                "dropped. These include NET_RAW (ARP spoofing), SYS_CHROOT, and "
-                "MKNOD, which are unnecessary for most workloads."
+                "dropped. These include NET_RAW (ARP spoofing), DAC_OVERRIDE "
+                "(bypass file permission checks), SYS_CHROOT, and MKNOD, which are "
+                "unnecessary for most workloads."
             ),
             severity=Severity.MEDIUM,
             references=[OWASP_REF, CIS_REF],
@@ -61,8 +62,8 @@ class CapDropRule(BaseRule):
                 service=service_name,
                 message=(
                     "Service does not drop all capabilities. Containers retain "
-                    "~14 default capabilities including NET_RAW, SYS_CHROOT, "
-                    "and MKNOD."
+                    "~14 default capabilities including NET_RAW, DAC_OVERRIDE, "
+                    "SYS_CHROOT, and MKNOD."
                 ),
                 line=lines.get(f"services.{service_name}"),
                 fix=(

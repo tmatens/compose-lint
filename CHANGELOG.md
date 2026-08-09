@@ -24,6 +24,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- CL-0011 no longer flags `DAC_OVERRIDE`, which inverted the default gate
+  (issue #492). `DAC_OVERRIDE` is one of Docker's 14 default capabilities,
+  so a container holds it whether or not the file names it — flagging it on
+  `cap_add` scored the declaration rather than the runtime state. The effect
+  was that hardening a service made it fail: `cap_drop: [ALL]` plus
+  `cap_add: [DAC_OVERRIDE]` — one capability — exited 1 at the default
+  `--fail-on high`, while the same service with no `cap_drop` at all —
+  fourteen capabilities, `DAC_OVERRIDE` among them — exited 0. The fastest
+  way back to green was to delete the hardening. CL-0011 already excluded
+  `MKNOD` and `SYS_CHROOT` for exactly this reason; `DAC_OVERRIDE` was the
+  one default capability the list still carried, and so was the whole of the
+  inversion. CL-0006 now names it among the retained defaults, so both rules
+  describe the same capability the same way.
+
 - CL-0020 and CL-0021 no longer skip credentials containing `$$`, Compose's
   escape for a literal dollar (issue #502). CL-0020's variable-reference
   regex read the second dollar of `pa$$w0rd` as starting a `$w0rd`
