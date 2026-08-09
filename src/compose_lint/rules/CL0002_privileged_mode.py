@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
+from compose_lint.rules._bool import as_bool
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -44,7 +45,7 @@ class PrivilegedModeRule(BaseRule):
         global_config: dict[str, Any],
         lines: dict[str, int],
     ) -> Iterator[Finding]:
-        if service_config.get("privileged") is True:
+        if as_bool(service_config.get("privileged")) is True:
             yield Finding(
                 rule_id="CL-0002",
                 severity=Severity.CRITICAL,

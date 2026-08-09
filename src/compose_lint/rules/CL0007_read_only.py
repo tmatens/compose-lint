@@ -10,6 +10,7 @@ from compose_lint._yaml_edit import (
 )
 from compose_lint.models import Finding, RuleMetadata, Severity, TextEdit
 from compose_lint.rules import BaseRule, register_rule
+from compose_lint.rules._bool import as_bool
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -54,7 +55,7 @@ class ReadOnlyFilesystemRule(BaseRule):
         global_config: dict[str, Any],
         lines: dict[str, int],
     ) -> Iterator[Finding]:
-        if service_config.get("read_only") is not True:
+        if as_bool(service_config.get("read_only")) is not True:
             yield Finding(
                 rule_id="CL-0007",
                 severity=Severity.MEDIUM,

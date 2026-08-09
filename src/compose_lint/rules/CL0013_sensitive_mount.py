@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
+from compose_lint.rules._bool import as_bool
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -128,7 +129,7 @@ class SensitiveMountRule(BaseRule):
                     vtype == "bind" or source.startswith("/")
                 ):
                     host_path = source
-                    is_readonly = volume.get("read_only") is True
+                    is_readonly = as_bool(volume.get("read_only")) is True
                 else:
                     continue
             else:

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from compose_lint.fix import apply_edits
-from compose_lint.parser import load_compose
+from compose_lint.parser import load_compose, loads
 from compose_lint.rules.CL0007_read_only import ReadOnlyFilesystemRule
 
 if TYPE_CHECKING:
@@ -188,3 +188,26 @@ class TestReadOnlyFix:
     def test_refuses_explicit_read_only_value(self, tmp_path: Path) -> None:
         content = "services:\n  web:\n    read_only: false\n    image: nginx\n"
         assert self._fix(tmp_path, content) is None
+
+
+class TestStringBoolean:
+    """`read_only: "true"` (quoted) must not be misread as writable (issue #514)."""
+
+    def setup_method(self) -> None:
+        self.rule = ReadOnlyFilesystemRule()
+
+    def _check(self, content: str, service: str = "a") -> list:
+        data, lines = loads(content)
+        return list(self.rule.check(service, data["services"][service], data, lines))
+
+    def test_quoted_true_does_not_fire(self) -> None:
+        content = 'services:\n  a:\n    image: nginx\n    read_only: "true"\n'
+        assert self._check(content) == []
+
+    def test_quoted_false_fires(self) -> None:
+        content = 'services:\n  a:\n    image: nginx\n    read_only: "false"\n'
+        assert len(self._check(content)) == 1
+
+    def test_absent_fires(self) -> None:
+        content = "services:\n  a:\n    image: nginx\n"
+        assert len(self._check(content)) == 1

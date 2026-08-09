@@ -12,6 +12,7 @@ from compose_lint._yaml_edit import (
 )
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
+from compose_lint.rules._bool import as_bool
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -61,7 +62,7 @@ class HealthcheckDisabledRule(BaseRule):
         if not isinstance(healthcheck, dict):
             return
 
-        disable = healthcheck.get("disable")
+        disable = as_bool(healthcheck.get("disable"))
         test = healthcheck.get("test")
         disabled_via_test = test == ["NONE"] or test == "NONE"
 
@@ -118,7 +119,7 @@ class HealthcheckDisabledRule(BaseRule):
         if not isinstance(healthcheck, dict):
             return None
 
-        disable = healthcheck.get("disable")
+        disable = as_bool(healthcheck.get("disable"))
         test = healthcheck.get("test")
         if not (disable is True or test == ["NONE"] or test == "NONE"):
             return None

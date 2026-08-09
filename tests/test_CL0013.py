@@ -194,6 +194,15 @@ class TestTimezoneExemption:
         )
         assert len(self._check(content)) == 1
 
+    def test_long_syntax_quoted_readonly_localtime_exempt(self) -> None:
+        # A quoted `read_only: "true"` is coerced like Docker does (issue #514).
+        content = (
+            "services:\n  a:\n    image: nginx\n    volumes:\n"
+            "      - type: bind\n        source: /etc/localtime\n"
+            '        target: /etc/localtime\n        read_only: "true"\n'
+        )
+        assert self._check(content) == []
+
 
 class TestRunMount:
     """Bare /run is sensitive: it holds both daemon sockets (issue #513)."""

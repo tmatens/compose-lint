@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from compose_lint.parser import load_compose
+from compose_lint.parser import load_compose, loads
 from compose_lint.rules.CL0002_privileged_mode import PrivilegedModeRule
 
 FIXTURES = Path(__file__).parent / "compose_files"
@@ -56,3 +56,26 @@ class TestPrivilegedModeRule:
     def test_has_references(self) -> None:
         assert len(self.rule.metadata.references) > 0
         assert "owasp" in self.rule.metadata.references[0].lower()
+
+
+class TestStringBoolean:
+    """Quoted string booleans are coerced like Docker does (issue #514)."""
+
+    def setup_method(self) -> None:
+        self.rule = PrivilegedModeRule()
+
+    def _check(self, content: str, service: str = "a") -> list:
+        data, lines = loads(content)
+        return list(self.rule.check(service, data["services"][service], data, lines))
+
+    def test_quoted_true_fires(self) -> None:
+        content = 'services:\n  a:\n    image: nginx\n    privileged: "true"\n'
+        assert len(self._check(content)) == 1
+
+    def test_quoted_yes_fires(self) -> None:
+        content = 'services:\n  a:\n    image: nginx\n    privileged: "yes"\n'
+        assert len(self._check(content)) == 1
+
+    def test_quoted_false_does_not_fire(self) -> None:
+        content = 'services:\n  a:\n    image: nginx\n    privileged: "false"\n'
+        assert self._check(content) == []
