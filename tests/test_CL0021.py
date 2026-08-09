@@ -7,6 +7,7 @@ from pathlib import Path
 
 from compose_lint.models import Finding, Severity
 from compose_lint.parser import load_compose, loads
+from compose_lint.rules.CL0020_credential_env_keys import CredentialEnvKeysRule
 from compose_lint.rules.CL0021_connection_string_credentials import (
     ConnectionStringCredentialsRule,
 )
@@ -113,6 +114,43 @@ class TestConnectionStringCredentialsRule:
     def test_skip_list_form_with_var(self) -> None:
         findings = self._check("list_form_skipped_when_var")
         assert findings == []
+
+    # ---- $$ escape: a literal dollar is not a substitution (issue #502) ----
+
+    def test_detect_dollar_escaped_password_in_url(self) -> None:
+        # `$$` is Compose's escape for a literal `$` — the password is a
+        # literal credential, not parameterized.
+        findings = self._check_inline('"postgres://app:pa$$w0rd@db/app"')
+        assert len(findings) == 1
+
+    def test_detect_trailing_dollar_password_in_url(self) -> None:
+        # A trailing `$` cannot begin a substitution — still a literal.
+        findings = self._check_inline('"postgres://u:hunter2$@db/x"')
+        assert len(findings) == 1
+
+    def test_skip_password_var_after_escaped_dollar(self) -> None:
+        # `$$` is a literal `$`; the `${VAR}` after it is a real substitution,
+        # so the password is still parameterized.
+        findings = self._check_inline('"postgres://u:$$${DB_PASSWORD}@db/x"')
+        assert findings == []
+
+    def test_agrees_with_cl0020_on_dollar_passwords(self) -> None:
+        # The same password must classify identically as an env-key value
+        # (CL-0020) and inside a connection string (CL-0021) (issue #502).
+        for password in ("pa$$w0rd", "hunter2$"):
+            data, lines = loads(
+                "services:\n"
+                "  app:\n"
+                "    image: nginx\n"
+                "    environment:\n"
+                f'      DB_PASSWORD: "{password}"\n'
+                f'      DATABASE_URL: "postgres://app:{password}@db/app"\n'
+            )
+            svc = data["services"]["app"]
+            key_findings = list(CredentialEnvKeysRule().check("app", svc, data, lines))
+            url_findings = list(self.rule.check("app", svc, data, lines))
+            assert [f.rule_id for f in key_findings] == ["CL-0020"], password
+            assert [f.rule_id for f in url_findings] == ["CL-0021"], password
 
     # ---- Skips: structural ----
 

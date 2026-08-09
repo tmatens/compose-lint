@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
+from compose_lint.rules._interpolation import contains_var_ref
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -25,18 +26,13 @@ RFC3986_REF = "https://datatracker.ietf.org/doc/html/rfc3986#section-3.2.1"
 # the structural separators (':', '/', '@', whitespace). The user half is
 # optional (`*`, not `+`): RFC 3986 §3.2.1 permits an empty username, and
 # `redis://:password@host` — the standard Redis URL form — must still fire
-# (issue #279 R2). The '$' guard below filters out variable substitutions in
-# the password half.
+# (issue #279 R2). The var-ref guard below filters out variable substitutions
+# in the password half.
 _URI_USERINFO_RE = re.compile(
     r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.\-]*)://"
     r"(?P<user>[^:/@\s]*):"
     r"(?P<password>[^@/\s]+)@"
 )
-
-
-def _is_var_ref(s: str) -> bool:
-    """True if s contains a $VAR or ${VAR} substitution."""
-    return "$" in s
 
 
 def _iter_env(env_block: Any) -> Iterator[tuple[str, Any, int | None]]:
@@ -65,7 +61,10 @@ def _find_inline_credential(value: str) -> tuple[str, str, str] | None:
     password being a `${VAR}` substitution means the secret is parameterized;
     a substituted username with a literal password (e.g.
     `postgres://${DB_USER}:secret@db`) still leaks the credential, so it must
-    not suppress the finding (issue #277 F6).
+    not suppress the finding (issue #277 F6). The var-ref test is shared with
+    CL-0020 so both rules classify a password identically — in particular,
+    Compose's escaped literal dollar (`$$`) is data, not a substitution, so
+    `pa$$w0rd` still fires (issue #502).
     """
     # The pattern requires a terminating '@', so a value without one can never
     # match. Bail before `finditer` runs: without this guard a value shaped like
@@ -77,7 +76,7 @@ def _find_inline_credential(value: str) -> tuple[str, str, str] | None:
     for m in _URI_USERINFO_RE.finditer(value):
         user = m.group("user")
         password = m.group("password")
-        if _is_var_ref(password):
+        if contains_var_ref(password):
             continue
         return m.group("scheme"), user, password
     return None

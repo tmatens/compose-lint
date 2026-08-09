@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING, Any
 
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
+from compose_lint.rules._interpolation import contains_var_ref
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -63,11 +63,6 @@ _FLAG_KEY_FRAGMENTS = (
 # Compared case-insensitively against the trimmed value.
 _FLAG_VALUES = frozenset({"yes", "no", "true", "false", "0", "1", "on", "off"})
 
-# A pure variable substitution ("${VAR}", "${VAR:-default}", "$VAR").
-# Used to skip parameterized values entirely; the credential is sourced
-# from process env, which is the documented secure-ish pattern.
-_VAR_REF_RE = re.compile(r"\$\{[^}]+\}|\$[A-Za-z_][A-Za-z0-9_]*")
-
 
 def _matches_credential_pattern(key_upper: str) -> bool:
     """Return True if the key name matches a credential-shaped pattern."""
@@ -90,7 +85,10 @@ def _is_literal_credential_value(raw: Any) -> bool:
     - Booleans (a YAML `yes`/`no`/`true`/`false` toggle, not a credential)
     - Non-string, non-numeric, and empty-string values (env unset)
     - Boolean / numeric toggles like "yes", "true", "1"
-    - Any value containing a ${VAR} substitution (parameterized)
+    - Any value containing a ${VAR} substitution (parameterized); the
+      credential is sourced from process env, which is the documented
+      secure-ish pattern. Compose's escaped literal dollar (`$$`) is not
+      a substitution, so `pa$$w0rd` still counts as literal (issue #502).
 
     An unquoted numeric value (`DB_PASSWORD: 12345678`) decodes to a Python
     int/float; it is coerced to its string form so a numeric literal secret is
@@ -107,7 +105,7 @@ def _is_literal_credential_value(raw: Any) -> bool:
         return False
     if raw.strip().lower() in _FLAG_VALUES:
         return False
-    return not _VAR_REF_RE.search(raw)
+    return not contains_var_ref(raw)
 
 
 def _iter_env(env_block: Any) -> Iterator[tuple[str, Any, int | None]]:

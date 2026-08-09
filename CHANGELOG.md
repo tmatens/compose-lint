@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- CL-0020 and CL-0021 no longer skip credentials containing `$$`, Compose's
+  escape for a literal dollar (issue #502). CL-0020's variable-reference
+  regex read the second dollar of `pa$$w0rd` as starting a `$w0rd`
+  substitution, and CL-0021 exempted any value containing `$` at all — so
+  exactly the passwords a careful user escaped correctly went unchecked,
+  and the two rules disagreed on values like `hunter2$` (flagged as an env
+  key, silent in a connection string). Both rules now share one classifier
+  that consumes `$$` escapes left-to-right, as Compose does, before testing
+  for a `${VAR}`/`$VAR` reference.
+
 - Handing compose-lint its own config file no longer fails the run
   (issue #499). `.compose-lint.yml` parses as YAML but has no `services:`
   key, and its shape matched neither of ADR-013's not-applicable buckets,

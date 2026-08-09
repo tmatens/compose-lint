@@ -209,6 +209,25 @@ class TestCredentialEnvKeysRule:
         findings = self._check("skip_mixed_var_reference")
         assert findings == []
 
+    # ---- $$ escape: a literal dollar is not a substitution (issue #502) ----
+
+    def test_detects_dollar_escaped_password(self) -> None:
+        # `$$` is Compose's escape for a literal `$`; the `$w0rd` tail must
+        # not be read as a `$VAR` reference.
+        findings = self._check_key("DB_PASSWORD", '"pa$$w0rd"')
+        assert len(findings) == 1
+
+    def test_detects_trailing_dollar_password(self) -> None:
+        # A trailing `$` cannot begin a substitution — still a literal.
+        findings = self._check_key("DB_PASSWORD", '"hunter2$"')
+        assert len(findings) == 1
+
+    def test_skip_var_ref_following_escaped_dollar(self) -> None:
+        # Compose consumes escapes left-to-right: `$$` is a literal `$`, the
+        # `${VAR}` after it is a real substitution — still parameterized.
+        findings = self._check_key("DB_PASSWORD", '"$$${DB_PASSWORD}"')
+        assert findings == []
+
     # ---- Negative cases ----
 
     def test_skip_empty_string(self) -> None:
