@@ -193,3 +193,33 @@ class TestTimezoneExemption:
             "      - /etc/shadow:/etc/shadow:ro\n"
         )
         assert len(self._check(content)) == 1
+
+
+class TestRunMount:
+    """Bare /run is sensitive: it holds both daemon sockets (issue #513)."""
+
+    def setup_method(self) -> None:
+        self.rule = SensitiveMountRule()
+
+    def _check(self, content: str, service: str = "a") -> list:
+        data, lines = loads(content)
+        return list(self.rule.check(service, data["services"][service], data, lines))
+
+    def test_bare_run_flagged(self) -> None:
+        content = (
+            "services:\n  a:\n    image: nginx\n    volumes:\n      - /run:/hostrun\n"
+        )
+        findings = self._check(content)
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.HIGH
+        assert "/run" in findings[0].message
+
+    def test_run_subpaths_keep_specific_message(self) -> None:
+        # /run/containerd must still report as itself, not as bare /run.
+        content = (
+            "services:\n  a:\n    image: nginx\n    volumes:\n"
+            "      - /run/containerd:/x\n"
+        )
+        findings = self._check(content)
+        assert len(findings) == 1
+        assert "/run/containerd" in findings[0].message

@@ -33,6 +33,11 @@ _SENSITIVE_PATHS = (
     "/var/run",
     "/run/containerd",
     "/run/systemd",
+    # Bare /run must follow the more specific /run/* entries so those keep
+    # their own messages. On a systemd host /run holds both /run/docker.sock
+    # and /run/containerd.sock (and /var/run is a symlink to it), so mounting
+    # it is root-equivalent daemon control that was previously a clean pass.
+    "/run",
     "/home",
 )
 
