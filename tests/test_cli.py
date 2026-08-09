@@ -476,6 +476,36 @@ class TestFixSubcommand:
         assert stat.S_IMODE(f.stat().st_mode) == 0o640
         assert "read_only: true" in f.read_text()
 
+    def test_apply_preserves_crlf_line_endings(self, tmp_path: Path) -> None:
+        # Regression (#515): --apply must not rewrite CRLF to LF file-wide. The
+        # read used universal-newline translation, so a one-line edit persisted
+        # the whole file as LF though the diff showed only that line.
+        f = tmp_path / "docker-compose.yml"
+        f.write_bytes(
+            b"services:\r\n  web:\r\n    image: nginx:1.27\r\n"
+            b'    ports:\r\n      - "8080:80"\r\n'
+        )
+        result = run_cli("fix", "--apply", "--only", "CL-0005", str(f))
+        assert result.returncode == 0
+        raw = f.read_bytes()
+        assert b"127.0.0.1:8080:80" in raw  # the fix applied
+        assert b"\r\n" in raw  # endings preserved
+        assert b"\n" not in raw.replace(b"\r\n", b"")  # no lone LF introduced
+
+    def test_apply_skips_read_only_file_with_warning(self, tmp_path: Path) -> None:
+        # Regression (#515): a chmod 444 file is an explicit "do not modify"
+        # signal; os.replace would still swap it in via the writable directory.
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(_BARE_SERVICE)
+        f.chmod(0o444)
+        try:
+            result = run_cli("fix", "--apply", "--only", "CL-0007", str(f))
+            assert result.returncode == 0
+            assert "not writable" in result.stderr
+            assert f.read_text() == _BARE_SERVICE  # unchanged
+        finally:
+            f.chmod(0o644)
+
     def test_apply_prints_behavior_changing_caveats(self, tmp_path: Path) -> None:
         # Regression (#428): the caveat banner must surface on the apply path
         # too, not only in the dry-run diff — nothing forces a dry run first,
@@ -633,7 +663,7 @@ class TestFixSubcommand:
             def __init__(self, *a: object, **k: object) -> None:
                 self._p = Path(*a, **k)
 
-            def read_text(self, *a: object, **k: object) -> str:
+            def open(self, *a: object, **k: object) -> object:
                 raise OSError("simulated: file became unreadable")
 
             def __getattr__(self, name: str) -> object:

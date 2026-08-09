@@ -583,7 +583,12 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             continue
 
         try:
-            text = Path(filepath).read_text(encoding="utf-8")
+            # newline="" preserves the file's original line endings: read_text's
+            # universal-newline translation would turn a CRLF file into LF and
+            # _atomic_write would then persist the LF verbatim, so `fix --apply`
+            # would rewrite every line's ending though the diff showed only one.
+            with Path(filepath).open(encoding="utf-8", newline="") as fh:
+                text = fh.read()
         except OSError as e:
             # Parsed above, but unreadable now (deleted, unmounted, permission
             # change) — record and continue so the rest of the batch still runs.
@@ -659,6 +664,17 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             continue
 
         if args.apply:
+            if not os.access(filepath, os.W_OK):
+                # A read-only file (e.g. chmod 444) is an explicit "do not
+                # modify" signal; os.replace would still swap it in via the
+                # writable parent directory. Warn and skip rather than override
+                # the user's intent silently.
+                print(
+                    f"Warning: {filepath}: file is not writable; skipping "
+                    "(make it writable to allow `fix --apply` to modify it)",
+                    file=sys.stderr,
+                )
+                continue
             _atomic_write(Path(filepath), patched)
             # The behavior-changing caveats must surface here too, not only on
             # the dry run — nothing forces a dry run first, so a one-shot
