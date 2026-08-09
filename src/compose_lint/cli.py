@@ -10,7 +10,7 @@ import stat
 import sys
 import tempfile
 from pathlib import Path
-from typing import NoReturn
+from typing import Any, NoReturn
 
 from compose_lint import __version__
 from compose_lint.config import ConfigError, load_config
@@ -334,6 +334,23 @@ def main(argv: list[str] | None = None) -> NoReturn:
     _run_check(args)
 
 
+def _warn_unresolved_include(filepath: str, data: dict[str, Any]) -> None:
+    """Warn that `include:` brings in services compose-lint does not lint.
+
+    An include-*only* file is rejected at parse (ComposeError); here `include`
+    coexists with `services`, so the local services lint normally but services
+    from the included files are invisible. Surface the coverage gap (issue
+    #516) rather than reporting a clean pass over a partial view.
+    """
+    if "include" in data:
+        print(
+            f"Warning: {filepath}: 'include:' is not resolved; services from "
+            "included files are not linted. Lint the merged output "
+            "(docker compose config) to cover them.",
+            file=sys.stderr,
+        )
+
+
 def _run_check(args: argparse.Namespace) -> NoReturn:
     """Run the `check` operation: lint files and exit with the verdict code."""
     if args.explain is not None:
@@ -419,6 +436,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             parse_errors.append((filepath, _report_parse_error(filepath, e)))
             continue
 
+        _warn_unresolved_include(filepath, data)
         seen_services.update(data.get("services", {}).keys())
 
         def _record_rule_error(
@@ -581,6 +599,8 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             _report_parse_error(filepath, e)
             had_error = True
             continue
+
+        _warn_unresolved_include(filepath, data)
 
         try:
             # newline="" preserves the file's original line endings: read_text's

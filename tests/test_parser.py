@@ -43,6 +43,15 @@ class TestLoads:
         with pytest.raises(ComposeError, match="file is empty"):
             loads("")
 
+    def test_include_only_file_is_a_hard_error_not_a_skip(self) -> None:
+        # `include:` pulls services in from other files; compose-lint reads
+        # files only and can't resolve it, so an include-only file must be an
+        # honest error (exit 2), not a reassuring clean pass (issue #516). It
+        # must NOT be a ComposeNotApplicableError (which the CLI skips at exit 0).
+        with pytest.raises(ComposeError, match="include") as exc:
+            loads("include:\n  - base.yml\n")
+        assert not isinstance(exc.value, ComposeNotApplicableError)
+
 
 class TestDuplicateKeys:
     """Duplicate mapping keys are rejected, matching Docker (#277 P2)."""

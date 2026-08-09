@@ -129,6 +129,29 @@ class TestCLI:
         assert "compose v1" in result.stderr.lower()
         assert "2023" in result.stderr
 
+    def test_include_only_file_errors_not_clean_pass(self, tmp_path: Path) -> None:
+        # Issue #516: an include-only file used to be skipped with a reassuring
+        # "no services to lint" and exit 0 — a false all-clear on a deployable
+        # stack. It must now be an honest usage error (exit 2).
+        f = tmp_path / "docker-compose.yml"
+        f.write_text("include:\n  - base.yml\n")
+        result = run_cli(str(f))
+        assert result.returncode == 2
+        assert "include" in result.stderr.lower()
+
+    def test_include_with_services_warns_and_still_lints(self, tmp_path: Path) -> None:
+        # When include coexists with services, the local services lint normally
+        # but a warning flags that the included files are not covered.
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(
+            "include:\n  - base.yml\n"
+            "services:\n  web:\n    image: nginx:1.27\n    privileged: true\n"
+        )
+        result = run_cli(str(f))
+        assert result.returncode == 1
+        assert "CL-0002" in result.stdout
+        assert "include" in result.stderr.lower()
+
     def test_own_config_skipped_with_exit_zero(self) -> None:
         # ADR-013 / issue #499: handing the linter its own config is a skip,
         # not a failure.
