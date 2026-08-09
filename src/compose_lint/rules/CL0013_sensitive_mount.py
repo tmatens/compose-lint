@@ -38,17 +38,27 @@ _SENSITIVE_PATHS = (
 
 # Matches host:container or host:container:mode in short syntax.
 # Host group allows a bare "/" (root mount) by using `*` instead of `+`.
-_SHORT_VOLUME_RE = re.compile(r"^(?P<host>/[^:]*):(?P<container>[^:]+)")
+_SHORT_VOLUME_RE = re.compile(
+    r"^(?P<host>/[^:]*):(?P<container>[^:]+)(?::(?P<mode>[^:]+))?"
+)
+
+# The timezone-config pattern `- /etc/localtime:/etc/localtime:ro` (and
+# /etc/timezone) is near-universal and, read-only, exposes only the host's UTC
+# offset — not host configuration. A read-only mount of exactly these files is
+# exempt; /etc itself, /etc/shadow, or a read-write timezone mount still fire.
+_BENIGN_READONLY_FILES = frozenset({"/etc/localtime", "/etc/timezone"})
 
 
-def _extract_host_path(volume: Any) -> str | None:
-    """Extract the host path from a short-syntax volume string."""
+def _extract_short_mount(volume: Any) -> tuple[str, bool] | None:
+    """Return (host_path, is_readonly) for a short-syntax bind, else None."""
     if not isinstance(volume, str):
         return None
     m = _SHORT_VOLUME_RE.match(volume)
-    if m:
-        return m.group("host")
-    return None
+    if not m:
+        return None
+    mode = m.group("mode")
+    is_readonly = bool(mode) and "ro" in (part.strip() for part in mode.split(","))
+    return m.group("host"), is_readonly
 
 
 def _is_sensitive(host_path: str) -> str | None:
@@ -99,8 +109,10 @@ class SensitiveMountRule(BaseRule):
 
         for i, volume in enumerate(volumes):
             # Short syntax: /host/path:/container/path[:mode]
-            host_path = _extract_host_path(volume)
-            if host_path is None and isinstance(volume, dict):
+            short = _extract_short_mount(volume)
+            if short is not None:
+                host_path, is_readonly = short
+            elif isinstance(volume, dict):
                 # Long syntax: dict with 'source' key.
                 # Treat as a bind when type == "bind" OR when source is an
                 # absolute path (Compose infers bind from absolute paths even
@@ -111,12 +123,18 @@ class SensitiveMountRule(BaseRule):
                     vtype == "bind" or source.startswith("/")
                 ):
                     host_path = source
-
-            if host_path is None:
+                    is_readonly = volume.get("read_only") is True
+                else:
+                    continue
+            else:
                 continue
 
             sensitive = _is_sensitive(host_path)
             if sensitive is None:
+                continue
+
+            # Exempt the read-only timezone-config pattern (issue #509).
+            if is_readonly and host_path.rstrip("/") in _BENIGN_READONLY_FILES:
                 continue
 
             is_root_mount = sensitive == "/"

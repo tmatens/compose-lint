@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from compose_lint.models import Severity
-from compose_lint.parser import load_compose
+from compose_lint.parser import load_compose, loads
 from compose_lint.rules.CL0013_sensitive_mount import SensitiveMountRule
 
 FIXTURES = Path(__file__).parent / "compose_files"
@@ -137,3 +137,59 @@ class TestSensitiveMountRule:
         meta = self.rule.metadata
         assert meta.id == "CL-0013"
         assert meta.severity.value == "high"
+
+
+class TestTimezoneExemption:
+    """Read-only /etc/localtime and /etc/timezone are exempt (issue #509).
+
+    The near-universal `- /etc/localtime:/etc/localtime:ro` pattern exposes only
+    the host's UTC offset. Flagging it HIGH failed the default gate on otherwise
+    fully-hardened services. /etc itself, other /etc files, and read-write
+    timezone mounts still fire.
+    """
+
+    def setup_method(self) -> None:
+        self.rule = SensitiveMountRule()
+
+    def _check(self, content: str, service: str = "a") -> list:
+        data, lines = loads(content)
+        return list(self.rule.check(service, data["services"][service], data, lines))
+
+    def test_readonly_localtime_and_timezone_exempt(self) -> None:
+        content = (
+            "services:\n  a:\n    image: nginx\n    volumes:\n"
+            "      - /etc/localtime:/etc/localtime:ro\n"
+            "      - /etc/timezone:/etc/timezone:ro\n"
+        )
+        assert self._check(content) == []
+
+    def test_long_syntax_readonly_localtime_exempt(self) -> None:
+        content = (
+            "services:\n  a:\n    image: nginx\n    volumes:\n"
+            "      - type: bind\n        source: /etc/localtime\n"
+            "        target: /etc/localtime\n        read_only: true\n"
+        )
+        assert self._check(content) == []
+
+    def test_readwrite_localtime_still_fires(self) -> None:
+        content = (
+            "services:\n  a:\n    image: nginx\n    volumes:\n"
+            "      - /etc/localtime:/etc/localtime\n"
+        )
+        findings = self._check(content)
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.HIGH
+
+    def test_etc_directory_still_fires_readonly(self) -> None:
+        content = (
+            "services:\n  a:\n    image: nginx\n    volumes:\n"
+            "      - /etc:/host/etc:ro\n"
+        )
+        assert len(self._check(content)) == 1
+
+    def test_other_etc_file_still_fires_readonly(self) -> None:
+        content = (
+            "services:\n  a:\n    image: nginx\n    volumes:\n"
+            "      - /etc/shadow:/etc/shadow:ro\n"
+        )
+        assert len(self._check(content)) == 1
