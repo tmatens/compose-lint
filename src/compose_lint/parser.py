@@ -517,6 +517,75 @@ def _validate_compose(data: Any) -> dict[str, Any]:
     return data
 
 
+def _merge_extends(base: Any, over: Any) -> Any:
+    """Merge a resolved ``extends`` base under an overriding child value.
+
+    Follows Compose's ``extends`` semantics: child scalars win, mappings merge
+    (child wins per key), sequences concatenate with the base first (Docker
+    append-merges the base's list into every service that extends it).
+    """
+    if isinstance(base, dict) and isinstance(over, dict):
+        merged = dict(base)
+        for key, value in over.items():
+            merged[key] = _merge_extends(base[key], value) if key in base else value
+        return merged
+    if isinstance(base, list) and isinstance(over, list):
+        return [*base, *over]
+    return over
+
+
+def _resolve_in_file_extends(data: dict[str, Any]) -> None:
+    """Merge in-file ``extends`` targets into each service, in place.
+
+    A service can inherit another's config via ``extends``. compose-lint reads
+    files only, so it resolves the *in-file* forms — ``extends: <name>`` and
+    ``extends: {service: <name>}`` — by merging the recursively-resolved target
+    into the child. Without this, a child inheriting hardening is flagged for
+    missing it and one inheriting a dangerous key is not flagged at all (issue
+    #517). Cross-file ``extends: {file: ...}`` needs I/O we do not do and is
+    left unresolved.
+
+    The child's ``extends`` key is intentionally *kept* after merging: the
+    fixers refuse to edit either side of an ``extends`` relationship (a text
+    edit could create a post-merge duplicate Docker rejects), and that refusal
+    keys on the ``extends`` marker still being present.
+    """
+    services = data.get("services")
+    if not isinstance(services, dict):
+        return
+    resolved: dict[str, Any] = {}
+
+    def _resolve(name: str, stack: tuple[str, ...]) -> Any:
+        if name in resolved:
+            return resolved[name]
+        cfg = services[name]
+        if not isinstance(cfg, dict):
+            return cfg
+        ext = cfg.get("extends")
+        target: str | None = None
+        if isinstance(ext, str):
+            target = ext
+        elif isinstance(ext, dict) and "file" not in ext:
+            service = ext.get("service")
+            if isinstance(service, str):
+                target = service
+        if (
+            target is None
+            or target not in services
+            or not isinstance(services[target], dict)
+            or name in stack  # cycle — stop rather than recurse forever
+        ):
+            resolved[name] = cfg
+            return cfg
+        parent = _resolve(target, (*stack, name))
+        merged = _merge_extends(parent, cfg)  # keeps child's `extends` marker
+        resolved[name] = merged
+        return merged
+
+    for name in list(services):
+        services[name] = _resolve(name, ())
+
+
 def load_compose(
     path: str | Path,
 ) -> tuple[dict[str, Any], dict[str, int]]:
@@ -589,5 +658,6 @@ def loads(content: str) -> tuple[dict[str, Any], dict[str, int]]:
 
     lines = _collect_lines(raw, seq_lines)
     data = _strip_lines(raw)
+    _resolve_in_file_extends(data)
 
     return data, lines

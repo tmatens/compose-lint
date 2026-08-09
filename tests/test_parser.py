@@ -498,3 +498,81 @@ h: {p: *g, q: *g, r: *g, s: *g, t: *g, u: *g, v: *g, w: *g, x: *g}
         assert len(result) < 1000
         # The legitimate `services.s.image` lookup still resolves.
         assert "services.s" in result
+
+
+class TestExtendsResolution:
+    """In-file `extends` is merged into the child before rules run (#517)."""
+
+    def test_mapping_form_inherits_keys(self) -> None:
+        data, _lines = loads(
+            "services:\n"
+            "  base:\n"
+            "    image: nginx\n"
+            "    privileged: true\n"
+            "    read_only: true\n"
+            "  child:\n"
+            "    extends:\n      service: base\n"
+        )
+        child = data["services"]["child"]
+        assert child["privileged"] is True
+        assert child["read_only"] is True
+        assert child["image"] == "nginx"
+
+    def test_shorthand_form_inherits_keys(self) -> None:
+        data, _lines = loads(
+            "services:\n"
+            "  base:\n    image: nginx\n    privileged: true\n"
+            "  child:\n    extends: base\n"
+        )
+        assert data["services"]["child"]["privileged"] is True
+
+    def test_child_keys_win_over_base(self) -> None:
+        data, _lines = loads(
+            "services:\n"
+            "  base:\n    image: nginx\n    privileged: true\n"
+            "  child:\n    extends: base\n    privileged: false\n"
+        )
+        assert data["services"]["child"]["privileged"] is False
+
+    def test_sequences_concatenate(self) -> None:
+        # Docker append-merges the base's list into the child.
+        data, _lines = loads(
+            "services:\n"
+            "  base:\n    image: nginx\n"
+            "    security_opt:\n      - seccomp:unconfined\n"
+            "  child:\n    extends: base\n"
+            "    security_opt:\n      - no-new-privileges:true\n"
+        )
+        assert data["services"]["child"]["security_opt"] == [
+            "seccomp:unconfined",
+            "no-new-privileges:true",
+        ]
+
+    def test_extends_marker_kept_for_fixer_safety(self) -> None:
+        # The child keeps its `extends` key so the fixers still refuse to edit
+        # either side of the merge (a text edit could create a post-merge dup).
+        data, _lines = loads(
+            "services:\n  base:\n    image: nginx\n  child:\n    extends: base\n"
+        )
+        assert "extends" in data["services"]["child"]
+
+    def test_cross_file_extends_left_unresolved(self) -> None:
+        # extends: {file: ...} needs I/O; the child is not merged.
+        data, _lines = loads(
+            "services:\n"
+            "  child:\n    image: nginx\n"
+            "    extends:\n      file: base.yml\n      service: base\n"
+        )
+        assert data["services"]["child"]["extends"] == {
+            "file": "base.yml",
+            "service": "base",
+        }
+
+    def test_extends_cycle_does_not_hang(self) -> None:
+        data, _lines = loads(
+            "services:\n"
+            "  a:\n    image: nginx\n    extends: b\n"
+            "  b:\n    image: redis\n    extends: a\n"
+        )
+        assert "extends" in data["services"]["a"]
+        assert "extends" in data["services"]["b"]
