@@ -1,23 +1,19 @@
 # One waiver for a four-service stack.
 #
-# There used to be a second, for CL-0007, saying the server, worker and database
-# "write to data and cache volumes so cannot be fully read_only". It was deleted
-# rather than reworded — see the page. Volumes stay writable under read_only.
+# There used to be two others, and both are gone for different reasons.
+#
+# A CL-0007 waiver said the server, worker and database "write to data and cache
+# volumes so cannot be fully read_only". It was deleted rather than reworded —
+# see the page. Volumes stay writable under read_only.
+#
+# A CL-0011 waiver covered the database's DAC_OVERRIDE. It is gone because the
+# rule stopped flagging it: DAC_OVERRIDE is one of Docker's 14 default
+# capabilities, so the container holds it whether or not the file names it, and
+# flagging it scored the declaration rather than the runtime state (issue #492).
+# The capability is still required, and why is recorded next to the cap_add in
+# docker-compose.yml. Nothing about the deployment changed — the tool did.
 
 rules:
-  CL-0011:
-    exclude_services:
-      database: >-
-        DAC_OVERRIDE is required and was confirmed in the DEPLOYED posture, not
-        inferred from upstream guidance. The data directory is a host bind owned
-        by the database uid with mode 700, so the entrypoint — which starts as
-        root — cannot traverse it without the capability; dropping it fails at
-        "find: /var/lib/postgresql/data: Permission denied". Note that testing
-        this against a NAMED VOLUME instead of a bind reports the capability as
-        removable, which is a false negative: the mount type is the whole
-        difference. CHOWN, SETUID and SETGID complete the set the official
-        Postgres entrypoint needs to initialise and drop to its own user.
-
   CL-0019:
     exclude_services:
       server: >-

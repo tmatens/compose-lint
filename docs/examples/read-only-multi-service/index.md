@@ -1,6 +1,6 @@
 # A true premise and a false conclusion
 
-**Verified against:** compose-lint 0.15.1, 2026-08-08
+**Verified against:** compose-lint 0.15.2 plus the CL-0011 fix from issue #492, 2026-08-09
 
 A four-service stack — application server, database, cache, machine-learning worker — where every service runs with a read-only root filesystem. For a long time its config said that was impossible:
 
@@ -58,7 +58,7 @@ All six data directories created, the asset written and readable. That is the ev
 
 The database was checked the same way: inserts, all three vector extensions available, and a successful `CHECKPOINT` to force a real write through to the volume.
 
-## The waiver that nearly got deleted by a bad test
+## The capability that nearly got dropped by a bad test
 
 The database keeps `DAC_OVERRIDE`, and the honest version of how that was confirmed is more useful than the conclusion.
 
@@ -73,21 +73,25 @@ without DAC_OVERRIDE  FAILED — find: '/var/lib/postgresql/data': Permission de
 
 The entrypoint starts as root, and root without `DAC_OVERRIDE` cannot traverse a directory it does not own with mode 700. Docker creates named volumes with ownership that makes the problem disappear, so the wrong mount type produces a clean, confident, wrong answer.
 
-The suppression records that, so the next person to re-derive it does not repeat the shortcut.
+The compose file records that next to the `cap_add`, so the next person to re-derive it does not repeat the shortcut.
 
-## When the number and the posture disagree
+## A warning this page used to carry
 
-Worth knowing before hardening a service that currently has no `cap_drop` at all: dropping capabilities can make the linter's output *worse*.
+Until recently this section said that dropping capabilities could make the linter's output *worse*, and it was right.
 
-A service with no `cap_drop` holds roughly fourteen default capabilities, several of them dangerous, and reports a single CL-0006 **medium**. Convert it to `cap_drop: ALL` plus explicit add-backs and any dangerous capability you keep becomes a CL-0011 **high** — a strictly smaller set of privileges, reported more severely, because the implicit ones were never visible and the explicit one is.
+A service with no `cap_drop` holds roughly fourteen default capabilities, several of them dangerous, and reports a single CL-0006 **medium**. Converting it to `cap_drop: ALL` plus explicit add-backs turned `DAC_OVERRIDE` — one of those same fourteen — into a CL-0011 **high**. A strictly smaller set of privileges, reported more severely, because the implicit ones were never visible and the explicit one was.
 
-That happened on a different stack in this library and is being tracked upstream. It does not apply to this example — the database's `DAC_OVERRIDE` was always explicit — but it is the reason to read a suppression file for what it *permits* rather than counting entries.
+That was a defect in the linter rather than a fact about capabilities, and it is fixed (issue #492). CL-0011 no longer flags Docker's default capabilities, on the same reasoning that already excluded `MKNOD` and `SYS_CHROOT`: the container holds them either way, so flagging them scored the declaration rather than the runtime state. The waiver this stack needed for `DAC_OVERRIDE` is gone from its config as a result — nothing about the deployment changed.
 
-## Two waivers that survived
+Adding back a capability that is **not** a default — `SYS_ADMIN`, `NET_ADMIN`, `SYS_MODULE` — is a genuine escalation above Docker's baseline and still reports HIGH. That is a different situation and the severity is correct there.
+
+The habit is worth keeping even though the bug is gone: read a suppression file for what it *permits*, not for how many entries it has.
+
+## A waiver that survived
 
 Not every waiver on this page was wrong, and it would be a poor lesson if they all were.
 
-`DAC_OVERRIDE` above is real, once tested properly. The **CL-0019** digest-pinning waiver is real too: these images are tracked by an automated update tool through a custom matcher whose pattern ends in a version-tag capture, so appending a digest would silently stop version tracking rather than improve it. That is a genuine tooling constraint, and the correct answer is a documented waiver rather than a pinned digest that quietly freezes updates.
+The **CL-0019** digest-pinning waiver is real: these images are tracked by an automated update tool through a custom matcher whose pattern ends in a version-tag capture, so appending a digest would silently stop version tracking rather than improve it. That is a genuine tooling constraint, and the correct answer is a documented waiver rather than a pinned digest that quietly freezes updates. The `DAC_OVERRIDE` claim above was sound too, once tested properly — it simply no longer needs a waiver to sit behind.
 
 The useful ratio is not "waivers are usually wrong". It is that a waiver nobody has re-tested is *unverified*, and unverified claims fail at whatever rate the original reasoning fails.
 
