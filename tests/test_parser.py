@@ -78,6 +78,35 @@ class TestDuplicateKeys:
         assert data["services"]["web"]["image"] == "nginx"
 
 
+class TestNonStringScalarKeys:
+    """Service names that look like YAML 1.1 literals stay strings (#507).
+
+    Docker/compose-go keeps a key like ``yes`` or ``123`` verbatim and coerces
+    only boolean-typed *values*; the retained YAML 1.1 resolvers otherwise
+    turned a service named ``yes``/``on``/``123``/``null`` into True/int/None,
+    which had no line-map entry and crashed the formatters on a non-string
+    ``Finding.service``.
+    """
+
+    def test_boolean_literal_service_name_stays_string(self) -> None:
+        data, lines = loads("services:\n  yes:\n    image: nginx\n")
+        assert "yes" in data["services"]
+        assert all(isinstance(name, str) for name in data["services"])
+        assert lines["services.yes"] == 2
+
+    def test_numeric_and_null_service_names_stay_strings(self) -> None:
+        data, lines = loads("services:\n  123:\n    image: a\n  null:\n    image: b\n")
+        assert set(data["services"]) == {"123", "null"}
+        assert lines["services.123"] == 2
+        assert lines["services.null"] == 4
+
+    def test_distinct_boolean_names_are_not_duplicates(self) -> None:
+        # ``yes`` and ``on`` both resolved to True and tripped the duplicate
+        # check, dying with a misleading "duplicate key True".
+        data, _lines = loads("services:\n  yes:\n    image: a\n  on:\n    image: b\n")
+        assert set(data["services"]) == {"yes", "on"}
+
+
 class TestOverrideTags:
     """Compose override-file tags (`!reset` / `!override`) parse, not crash."""
 

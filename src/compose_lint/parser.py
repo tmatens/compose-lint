@@ -158,6 +158,24 @@ class LineLoader(yaml.SafeLoader):
         self._seq_lines: dict[int, dict[int, int]] = {}
 
 
+def _mapping_key(loader: LineLoader, key_node: yaml.Node) -> Any:
+    """Construct a mapping key, keeping non-string scalar keys as source text.
+
+    Compose mapping keys (service names and every other key) are always strings;
+    ``docker compose config`` keeps a key like ``yes`` or ``123`` verbatim while
+    coercing only boolean-typed *values*. The retained YAML 1.1 resolvers (see
+    ``_install_scalar_resolvers``) would otherwise turn a service named
+    ``yes``/``on``/``123``/``null`` into ``True``/``int``/``None`` — which gets
+    no line-map entry (line 218's ``isinstance(key, str)`` guard) and later
+    crashes the formatters on the non-string ``Finding.service``. Using the
+    source text matches Docker and keeps keys hashable strings.
+    """
+    key = loader.construct_object(key_node)
+    if not isinstance(key, str) and isinstance(key_node, yaml.ScalarNode):
+        return key_node.value
+    return key
+
+
 def _reject_duplicate_keys(loader: LineLoader, node: yaml.MappingNode) -> None:
     """Raise if a mapping declares the same key twice (issue #277 P2).
 
@@ -176,7 +194,7 @@ def _reject_duplicate_keys(loader: LineLoader, node: yaml.MappingNode) -> None:
     for key_node, _value_node in node.value:
         if key_node.tag == "tag:yaml.org,2002:merge":
             continue  # the `<<` merge directive, not a data key
-        key = loader.construct_object(key_node)
+        key = _mapping_key(loader, key_node)
         try:
             duplicate = key in seen
         except TypeError:
@@ -197,7 +215,7 @@ def _construct_mapping(loader: LineLoader, node: yaml.MappingNode) -> dict[Any, 
     mapping: dict[Any, Any] = {}
     line_map: dict[str, int] = {}
     for key_node, value_node in node.value:
-        key = loader.construct_object(key_node)
+        key = _mapping_key(loader, key_node)
         try:
             hash(key)
         except TypeError as e:
