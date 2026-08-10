@@ -30,17 +30,20 @@ REFERENCES = [OWASP_REF, CIS_REF]
 # Host paths where *write* access is host root, with no further technique. A
 # read-only mount of any of these is disclosure rather than takeover and falls
 # through to CL-0013.
+#
+# A whole-root mount ("/") is deliberately absent: it contains the daemon
+# control socket, so it is host root in *either* mode, not only when writable.
+# CL-0001 owns it, mode-independent — grading a read-only "/" here (or as
+# CL-0013's HIGH disclosure) would under-price the socket it exposes.
 ROOT_EQUIVALENT_PATHS: tuple[str, ...] = (
     "/etc",
     "/root",
     "/boot",
     "/var/lib/docker",
     "/proc",
-    "/",
 )
 
 _GRANTS: dict[str, str] = {
-    "/": "the whole host filesystem — every path below is writable at once",
     "/etc": "cron.d, ld.so.preload, sudoers and shadow — host root on the next "
     "scheduled job or login",
     "/root": "authorized_keys — host root over SSH",
@@ -62,9 +65,10 @@ class WritableHostRootMountRule(BaseRule):
             id="CL-0025",
             name="Root-equivalent host path mounted writable",
             description=(
-                "A writable bind mount of /, /etc, /root, /boot, /var/lib/docker "
+                "A writable bind mount of /etc, /root, /boot, /var/lib/docker "
                 "or /proc gives a container host root through ordinary file "
-                "writes — no exploit and no technique required."
+                "writes — no exploit and no technique required. (A whole-root "
+                "mount is CL-0001's, which owns it in either mode.)"
             ),
             severity=Severity.CRITICAL,
             references=REFERENCES,

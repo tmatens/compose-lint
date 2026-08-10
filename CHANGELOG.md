@@ -34,16 +34,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   branches severity any more, which fixes the SARIF descriptor/finding
   mismatch in #503.
 
+  A whole-root mount (`/`) belongs to CL-0025 (writable subdirectory list) no
+  longer: it contains the daemon control socket, so CL-0001 owns it in either
+  mode. CL-0025 covers `/etc`, `/root`, `/boot`, `/var/lib/docker` and `/proc`.
+
   **Suppression migration.** A `CL-0011` waiver now covers only `NET_ADMIN`,
   `BPF` and `SYS_BOOT`; the other capabilities move to CL-0024 and CL-0027 and
   are no longer covered by it. A `CL-0013` waiver no longer covers a writable
-  root-equivalent path (CL-0025) or a `/run`-family mount (CL-0001). Waivers
-  for CL-0012, CL-0015 and `/var/lib/kubelet` are dead and can be deleted.
+  root-equivalent path (CL-0025) or a `/run`-family mount (CL-0001), and a
+  waiver of a whole-root mount moves to CL-0001 (from CL-0025 when writable, or
+  from CL-0013 when read-only). Waivers for CL-0012, CL-0015 and
+  `/var/lib/kubelet` are dead and can be deleted.
 
 - CL-0001 now flags any mount that exposes a host control socket, including a
   directory that merely contains one — `/run`, `/var/run`, `/run/containerd`,
-  `/run/systemd` — and is mode-independent, because `:ro` applies to the socket
-  file rather than to the read-write API behind it.
+  `/run/systemd`, or the whole root `/` — and is mode-independent, because `:ro`
+  applies to the socket file rather than to the read-write API behind it. A
+  read-only `/` used to be graded CL-0013 HIGH, a tier below the socket it
+  exposes, because CL-0025 declines read-only mounts and CL-0001 deferred the
+  whole-root case to it.
 
 ### Added
 

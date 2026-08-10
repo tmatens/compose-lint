@@ -140,3 +140,17 @@ class TestSocketDirectories:
             findings = self._check(volume)
             assert len(findings) == 1, volume
             assert findings[0].severity == Severity.CRITICAL
+
+    def test_whole_root_mount_fires_in_either_mode(self) -> None:
+        """`/` holds the control sockets, so it is CRITICAL read-only too.
+
+        Read-only `/` used to fall to CL-0013 HIGH: CL-0025 declines a read-only
+        mount and CL-0001 deferred the whole-root case to it, so the socket the
+        mount exposes went a tier under-graded. CL-0001 now owns `/` in both
+        modes.
+        """
+        for volume in ("/:/host", "/:/host:ro"):
+            findings = self._check(volume)
+            assert len(findings) == 1, volume
+            assert findings[0].severity == Severity.CRITICAL
+            assert "control sockets" in findings[0].message

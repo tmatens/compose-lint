@@ -31,7 +31,8 @@ class TestSensitiveMountRule:
         )
 
     def test_writable_root_equivalents_are_not_this_rule(self) -> None:
-        """Writable /etc, /proc, /boot, /root, /var/lib/docker are CL-0025's."""
+        """Writable /etc, /proc, /boot, /root, /var/lib/docker are CL-0025's;
+        a whole-root mount is CL-0001's. None is this rule's."""
         for service in (
             "mounts_proc",
             "mounts_boot",
@@ -65,12 +66,10 @@ class TestSensitiveMountRule:
             assert findings[0].severity == Severity.HIGH
             assert "read-only" in findings[0].message
 
-    def test_readonly_root_filesystem_is_disclosure(self) -> None:
-        """A read-only whole-root mount discloses without granting write."""
-        findings = self._check("mounts_root_filesystem_ro")
-        assert len(findings) == 1
-        assert findings[0].severity == Severity.HIGH
-        assert "read-only" in findings[0].message
+    def test_readonly_whole_root_is_cl0001_not_this_rule(self) -> None:
+        """A read-only whole-root mount exposes the daemon socket, so CL-0001
+        owns it at CRITICAL. It used to fall here and be under-graded to HIGH."""
+        assert self._check("mounts_root_filesystem_ro") == []
 
     def test_detects_multiple(self) -> None:
         # The fixture mounts /etc and /proc, both writable — both CL-0025's.
@@ -93,8 +92,9 @@ class TestSensitiveMountRule:
         findings = self._check("no_volumes")
         assert len(findings) == 0
 
-    def test_long_syntax_writable_binds_are_cl0025(self) -> None:
-        """Both long-syntax forms parse; a writable /etc or / is CL-0025's."""
+    def test_long_syntax_writable_binds_are_not_this_rule(self) -> None:
+        """Both long-syntax forms parse; a writable /etc is CL-0025's and a
+        whole-root mount is CL-0001's — neither is this rule's."""
         for service in (
             "long_syntax_bind",
             "long_syntax_bind_no_type",

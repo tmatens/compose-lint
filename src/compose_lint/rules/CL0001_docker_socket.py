@@ -48,7 +48,10 @@ _RUNTIME_SOCKETS: dict[str, str] = {
 # /run/systemd/private authenticates a container straight into
 # StartTransientUnit — host command execution.
 #
-# Ordered specific-first so the more precise entry supplies the message.
+# Ordered specific-first so the more precise entry supplies the message. "/" is
+# last: a whole-root mount contains every socket below, and is owned here rather
+# than by CL-0025 because it exposes the daemon socket in *either* mode, not
+# only when writable (CL-0025 covers writable mounts only).
 _SOCKET_DIRS: dict[str, str] = {
     "/run/containerd": "the containerd control API, which sits below the "
     "Docker daemon's authorization layer",
@@ -56,6 +59,7 @@ _SOCKET_DIRS: dict[str, str] = {
     "it and drive StartTransientUnit, executing commands on the host",
     "/var/run": "the Docker and containerd control sockets",
     "/run": "the Docker and containerd control sockets",
+    "/": "the Docker and containerd control sockets",
 }
 
 
@@ -69,13 +73,21 @@ def _matched_socket_dir(host_path: str) -> str | None:
     under /run but hold no socket — while missing `/var`, which genuinely
     contains /var/run/docker.sock.
 
+    A whole-root mount is the widest ancestor of all: it contains the sockets in
+    either mode, so it matches here rather than falling to CL-0025 (writable
+    only) or CL-0013 (HIGH disclosure), both of which would under-grade it.
+
     A descendant that *is* a socket is still caught, by the socket-name
     substring match in the caller.
     """
+    if not host_path:
+        return None  # not a bind mount (e.g. a named volume) — no host path
     normalized = host_path.rstrip("/")
     if not normalized:
-        return None  # a whole-root mount is CL-0025's finding
+        return "/" if "/" in _SOCKET_DIRS else None  # a whole-root mount
     for candidate in _SOCKET_DIRS:
+        if candidate == "/":
+            continue
         if normalized == candidate or candidate.startswith(normalized + "/"):
             return candidate
     return None

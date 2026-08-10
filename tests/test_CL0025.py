@@ -40,7 +40,7 @@ class TestWritableHostRootMountRule:
         assert len(meta.references) > 0
 
     def test_detects_each_member_writable(self) -> None:
-        for path in ("/etc", "/root", "/boot", "/var/lib/docker", "/proc", "/"):
+        for path in ("/etc", "/root", "/boot", "/var/lib/docker", "/proc"):
             findings = self._inline(f'"{path}:/host"')
             assert len(findings) == 1, path
             assert findings[0].rule_id == "CL-0025"
@@ -48,8 +48,14 @@ class TestWritableHostRootMountRule:
 
     def test_readonly_is_not_this_rule(self) -> None:
         """`:ro` moves the finding to CL-0013, it does not silence it."""
-        for path in ("/etc", "/root", "/boot", "/var/lib/docker", "/proc", "/"):
+        for path in ("/etc", "/root", "/boot", "/var/lib/docker", "/proc"):
             assert self._inline(f'"{path}:/host:ro"') == [], path
+
+    def test_whole_root_is_cl0001_not_this_rule(self) -> None:
+        """`/` holds the daemon socket, so CL-0001 owns it in both modes — it is
+        not this rule's, in either mode."""
+        assert self._inline('"/:/host"') == []
+        assert self._inline('"/:/host:ro"') == []
 
     def test_timezone_files_are_not_root_equivalent(self) -> None:
         """Under /etc, but writing one changes a clock, not the host's root.
@@ -76,16 +82,14 @@ class TestWritableHostRootMountRule:
         assert len(self._check("mounts_boot")) == 1
         assert len(self._check("mounts_root")) == 1
         assert len(self._check("mounts_var_lib_docker")) == 1
-        assert len(self._check("mounts_root_filesystem")) == 1
+        # mounts_root_filesystem ("/") is CL-0001's now — see test_CL0001.py.
+        assert self._check("mounts_root_filesystem") == []
         assert len(self._check("mounts_multiple")) == 2
         assert len(self._check("mounts_etc_trailing_slash")) == 1
 
     def test_long_syntax_writable(self) -> None:
-        for service in (
-            "long_syntax_bind",
-            "long_syntax_bind_no_type",
-            "long_syntax_root_no_type",
-        ):
+        # long_syntax_root_no_type ("/") is CL-0001's — see test_CL0001.py.
+        for service in ("long_syntax_bind", "long_syntax_bind_no_type"):
             findings = self._check(service)
             assert len(findings) == 1, service
             assert findings[0].severity == Severity.CRITICAL
