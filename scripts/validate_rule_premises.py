@@ -48,6 +48,72 @@ PY_IMAGE = (
 # Rules with nothing to observe in a live container — grounded by source only.
 _NON_RUNTIME = ["CL-0004", "CL-0014", "CL-0015", "CL-0019", "CL-0020", "CL-0021"]
 
+# Docker's default capability set, which is compiled into the daemon and has no
+# flag or daemon.json key. Every capability premise is measured against it.
+DEFAULT_CAPEFF = "00000000a80425fb"
+
+
+def _info(field: str) -> str:
+    """One projected field from ``docker info``.
+
+    Projected rather than dumped: the full ``docker info`` output carries
+    registry and proxy configuration, and nothing here needs it.
+    """
+    proc = subprocess.run(
+        ["docker", "info", "--format", field],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    return proc.stdout.strip()
+
+
+def _posture() -> tuple[bool, str]:
+    """Assert the daemon under test is at the defaults every premise assumes.
+
+    ADR-020 grounds every rule against rootful Docker Engine at its default
+    configuration. A premise measured against a hardened or loosened daemon
+    returns a confidently wrong answer — which is the exact failure mode this
+    suite exists to catch — so the posture is checked before any premise is.
+    """
+    problems: list[str] = []
+
+    opts = _info("{{.SecurityOptions}}")
+    if "seccomp,profile=builtin" not in opts:
+        problems.append("seccomp is not the builtin profile")
+    if "name=apparmor" not in opts and "name=selinux" not in opts:
+        problems.append("no LSM confinement (AppArmor/SELinux) is active")
+    if "name=userns" in opts:
+        problems.append("userns-remap is enabled")
+
+    icc = subprocess.run(
+        [
+            "docker",
+            "network",
+            "inspect",
+            "bridge",
+            "--format",
+            '{{index .Options "com.docker.network.bridge.enable_icc"}}',
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    ).stdout.strip()
+    # Unset is the default (on). Only an explicit "false" is a departure.
+    if icc == "false":
+        problems.append("inter-container communication is disabled (icc=false)")
+
+    _, caps = _run([], ["sh", "-c", "grep ^CapEff /proc/self/status | tr -d '\t'"])
+    if not caps.endswith(DEFAULT_CAPEFF):
+        problems.append(f"capability set is not the default 14 ({caps})")
+
+    _, uid_map = _run([], ["cat", "/proc/self/uid_map"])
+    if uid_map.split()[:2] != ["0", "0"]:
+        problems.append(f"uid namespace is remapped ({uid_map})")
+
+    detail = "; ".join(problems) if problems else f"at defaults — {opts}"
+    return (not problems), detail
+
 
 def _run(args: list[str], cmd: list[str], image: str = IMAGE) -> tuple[int, str]:
     """``docker run --rm <args> <image> <cmd>`` → (returncode, stdout).
@@ -689,8 +755,130 @@ def _t3_drop_unaffected() -> tuple[bool, str]:
     return ok, f"root->nobody drop under nnp rc={rc} uid={out!r}"
 
 
+def _cl0001_ro_socket() -> tuple[bool, str]:
+    """``:ro`` does not neuter the socket — the API answers through it.
+
+    ``:ro`` sets the inode permissions on the socket *file*; the Docker API is
+    read-write over any connection that gets opened, so a read-only mount grants
+    the same control as a read-write one. Uses ``/_ping`` — the smallest
+    read-only endpoint — so the check makes no state-changing API call.
+    """
+    probe = (
+        "import socket;"
+        "s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);"
+        "s.connect('/var/run/docker.sock');"
+        "s.sendall(b'GET /_ping HTTP/1.1\\r\\nHost: docker\\r\\n\\r\\n');"
+        "print(s.recv(64).split(b'\\r\\n')[0].decode())"
+    )
+    _, out = _run(
+        ["-v", "/var/run/docker.sock:/var/run/docker.sock:ro"],
+        ["python", "-c", probe],
+        image=PY_IMAGE,
+    )
+    return ("200 OK" in out), f"ro-mounted socket answered: {out!r}"
+
+
+def _host_block_device() -> str:
+    """Name of a whole-disk block device on the *daemon's* host, or ""."""
+    _, dev = _run(
+        ["-v", "/dev:/hostdev:ro"],
+        [
+            "sh",
+            "-c",
+            "ls /hostdev | grep -E '^(nvme[0-9]+n[0-9]+|sd[a-z]|vd[a-z])$' | head -1",
+        ],
+    )
+    return dev
+
+
+def _cl0016_raw_disk() -> tuple[bool, str]:
+    """A block device mapped via ``devices:`` is readable at default caps.
+
+    This is what puts CL-0016 in the CRITICAL tier: no capability is added, no
+    technique is needed, and the read lands on the disk backing the host
+    filesystem. Reads one sector to /dev/null — nothing is written, and no disk
+    content reaches the output.
+    """
+    dev = _host_block_device()
+    if not dev:
+        return False, "no whole-disk block device found under the daemon host's /dev"
+    _, out = _run(
+        ["--device", f"/dev/{dev}:/dev/{dev}:r"],
+        ["sh", "-c", f"dd if=/dev/{dev} of=/dev/null bs=512 count=1 2>&1 | tail -1"],
+    )
+    return ("512 bytes" in out), f"/dev/{dev} via --device at default caps: {out!r}"
+
+
+def _cl0013_dev_bind_is_gated() -> tuple[bool, str]:
+    """A ``/dev`` bind conveys the nodes but not device-cgroup permission.
+
+    The negative control for ``_cl0016``: same host, same device, same default
+    capabilities — refused through a bind mount, allowed through ``--device``.
+    It is why CL-0013's ``/dev`` member is not equivalent to CL-0016.
+    """
+    dev = _host_block_device()
+    if not dev:
+        return False, "no whole-disk block device found under the daemon host's /dev"
+    _, out = _run(
+        ["-v", "/dev:/hostdev"],
+        [
+            "sh",
+            "-c",
+            f"dd if=/hostdev/{dev} of=/dev/null bs=512 count=1 2>&1 | tail -1",
+        ],
+    )
+    return ("not permitted" in out), f"/dev/{dev} via bind mount: {out!r}"
+
+
+def _cl0025_core_pattern() -> tuple[bool, str]:
+    """An rw ``/proc`` bind makes ``core_pattern`` writable at default caps.
+
+    Docker mounts the container's own ``/proc/sys`` read-only, but a bind mount
+    of the host's ``/proc`` arrives writable — which hands a container the
+    ability to point the host's core-dump handler at a program of its choosing.
+
+    The check writes back the value it just read, so the host's setting is
+    unchanged whether the write is permitted or refused.
+    """
+    script = (
+        "v=$(cat {root}/sys/kernel/core_pattern); "
+        'printf "%s\\n" "$v" > {root}/sys/kernel/core_pattern 2>/dev/null '
+        "&& echo WROTE || echo REFUSED"
+    )
+    _, bound = _run(
+        ["-v", "/proc:/hostproc"], ["sh", "-c", script.format(root="/hostproc")]
+    )
+    _, default = _run([], ["sh", "-c", script.format(root="/proc")])
+    ok = bound == "WROTE" and default == "REFUSED"
+    return ok, f"rw /proc bind={bound!r}, container's own /proc={default!r}"
+
+
+def _cl0026() -> tuple[bool, str]:
+    """Memory and CPU are both unbounded by default; a limit bounds them.
+
+    Docker imposes no default memory or CPU cap, so the absence CL-0026 flags is
+    genuinely the insecure default rather than a hardening preference.
+    """
+    read = "echo $(cat /sys/fs/cgroup/memory.max)/$(cat /sys/fs/cgroup/cpu.max)"
+    _, base = _run([], ["sh", "-c", read])
+    _, limited = _run(["--memory", "64m", "--cpus", "0.5"], ["sh", "-c", read])
+    ok = base.startswith("max/max ") and not limited.startswith("max/")
+    return ok, f"default={base!r} limited={limited!r}"
+
+
+# NOTE: CL-0006's ARP-overwrite leg (ADR-020 Appendix A, row 5) is not yet
+# automated. It needs two containers on a shared user-defined bridge, a
+# raw-socket ARP sender, and a victim whose cache is actively cycling — an
+# orchestration this single-container harness has no shape for. The capability
+# gate underneath it (`_t_net_raw`) *is* checked on every run; the overwrite
+# itself is captured evidence in the ADR until a multi-container harness exists.
 CHECKS: list[tuple[str, str, Callable[[], tuple[bool, str]]]] = [
     ("CL-0001", "docker socket mount is root-equivalent", _cl0001),
+    (
+        "CL-0001",
+        "premise: :ro socket is still a working API endpoint",
+        _cl0001_ro_socket,
+    ),
     ("CL-0002", "privileged grants full caps", _cl0002),
     ("CL-0003", "no-new-privileges off by default", _cl0003),
     ("CL-0005", "bare published port binds all interfaces", _cl0005),
@@ -702,7 +890,13 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool, str]]]] = [
     ("CL-0011", "cap_add adds the capability", _cl0011),
     ("CL-0012", "explicit pids limit takes effect", _cl0012),
     ("CL-0013", "host bind mount exposes host path", _cl0013),
+    (
+        "CL-0013",
+        "premise: /dev bind is device-cgroup gated, unlike --device",
+        _cl0013_dev_bind_is_gated,
+    ),
     ("CL-0016", "device exposes a host device", _cl0016),
+    ("CL-0016", "premise: raw host-disk read at default caps", _cl0016_raw_disk),
     ("CL-0017", "shared propagation is observable", _cl0017),
     ("CL-0018", "explicit user maps to that uid", _cl0018),
     ("CL-0022", "tmpfs noexec by default; :exec removes it", _cl0022),
@@ -729,6 +923,13 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool, str]]]] = [
     ("CL-0018", "map: non-root write to root-owned path", _t18_rootfs_write),
     ("CL-0018", "premise: tmpfs inherits image-dir ownership", _t18_tmpfs_inherits),
     ("CL-0018", "premise: named-volume initial ownership", _t18_volume_ownership),
+    # Premises for rules that land later in this release train.
+    (
+        "CL-0025",
+        "premise: rw /proc bind makes core_pattern writable",
+        _cl0025_core_pattern,
+    ),
+    ("CL-0026", "premise: memory and cpu are unbounded by default", _cl0026),
     # CL-0003 symptom mappings.
     ("CL-0003", "map: setuid bit inert (and silent) under nnp", _t3_setuid_inert),
     ("CL-0003", "premise: root privilege-drop unaffected by nnp", _t3_drop_unaffected),
@@ -784,6 +985,20 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
+
+    ok, detail = _posture()
+    mark = "PASS" if ok else "FAIL"
+    print(f"  [{mark}] posture  daemon is at Docker defaults\n          {detail}")
+    if not ok:
+        print(
+            "\nDAEMON POSTURE CHECK FAILED — refusing to validate premises.\n"
+            "Every rule is grounded against rootful Docker Engine at default\n"
+            "configuration (ADR-020). Measured against this daemon the results\n"
+            "would be confidently wrong, which is the failure mode this suite\n"
+            "exists to catch.",
+            file=sys.stderr,
+        )
+        return 1
 
     failures = []
     for rule_id, label, check in CHECKS:
