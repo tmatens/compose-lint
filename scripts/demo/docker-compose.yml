@@ -2,15 +2,32 @@ services:
   watchtower:
     image: containrrr/watchtower:1.7.1
     read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     deploy:
       resources:
         limits:
           memory: 256M
           cpus: '0.50'
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /home/ops/backups:/backups
+
+  db:
+    image: postgres:16-alpine@sha256:0aafd2ae4b1ec5b3d9e0e0b7f0f1e3ca5e5a2b3c4d5e6f708192a3b4c5d6e7f8
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.00'
+    tmpfs:
+      - /tmp
+      - /run
+    environment:
+      POSTGRES_PASSWORD: hunter2

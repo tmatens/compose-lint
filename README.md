@@ -14,10 +14,12 @@
 
 Static-analysis checks for `docker-compose.yml` and `compose.yaml`, covering privileged containers, unpinned images, host-network sharing, sensitive bind mounts, hard-coded credentials, and more. Full rule documentation lives at **[tmatens.github.io/compose-lint](https://tmatens.github.io/compose-lint/)** (the same pages `--explain` prints offline).
 
-In a scan of 6,444 public Docker Compose files on GitHub, **91% of those that parse had at least one security finding** — and 68% had a finding rated HIGH or CRITICAL. Nearly all skip basic capability restrictions, 52% run images without a pinned digest, and 58% bind ports to all interfaces. compose-lint catches these in CI before they ship. **[Read the full *State of Docker Compose Security* report →](https://tmatens.github.io/compose-lint/state-of-compose/)**
+In a scan of 6,444 public Docker Compose files on GitHub, **91% of those that parse had at least one security finding.** Nearly all skip basic capability restrictions, 52% run images without a pinned digest, and 58% bind ports to all interfaces. compose-lint catches these in CI before they ship. **[Read the full *State of Docker Compose Security* report →](https://tmatens.github.io/compose-lint/state-of-compose/)**
+
+*(The report is pinned to compose-lint 0.7.0. Its severity-tier percentages predate the severity-model rework and are being regenerated; the prevalence figures above are unaffected, since they count findings rather than tiers.)*
 
 <!-- Demo GIF. Regenerate with scripts/demo/ — see scripts/demo/README.md. -->
-![compose-lint scanning a docker-compose.yml: three severity-sorted findings — a CRITICAL mounted Docker socket (CL-0001) leading, with a box-drawing underline, fix block, and reference URL, above a HIGH sensitive host mount (CL-0013) and a MEDIUM image pinned to a tag but not a digest (CL-0019) — then the FAIL verdict, and `compose-lint --explain CL-0001` printing the offline rule docs.](https://raw.githubusercontent.com/tmatens/compose-lint/main/docs/assets/demo.gif)
+![compose-lint scanning a docker-compose.yml with two services: under `service: watchtower`, a CRITICAL mounted Docker socket (CL-0001) with a box-drawing underline, fix block and reference URL, above a MEDIUM image pinned to a tag but not a digest (CL-0019); then under `service: db`, a HIGH plaintext credential (CL-0020) with `POSTGRES_PASSWORD: hunter2` underlined — then the FAIL verdict, and `compose-lint --explain CL-0001` printing the offline rule docs.](https://raw.githubusercontent.com/tmatens/compose-lint/main/docs/assets/demo.gif)
 
 **What it catches:**
 

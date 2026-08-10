@@ -26,13 +26,15 @@ DEMO_DIR = Path(__file__).parent.parent / "scripts" / "demo"
 HERO_FIXTURE = DEMO_DIR / "docker-compose.yml"
 FIX_FIXTURE = DEMO_DIR / "fix-compose.yml"
 
-# What the hero GIF (demo.tape) and its descriptions show, severity-sorted as in
-# the text report: CRITICAL socket mount leading, then the sensitive host mount,
-# then the tag-only image pin. The demo also runs `--explain CL-0001`, so the
-# leading finding's rule id is baked into the tape as well.
+# What the hero GIF (demo.tape) and its descriptions show: one finding per tier
+# across two services, so the cast demonstrates the report's per-service
+# grouping as well as its severity sort. The CRITICAL socket mount leads (the
+# demo also runs `--explain CL-0001`, so that rule id is baked into the tape),
+# the HIGH is a plaintext credential — the finding a viewer understands without
+# knowing anything about containers — and the MEDIUM is the tag-only image pin.
 HERO_EXPECTED = {
     ("CL-0001", Severity.CRITICAL),
-    ("CL-0013", Severity.HIGH),
+    ("CL-0020", Severity.HIGH),
     ("CL-0019", Severity.MEDIUM),
 }
 

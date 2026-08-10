@@ -9,6 +9,13 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
 from compose_lint import __version__
+from compose_lint.attack import (
+    ATTACK_TAXONOMY_GUID,
+    ATTACK_URL,
+    ATTACK_VERSION,
+    RULE_TECHNIQUES,
+    all_techniques,
+)
 from compose_lint.models import Severity
 from compose_lint.rules import get_registered_rules
 
@@ -131,8 +138,57 @@ _SARIF_LEVEL: dict[Severity, str] = {
 }
 
 
+def _build_attack_taxonomy() -> tuple[dict[str, Any], dict[str, int]]:
+    """The ATT&CK taxonomy component, plus technique id -> taxa index.
+
+    Emitted as a SARIF ``toolComponent`` under ``run.taxonomies`` so consumers
+    can pivot findings onto ATT&CK without parsing prose. Rules link to it with
+    ``relationships`` of kind ``relevant`` — deliberately not ``equal``: the
+    rule flags a misconfiguration whose remediation *mitigates* the technique,
+    which is a weaker and more honest claim than identity.
+    """
+    techniques = all_techniques()
+    taxa_index = {technique.id: i for i, technique in enumerate(techniques)}
+    taxonomy = {
+        "name": "MITRE ATT&CK",
+        "version": ATTACK_VERSION,
+        "guid": ATTACK_TAXONOMY_GUID,
+        "informationUri": ATTACK_URL,
+        "organization": "MITRE",
+        "shortDescription": {
+            "text": (
+                "MITRE ATT&CK techniques whose mitigation each rule supports. "
+                "compose-lint performs static analysis, so these are mitigation "
+                "coverage, not detections."
+            )
+        },
+        "isComprehensive": False,
+        "taxa": [
+            {
+                "id": technique.id,
+                "name": technique.name,
+                "shortDescription": {
+                    "text": (
+                        f"{technique.name} ({technique.tactic})"
+                        + (
+                            " — Enterprise/Linux technique, not on the "
+                            "Containers matrix"
+                            if technique.enterprise
+                            else ""
+                        )
+                    )
+                },
+                "helpUri": technique.url,
+            }
+            for technique in techniques
+        ],
+    }
+    return taxonomy, taxa_index
+
+
 def _build_rules(
     severity_overrides: dict[str, Severity] | None = None,
+    taxa_index: dict[str, int] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """Build SARIF rule definitions from the rule registry.
 
@@ -147,6 +203,7 @@ def _build_rules(
     same finding (issue #279 S-b).
     """
     overrides = severity_overrides or {}
+    taxa_index = taxa_index if taxa_index is not None else {}
     rules: list[dict[str, Any]] = []
     index_map: dict[str, int] = {}
 
@@ -184,6 +241,23 @@ def _build_rules(
             help_lines = [meta.description, "", "References:"]
             help_lines.extend(f"- {ref}" for ref in meta.references)
             rule_obj["help"] = {"text": "\n".join(help_lines)}
+
+        techniques = RULE_TECHNIQUES.get(meta.id, ())
+        if techniques:
+            rule_obj["relationships"] = [
+                {
+                    "target": {
+                        "id": technique.id,
+                        "index": taxa_index[technique.id],
+                        "toolComponent": {
+                            "name": "MITRE ATT&CK",
+                            "guid": ATTACK_TAXONOMY_GUID,
+                        },
+                    },
+                    "kinds": ["relevant"],
+                }
+                for technique in techniques
+            ]
 
         rules.append(rule_obj)
 
@@ -246,7 +320,8 @@ def format_findings(
     caller gates whether to pass ``fixes`` at all (experimental until the ``fix``
     feature is promoted), so the default output shape is unchanged.
     """
-    rules, index_map = _build_rules()
+    _taxonomy, taxa_index = _build_attack_taxonomy()
+    rules, index_map = _build_rules(taxa_index=taxa_index)
     results: list[dict[str, Any]] = []
     # Match edits to findings on a stable logical key rather than id(): the CLI
     # happens to pass the same list objects to both calls today, but any future
@@ -312,7 +387,8 @@ def build_sarif_log(
     rule descriptors so their advertised severity matches the per-result level
     (issue #279 S-b).
     """
-    rules, _ = _build_rules(severity_overrides)
+    taxonomy, taxa_index = _build_attack_taxonomy()
+    rules, _ = _build_rules(severity_overrides, taxa_index)
 
     working_dir_uri = _working_dir_uri()
     invocation: dict[str, Any] = {
@@ -348,6 +424,7 @@ def build_sarif_log(
                         "rules": rules,
                     },
                 },
+                "taxonomies": [taxonomy],
                 "originalUriBaseIds": {_URI_BASE_ID: {"uri": working_dir_uri}},
                 "invocations": [invocation],
                 "results": all_results,

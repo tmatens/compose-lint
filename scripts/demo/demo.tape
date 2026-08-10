@@ -11,12 +11,13 @@ Require compose-lint
 # off line wrapping so compose-lint's long finding and reference lines clip at
 # the right edge instead of wrapping raggedly — the structured left side
 # (severity, rule id, message, underline, fix/ref) stays clean. Height gives
-# 28 rows at this font, one more than the lint step needs (command + 25 output
-# lines + prompt), so the banner stays on screen.
+# 32 rows at this font, one more than the lint step needs (command + 29 output
+# lines + prompt), so the banner stays on screen. The fixture has two services,
+# so the cast also shows the per-service grouping the report uses.
 Set Shell bash
 Set FontSize 22
 Set Width 1500
-Set Height 880
+Set Height 1000
 Set Padding 20
 Set Theme "Dracula"
 Set TypingSpeed 45ms

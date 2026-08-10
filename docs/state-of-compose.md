@@ -68,7 +68,23 @@ The MEDIUM-heavy distribution is a property of compose-lint's rule design: the t
 
 **Why LOW is almost empty.** The 23 LOW findings (0.0%) are not a sign that compose files get the small things right — they are an artifact of the rule set. Of the 22 rules shipping at the time of this run, two are LOW — [CL-0015](rules/CL-0015.md) (healthcheck disabled) and [CL-0022](rules/CL-0022.md) (tmpfs re-enables exec/suid/dev) — and both fire only when a file *explicitly* opts out of a default, a deliberate and uncommon act rather than an omission. The severity floor is otherwise MEDIUM by design, because the tool's scope is security misconfiguration rather than style or hygiene nits. Read "0.0% LOW" as a statement about what compose-lint chooses to flag, not as a clean bill of health.
 
-> **Superseded by the severity-model rework.** Several rules that fire on most files are moving to LOW — CL-0007 (`read_only` absent) alone fires on 90.8% of files — which inverts this distribution: LOW becomes the largest tier by finding count and the "MEDIUM-heavy" reading below no longer holds. This section will be regenerated against the new severities; until then, treat the tier percentages on this page as describing the pre-rework model.
+> **The severity tiers on this page are superseded.** The severity-model rework
+> has landed, and it moves the tier of rules that fire on most files: CL-0007
+> (`read_only` absent, 90.8% of files) and CL-0017 went to LOW, CL-0005 (57.8%)
+> went to MEDIUM, CL-0016 went to CRITICAL, and CL-0026 — a new near-universal
+> MEDIUM — did not exist when this run was taken. The distribution below
+> inverts: LOW becomes the largest tier by finding count, and the "MEDIUM-heavy"
+> reading no longer holds. Two rules counted here (CL-0012, CL-0015) have since
+> been removed, and CL-0011 and CL-0013 have each been split.
+>
+> **What survives unchanged:** the prevalence figures — how many files carry a
+> given finding — because they count rule hits rather than tiers. The 91%
+> headline, the per-rule hit rates and the per-tier breakdowns are all still
+> accurate for the rules that still exist.
+>
+> Regenerating this report needs a fresh corpus run; until then, read every
+> *severity* on this page as describing compose-lint 0.7.0's model, not the
+> current one.
 
 ## Per-tier breakdown
 
@@ -137,7 +153,7 @@ Over half of all parsed files publish at least one port to `0.0.0.0`. The image-
 | [CL-0020](rules/CL-0020.md) Credential-shaped env key with literal value | HIGH | 1,230 | 19.6% |
 | [CL-0013](rules/CL-0013.md) Sensitive host path mounted | HIGH (CRITICAL when `/`) | 649 | 10.4% |
 | [CL-0001](rules/CL-0001.md) Docker socket mounted | CRITICAL | 399 | 6.4% |
-| [CL-0011](rules/CL-0011.md) Dangerous capabilities added | HIGH (CRITICAL when `cap_add: ALL`) | 258 | 4.1% |
+| [CL-0011](rules/CL-0011.md) Dangerous capabilities added | HIGH (CRITICAL when `cap_add: ALL`) — since split into CL-0011/CL-0024/CL-0027 | 258 | 4.1% |
 
 These are the rules where a finding indicates an *active* dangerous configuration, not a missing flag. CL-0020 is by far the most common: ~20% of files commit a literal value to an environment variable that looks like a credential (e.g., `DB_PASSWORD: hunter2`). CL-0001 (Docker socket mounted) is the canonical container-escape vector and appears on 6.4% of parsed files; in the `popular` tier specifically it appears on 8.1%.
 

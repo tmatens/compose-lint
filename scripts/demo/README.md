@@ -98,3 +98,17 @@ could land on the blink's off-phase and freeze a cursorless screen for ~2s.
 `render.sh` passes `--min-seconds` per cast so that if a future VHS really does
 collapse the timings, the render fails instead of shipping a GIF that flashes
 past unreadably.
+
+## Regenerating after the severity-model release
+
+Both casts are **stale on this branch and cannot be fixed here.** The toolchain
+image installs compose-lint from PyPI (pinned in `requirements.in`), so a cast
+always shows a *released* version — that is deliberate, and it means a change to
+rule output can only be re-recorded once it has shipped.
+
+Both fixtures, both tapes, the test expectations and the README alt text already
+describe the post-release output. After publishing, follow the demo step in
+`docs/RELEASING.md`: bump the `compose-lint==` pin, recompile the lock, run
+`render.sh` for **both** casts, and check neither screen scrolled — the hero
+tape grew to 32 rows for a second service, and `fix.tape` to 25 for an extra
+caveat line.
