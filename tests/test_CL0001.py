@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from compose_lint.models import Severity
 from compose_lint.parser import load_compose, loads
 from compose_lint.rules.CL0001_docker_socket import DockerSocketRule
 
@@ -88,3 +89,54 @@ class TestDockerSocketRule:
         assert meta.id == "CL-0001"
         assert meta.severity.value == "critical"
         assert len(meta.references) > 0
+
+
+class TestSocketDirectories:
+    """Mounting a directory that *holds* a socket exposes it too.
+
+    The matcher's blind spot before the broadening: `/run` hands over both
+    daemon sockets without naming either. The direction of the match is the
+    thing worth pinning — a mount counts when it is, or is an ancestor of, a
+    socket-holding directory. Matching descendants instead reported `/run/myapp`
+    as exposing the daemon and missed `/var`, which really does contain
+    `/var/run/docker.sock`.
+    """
+
+    def setup_method(self) -> None:
+        self.rule = DockerSocketRule()
+
+    def _check(self, volume: str) -> list:
+        data, lines = loads(
+            f"services:\n  a:\n    image: x\n    volumes:\n      - {volume}\n"
+        )
+        return list(self.rule.check("a", data["services"]["a"], data, lines))
+
+    def test_socket_holding_directories_fire(self) -> None:
+        for path in ("/run", "/var/run", "/run/containerd", "/run/systemd"):
+            findings = self._check(f"{path}:/x")
+            assert len(findings) == 1, path
+            assert findings[0].severity == Severity.CRITICAL
+
+    def test_ancestor_of_a_socket_directory_fires(self) -> None:
+        """/var holds /var/run/docker.sock — previously missed entirely."""
+        findings = self._check("/var:/x")
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.CRITICAL
+
+    def test_sibling_runtime_dirs_do_not_fire(self) -> None:
+        """Under /run, but holding no socket — a false CRITICAL if matched."""
+        for path in ("/run/myapp", "/run/user/1000", "/run/dbus"):
+            assert self._check(f"{path}:/x") == [], path
+
+    def test_systemd_private_socket_named_directly(self) -> None:
+        """It is not a *.sock, so the name match needs its own marker."""
+        findings = self._check("/run/systemd/private:/x")
+        assert len(findings) == 1
+        assert "systemd" in findings[0].message
+
+    def test_mode_independent(self) -> None:
+        """`:ro` applies to the socket file, not to the API behind it."""
+        for volume in ("/run:/x", "/run:/x:ro", "/var/run/docker.sock:/x:ro"):
+            findings = self._check(volume)
+            assert len(findings) == 1, volume
+            assert findings[0].severity == Severity.CRITICAL

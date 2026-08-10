@@ -36,6 +36,9 @@ _RUNTIME_SOCKETS: dict[str, str] = {
     "containerd.sock": "containerd",
     "crio.sock": "CRI-O",
     "podman.sock": "Podman",
+    # systemd's private socket is not named "*.sock"; a container that mounts it
+    # can authenticate and drive StartTransientUnit — host command execution.
+    "systemd/private": "systemd",
 }
 
 # Directories that *contain* a control socket on a stock Docker host. Mounting
@@ -57,12 +60,23 @@ _SOCKET_DIRS: dict[str, str] = {
 
 
 def _matched_socket_dir(host_path: str) -> str | None:
-    """Return the socket-holding directory ``host_path`` is at or under."""
+    """Return the socket-holding directory this mount exposes, if any.
+
+    A mount exposes a socket when it **is** a socket-holding directory or an
+    **ancestor** of one. The direction matters and the first draft had it
+    backwards, matching descendants instead: that reported `/run/myapp` and
+    `/run/user/1000` as exposing the daemon socket, which is false — they are
+    under /run but hold no socket — while missing `/var`, which genuinely
+    contains /var/run/docker.sock.
+
+    A descendant that *is* a socket is still caught, by the socket-name
+    substring match in the caller.
+    """
     normalized = host_path.rstrip("/")
     if not normalized:
         return None  # a whole-root mount is CL-0025's finding
     for candidate in _SOCKET_DIRS:
-        if normalized == candidate or normalized.startswith(candidate + "/"):
+        if normalized == candidate or candidate.startswith(normalized + "/"):
             return candidate
     return None
 
