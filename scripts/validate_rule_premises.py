@@ -934,25 +934,28 @@ _PERF_PROBE = (
 
 
 def _t_perfmon() -> tuple[bool, str]:
-    """PERFMON's reach is a function of the host's ``perf_event_paranoid``.
+    """PERFMON opens a system-wide ``perf_event_open``; without it, nothing.
 
-    A fixed assertion cannot work here. At the grounded kernel default of 2 the
-    capability opens a system-wide ``perf_event_open`` covering host processes;
-    at Debian's hardened 3 it opens nothing, because that value demands
-    CAP_SYS_ADMIN. Asserting either outcome alone would fail on half the hosts
-    this suite legitimately runs on -- including the one it usually runs on.
+    That is the premise CL-0027 prices its host-read member on, asserted at the
+    grounded posture (ADR-020: upstream kernel defaults), where ``perfmon_capable()``
+    lets the capability bypass ``perf_event_paranoid`` at any level.
 
-    So the check reads the sysctl and asserts the outcome *for that value*,
-    which is a true statement on any host and lands the setting's assertion
-    with the check that depends on it (ADR-020).
+    An earlier version of this check tried to infer the expected result from
+    the sysctl value -- grant at <= 2, deny above -- and that is unsound. The
+    value is not predictive: measured, a CI runner at ``perf_event_paranoid=4``
+    **granted**, while Debian 13 at 3 **denied**, and Arch at 2 granted. What
+    actually decides it is whether the kernel carries the downstream patch that
+    demands CAP_SYS_ADMIN instead of CAP_PERFMON, and that is not visible in
+    the number.
+
+    So this asserts the upstream behaviour plainly. A failure here means the
+    daemon's host carries that downstream hardening, not that the premise is
+    wrong -- the message says so, and names the sysctl for triage.
     """
     _, paranoid = _run([], ["cat", "/proc/sys/kernel/perf_event_paranoid"])
-    paranoid = paranoid.strip()
-    try:
-        level = int(paranoid)
-    except ValueError:
-        return False, f"could not read perf_event_paranoid: {paranoid!r}"
-    _, denied = _run(["--cap-drop", "ALL"], ["python", "-c", _PERF_PROBE], image=PY_IMAGE)
+    _, denied = _run(
+        ["--cap-drop", "ALL"], ["python", "-c", _PERF_PROBE], image=PY_IMAGE
+    )
     _, granted = _run(
         ["--cap-drop", "ALL", "--cap-add", "PERFMON"],
         ["python", "-c", _PERF_PROBE],
@@ -960,13 +963,17 @@ def _t_perfmon() -> tuple[bool, str]:
     )
     no_cap = "PERF_DENIED" in denied
     with_cap = "PERF_OK" in granted
-    if level <= 2:
-        ok, expected = (no_cap and with_cap), "capability grants system-wide perf"
-    else:
-        ok, expected = (no_cap and not with_cap), "hardened: capability grants nothing"
+    ok = no_cap and with_cap
+    note = (
+        ""
+        if ok
+        else " -- this host carries downstream perf hardening (CAP_SYS_ADMIN "
+        "required instead of CAP_PERFMON), so it cannot validate this premise; "
+        "the reach itself is not in question"
+    )
     return ok, (
-        f"perf_event_paranoid={level} ({expected}); "
-        f"without PERFMON={denied.strip()!r} with PERFMON={granted.strip()!r}"
+        f"perf_event_paranoid={paranoid.strip()}; without PERFMON="
+        f"{denied.strip()!r} with PERFMON={granted.strip()!r}{note}"
     )
 
 
@@ -1035,7 +1042,7 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool, str]]]] = [
     ("CL-0027", "premise: SYS_PTRACE traces a different-uid process", _t_sys_ptrace),
     (
         "CL-0027",
-        "premise: PERFMON reach matches the host perf_event_paranoid",
+        "premise: PERFMON opens system-wide perf, nothing without it",
         _t_perfmon,
     ),
     (
