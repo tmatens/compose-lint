@@ -919,6 +919,57 @@ def _t_dac_read_search() -> tuple[bool, str]:
     return ok, f"without={denied!r}; with={allowed!r}"
 
 
+_PERF_PROBE = (
+    "import ctypes,struct,os,sys\n"
+    "libc=ctypes.CDLL('libc.so.6',use_errno=True)\n"
+    "b=bytearray(128)\n"
+    "struct.pack_into('<I',b,0,1)\n"      # PERF_TYPE_SOFTWARE
+    "struct.pack_into('<I',b,4,128)\n"    # attr size
+    "a=(ctypes.c_char*128).from_buffer(b)\n"
+    "ctypes.set_errno(0)\n"
+    # pid=-1, cpu=0 -> system-wide, kernel samples included
+    "fd=libc.syscall(298,ctypes.byref(a),-1,0,-1,0)\n"
+    "print('PERF_OK' if fd>=0 else 'PERF_DENIED')\n"
+)
+
+
+def _t_perfmon() -> tuple[bool, str]:
+    """PERFMON's reach is a function of the host's ``perf_event_paranoid``.
+
+    A fixed assertion cannot work here. At the grounded kernel default of 2 the
+    capability opens a system-wide ``perf_event_open`` covering host processes;
+    at Debian's hardened 3 it opens nothing, because that value demands
+    CAP_SYS_ADMIN. Asserting either outcome alone would fail on half the hosts
+    this suite legitimately runs on -- including the one it usually runs on.
+
+    So the check reads the sysctl and asserts the outcome *for that value*,
+    which is a true statement on any host and lands the setting's assertion
+    with the check that depends on it (ADR-020).
+    """
+    _, paranoid = _run([], ["cat", "/proc/sys/kernel/perf_event_paranoid"])
+    paranoid = paranoid.strip()
+    try:
+        level = int(paranoid)
+    except ValueError:
+        return False, f"could not read perf_event_paranoid: {paranoid!r}"
+    _, denied = _run(["--cap-drop", "ALL"], ["python", "-c", _PERF_PROBE], image=PY_IMAGE)
+    _, granted = _run(
+        ["--cap-drop", "ALL", "--cap-add", "PERFMON"],
+        ["python", "-c", _PERF_PROBE],
+        image=PY_IMAGE,
+    )
+    no_cap = "PERF_DENIED" in denied
+    with_cap = "PERF_OK" in granted
+    if level <= 2:
+        ok, expected = (no_cap and with_cap), "capability grants system-wide perf"
+    else:
+        ok, expected = (no_cap and not with_cap), "hardened: capability grants nothing"
+    return ok, (
+        f"perf_event_paranoid={level} ({expected}); "
+        f"without PERFMON={denied.strip()!r} with PERFMON={granted.strip()!r}"
+    )
+
+
 # NOTE: CL-0006's ARP-overwrite leg (ADR-020 Appendix A, row 5) is not yet
 # automated. It needs two containers on a shared user-defined bridge, a
 # raw-socket ARP sender, and a victim whose cache is actively cycling — an
@@ -982,6 +1033,11 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool, str]]]] = [
     ),
     ("CL-0026", "premise: memory and cpu are unbounded by default", _cl0026),
     ("CL-0027", "premise: SYS_PTRACE traces a different-uid process", _t_sys_ptrace),
+    (
+        "CL-0027",
+        "premise: PERFMON reach matches the host perf_event_paranoid",
+        _t_perfmon,
+    ),
     (
         "CL-0027",
         "premise: DAC_READ_SEARCH bypasses an in-container read check",
