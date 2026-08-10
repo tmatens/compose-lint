@@ -259,8 +259,10 @@ class TestSarifDescriptorFixes:
         return next(r for r in rules if r["id"] == rule_id)
 
     def test_helpuri_omitted_for_cis_only_rule(self) -> None:
-        # CL-0012's only reference is CIS prose, not a URI (issue #279 S-a).
-        rule = self._rule(build_sarif_log([]), "CL-0012")
+        # A rule whose only reference is CIS prose, not a URI (issue #279 S-a).
+        # CL-0012 was the original subject; it was dropped, and CL-0016 is now
+        # the CIS-prose-only rule.
+        rule = self._rule(build_sarif_log([]), "CL-0016")
         assert "helpUri" not in rule
         # The prose still appears in help.text.
         assert "CIS" in rule["help"]["text"]

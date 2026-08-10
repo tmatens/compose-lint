@@ -34,28 +34,28 @@ class TestHostNamespaceRule:
         assert len(findings) == 1
         assert "IPC namespace" in findings[0].message
 
-    def test_detects_userns_host(self) -> None:
-        data, lines = load_compose(FIXTURES / "insecure_host_namespace.yml")
-        findings = list(
-            self.rule.check("userns_host", data["services"]["userns_host"], data, lines)
-        )
-        assert len(findings) == 1
-        assert "user namespace" in findings[0].message
+    def test_uts_and_userns_no_longer_flagged(self) -> None:
+        """Both are no-ops under the grounded posture, so both were dropped.
 
-    def test_detects_uts_host(self) -> None:
+        `uts: host` cannot change the hostname — sethostname() needs
+        CAP_SYS_ADMIN, which is not in Docker's default set. `userns_mode: host`
+        only means anything against a --userns-remap daemon, and rules are
+        scored against a daemon at defaults (ADR-020). Flagging a directive that
+        changes nothing is the failure mode that removed CL-0023.
+        """
         data, lines = load_compose(FIXTURES / "insecure_host_namespace.yml")
-        findings = list(
-            self.rule.check("uts_host", data["services"]["uts_host"], data, lines)
-        )
-        assert len(findings) == 1
-        assert "UTS namespace" in findings[0].message
+        for service in ("userns_host", "uts_host"):
+            findings = list(
+                self.rule.check(service, data["services"][service], data, lines)
+            )
+            assert findings == [], service
 
-    def test_detects_all_three(self) -> None:
+    def test_detects_both_remaining_namespaces(self) -> None:
         data, lines = load_compose(FIXTURES / "insecure_host_namespace.yml")
         findings = list(
             self.rule.check("all_host", data["services"]["all_host"], data, lines)
         )
-        assert len(findings) == 3
+        assert len(findings) == 2
 
     def test_no_namespace_sharing_clean(self) -> None:
         data, lines = load_compose(FIXTURES / "insecure_host_namespace.yml")

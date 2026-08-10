@@ -35,25 +35,21 @@ _NAMESPACE_CHECKS: list[tuple[str, str, str, str]] = [
         ),
         "IPC namespace. The container can access host shared memory segments.",
     ),
-    (
-        "userns_mode",
-        "host",
-        (
-            "CIS Docker Benchmark 5.31 — Ensure that the host's user "
-            "namespaces are not shared"
-        ),
-        "user namespace. UID/GID mapping between container and host is disabled.",
-    ),
-    (
-        "uts",
-        "host",
-        (
-            "CIS Docker Benchmark 5.21 — Ensure that the host's UTS "
-            "namespace is not shared"
-        ),
-        "UTS namespace. The container can change the host's hostname.",
-    ),
 ]
+
+# uts: host and userns_mode: host were removed — both are no-ops under the
+# grounded posture (ADR-020), and flagging a directive that changes nothing is
+# the CL-0023 failure mode.
+#
+#   uts: host        — sethostname() needs CAP_SYS_ADMIN, which is not in
+#                      Docker's default set, so the container reads the host's
+#                      hostname but cannot change it. Verified: the call is
+#                      refused even when setting the hostname to its current
+#                      value.
+#   userns_mode: host — only meaningful against a daemon running with
+#                      --userns-remap, and the grounded posture is a daemon at
+#                      defaults, where there is no remapping to opt out of.
+#                      /proc/self/uid_map is identical with and without it.
 
 
 @register_rule
@@ -66,9 +62,9 @@ class HostNamespaceRule(BaseRule):
             id="CL-0010",
             name="Host namespace sharing",
             description=(
-                "Sharing host namespaces (PID, IPC, user, UTS) breaks container "
-                "isolation. The container gains visibility into or control over "
-                "host-level resources."
+                "Sharing the host's PID or IPC namespace breaks container "
+                "isolation: the container sees and can signal every host "
+                "process, or reaches host shared-memory segments."
             ),
             severity=Severity.HIGH,
             references=[

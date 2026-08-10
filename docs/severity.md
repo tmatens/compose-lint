@@ -176,6 +176,10 @@ and leave the override with no exit condition. Where a frequent rule genuinely
 should ship lower, it is nearly always because the matcher over-covers —
 `detection-precision`, which names something fixable.
 
+No row currently carries `pending-split` or `pending-move`: the splits landed
+and the relabels with them, so every remaining override is a standing decision
+rather than a step in a migration.
+
 Every override row carries a reason **and** a link, both enforced by
 `tests/test_severity_matrix.py`. An override is a reviewable decision; a
 re-chosen cell is not.
@@ -244,10 +248,8 @@ link. `tests/test_severity_matrix.py` enforces all four properties.
 | [CL-0009](rules/CL-0009.md) | A | Second flaw | Cross-container | — | HIGH | HIGH | — |
 | [CL-0010](rules/CL-0010.md) | A | Technique | Cross-container | — | HIGH | HIGH | — |
 | [CL-0011](rules/CL-0011.md) | A | Technique | Cross-container | — | HIGH | HIGH | — |
-| [CL-0012](rules/CL-0012.md) | A | Second flaw | Single container | availability-only | LOW | MEDIUM | `pending-move` — premise refuted; removal not yet landed ([CL-0012](rules/CL-0012.md)) |
 | [CL-0013](rules/CL-0013.md) | A | Direct | Host | read-only | HIGH | HIGH | — |
 | [CL-0014](rules/CL-0014.md) | A | Removes a mitigation | Single container | — | LOW | LOW | — |
-| [CL-0015](rules/CL-0015.md) | A | Removes a mitigation | Single container | — | LOW | LOW | — |
 | [CL-0016](rules/CL-0016.md) | A | Direct | Host | — | CRITICAL | CRITICAL | — |
 | [CL-0017](rules/CL-0017.md) | A | Second flaw | Single container | read-only | LOW | LOW | — |
 | [CL-0018](rules/CL-0018.md) | A | Second flaw | Single container | — | MEDIUM | MEDIUM | — |
@@ -351,9 +353,7 @@ files showed several of these never firing). That is the design: they trade
 frequency for precision against deeply dangerous configurations, and a zero-hit
 run does not mean the rule is broken.
 
-- **CL-0012** — `pids_limit: 0` or `-1` (cgroup PID limit disabled)
 - **CL-0014** — `logging.driver: none`
-- **CL-0015** — `healthcheck.disable: true` or `test: ["NONE"]`
 - **CL-0016** — `devices:` mapping a sensitive host device (e.g. `/dev/mem`, `/dev/kmem`)
 - **CL-0017** — `volumes:` using `:rshared` (shared mount propagation)
 - **CL-0022** — `tmpfs` mount passing `exec`, `suid`, or `dev` (re-enabling Docker's default `noexec,nosuid,nodev`)

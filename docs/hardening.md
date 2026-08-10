@@ -21,7 +21,7 @@ docker run --rm \
 | `--security-opt no-new-privileges:true` | CL-0003 |
 | `--cap-drop ALL` | CL-0006 |
 | `--read-only` | CL-0007 |
-| `--pids-limit 256` | CL-0012 (defense-in-depth; rule fires only on `0`/`-1`) |
+| `--memory 256m --cpus 0.5` | CL-0026 |
 | `--user 65532:65532` | CL-0018 (matches the image's existing default) |
 
 `--network none` and `:ro` on the bind mount are extra hardening — compose-lint never reaches the network and only reads its inputs.

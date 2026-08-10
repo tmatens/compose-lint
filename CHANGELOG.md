@@ -7,6 +7,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING — the severity model was rebuilt, and rule ids moved with it.**
+  Severities are now *derived* from a documented two-axis matrix under a stated
+  attacker baseline and a stated Docker posture, and any rule shipping a
+  different value declares an override from a closed reason list. See
+  `docs/severity.md`, [ADR-020](docs/adr/020-severity-scoping-and-overrides.md),
+  [ADR-021](docs/adr/021-critical-tier-posture.md) and
+  [ADR-022](docs/adr/022-threat-model-grounding.md).
+
+  **Severity changes:** CL-0016 HIGH → CRITICAL; CL-0005 HIGH → MEDIUM;
+  CL-0007, CL-0014 and CL-0017 MEDIUM → LOW. Only CL-0005 crosses the default
+  `--fail-on high` gate: a file whose only finding at or above HIGH was an
+  all-interfaces port bind now passes. That is deliberate — CI stops failing on
+  intended-public exposure. Use `--fail-on medium`, or override CL-0005 back to
+  HIGH in `.compose-lint.yml`, to keep the old behaviour.
+
+  **Rules split.** `cap_add` is now three rules by what the capability grants:
+  CL-0024 (CRITICAL: `ALL`, `SYS_ADMIN`, `SYS_MODULE`, `SYS_RAWIO`), CL-0011
+  (HIGH, unchanged id: `NET_ADMIN`, `BPF`, `SYS_BOOT`) and CL-0027 (MEDIUM:
+  `SYS_PTRACE`, `PERFMON`, `SYS_TIME`, `DAC_READ_SEARCH`). Host paths are two:
+  CL-0025 (CRITICAL) for writable mounts of `/`, `/etc`, `/root`, `/boot`,
+  `/var/lib/docker` and `/proc`, and CL-0013 (HIGH, unchanged id) for `/sys`,
+  `/dev`, `/home` and read-only mounts of CL-0025's paths. Neither rule
+  branches severity any more, which fixes the SARIF descriptor/finding
+  mismatch in #503.
+
+  **Suppression migration.** A `CL-0011` waiver now covers only `NET_ADMIN`,
+  `BPF` and `SYS_BOOT`; the other capabilities move to CL-0024 and CL-0027 and
+  are no longer covered by it. A `CL-0013` waiver no longer covers a writable
+  root-equivalent path (CL-0025) or a `/run`-family mount (CL-0001). Waivers
+  for CL-0012, CL-0015 and `/var/lib/kubelet` are dead and can be deleted.
+
+- CL-0001 now flags any mount that exposes a host control socket, including a
+  directory that merely contains one — `/run`, `/var/run`, `/run/containerd`,
+  `/run/systemd` — and is mode-independent, because `:ro` applies to the socket
+  file rather than to the read-write API behind it.
+
+### Added
+
+- **CL-0026 — no memory or CPU resource limits** (MEDIUM). Docker imposes
+  neither by default: a container's `memory.max` is `max` and its `cpu.max` is
+  `max 100000` unless a limit is set. Fires when a service declares no memory
+  limit, no CPU limit, or neither, and names which is missing. Reservations
+  (`mem_reservation`, `cpu_shares`) express priority under contention and do
+  not satisfy it; `cpu_quota` does. Covers both halves of ATT&CK T1496 Resource
+  Hijacking — the memory-exhaustion denial of service and the CPU-bound
+  cryptomining that a memory limit does not bound at all.
+- Every rule page now carries a derivation block — baseline, precondition,
+  impact, qualifier, derived, shipped, and an **Evidence** line naming a premise
+  check or a captured observation. A test asserts the page and the severity
+  table state the same derivation.
+- `scripts/validate_rule_premises.py` asserts the daemon under test is at
+  Docker's defaults before measuring anything, and aborts if it is not — a
+  premise measured against a hardened or loosened daemon returns a confidently
+  wrong answer. Five new premise checks: a `:ro` socket is still a working API
+  endpoint, a raw host-disk read at default capabilities, the `/dev`-bind
+  negative control for it, `core_pattern` writable through an rw `/proc` bind,
+  and memory/CPU unbounded by default.
+
+### Removed
+
+- **CL-0012 (PIDs cgroup limit disabled)** — the premise does not hold. On the
+  grounded target, `pids_limit: -1`, `pids_limit: 0` and omitting the key all
+  produce the same `pids.max` (systemd's `DefaultTasksMax`), so the explicit
+  opt-out the rule flagged does not leave the process count unbounded.
+- **CL-0015 (healthcheck disabled)** — no runtime delta, and its citations
+  mandate the case it declines to flag.
+- **`uts: host` and `userns_mode: host`** from CL-0010. Both are no-ops under
+  the grounded posture: `sethostname()` needs `CAP_SYS_ADMIN`, which is not in
+  Docker's default set, and `userns_mode` only means anything against a
+  `--userns-remap` daemon.
+- **`/var/lib/kubelet`** from CL-0013 — its danger is entirely conditional on
+  Kubernetes being present, so it cannot be premise-checked on the grounded
+  target.
+
+  The ids CL-0012, CL-0015 and CL-0023 stay fallow and will not be reused.
+
+### Fixed
+
+- Fourteen false claims across the rule docs, each re-verified against a live
+  daemon. The worst was CL-0006's documented `## Fix`, which crash-looped:
+  `cap_drop: [ALL]` plus `cap_add: [NET_BIND_SERVICE]` exits with
+  `chown("/var/cache/nginx/client_temp") failed (Operation not permitted)`.
+  Also corrected: seccomp and AppArmor *do* survive `execve` of a setuid binary;
+  `bpf` and `init_module` are capability-gated rather than blocked outright;
+  `SYS_BOOT` does not load a kernel via kexec; `pid: host` does not expose
+  `/proc/[pid]/environ` at default capabilities; `uts: host` cannot change the
+  hostname; a `/dev` bind is not equivalent to `devices:`; `read_only` does not
+  prevent persistence through a volume; and `user: root` does not undo a
+  gosu/su-exec image's privilege drop.
+- CL-0019 was ungrounded — its only citation contained no digest guidance at
+  all. It now cites Docker's pull-by-digest documentation and CIS 5.28.
+
 ### Added
 
 - CI now smoke-tests `.pre-commit-hooks.yaml` with the real tool

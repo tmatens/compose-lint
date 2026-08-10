@@ -21,7 +21,7 @@ allow legs fail even with the capability granted, and the socket-mount and
 failures as environmental.
 Exits 0 if every premise holds (or Docker is unavailable → skipped), 1 on any
 failure. Rules that describe image/supply-chain or config-only concerns
-(CL-0004, CL-0014, CL-0015, CL-0019, CL-0020, CL-0021) have no runtime state to
+(CL-0004, CL-0014, CL-0019, CL-0020, CL-0021) have no runtime state to
 observe and are listed as intentionally out of scope.
 """
 
@@ -46,7 +46,7 @@ PY_IMAGE = (
     "python@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0"
 )
 # Rules with nothing to observe in a live container — grounded by source only.
-_NON_RUNTIME = ["CL-0004", "CL-0014", "CL-0015", "CL-0019", "CL-0020", "CL-0021"]
+_NON_RUNTIME = ["CL-0004", "CL-0014", "CL-0019", "CL-0020", "CL-0021"]
 
 # Docker's default capability set, which is compiled into the daemon and has no
 # flag or daemon.json key. Every capability premise is measured against it.
@@ -228,20 +228,6 @@ def _cl0011() -> tuple[bool, str]:
     _, base = _run([], ["grep", "CapEff", "/proc/self/status"])
     _, added = _run(["--cap-add", "SYS_ADMIN"], ["grep", "CapEff", "/proc/self/status"])
     return (added != base), f"default={base} +SYS_ADMIN={added}"
-
-
-def _cl0012() -> tuple[bool, str]:
-    """pids_limit: -1 (the rule's trigger) leaves a high/unbounded cap.
-
-    A positive limit is enforced; ``-1`` leaves whatever the cgroup hierarchy
-    allows (``max`` on an unconstrained host, or a high parent cap), which is far
-    looser than a sane explicit limit — the insecure choice the rule flags.
-    """
-    _, unlim = _run(["--pids-limit", "-1"], ["cat", "/sys/fs/cgroup/pids.max"])
-    _, limited = _run(["--pids-limit", "100"], ["cat", "/sys/fs/cgroup/pids.max"])
-    u = unlim.strip()
-    high = u == "max" or (u.isdigit() and int(u) > 1000)
-    return (high and limited.strip() == "100"), f"-1={u} 100={limited.strip()}"
 
 
 def _cl0013() -> tuple[bool, str]:
@@ -621,21 +607,9 @@ def _t7_volume_writable() -> tuple[bool, str]:
     return ok, f"volume write rc={rc_vol}; rootfs write rc={rc_root} msg={err!r}"
 
 
-# --- CL-0012 / CL-0018 / CL-0022 symptom-table mappings (#479) --------------
+# --- CL-0018 / CL-0022 symptom-table mappings (#479) -----------------------
 #
 # Same contract as the CL-0006/CL-0007 mapping checks (ADR-016 amendment).
-
-
-def _t12_fork_limit() -> tuple[bool, str]:
-    # 40 background forks against a pids limit of 10 must fail; the same storm
-    # under a sane limit must not. The busybox wording is the doc's quoted row.
-    fork_script = "for i in $(seq 1 40); do sleep 2 & done"
-    return _remedy(
-        ["--pids-limit", "10"],
-        ["--pids-limit", "100"],
-        ["sh", "-c", fork_script],
-        "can't fork: Resource temporarily unavailable",
-    )
 
 
 def _t22_exec_tmpfs() -> tuple[bool, str]:
@@ -888,7 +862,6 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool, str]]]] = [
     ("CL-0009", "seccomp filter active by default", _cl0009),
     ("CL-0010", "pid host exposes host processes", _cl0010),
     ("CL-0011", "cap_add adds the capability", _cl0011),
-    ("CL-0012", "explicit pids limit takes effect", _cl0012),
     ("CL-0013", "host bind mount exposes host path", _cl0013),
     (
         "CL-0013",
@@ -917,8 +890,7 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool, str]]]] = [
     ("CL-0007", "map: mkdir EROFS -> tmpfs", _t7_mkdir_tmpfs),
     ("CL-0007", "map: masked ENOENT -> tmpfs mountpoint", _t7_tmpfs_creates_mountpoint),
     ("CL-0007", "premise: named volume writable under read_only", _t7_volume_writable),
-    # CL-0012 / CL-0018 / CL-0022 symptom-table mappings (#479).
-    ("CL-0012", "map: fork failure at pids limit", _t12_fork_limit),
+    # CL-0018 / CL-0022 symptom-table mappings (#479).
     ("CL-0022", "map: exec from noexec tmpfs", _t22_exec_tmpfs),
     ("CL-0018", "map: non-root write to root-owned path", _t18_rootfs_write),
     ("CL-0018", "premise: tmpfs inherits image-dir ownership", _t18_tmpfs_inherits),

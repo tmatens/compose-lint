@@ -182,10 +182,8 @@ If you need broad IaC coverage across Terraform, Kubernetes, and more, KICS cove
 | [CL-0009](https://tmatens.github.io/compose-lint/rules/CL-0009/) | HIGH | Security profile disabled | [Rule #6](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-6-use-linux-security-module-seccomp-apparmor-or-selinux-for-runtime-security) | 5.2, 5.3, 5.22 |
 | [CL-0010](https://tmatens.github.io/compose-lint/rules/CL-0010/) | HIGH | Host namespace sharing | [Rule #3][owasp3] | 5.16, 5.17, 5.21, 5.31 |
 | [CL-0011](https://tmatens.github.io/compose-lint/rules/CL-0011/) | HIGH | Strong host-adjacent capability added | [Rule #3][owasp3] | 5.4 |
-| [CL-0012](https://tmatens.github.io/compose-lint/rules/CL-0012/) | MEDIUM | PIDs cgroup limit disabled | — | 5.29 |
 | [CL-0013](https://tmatens.github.io/compose-lint/rules/CL-0013/) | HIGH | Sensitive host path exposed | [Rule #8][owasp8] | 5.6 |
 | [CL-0014](https://tmatens.github.io/compose-lint/rules/CL-0014/) | LOW | Logging driver disabled | — | — |
-| [CL-0015](https://tmatens.github.io/compose-lint/rules/CL-0015/) | LOW | Healthcheck disabled | — | 4.6, 5.27 |
 | [CL-0016](https://tmatens.github.io/compose-lint/rules/CL-0016/) | CRITICAL | Dangerous host device exposed | — | 5.18 |
 | [CL-0017](https://tmatens.github.io/compose-lint/rules/CL-0017/) | LOW | Shared mount propagation | — | 5.20 |
 | [CL-0018](https://tmatens.github.io/compose-lint/rules/CL-0018/) | MEDIUM | Explicit root user | [Rule #2](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-2-set-a-user) | — |
