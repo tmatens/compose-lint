@@ -87,6 +87,48 @@ class TestResourceLimitsRule:
         assert len(findings) == 1
         assert "no memory limit" in findings[0].message
 
+    def test_non_positive_limits_are_not_limits(self) -> None:
+        """Docker reads --memory 0 / --cpus 0 as *unlimited*.
+
+        A service carrying `mem_limit: 0` is unbounded while wearing the syntax
+        of a bounded one, so being present is not enough — the value has to
+        actually bound something. Same non-positive-means-disabled convention
+        CL-0012 used to flag for pids.
+        """
+        for body, missing in (
+            ("    mem_limit: 0\n    cpus: 0.5\n", "no memory limit"),
+            ('    mem_limit: "0"\n    cpus: 0.5\n', "no memory limit"),
+            ("    mem_limit: 0m\n    cpus: 0.5\n", "no memory limit"),
+            ("    mem_limit: -1\n    cpus: 0.5\n", "no memory limit"),
+            ("    mem_limit: 512m\n    cpus: 0\n", "no CPU limit"),
+            ("    mem_limit: 512m\n    cpus: 0.0\n", "no CPU limit"),
+        ):
+            findings = _findings(_svc(body))
+            assert len(findings) == 1, body
+            assert missing in findings[0].message, body
+
+    def test_deploy_limits_are_checked_for_value_too(self) -> None:
+        findings = _findings(
+            _svc(
+                "    deploy:\n"
+                "      resources:\n"
+                "        limits:\n"
+                "          memory: 0\n"
+                "          cpus: '0.5'\n"
+            )
+        )
+        assert len(findings) == 1
+        assert "no memory limit" in findings[0].message
+
+    def test_interpolated_values_count_as_limits(self) -> None:
+        """`${MEM_LIMIT}` is unknowable from the file; assume it bounds.
+
+        The alternative fires on every parameterised compose file, which is
+        noise rather than signal — compose-lint leaves `${VAR}` unresolved by
+        design.
+        """
+        assert not _findings(_svc("    mem_limit: ${MEM}\n    cpus: ${CPU}\n"))
+
     def test_malformed_deploy_block_does_not_crash(self) -> None:
         """A scalar where a mapping belongs must not raise (parser tolerance)."""
         findings = _findings(_svc("    deploy: not-a-mapping\n"))

@@ -40,15 +40,34 @@ def _deploy_limits(service_config: dict[str, Any]) -> dict[str, Any]:
 
 
 def _is_set(value: Any) -> bool:
-    """A limit counts only if it carries a value.
+    """Whether a limit key actually bounds anything.
 
-    ``mem_limit:`` with nothing after it parses to ``None``, and an empty
-    string is not a limit either — both would otherwise read as "declared".
+    Being *present* is not enough. ``mem_limit:`` with nothing after it parses
+    to ``None``, and an empty string is not a limit either. More subtly, Docker
+    reads a non-positive limit as **unlimited** — ``--memory 0`` and ``--cpus 0``
+    impose no cap at all — so ``mem_limit: 0`` is an unbounded container wearing
+    the syntax of a bounded one, and must still fire. That is the same
+    non-positive-means-disabled convention CL-0012 used to flag for pids.
     """
-    if value is None:
+    if value is None or isinstance(value, bool):
         return False
+    if isinstance(value, (int, float)):
+        return value > 0
     if isinstance(value, str):
-        return bool(value.strip())
+        text = value.strip()
+        if not text:
+            return False
+        # "512M", "1.5", "0", "0m" — a size/quantity with an optional unit
+        # suffix. If the numeric part is non-positive it bounds nothing.
+        number = text.rstrip("bBkKmMgG")
+        try:
+            return float(number) > 0
+        except ValueError:
+            # Not a plain quantity (an interpolation such as "${MEM_LIMIT}",
+            # say). Treat it as a limit — the value is unknowable from the
+            # file, and assuming the worst would fire on every parameterised
+            # compose file.
+            return True
     return True
 
 
