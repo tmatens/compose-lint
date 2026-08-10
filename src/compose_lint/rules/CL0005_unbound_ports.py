@@ -74,7 +74,7 @@ class UnboundPortsRule(BaseRule):
                 "a bind address — or bound to a wildcard like 0.0.0.0 or :: — "
                 "are accessible on all network interfaces."
             ),
-            severity=Severity.HIGH,
+            severity=Severity.MEDIUM,
             references=[OWASP_REF, CIS_REF],
         )
 
@@ -188,7 +188,7 @@ class UnboundPortsRule(BaseRule):
             )
         return Finding(
             rule_id="CL-0005",
-            severity=Severity.HIGH,
+            severity=Severity.MEDIUM,
             service=service_name,
             message=message,
             line=lines.get(f"services.{service_name}.ports[{index}]")

@@ -19,7 +19,7 @@ rules:
   CL-0001:  # CRITICAL — Docker socket mounted
     exclude_services:
       proxy: "TODO: justify or fix"
-  CL-0007:  # MEDIUM — Filesystem not read-only
+  CL-0007:  # LOW — Filesystem not read-only
     exclude_services:
       web: "TODO: justify or fix"
       worker: "TODO: justify or fix"

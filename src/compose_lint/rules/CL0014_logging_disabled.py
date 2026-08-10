@@ -40,7 +40,7 @@ class LoggingDisabledRule(BaseRule):
                 "Setting the logging driver to 'none' prevents all log "
                 "collection, making incident response and forensics impossible."
             ),
-            severity=Severity.MEDIUM,
+            severity=Severity.LOW,
             references=[DOCKER_REF, OWASP_REF],
         )
 
@@ -59,7 +59,7 @@ class LoggingDisabledRule(BaseRule):
         if isinstance(driver, str) and driver.lower() == "none":
             yield Finding(
                 rule_id="CL-0014",
-                severity=Severity.MEDIUM,
+                severity=Severity.LOW,
                 service=service_name,
                 message=(
                     "Logging driver is set to 'none'. No logs will be collected "

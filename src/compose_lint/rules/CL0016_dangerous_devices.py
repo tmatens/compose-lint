@@ -62,7 +62,7 @@ class DangerousDevicesRule(BaseRule):
                 "Exposing raw memory, I/O ports, or block devices to a container "
                 "enables direct hardware access that bypasses all container isolation."
             ),
-            severity=Severity.HIGH,
+            severity=Severity.CRITICAL,
             references=[CIS_REF],
         )
 
@@ -86,7 +86,7 @@ class DangerousDevicesRule(BaseRule):
                 if pattern.match(host_device):
                     yield Finding(
                         rule_id="CL-0016",
-                        severity=Severity.HIGH,
+                        severity=Severity.CRITICAL,
                         service=service_name,
                         message=(
                             f"Service exposes dangerous host device "

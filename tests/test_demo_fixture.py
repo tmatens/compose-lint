@@ -37,12 +37,17 @@ HERO_EXPECTED = {
 }
 
 # What the fix GIF (fix.tape) shows. Its whole narrative is the split between
-# these two sets: three findings `fix` remediates automatically, and one it
-# refuses because no safe automatic fix exists. The tape's on-screen summary
-# lines ("3 fix(es) available; 1 finding(s) need manual review") quote these
-# counts, and its second screen depends on the leftover being below the default
+# these two sets: four findings `fix` remediates automatically over three edits
+# (CL-0003 and CL-0009 share the `security_opt` rewrite), and one it refuses
+# because no safe automatic fix exists. The tape's on-screen summary line
+# ("3 fix(es) available; 1 finding(s) need manual review") quotes the *edit*
+# count, and its second screen depends on the leftover being below the default
 # HIGH threshold so the re-lint verdict flips FAIL -> PASS.
-FIX_AUTOFIXED = {"CL-0003", "CL-0005", "CL-0007"}
+#
+# The opening FAIL rests on CL-0009 (seccomp:unconfined, HIGH). It used to rest
+# on CL-0005, which moved to MEDIUM when the port-binding rule was recalibrated
+# and stopped crossing the default gate on its own.
+FIX_AUTOFIXED = {"CL-0003", "CL-0005", "CL-0007", "CL-0009"}
 FIX_MANUAL = {"CL-0019"}
 
 

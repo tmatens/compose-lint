@@ -34,7 +34,7 @@ class SharedMountRule(BaseRule):
                 "to appear on the host filesystem and vice versa, breaking mount "
                 "namespace isolation."
             ),
-            severity=Severity.MEDIUM,
+            severity=Severity.LOW,
             references=[CIS_REF],
         )
 
@@ -85,7 +85,7 @@ class SharedMountRule(BaseRule):
     ) -> Finding:
         return Finding(
             rule_id="CL-0017",
-            severity=Severity.MEDIUM,
+            severity=Severity.LOW,
             service=service_name,
             message=(
                 "Service uses shared mount propagation. Mounts created inside "

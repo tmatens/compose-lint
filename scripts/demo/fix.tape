@@ -12,16 +12,16 @@ Require compose-lint
 # behavior-changing caveat lines clip at the right edge instead of wrapping
 # and pushing the diff off screen.
 #
-# Height gives 23 rows, one more than the taller of the two screens needs:
-#   screen 1 — command + 18 lines of dry-run diff + prompt        = 20 rows
-#   screen 2 — apply (command + 3) + check (command + 15) + prompt = 21 rows
+# Height gives 25 rows, one more than the taller of the two screens needs:
+#   screen 1 — command + 22 lines of dry-run output + prompt       = 24 rows
+#   screen 2 — apply (command + 4) + check (command + 15) + prompt = 22 rows
 # A release that adds a line to either output overflows and scrolls, which
 # tests/test_demo_fixture.py is what catches (it pins the finding set the two
 # screens are sized around).
 Set Shell bash
 Set FontSize 22
 Set Width 1500
-Set Height 730
+Set Height 790
 Set Padding 20
 Set Theme "Dracula"
 Set TypingSpeed 45ms
@@ -45,9 +45,10 @@ Sleep 1s
 
 # 1. Dry run. `fix` writes nothing by default: it prints the unified diff it
 #    would apply, led by a behavior-changing caveat for each fix that can
-#    change how the container runs (CL-0007's read_only, CL-0005's rebind to
-#    127.0.0.1). The summary line names what it will not touch — the tag-only
-#    image pin (CL-0019), which has no safe automatic fix.
+#    change how the container runs (CL-0009's re-applied seccomp profile,
+#    CL-0007's read_only, CL-0005's rebind to 127.0.0.1). The summary line
+#    names what it will not touch — the tag-only image pin (CL-0019), which
+#    has no safe automatic fix.
 Type "compose-lint fix docker-compose.yml"
 Sleep 1900ms
 Enter
@@ -62,8 +63,8 @@ Show
 
 Sleep 500ms
 
-# 2. Apply the same three fixes for real, then re-lint. The file went from
-#    FAIL (the all-interfaces port bind is HIGH) to PASS at the default
+# 2. Apply the same three edits for real, then re-lint. The file went from
+#    FAIL (the unconfined seccomp profile is HIGH) to PASS at the default
 #    threshold, with the one un-auto-fixable MEDIUM left reported rather than
 #    silently dropped.
 Type "compose-lint fix --apply docker-compose.yml"

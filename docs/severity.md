@@ -237,19 +237,19 @@ link. `tests/test_severity_matrix.py` enforces all four properties.
 | [CL-0002](rules/CL-0002.md) | A | Direct | Host | — | CRITICAL | CRITICAL | — |
 | [CL-0003](rules/CL-0003.md) | A | Second flaw | Single container | — | MEDIUM | MEDIUM | — |
 | [CL-0004](rules/CL-0004.md) | B | Second flaw | Single container | — | MEDIUM | MEDIUM | — |
-| [CL-0005](rules/CL-0005.md) | A | Second flaw | Single container | pre-foothold reach | HIGH | HIGH | — |
+| [CL-0005](rules/CL-0005.md) | A | Second flaw | Single container | pre-foothold reach | HIGH | MEDIUM | `detection-precision` — flags every `0.0.0.0` bind, not only the not-meant-to-be-public subset ([ADR-020](adr/020-severity-scoping-and-overrides.md)) |
 | [CL-0006](rules/CL-0006.md) | A | Technique | Cross-container | — | HIGH | MEDIUM | `detection-precision` — fires on every service, not only those with a reachable neighbour ([ADR-020](adr/020-severity-scoping-and-overrides.md)) |
-| [CL-0007](rules/CL-0007.md) | A | Removes a mitigation | Single container | — | LOW | MEDIUM | `pending-move` — relabel to LOW not yet landed ([CL-0007](rules/CL-0007.md)) |
+| [CL-0007](rules/CL-0007.md) | A | Removes a mitigation | Single container | — | LOW | LOW | — |
 | [CL-0008](rules/CL-0008.md) | A | Technique | Cross-container | — | HIGH | HIGH | — |
 | [CL-0009](rules/CL-0009.md) | A | Second flaw | Cross-container | — | HIGH | HIGH | — |
 | [CL-0010](rules/CL-0010.md) | A | Technique | Cross-container | — | HIGH | HIGH | — |
 | [CL-0011](rules/CL-0011.md) | A | Direct | Host | — | CRITICAL | HIGH | `pending-split` — priced at `ALL`, its most dangerous member ([#503](https://github.com/tmatens/compose-lint/issues/503)) |
 | [CL-0012](rules/CL-0012.md) | A | Second flaw | Single container | availability-only | LOW | MEDIUM | `pending-move` — premise refuted; removal not yet landed ([CL-0012](rules/CL-0012.md)) |
 | [CL-0013](rules/CL-0013.md) | A | Direct | Host | — | CRITICAL | HIGH | `pending-split` — priced at a writable host root, its most dangerous member ([#503](https://github.com/tmatens/compose-lint/issues/503)) |
-| [CL-0014](rules/CL-0014.md) | A | Removes a mitigation | Single container | — | LOW | MEDIUM | `pending-move` — relabel to LOW not yet landed ([CL-0014](rules/CL-0014.md)) |
+| [CL-0014](rules/CL-0014.md) | A | Removes a mitigation | Single container | — | LOW | LOW | — |
 | [CL-0015](rules/CL-0015.md) | A | Removes a mitigation | Single container | — | LOW | LOW | — |
-| [CL-0016](rules/CL-0016.md) | A | Direct | Host | — | CRITICAL | HIGH | `pending-move` — relabel to CRITICAL not yet landed ([CL-0016](rules/CL-0016.md)) |
-| [CL-0017](rules/CL-0017.md) | A | Second flaw | Single container | read-only | LOW | MEDIUM | `pending-move` — relabel to LOW not yet landed ([CL-0017](rules/CL-0017.md)) |
+| [CL-0016](rules/CL-0016.md) | A | Direct | Host | — | CRITICAL | CRITICAL | — |
+| [CL-0017](rules/CL-0017.md) | A | Second flaw | Single container | read-only | LOW | LOW | — |
 | [CL-0018](rules/CL-0018.md) | A | Second flaw | Single container | — | MEDIUM | MEDIUM | — |
 | [CL-0019](rules/CL-0019.md) | B | Second flaw | Single container | — | MEDIUM | MEDIUM | — |
 | [CL-0020](rules/CL-0020.md) | B | Direct | Single container | — | HIGH | HIGH | — |

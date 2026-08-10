@@ -285,8 +285,8 @@ class TestSarifDescriptorFixes:
 
     def test_descriptor_uses_default_without_override(self) -> None:
         rule = self._rule(build_sarif_log([]), "CL-0007")
-        assert rule["properties"]["security-severity"] == "5.5"
-        assert rule["defaultConfiguration"]["level"] == "warning"
+        assert rule["properties"]["security-severity"] == "2.0"
+        assert rule["defaultConfiguration"]["level"] == "note"
 
     def test_edits_match_by_logical_identity_not_object_id(self) -> None:
         # The fix list and the findings list may hold distinct objects with the

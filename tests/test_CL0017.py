@@ -97,7 +97,7 @@ class TestSharedMountRule:
     def test_metadata(self) -> None:
         meta = self.rule.metadata
         assert meta.id == "CL-0017"
-        assert meta.severity.value == "medium"
+        assert meta.severity.value == "low"
 
     def test_safe_named_short_no_findings(self) -> None:
         data, lines = load_compose(FIXTURES / "safe_named_volume_propagation.yml")

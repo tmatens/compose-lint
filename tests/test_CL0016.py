@@ -93,4 +93,4 @@ class TestDangerousDevicesRule:
     def test_metadata(self) -> None:
         meta = self.rule.metadata
         assert meta.id == "CL-0016"
-        assert meta.severity.value == "high"
+        assert meta.severity.value == "critical"

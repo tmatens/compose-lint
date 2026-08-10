@@ -61,7 +61,7 @@ class TestLoggingDisabledRule:
     def test_metadata(self) -> None:
         meta = self.rule.metadata
         assert meta.id == "CL-0014"
-        assert meta.severity.value == "medium"
+        assert meta.severity.value == "low"
 
 
 class TestLoggingDisabledFix:
