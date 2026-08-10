@@ -106,12 +106,31 @@ services:
     image: traefik:v3.0@sha256:aaaabbbbccccddddeeeeffff00001111222233334444555566667777888899990
     read_only: true
     cap_drop: [ALL]
-    security_opt:
-      - no-new-privileges:true
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 0.5
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "8080:80"
+
+  db:
+    image: postgres:16@sha256:bbbbccccddddeeeeffff000011112222333344445555666677778888999900001
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1g
+    cpus: 1.0
+    environment:
+      POSTGRES_PASSWORD: hunter2
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    tmpfs:
+      - /tmp
+      - /run
+
+volumes:
+  pgdata:
 ```
 
 and this `.compose-lint.yml` (suppressing CL-0001 for `traefik` with a tracked reason):
@@ -130,22 +149,24 @@ files: docker-compose.yml  ·  config: .compose-lint.yml  ·  fail-on: high
 
 docker-compose.yml
 
-  service: traefik  (line 9)
-    line  severity  rule     message
-       9  SUPPRESSED  CL-0001  Docker runtime socket mounted via '/var/run/docker.sock:/var/run/docker.sock'. This gives the container full control over the Docker runtime — equivalent to root on the host.
+  service: traefik  (line 10)
+    line  severity    rule     message
+      10  SUPPRESSED  CL-0001  Docker runtime socket mounted via '/var/run/docker.sock:/var/run/docker.sock'. This gives the container full control over the Docker runtime — equivalent to root on the host.
           reason: SEC-1234 approved — socket proxy planned for 2026-Q3
-       9  HIGH      CL-0013  Service mounts sensitive host path '/var/run/docker.sock' (under /var/run). This exposes host system files to the container.
-          9 │       - /var/run/docker.sock:/var/run/docker.sock
-            │         ────────────────────
-          fix: Remove the bind mount for /var/run/docker.sock. If the container needs specific files, copy them into the image at build time or use a named volume with only the required data.
-          ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8-set-filesystem-and-volumes-to-read-only
-      11  MEDIUM    CL-0005  Port '8080:80' is bound to all interfaces. Docker bypasses host firewalls (UFW/firewalld), potentially exposing this port to the public internet.
-          11 │       - "8080:80"
+      12  MEDIUM      CL-0005  Port '8080:80' is bound to all interfaces. Docker bypasses host firewalls (UFW/firewalld), potentially exposing this port to the public internet.
+          12 │       - "8080:80"
              │          ───────
           fix: Bind to localhost: 127.0.0.1:8080:80
                If public access is needed, use a reverse proxy with TLS.
           ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5a-be-careful-when-mapping-container-ports-to-the-host-with-firewalls-like-ufw
 
+  service: db  (line 22)
+    line  severity    rule     message
+      22  HIGH        CL-0020  Service has credential-shaped env key 'POSTGRES_PASSWORD' with a literal value. Env vars are exposed via `docker inspect`, `/proc/<pid>/environ`, `docker compose config`, process listings, and CI logs — any process or operator with daemon access can read them.
+          22 │       POSTGRES_PASSWORD: hunter2
+             │       ─────────────────
+          fix: Move 'POSTGRES_PASSWORD' to Compose's `secrets:` primitive. If the image supports the `*_FILE` convention (Postgres, MySQL, MariaDB, MinIO, etc.), set `POSTGRES_PASSWORD_FILE: /run/secrets/<name>` and declare the secret under the top-level `secrets:` block sourced from a gitignored file or `external: true`. Otherwise, have the entrypoint read the secret file at startup and export the value into the workload's environment.
+          ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-12-utilize-docker-secrets-for-sensitive-data-management
 docker-compose.yml: 1 high, 1 medium  ·  1 suppressed (not counted)
 ✗ FAIL  ·  1 finding at or above high
 ```
