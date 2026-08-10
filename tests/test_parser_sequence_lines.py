@@ -201,11 +201,11 @@ def test_scalar_items_get_lines(tmp_path: Path) -> None:
             ),
             [5, 6],
         ),
-        # CL-0013: sensitive volumes
+        # CL-0025: writable root-equivalent volumes (split from CL-0013)
         (
-            "CL-0013",
-            "compose_lint.rules.CL0013_sensitive_mount",
-            "SensitiveMountRule",
+            "CL-0025",
+            "compose_lint.rules.CL0025_writable_host_root",
+            "WritableHostRootMountRule",
             (
                 "services:\n"
                 "  s:\n"

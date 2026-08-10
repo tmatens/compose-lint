@@ -1,13 +1,13 @@
-"""CL-0013: Sensitive host paths mounted."""
+"""CL-0013: Sensitive host path exposed."""
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING, Any
 
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
-from compose_lint.rules._bool import as_bool
+from compose_lint.rules._mounts import iter_bind_mounts, match_prefix
+from compose_lint.rules.CL0025_writable_host_root import ROOT_EQUIVALENT_PATHS
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -22,30 +22,23 @@ CIS_REF = (
     "are not mounted on containers"
 )
 
-_SENSITIVE_PATHS = (
-    "/etc",
-    "/proc",
-    "/sys",
-    "/boot",
-    "/root",
-    "/dev",
-    "/var/lib/docker",
-    "/var/lib/kubelet",
-    "/var/run",
-    "/run/containerd",
-    "/run/systemd",
-    # Bare /run must follow the more specific /run/* entries so those keep
-    # their own messages. On a systemd host /run holds both /run/docker.sock
-    # and /run/containerd.sock (and /var/run is a symlink to it), so mounting
-    # it is root-equivalent daemon control that was previously a clean pass.
-    "/run",
-    "/home",
-)
+REFERENCES = [OWASP_REF, CIS_REF]
 
-# Matches host:container or host:container:mode in short syntax.
-# Host group allows a bare "/" (root mount) by using `*` instead of `+`.
-_SHORT_VOLUME_RE = re.compile(
-    r"^(?P<host>/[^:]*):(?P<container>[^:]+)(?::(?P<mode>[^:]+))?"
+# Paths that are a disclosure or a weakened boundary in *either* mode, because
+# writing to them does not add a host-root path the way CL-0025's members do.
+#
+# /var/lib/kubelet was removed: its danger is entirely conditional on Kubernetes
+# being present, so it cannot be premise-checked on the grounded target and it
+# fails the same bar that removed CL-0023 (ADR-020).
+_EXPOSED_PATHS: tuple[str, ...] = (
+    # uevent_helper is not writable at default capabilities and release_agent is
+    # cgroup-v1 only, so /sys is disclosure and a weakened boundary, not escape.
+    "/sys",
+    # A /dev bind conveys the device *nodes* without device-cgroup permission —
+    # verified: the same raw read fails through a bind and succeeds through
+    # --device, which is why CL-0016 owns raw device access, not this rule.
+    "/dev",
+    "/home",
 )
 
 # The timezone-config pattern `- /etc/localtime:/etc/localtime:ro` (and
@@ -55,51 +48,22 @@ _SHORT_VOLUME_RE = re.compile(
 _BENIGN_READONLY_FILES = frozenset({"/etc/localtime", "/etc/timezone"})
 
 
-def _extract_short_mount(volume: Any) -> tuple[str, bool] | None:
-    """Return (host_path, is_readonly) for a short-syntax bind, else None."""
-    if not isinstance(volume, str):
-        return None
-    m = _SHORT_VOLUME_RE.match(volume)
-    if not m:
-        return None
-    mode = m.group("mode")
-    is_readonly = bool(mode) and "ro" in (part.strip() for part in mode.split(","))
-    return m.group("host"), is_readonly
-
-
-def _is_sensitive(host_path: str) -> str | None:
-    """Return the sensitive prefix if host_path starts with one, else None.
-
-    Returns "/" for a literal root mount — the most sensitive path possible.
-    """
-    normalized = host_path.rstrip("/")
-    if not normalized:
-        return "/"
-    for sensitive in _SENSITIVE_PATHS:
-        if normalized == sensitive or normalized.startswith(sensitive + "/"):
-            return sensitive
-    return None
-
-
 @register_rule
 class SensitiveMountRule(BaseRule):
-    """Detects services mounting sensitive host paths."""
+    """Detects host paths exposed into a container without host-root write."""
 
     @property
     def metadata(self) -> RuleMetadata:
         return RuleMetadata(
             id="CL-0013",
-            name="Sensitive host path mounted",
+            name="Sensitive host path exposed",
             description=(
-                "Mounting sensitive host directories like /etc, /proc, /sys, "
-                "/boot, /dev, /root, /var/lib/docker, /var/lib/kubelet, "
-                "/var/run, /run/containerd, /run/systemd, or /home into a "
-                "container exposes host configuration, kernel interfaces, "
-                "container-runtime state, and credentials. Mounting the "
-                "entire host root filesystem is a one-line container escape."
+                "Mounting /sys, /dev or /home into a container, or mounting a "
+                "root-equivalent host path read-only, exposes host "
+                "configuration, kernel interfaces and credentials to it."
             ),
             severity=Severity.HIGH,
-            references=[OWASP_REF, CIS_REF],
+            references=REFERENCES,
         )
 
     def check(
@@ -109,65 +73,43 @@ class SensitiveMountRule(BaseRule):
         global_config: dict[str, Any],
         lines: dict[str, int],
     ) -> Iterator[Finding]:
-        volumes = service_config.get("volumes", [])
-        if not isinstance(volumes, list):
-            return
-
-        for i, volume in enumerate(volumes):
-            # Short syntax: /host/path:/container/path[:mode]
-            short = _extract_short_mount(volume)
-            if short is not None:
-                host_path, is_readonly = short
-            elif isinstance(volume, dict):
-                # Long syntax: dict with 'source' key.
-                # Treat as a bind when type == "bind" OR when source is an
-                # absolute path (Compose infers bind from absolute paths even
-                # when type is omitted).
-                source = volume.get("source")
-                vtype = volume.get("type")
-                if isinstance(source, str) and (
-                    vtype == "bind" or source.startswith("/")
-                ):
-                    host_path = source
-                    is_readonly = as_bool(volume.get("read_only")) is True
-                else:
-                    continue
-            else:
-                continue
-
-            sensitive = _is_sensitive(host_path)
-            if sensitive is None:
-                continue
+        for mount in iter_bind_mounts(service_name, service_config, lines):
+            normalized = mount.host_path.rstrip("/")
 
             # Exempt the read-only timezone-config pattern (issue #509).
-            if is_readonly and host_path.rstrip("/") in _BENIGN_READONLY_FILES:
+            if mount.read_only and normalized in _BENIGN_READONLY_FILES:
                 continue
 
-            is_root_mount = sensitive == "/"
-            severity = Severity.CRITICAL if is_root_mount else Severity.HIGH
-            if is_root_mount:
-                message = (
-                    f"Service mounts the entire host root filesystem "
-                    f"('{host_path}'). This is a one-line container escape — "
-                    "the container has full read/write access to the host."
+            matched = match_prefix(mount.host_path, _EXPOSED_PATHS)
+            reason = "exposes host kernel interfaces, devices or user data"
+            if matched is None:
+                # A read-only mount of a root-equivalent path is disclosure
+                # rather than takeover, so it lands here instead of CL-0025.
+                if not mount.read_only:
+                    continue
+                matched = match_prefix(mount.host_path, ROOT_EQUIVALENT_PATHS)
+                if matched is None:
+                    continue
+                reason = (
+                    "is read-only, so it discloses host configuration and "
+                    "credentials without granting host write"
                 )
-            else:
-                message = (
-                    f"Service mounts sensitive host path '{host_path}' "
-                    f"(under {sensitive}). This exposes host system files "
-                    "to the container."
-                )
+
             yield Finding(
                 rule_id="CL-0013",
-                severity=severity,
+                severity=Severity.HIGH,
                 service=service_name,
-                message=message,
-                line=lines.get(f"services.{service_name}.volumes[{i}]")
-                or lines.get(f"services.{service_name}.volumes"),
-                fix=(
-                    f"Remove the bind mount for {host_path}. If the container "
-                    "needs specific files, copy them into the image at build time "
-                    "or use a named volume with only the required data."
+                message=(
+                    f"Service mounts sensitive host path '{mount.host_path}' "
+                    f"(under {matched}). The mount {reason}."
                 ),
-                references=[OWASP_REF, CIS_REF],
+                line=mount.line,
+                fix=(
+                    f"Remove the bind mount for {mount.host_path}. If the "
+                    "container needs specific files, copy them into the image "
+                    "at build time or use a named volume with only the "
+                    "required data.\n"
+                    "Full guide: compose-lint --explain CL-0013"
+                ),
+                references=REFERENCES,
             )

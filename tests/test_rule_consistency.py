@@ -32,17 +32,17 @@ FIXTURES = Path(__file__).parent / "compose_files"
 RULE_ID_RE = re.compile(r"^CL-\d{4}$")
 
 # Rules that deliberately raise a finding's severity above the documented
-# baseline in ``metadata.severity``. Each value is the COMPLETE set of
-# severities the rule may emit and must contain the metadata baseline:
-#   CL-0013 raises a full host-root bind mount from HIGH to CRITICAL.
-# CL-0011 left this list when ``cap_add`` was split into three rules, one per
-# tier; CL-0013 leaves it when the writable-mount split lands, after which the
-# list should be empty and stay that way.
-# Any other rule emitting a non-baseline severity is intentionally a failure
-# below, so per-finding escalation stays a deliberate, reviewed decision.
-VARIABLE_SEVERITY_RULES: dict[str, set[Severity]] = {
-    "CL-0013": {Severity.HIGH, Severity.CRITICAL},
-}
+# baseline in ``metadata.severity``. Each value would be the COMPLETE set of
+# severities the rule may emit, and must contain the metadata baseline.
+#
+# **It is empty, and should stay that way.** CL-0011 and CL-0013 were the two
+# entries; both left when the capability and host-path splits gave each tier its
+# own rule id. A branching rule cannot be represented honestly in SARIF, which
+# advertises ``security-severity`` on the *rule descriptor* — so whichever
+# severity the descriptor names, the other one is misreported in GitHub
+# (issue #503). Adding an entry here is therefore a decision to ship that bug;
+# the answer is almost always to split the rule instead.
+VARIABLE_SEVERITY_RULES: dict[str, set[Severity]] = {}
 
 # Inline triggers for rules no committed fixture under ``compose_files/``
 # exercises (CL-0022 is only covered by inline snippets in its own test).

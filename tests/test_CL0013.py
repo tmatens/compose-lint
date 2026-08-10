@@ -1,4 +1,11 @@
-"""Tests for CL-0013: Sensitive host paths mounted."""
+"""Tests for CL-0013: sensitive host path exposed.
+
+CL-0013 is the exposure tier of the host-path split. Writable mounts of
+root-equivalent paths are CL-0025's; a mount of a control socket or a directory
+holding one is CL-0001's. What is worth testing here is the boundary: this rule
+keeps /sys, /dev and /home in either mode, and picks up read-only mounts of
+CL-0025's paths, where the grant is disclosure rather than host write.
+"""
 
 from __future__ import annotations
 
@@ -23,78 +30,60 @@ class TestSensitiveMountRule:
             self.rule.check(service_name, data["services"][service_name], data, lines)
         )
 
-    def test_detects_etc(self) -> None:
-        findings = self._check("mounts_etc")
-        assert len(findings) == 1
-        assert findings[0].rule_id == "CL-0013"
-        assert "/etc" in findings[0].message
-        assert findings[0].severity == Severity.HIGH
+    def test_writable_root_equivalents_are_not_this_rule(self) -> None:
+        """Writable /etc, /proc, /boot, /root, /var/lib/docker are CL-0025's."""
+        for service in (
+            "mounts_proc",
+            "mounts_boot",
+            "mounts_root",
+            "mounts_var_lib_docker",
+            "mounts_root_filesystem",
+        ):
+            assert self._check(service) == [], service
 
-    def test_detects_proc(self) -> None:
-        findings = self._check("mounts_proc")
-        assert len(findings) == 1
-        assert "/proc" in findings[0].message
+    def test_control_socket_dirs_are_not_this_rule(self) -> None:
+        """/var/run and friends moved to CL-0001, which owns the socket."""
+        assert self._check("mounts_var_run") == []
 
     def test_detects_sys(self) -> None:
         findings = self._check("mounts_sys")
         assert len(findings) == 1
+        assert findings[0].rule_id == "CL-0013"
+        assert findings[0].severity == Severity.HIGH
         assert "/sys" in findings[0].message
-
-    def test_detects_boot(self) -> None:
-        findings = self._check("mounts_boot")
-        assert len(findings) == 1
-        assert "/boot" in findings[0].message
-
-    def test_detects_root(self) -> None:
-        findings = self._check("mounts_root")
-        assert len(findings) == 1
-        assert "/root" in findings[0].message
-
-    def test_detects_etc_subpath(self) -> None:
-        findings = self._check("mounts_etc_subpath")
-        assert len(findings) == 1
-        assert "/etc/passwd" in findings[0].message
-
-    def test_detects_multiple(self) -> None:
-        findings = self._check("mounts_multiple")
-        assert len(findings) == 2
-
-    def test_detects_root_filesystem(self) -> None:
-        findings = self._check("mounts_root_filesystem")
-        assert len(findings) == 1
-        assert findings[0].severity == Severity.CRITICAL
-        assert "root filesystem" in findings[0].message
-
-    def test_detects_root_filesystem_ro(self) -> None:
-        findings = self._check("mounts_root_filesystem_ro")
-        assert len(findings) == 1
-        assert findings[0].severity == Severity.CRITICAL
-
-    def test_detects_var_lib_docker(self) -> None:
-        findings = self._check("mounts_var_lib_docker")
-        assert len(findings) == 1
-        assert "/var/lib/docker" in findings[0].message
-
-    def test_detects_var_run(self) -> None:
-        findings = self._check("mounts_var_run")
-        assert len(findings) == 1
-        assert "/var/run" in findings[0].message
 
     def test_detects_home(self) -> None:
         findings = self._check("mounts_home")
         assert len(findings) == 1
         assert "/home" in findings[0].message
 
-    def test_detects_root_ssh(self) -> None:
-        findings = self._check("mounts_root_ssh")
-        assert len(findings) == 1
-        assert "/root/.ssh" in findings[0].message
+    def test_readonly_root_equivalents_are_disclosure(self) -> None:
+        """Read-only /etc, /etc/passwd and /root/.ssh disclose without write."""
+        for service in ("mounts_etc", "mounts_etc_subpath", "mounts_root_ssh"):
+            findings = self._check(service)
+            assert len(findings) == 1, service
+            assert findings[0].severity == Severity.HIGH
+            assert "read-only" in findings[0].message
 
-    def test_detects_etc_trailing_slash(self) -> None:
-        findings = self._check("mounts_etc_trailing_slash")
+    def test_readonly_root_filesystem_is_disclosure(self) -> None:
+        """A read-only whole-root mount discloses without granting write."""
+        findings = self._check("mounts_root_filesystem_ro")
         assert len(findings) == 1
-        assert "/etc" in findings[0].message
         assert findings[0].severity == Severity.HIGH
+        assert "read-only" in findings[0].message
+
+    def test_detects_multiple(self) -> None:
+        # The fixture mounts /etc and /proc, both writable — both CL-0025's.
+        assert self._check("mounts_multiple") == []
+
+    def test_dev_fires_in_either_mode(self) -> None:
+        for volume in ("/dev:/hostdev", "/dev:/hostdev:ro"):
+            data, lines = loads(
+                f"services:\n  a:\n    image: x\n    volumes:\n      - {volume}\n"
+            )
+            findings = list(self.rule.check("a", data["services"]["a"], data, lines))
+            assert len(findings) == 1, volume
+            assert findings[0].severity == Severity.HIGH
 
     def test_safe_volume_no_findings(self) -> None:
         findings = self._check("safe_volume")
@@ -104,25 +93,32 @@ class TestSensitiveMountRule:
         findings = self._check("no_volumes")
         assert len(findings) == 0
 
-    def test_long_syntax_bind(self) -> None:
-        findings = self._check("long_syntax_bind")
-        assert len(findings) == 1
-        assert "/etc" in findings[0].message
+    def test_long_syntax_writable_binds_are_cl0025(self) -> None:
+        """Both long-syntax forms parse; a writable /etc or / is CL-0025's."""
+        for service in (
+            "long_syntax_bind",
+            "long_syntax_bind_no_type",
+            "long_syntax_root_no_type",
+        ):
+            assert self._check(service) == [], service
 
-    def test_long_syntax_bind_no_type(self) -> None:
-        findings = self._check("long_syntax_bind_no_type")
+    def test_long_syntax_readonly_bind_fires(self) -> None:
+        data, lines = loads(
+            "services:\n  a:\n    image: x\n    volumes:\n"
+            "      - type: bind\n        source: /etc\n"
+            "        target: /host-etc\n        read_only: true\n"
+        )
+        findings = list(self.rule.check("a", data["services"]["a"], data, lines))
         assert len(findings) == 1
-        assert "/etc" in findings[0].message
         assert findings[0].severity == Severity.HIGH
-
-    def test_long_syntax_root_no_type(self) -> None:
-        findings = self._check("long_syntax_root_no_type")
-        assert len(findings) == 1
-        assert findings[0].severity == Severity.CRITICAL
 
     def test_long_syntax_named_no_findings(self) -> None:
         findings = self._check("long_syntax_named")
         assert len(findings) == 0
+
+    def test_etc_trailing_slash_normalized(self) -> None:
+        """`/etc/` is `/etc`; writable, so CL-0025's."""
+        assert self._check("mounts_etc_trailing_slash") == []
 
     def test_has_fix_guidance(self) -> None:
         findings = self._check("mounts_etc")
@@ -171,14 +167,17 @@ class TestTimezoneExemption:
         )
         assert self._check(content) == []
 
-    def test_readwrite_localtime_still_fires(self) -> None:
+    def test_readwrite_localtime_is_now_cl0025(self) -> None:
+        """A writable /etc subpath is a host-root write, so CL-0025 owns it.
+
+        The exemption is deliberately read-only-scoped: it exists for the
+        near-universal `:ro` timezone pattern, not for a writable /etc mount.
+        """
         content = (
             "services:\n  a:\n    image: nginx\n    volumes:\n"
             "      - /etc/localtime:/etc/localtime\n"
         )
-        findings = self._check(content)
-        assert len(findings) == 1
-        assert findings[0].severity == Severity.HIGH
+        assert self._check(content) == []
 
     def test_etc_directory_still_fires_readonly(self) -> None:
         content = (
@@ -205,7 +204,12 @@ class TestTimezoneExemption:
 
 
 class TestRunMount:
-    """Bare /run is sensitive: it holds both daemon sockets (issue #513)."""
+    """/run and friends moved to CL-0001 when it grew the parent-directory case.
+
+    Issue #513 added bare /run here because it holds both daemon sockets. That
+    is a control-socket exposure, so CL-0001 owns it now — including
+    mode-independence, which this rule never had.
+    """
 
     def setup_method(self) -> None:
         self.rule = SensitiveMountRule()
@@ -214,21 +218,15 @@ class TestRunMount:
         data, lines = loads(content)
         return list(self.rule.check(service, data["services"][service], data, lines))
 
-    def test_bare_run_flagged(self) -> None:
+    def test_bare_run_no_longer_this_rule(self) -> None:
         content = (
             "services:\n  a:\n    image: nginx\n    volumes:\n      - /run:/hostrun\n"
         )
-        findings = self._check(content)
-        assert len(findings) == 1
-        assert findings[0].severity == Severity.HIGH
-        assert "/run" in findings[0].message
+        assert self._check(content) == []
 
-    def test_run_subpaths_keep_specific_message(self) -> None:
-        # /run/containerd must still report as itself, not as bare /run.
+    def test_run_subpaths_no_longer_this_rule(self) -> None:
         content = (
             "services:\n  a:\n    image: nginx\n    volumes:\n"
             "      - /run/containerd:/x\n"
         )
-        findings = self._check(content)
-        assert len(findings) == 1
-        assert "/run/containerd" in findings[0].message
+        assert self._check(content) == []

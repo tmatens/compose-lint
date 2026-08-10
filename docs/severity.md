@@ -245,7 +245,7 @@ link. `tests/test_severity_matrix.py` enforces all four properties.
 | [CL-0010](rules/CL-0010.md) | A | Technique | Cross-container | — | HIGH | HIGH | — |
 | [CL-0011](rules/CL-0011.md) | A | Technique | Cross-container | — | HIGH | HIGH | — |
 | [CL-0012](rules/CL-0012.md) | A | Second flaw | Single container | availability-only | LOW | MEDIUM | `pending-move` — premise refuted; removal not yet landed ([CL-0012](rules/CL-0012.md)) |
-| [CL-0013](rules/CL-0013.md) | A | Direct | Host | — | CRITICAL | HIGH | `pending-split` — priced at a writable host root, its most dangerous member ([#503](https://github.com/tmatens/compose-lint/issues/503)) |
+| [CL-0013](rules/CL-0013.md) | A | Direct | Host | read-only | HIGH | HIGH | — |
 | [CL-0014](rules/CL-0014.md) | A | Removes a mitigation | Single container | — | LOW | LOW | — |
 | [CL-0015](rules/CL-0015.md) | A | Removes a mitigation | Single container | — | LOW | LOW | — |
 | [CL-0016](rules/CL-0016.md) | A | Direct | Host | — | CRITICAL | CRITICAL | — |
@@ -256,6 +256,7 @@ link. `tests/test_severity_matrix.py` enforces all four properties.
 | [CL-0021](rules/CL-0021.md) | B | Direct | Single container | — | HIGH | HIGH | — |
 | [CL-0022](rules/CL-0022.md) | A | Removes a mitigation | Single container | — | LOW | LOW | — |
 | [CL-0024](rules/CL-0024.md) | A | Direct | Host | — | CRITICAL | CRITICAL | — |
+| [CL-0025](rules/CL-0025.md) | A | Direct | Host | — | CRITICAL | CRITICAL | — |
 | [CL-0026](rules/CL-0026.md) | A | Second flaw | Cross-container | availability-only | MEDIUM | MEDIUM | — |
 | [CL-0027](rules/CL-0027.md) | A | Technique | Single container | — | HIGH | MEDIUM | `detection-precision` — cannot tell a debugger or NTP sidecar, which need these, from a workload that does not ([ADR-020](adr/020-severity-scoping-and-overrides.md)) |
 
@@ -293,8 +294,18 @@ link. `tests/test_severity_matrix.py` enforces all four properties.
   move to CL-0024, and `SYS_PTRACE`, `PERFMON`, `SYS_TIME` and
   `DAC_READ_SEARCH` to CL-0027. Resolves the descriptor/finding mismatch in
   [#503](https://github.com/tmatens/compose-lint/issues/503) for capabilities.
-- **CL-0013** — still heterogeneous, and priced at its most dangerous member per
-  the edge rule above, until the writable-mount split lands.
+- **CL-0013 / CL-0025** — host paths are graded by what the mount *grants*, not
+  by which directory it names. A writable mount of a root-equivalent path is
+  host root through ordinary file writes (CL-0025); the same path read-only
+  discloses without granting write, which is the `read-only` qualifier stepping
+  Direct × Host down one tier to CL-0013's HIGH. `/sys` and `/dev` sit in
+  CL-0013 in either mode, because writing to them adds no host-root path:
+  `/sys`'s `uevent_helper` is not writable at default capabilities, and a `/dev`
+  bind is gated by the device cgroup.
+- **CL-0001** — owns any mount that exposes a host control socket, including a
+  directory that merely *contains* one (`/run`, `/var/run`, `/run/containerd`,
+  `/run/systemd`), and is mode-independent because `:ro` applies to the socket
+  file rather than the API behind it.
 - **CL-0017** — the leg that works unaided is host → container: the container
   passively receives whatever the host later mounts under the shared path. It
   needs no capability, but it also needs a host operator action that no attacker
