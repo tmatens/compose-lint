@@ -95,6 +95,23 @@ pytest --cov=compose_lint --cov-report=term-missing --cov-fail-under=80
     default (absence rules) or that the flagged config produces the insecure
     behavior (presence rules). It runs in CI (`rule-premises`) and guards
     against flagging a Docker default — the CL-0022/CL-0023 failure mode
+11. **Derive the severity, don't pick it.** Work through the procedure in
+    [docs/severity.md](docs/severity.md) and write the derivation block on the
+    rule page — baseline, precondition, impact, qualifier, derived, shipped,
+    scoping assumptions, and an **Evidence** line naming the premise check or
+    captured observation that backs the impact claim. Write the fields before
+    looking at the number you wanted; if the result disagrees with instinct,
+    fix an axis definition or file an override, never try a different cell
+12. **Add the row to `docs/severity.md`'s assignment table.** The page and the
+    table must state the same derivation — `tests/test_severity_matrix.py`
+    fails if they drift, if the cell does not produce the printed severity, or
+    if a shipped severity differs from the derived one without a declared
+    override and a link
+13. **List the rule on every surface**: the README table, `docs/index.md`, and
+    the mkdocs nav. `tests/test_rule_surfaces.py` checks all of them
+14. **Map it to ATT&CK** in `src/compose_lint/attack.py`, or record why no
+    technique fits — an unmapped rule needs an entry in the test's
+    `UNMAPPED_BY_DESIGN` allow-list with its reason
 
 ### Rule requirements
 
@@ -105,8 +122,13 @@ pytest --cov=compose_lint --cov-report=term-missing --cov-fail-under=80
   (`scripts/validate_rule_premises.py`). No opinion-only rules.
 - **Every finding must be actionable.** If you can't tell the user exactly what
   to change, the finding isn't ready.
-- **Severity reflects real-world exploitability**, not subjective importance.
-  See [docs/severity.md](docs/severity.md) for the scoring matrix.
+- **Severity is derived, not chosen.** It is the value the two-axis matrix
+  produces for the rule's cell, under a stated attacker baseline and the
+  grounded Docker posture. Shipping a different number is legal only as a
+  declared override from the closed reason list, with a link. See
+  [docs/severity.md](docs/severity.md) — and note that "I evaluated cells until
+  one gave the number I expected" is the documented failure mode the model
+  exists to prevent.
 - **Rule IDs are permanent from 1.0.** Never reuse or retire a `CL-XXXX` ID once
   1.0 ships; pre-1.0, a mis-grounded rule may be removed and its ID reclaimed.
 
