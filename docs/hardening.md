@@ -11,6 +11,8 @@ docker run --rm \
   --security-opt no-new-privileges:true \
   --network none \
   --user 65532:65532 \
+  --memory 256m \
+  --cpus 0.5 \
   --pids-limit 256 \
   -v "$(pwd):/src:ro" \
   composelint/compose-lint:0.15.2
@@ -21,8 +23,9 @@ docker run --rm \
 | `--security-opt no-new-privileges:true` | CL-0003 |
 | `--cap-drop ALL` | CL-0006 |
 | `--read-only` | CL-0007 |
-| `--memory 256m --cpus 0.5` | CL-0026 |
+| `--memory 256m` + `--cpus 0.5` | CL-0026 |
 | `--user 65532:65532` | CL-0018 (matches the image's existing default) |
+| `--pids-limit 256` | — defence in depth; no rule flags its absence. CL-0012 used to, and was removed: on a mainstream systemd host the limit is bounded by `DefaultTasksMax` whether or not you set it |
 
 `--network none` and `:ro` on the bind mount are extra hardening — compose-lint never reaches the network and only reads its inputs.
 
