@@ -27,6 +27,7 @@ from compose_lint.models import Severity
 from compose_lint.rules import get_registered_rules
 
 SEVERITY_DOC = Path(__file__).parent.parent / "docs" / "severity.md"
+RULE_DOCS = Path(__file__).parent.parent / "docs" / "rules"
 
 # The closed list from ``docs/severity.md``. Extending it is an ADR-level
 # decision, not a test edit — the point of the list is that "just override it"
@@ -207,6 +208,77 @@ def test_closed_reason_list_matches_the_document() -> None:
         for cell in row[:1]
     }
     assert documented == set(OVERRIDE_REASONS)
+
+
+DERIVATION_FIELD_RE = re.compile(
+    r"^- \*\*(Baseline|Precondition|Impact|Qualifier/modifier|Derived|Shipped|"
+    r"Scoping assumptions|Evidence):\*\* (.+)$",
+    re.MULTILINE,
+)
+
+
+def _derivation(rule_id: str) -> dict[str, str]:
+    """Parse the derivation block from a rule's own doc page."""
+    text = (RULE_DOCS / f"{rule_id}.md").read_text(encoding="utf-8")
+    return {m.group(1): m.group(2).strip() for m in DERIVATION_FIELD_RE.finditer(text)}
+
+
+@pytest.mark.parametrize("row", ASSIGNMENTS, ids=ASSIGNMENT_IDS)
+def test_rule_page_derivation_matches_the_table(row: dict[str, str]) -> None:
+    """The rule page and the assignment table must not drift apart.
+
+    Both state the same derivation, so either can be edited alone — which is how
+    ``severity.md`` came to disagree with the rules in the first place.
+    """
+    match = RULE_ID_RE.search(row["Rule"])
+    assert match is not None
+    rule_id = match.group(0)
+    block = _derivation(rule_id)
+    required = {
+        "Baseline",
+        "Precondition",
+        "Impact",
+        "Qualifier/modifier",
+        "Derived",
+        "Shipped",
+        "Evidence",
+    }
+    assert required <= set(block), (
+        f"{rule_id}: derivation block is missing {sorted(required - set(block))}"
+    )
+
+    assert block["Baseline"].startswith(row["Baseline"]), (
+        f"{rule_id}: page says baseline {block['Baseline'][:1]!r}, "
+        f"table says {row['Baseline']!r}"
+    )
+    for field, column in (("Precondition", "Precondition"), ("Impact", "Impact")):
+        assert block[field].startswith(row[column]), (
+            f"{rule_id}: page {field} is {block[field][:40]!r}, "
+            f"table says {row[column]!r}"
+        )
+    qualifier = row["Qualifier"]
+    expected_qualifier = "none" if qualifier == NONE_CELL else qualifier
+    assert block["Qualifier/modifier"].startswith(expected_qualifier), (
+        f"{rule_id}: page qualifier {block['Qualifier/modifier'][:40]!r} "
+        f"disagrees with table {qualifier!r}"
+    )
+    assert block["Derived"].endswith(row["Derived"]), (
+        f"{rule_id}: page derives {block['Derived']!r}, table says {row['Derived']}"
+    )
+    assert block["Shipped"].startswith(row["Shipped"]), (
+        f"{rule_id}: page ships {block['Shipped'][:40]!r}, table says {row['Shipped']}"
+    )
+    if row["Override"] == NONE_CELL:
+        assert "override" not in block["Shipped"], (
+            f"{rule_id}: page declares an override the table does not carry"
+        )
+    else:
+        reason = OVERRIDE_REASON_RE.match(row["Override"])
+        assert reason is not None
+        assert f"`{reason.group(1)}`" in block["Shipped"], (
+            f"{rule_id}: page does not name the table's override reason "
+            f"{reason.group(1)!r}"
+        )
 
 
 @pytest.mark.parametrize("row", ASSIGNMENTS, ids=ASSIGNMENT_IDS)
