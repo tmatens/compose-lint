@@ -10,6 +10,7 @@ from compose_lint.rules._mounts import (
     TIMEZONE_FILES,
     iter_bind_mounts,
     match_prefix,
+    normalize_host_path,
 )
 
 if TYPE_CHECKING:
@@ -84,7 +85,7 @@ class WritableHostRootMountRule(BaseRule):
         for mount in iter_bind_mounts(service_name, service_config, lines):
             if mount.read_only:
                 continue  # disclosure only — CL-0013 owns it
-            if mount.host_path.rstrip("/") in TIMEZONE_FILES:
+            if normalize_host_path(mount.host_path) in TIMEZONE_FILES:
                 continue  # under /etc, but writing it is not host root
             matched = match_prefix(mount.host_path, ROOT_EQUIVALENT_PATHS)
             if matched is None:

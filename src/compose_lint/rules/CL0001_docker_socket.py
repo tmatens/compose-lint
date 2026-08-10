@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
-from compose_lint.rules._mounts import iter_bind_mounts
+from compose_lint.rules._mounts import iter_bind_mounts, normalize_host_path
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -80,10 +80,10 @@ def _matched_socket_dir(host_path: str) -> str | None:
     A descendant that *is* a socket is still caught, by the socket-name
     substring match in the caller.
     """
-    if not host_path:
-        return None  # not a bind mount (e.g. a named volume) — no host path
-    normalized = host_path.rstrip("/")
+    normalized = normalize_host_path(host_path)
     if not normalized:
+        return None  # not a bind mount (e.g. a named volume) — no host path
+    if normalized == "/":
         return "/" if "/" in _SOCKET_DIRS else None  # a whole-root mount
     for candidate in _SOCKET_DIRS:
         if candidate == "/":

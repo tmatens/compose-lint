@@ -154,3 +154,45 @@ class TestSocketDirectories:
             assert len(findings) == 1, volume
             assert findings[0].severity == Severity.CRITICAL
             assert "control sockets" in findings[0].message
+
+
+class TestRootSpellingNormalisation:
+    """A whole-root mount is root however the path is spelled.
+
+    ``/.``, ``/..``, ``//`` and ``/./`` all name the host root, and Docker
+    cleans the mount source before using it — verified: ``- /.:/host:ro``
+    mounts the real filesystem, live ``docker.sock`` included. Matching the
+    string as written missed every spelling but the bare ``/``, so a whole-root
+    bind was reported as a clean pass. ``/run/.`` is the same defect one level
+    down, and ``/etc/..`` under-graded to CL-0013's HIGH.
+    """
+
+    def setup_method(self) -> None:
+        self.rule = DockerSocketRule()
+
+    def _check(self, mount: str) -> list:
+        data, lines = loads(
+            f"services:\n  svc:\n    image: nginx\n    volumes:\n      - {mount}\n"
+        )
+        return list(self.rule.check("svc", data["services"]["svc"], data, lines))
+
+    def test_every_root_spelling_is_critical(self) -> None:
+        for spelling in ("/", "//", "/.", "/..", "/./", "/etc/.."):
+            findings = self._check(f"{spelling}:/host:ro")
+            assert len(findings) == 1, f"{spelling!r} produced {findings}"
+            assert findings[0].severity is Severity.CRITICAL, spelling
+
+    def test_dotted_socket_directory_is_still_matched(self) -> None:
+        findings = self._check("/run/.:/hostrun")
+        assert len(findings) == 1
+        assert findings[0].severity is Severity.CRITICAL
+
+    def test_normalisation_does_not_resurrect_the_named_volume_bug(self) -> None:
+        # An empty host path must not normalise to root: that turned every
+        # named volume into a CRITICAL finding once already.
+        assert self._check("myvol:/data") == []
+
+    def test_descendants_of_a_socket_dir_stay_unflagged(self) -> None:
+        # Ancestry, not descent — /run/myapp holds no socket.
+        assert self._check("/run/myapp:/x") == []
+        assert self._check("/run/./myapp:/x") == []

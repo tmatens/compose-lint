@@ -117,3 +117,34 @@ class TestWritableHostRootMountRule:
         assert finding.fix is not None
         assert ":ro" in finding.fix
         assert len(finding.references) > 0
+
+
+class TestPathNormalisation:
+    """Timezone and root exemptions must survive an unusual path spelling.
+
+    ``/etc/./localtime`` is the timezone file; before the host path was
+    normalised it slipped the exemption and a writable timezone bind came back
+    as CRITICAL — issue #509 one tier up, which this rule exists not to repeat.
+    """
+
+    def setup_method(self) -> None:
+        self.rule = WritableHostRootMountRule()
+
+    def _inline(self, volume: str) -> list:
+        data, lines = loads(
+            f"services:\n  a:\n    image: x\n    volumes:\n      - {volume}\n"
+        )
+        return list(self.rule.check("a", data["services"]["a"], data, lines))
+
+    def test_dotted_timezone_path_is_still_exempt(self) -> None:
+        assert self._inline("/etc/./localtime:/etc/localtime") == []
+        assert self._inline("/etc/timezone/.:/etc/timezone") == []
+
+    def test_whole_root_is_cl0001_in_every_spelling(self) -> None:
+        for spelling in ("/", "//", "/.", "/..", "/etc/.."):
+            assert self._inline(f"{spelling}:/host") == [], spelling
+
+    def test_dotted_subpath_still_matches_its_prefix(self) -> None:
+        findings = self._inline("/etc/./cron.d:/x")
+        assert len(findings) == 1
+        assert findings[0].severity is Severity.CRITICAL

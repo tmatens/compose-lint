@@ -10,6 +10,7 @@ in particular has already been a source of missed mounts.
 
 from __future__ import annotations
 
+import posixpath
 import re
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -95,14 +96,41 @@ def iter_bind_mounts(
         yield BindMount(i, host_path, read_only, line)
 
 
+def normalize_host_path(host_path: str) -> str:
+    """Resolve ``.`` and ``..`` segments; drop any trailing slash.
+
+    Docker cleans a mount source this way before using it, so ``/.``, ``/..``,
+    ``//`` and ``/etc/..`` all name the host **root**, and ``/run/.`` names
+    ``/run``. Matching the string as written missed every one of them: a
+    whole-root bind spelled ``/.`` mounted the host filesystem — the live
+    ``docker.sock`` included — and was reported as a clean pass.
+
+    Returns ``"/"`` for any spelling of the root and ``""`` for an empty path.
+    The two must not collapse together: an empty host path means a named
+    volume, which is not a bind mount at all, and normalising it to root is
+    how every named volume once became a CRITICAL finding.
+    """
+    if not host_path:
+        return ""
+    normalized = posixpath.normpath(host_path)
+    # normpath keeps exactly two leading slashes (POSIX leaves them
+    # implementation-defined); Docker collapses them.
+    if normalized.startswith("//"):
+        normalized = "/" + normalized.lstrip("/")
+    return normalized
+
+
 def match_prefix(host_path: str, paths: tuple[str, ...]) -> str | None:
     """Return the entry in ``paths`` that ``host_path`` is at or under.
 
-    Returns ``"/"`` for a literal root mount. ``paths`` is matched in order, so
-    callers list more specific entries before the prefixes that contain them.
+    Returns ``"/"`` for a root mount in any spelling. ``paths`` is matched in
+    order, so callers list more specific entries before the prefixes that
+    contain them.
     """
-    normalized = host_path.rstrip("/")
+    normalized = normalize_host_path(host_path)
     if not normalized:
+        return None
+    if normalized == "/":
         return "/" if "/" in paths else None
     for candidate in paths:
         if candidate == "/":

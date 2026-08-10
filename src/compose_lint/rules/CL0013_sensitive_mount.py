@@ -10,6 +10,7 @@ from compose_lint.rules._mounts import (
     TIMEZONE_FILES,
     iter_bind_mounts,
     match_prefix,
+    normalize_host_path,
 )
 from compose_lint.rules.CL0025_writable_host_root import ROOT_EQUIVALENT_PATHS
 
@@ -72,7 +73,7 @@ class SensitiveMountRule(BaseRule):
         lines: dict[str, int],
     ) -> Iterator[Finding]:
         for mount in iter_bind_mounts(service_name, service_config, lines):
-            normalized = mount.host_path.rstrip("/")
+            normalized = normalize_host_path(mount.host_path)
 
             matched = match_prefix(mount.host_path, _EXPOSED_PATHS)
             reason = "exposes host kernel interfaces, devices or user data"
