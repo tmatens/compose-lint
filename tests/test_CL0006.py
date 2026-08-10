@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from compose_lint.parser import load_compose
+from compose_lint.parser import load_compose, loads
 from compose_lint.rules.CL0006_cap_drop import CapDropRule
 
 FIXTURES = Path(__file__).parent / "compose_files"
@@ -111,3 +111,26 @@ class TestCapDropRule:
             )
         )
         assert len(findings) == 0
+
+
+class TestCapDropNormalisation:
+    """``cap_drop`` and ``cap_add`` must agree about a spelling.
+
+    They did not: this rule upper-cased only, while ``_caps`` also trimmed and
+    stripped the ``CAP_`` prefix, so ``cap_drop: [CAP_ALL]`` read as "did not
+    drop all" while the same spelling on ``cap_add`` was normalised. Docker
+    rejects both odd spellings, so neither reading shipped a wrong finding
+    about a file that runs — but one answer is better than two.
+    """
+
+    def _findings(self, body: str) -> list:
+        data, lines = loads(f"services:\n  app:\n    image: nginx:1.27\n{body}")
+        return list(CapDropRule().check("app", data["services"]["app"], data, lines))
+
+    def test_all_spellings_count_as_dropping_everything(self) -> None:
+        for spelling in ("ALL", "all", "CAP_ALL", "cap_all", '"  ALL  "'):
+            body = f"    cap_drop:\n      - {spelling}\n"
+            assert self._findings(body) == [], spelling
+
+    def test_a_partial_drop_still_fires(self) -> None:
+        assert len(self._findings("    cap_drop:\n      - CHOWN\n")) == 1

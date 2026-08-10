@@ -32,6 +32,22 @@ CIS_REF = (
 REFERENCES = [OWASP_REF, CIS_REF]
 
 
+def normalize_cap(cap: object) -> str:
+    """Canonical capability name: upper-cased, trimmed, ``CAP_`` prefix removed.
+
+    Shared so ``cap_add`` and ``cap_drop`` cannot disagree about the same
+    spelling. They did: this helper trimmed and stripped the prefix while
+    CL-0006 upper-cased only, so ``cap_drop: [CAP_ALL]`` read as "did not drop
+    all" while ``cap_add: [CAP_ALL]`` was normalised. Docker refuses both odd
+    spellings, so neither reading shipped a wrong finding about a file that
+    runs -- but one answer is better than two.
+
+    ``ALL`` keeps its exception (see :func:`iter_cap_add`) at the call site,
+    because it is only ``cap_add`` that must reject the prefixed form.
+    """
+    return str(cap).strip().upper().removeprefix("CAP_")
+
+
 def iter_cap_add(
     service_name: str,
     service_config: dict[str, Any],
@@ -59,7 +75,7 @@ def iter_cap_add(
 
     for i, cap in enumerate(cap_add):
         as_written = str(cap).strip().upper()
-        bare = as_written.removeprefix("CAP_")
+        bare = normalize_cap(cap)
         if bare == "ALL" and as_written != "ALL":
             continue  # CAP_ALL is not a capability Docker accepts — see above
         if bare not in members:

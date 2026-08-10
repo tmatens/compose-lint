@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
+from compose_lint.rules._caps import normalize_cap
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -53,7 +54,7 @@ class CapDropRule(BaseRule):
             cap_drop = []
 
         # Normalize to uppercase for comparison
-        dropped = {str(cap).upper() for cap in cap_drop}
+        dropped = {normalize_cap(cap) for cap in cap_drop}
 
         if "ALL" not in dropped:
             yield Finding(
