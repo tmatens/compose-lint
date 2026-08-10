@@ -5,7 +5,7 @@
 # inside code fences (CL-0004, CL-0019, hardening.md docker --format examples).
 site_name: compose-lint
 site_description: >-
-  Security linter for Docker Compose files — 22 rules with actionable,
+  Security linter for Docker Compose files — 24 rules with actionable,
   runtime-proven fix guidance.
 site_url: https://tmatens.github.io/compose-lint/
 repo_url: https://github.com/tmatens/compose-lint
@@ -49,9 +49,9 @@ nav:
       - "CL-0007 read_only — Read-only file system errors": rules/CL-0007.md
       - "CL-0008 network_mode: host": rules/CL-0008.md
       - "CL-0009 Disabled seccomp / AppArmor profiles": rules/CL-0009.md
-      - "CL-0010 Host PID / IPC / UTS namespaces": rules/CL-0010.md
+      - "CL-0010 Host PID and IPC namespaces": rules/CL-0010.md
       - "CL-0011 Strong host-adjacent capabilities": rules/CL-0011.md
-      - "CL-0013 Sensitive host bind mounts": rules/CL-0013.md
+      - "CL-0013 Sensitive host path exposed": rules/CL-0013.md
       - "CL-0014 Logging driver none": rules/CL-0014.md
       - "CL-0016 Dangerous host devices": rules/CL-0016.md
       - "CL-0017 Shared mount propagation": rules/CL-0017.md

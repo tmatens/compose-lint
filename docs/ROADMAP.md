@@ -1,6 +1,6 @@
 # Roadmap
 
-compose-lint today ships 22 security rules, PyPI distribution, a published GitHub Action and Docker image, SARIF/JSON/text output, pre-commit support, per-service rule overrides, and `--explain`. The foundation is solid; the next milestone is the 1.0 stability commitment. Remaining investments make the tool more useful to the users already running it, not chase speculative distribution channels.
+compose-lint today ships 24 security rules, PyPI distribution, a published GitHub Action and Docker image, SARIF/JSON/text output, pre-commit support, per-service rule overrides, and `--explain`. The foundation is solid; the next milestone is the 1.0 stability commitment. Remaining investments make the tool more useful to the users already running it, not chase speculative distribution channels.
 
 ## Strategic framing
 
@@ -54,7 +54,7 @@ Turn findings into fixes. This is where the product's differentiation grows the 
 **`--explain CL-XXXX`** _(shipped in v0.4.x)_ — prints the full prose from `docs/rules/CL-XXXX.md` in the terminal, reducing context-switching to the browser during triage. Rule-doc markdown is force-included into the wheel at build time. No new deps; pulled forward out of Milestone 3 because it's strictly additive and unblocks the `--fix` UX work.
 
 **`fix` subcommand** _(shipped; promoted to the documented, SemVer-covered surface in 0.11.0 — [ADR-014](adr/014-fix-remediation.md))_ — auto-fix for safe, unambiguous rules:
-- Six fixers: CL-0003 (`no-new-privileges:true`), CL-0005 (bind published ports to `127.0.0.1`), CL-0007 (`read_only: true`), CL-0009, CL-0014, CL-0015.
+- Five fixers: CL-0003 (`no-new-privileges:true`), CL-0005 (bind published ports to `127.0.0.1`), CL-0007 (`read_only: true`), CL-0009, CL-0014.
 - Dry run by default; `fix --apply` writes in-place via an atomic swap; `--only CL-XXXX` scopes to named rules.
 - Refuses anchors/merge keys/`${VAR}` regions and guards every apply with a re-parse + verify-apply pass.
 - Out of scope for auto-fix: CL-0001 (socket proxy replacement is non-trivial), CL-0006 (capability lists are image-specific), CL-0016 (correct secret management is context-dependent).

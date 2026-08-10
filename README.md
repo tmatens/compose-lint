@@ -257,8 +257,8 @@ init options:
 `compose-lint fix` auto-remediates the findings whose edit is **mechanically
 unambiguous** — one correct value, in one place, with no collateral change to
 the rest of the file: adding `read_only: true` or `no-new-privileges:true`,
-binding a published port to `127.0.0.1`, restoring a disabled logging driver,
-seccomp profile, or healthcheck, and similar. It is **dry-run by default**: it
+binding a published port to `127.0.0.1`, restoring a disabled logging driver
+or seccomp profile, and similar. It is **dry-run by default**: it
 prints a unified diff and writes nothing.
 
 <!-- Fix demo GIF. Regenerate with scripts/demo/ — see scripts/demo/README.md. -->

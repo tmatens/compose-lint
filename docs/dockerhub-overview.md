@@ -6,7 +6,7 @@ In a scan of 6,444 public Docker Compose files on GitHub, **91% of those that pa
 
 ![compose-lint scanning a docker-compose.yml: severity-sorted findings with fix guidance and reference URLs, then the FAIL verdict.](https://raw.githubusercontent.com/tmatens/compose-lint/main/docs/assets/demo.gif)
 
-**What it catches** — 22 rules, each citing its OWASP/CIS grounding ([full rules table](https://github.com/tmatens/compose-lint#rules)):
+**What it catches** — 24 rules, each citing its OWASP/CIS grounding ([full rules table](https://github.com/tmatens/compose-lint#rules)):
 
 - Privilege flaws — `privileged: true`, missing `cap_drop`, `no-new-privileges` not set, root user, host namespace sharing
 - Network exposure — wildcard port binds, `network_mode: host`
