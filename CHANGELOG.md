@@ -46,6 +46,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from CL-0013 when read-only). Waivers for CL-0012, CL-0015 and
   `/var/lib/kubelet` are dead and can be deleted.
 
+- CL-0016's device list is reconciled with what a device actually grants. It
+  **gains** `/dev/vd*`, `/dev/xvd*`, `/dev/mmcblk*` and `/dev/md*` — the host
+  root disks of KVM and Proxmox guests, EC2 instances, Raspberry Pis and mdraid
+  arrays, which needed no capability and were not flagged at all. It **drops**
+  `/dev/mem`, `/dev/port` and `/dev/fuse`, each live only alongside a capability
+  CL-0024 or CL-0009 already flags, and `/dev/kmem` and `/dev/raw`, for which
+  Docker refuses to create the container. Suppressions for the dropped devices
+  are dead and can be deleted.
+
+- Host paths are normalised before the mount rules match them, so `.` and `..`
+  segments no longer hide a mount. `- /.:/host`, `- /..:/host` and `- /./:/host`
+  are whole-root mounts and now report CL-0001 CRITICAL instead of passing
+  clean; `/run/.` is matched like `/run`, and `/etc/..` is treated as root
+  rather than as CL-0013's HIGH.
+
+- CL-0026 no longer accepts a non-positive value hidden in an interpolation
+  default. `mem_limit: ${MEM:-0}` and `cpus: ${CPUS:-0}` describe an unbounded
+  container and are now flagged; a bare `${MEM}` still counts as a limit,
+  because its value is genuinely unknowable from the file.
+
+- CL-0001 matches a socket name on the **host** side of a mount only.
+  `- /tmp/fake:/var/run/docker.sock` is no longer reported as a socket mount —
+  the container path is where a socket would land, not where it comes from.
+
+- CL-0006 and the `cap_add` rules now share one capability normaliser, so
+  `cap_drop: [CAP_ALL]` and `cap_drop: ["  ALL  "]` are read the same way
+  `cap_add` reads them. `cap_add: [CAP_ALL]` is no longer flagged at all:
+  Docker rejects that spelling outright, so the file could never start.
+
 - CL-0001 now flags any mount that exposes a host control socket, including a
   directory that merely contains one — `/run`, `/var/run`, `/run/containerd`,
   `/run/systemd`, or the whole root `/` — and is mode-independent, because `:ro`
