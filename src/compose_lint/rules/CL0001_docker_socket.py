@@ -124,9 +124,10 @@ class DockerSocketRule(BaseRule):
         if not isinstance(volumes, list):
             return
 
-        # Host path per index, so the socket-name match (a substring over the
-        # whole entry, which also catches a named volume mounted *at* a socket
-        # path) and the parent-directory match can share one pass.
+        # Host path per index, so the socket-name match and the
+        # parent-directory match can share one pass. Keyed on the entry's real
+        # position in volumes:, because the iterator skips named volumes and
+        # enumerating it instead would be off-by-N.
         host_paths = {
             mount.position: mount.host_path
             for mount in iter_bind_mounts(service_name, service_config, lines)
@@ -134,11 +135,20 @@ class DockerSocketRule(BaseRule):
 
         for i, volume in enumerate(volumes):
             volume_str = str(volume)
+            # Match the *host* side only. Matching the whole entry reported
+            # `- /tmp/fake:/var/run/docker.sock` as a socket mount, which is
+            # false: the container path is where the socket lands, not where it
+            # comes from. The catch that cost was a named volume mounted *at* a
+            # socket path — which shadows the path with an empty volume and
+            # grants nothing, so it was never a risk. A host socket is always
+            # the host side in short syntax and `source:` in long syntax, so
+            # nothing real is missed.
+            host_path = host_paths.get(i, "")
             runtime = next(
                 (
                     name
                     for marker, name in _RUNTIME_SOCKETS.items()
-                    if marker in volume_str
+                    if marker in host_path
                 ),
                 None,
             )
@@ -152,7 +162,7 @@ class DockerSocketRule(BaseRule):
                 # The parent-directory case: no socket named, but one is inside.
                 # Mode-independent — ':ro' applies to the socket file, not to
                 # the API behind it.
-                directory = _matched_socket_dir(host_paths.get(i, ""))
+                directory = _matched_socket_dir(host_path)
                 if directory is None:
                     continue
                 message = (

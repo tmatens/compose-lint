@@ -196,3 +196,46 @@ class TestRootSpellingNormalisation:
         # Ancestry, not descent — /run/myapp holds no socket.
         assert self._check("/run/myapp:/x") == []
         assert self._check("/run/./myapp:/x") == []
+
+
+class TestHostSideMatching:
+    """The socket name is matched on the host side of the mount only.
+
+    Matching the whole entry reported `- /tmp/fake:/var/run/docker.sock` as a
+    socket mount. That is false — the container path is where a socket would
+    land, not where it comes from — and it landed at CRITICAL, the tier meant
+    for "fix this first". The catch it cost was a named volume mounted *at* a
+    socket path, which shadows that path with an empty volume and grants
+    nothing.
+    """
+
+    def setup_method(self) -> None:
+        self.rule = DockerSocketRule()
+
+    def _check(self, mount: str) -> list:
+        data, lines = loads(
+            f"services:\n  svc:\n    image: nginx\n    volumes:\n      - {mount}\n"
+        )
+        return list(self.rule.check("svc", data["services"]["svc"], data, lines))
+
+    def test_container_side_socket_path_is_not_a_finding(self) -> None:
+        assert self._check("/tmp/fake:/var/run/docker.sock") == []
+        assert self._check("myvol:/var/run/docker.sock") == []
+
+    def test_host_side_socket_still_fires_anywhere_on_disk(self) -> None:
+        for host in (
+            "/var/run/docker.sock",
+            "/opt/custom/docker.sock",
+            "/run/containerd/containerd.sock",
+        ):
+            findings = self._check(f"{host}:/x")
+            assert len(findings) == 1, host
+            assert findings[0].severity is Severity.CRITICAL
+
+    def test_long_syntax_uses_source_not_target(self) -> None:
+        data, lines = loads(
+            "services:\n  svc:\n    image: nginx\n    volumes:\n"
+            "      - type: bind\n        source: /tmp/f\n"
+            "        target: /var/run/docker.sock\n"
+        )
+        assert list(self.rule.check("svc", data["services"]["svc"], data, lines)) == []
