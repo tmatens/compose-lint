@@ -12,7 +12,7 @@ Security-focused linter for Docker Compose files. Python >=3.10, PyYAML only run
 
 ## Severity
 
-CRITICAL > HIGH > MEDIUM > LOW. See `docs/severity.md` for the scoring matrix. Don't inflate severity.
+CRITICAL > HIGH > MEDIUM > LOW. A rule's severity is **derived**, not chosen: it is what the two-axis matrix in `docs/severity.md` produces for the rule's cell, under a stated attacker baseline and the grounded Docker posture (ADR-020). Shipping a different number is legal only as a declared override from the closed reason list, with a link — `tests/test_severity_matrix.py` fails otherwise. Evaluating cells until one yields the number you expected is the documented failure mode the model exists to prevent, so if the result disagrees with instinct, fix an axis definition or file an override rather than trying a different cell.
 
 ## Exit codes
 
@@ -35,7 +35,9 @@ Disables still produce suppressed findings. `reason` flows to `suppression_reaso
 
 ## Adding a rule
 
-See CONTRIBUTING.md for the full checklist. Every rule must cite OWASP, CIS, or Docker docs **that demonstrate the need in a container context** — generic host/Linux hardening a container's defaults already neutralize is not enough (see CL-0022/CL-0023). If a container-context source is thin, the rule's premise must be **validated at runtime**: a rule that describes container runtime state gets a check in `scripts/validate_rule_premises.py`, which proves the insecure state is Docker's *default* (for absence rules) or that the flagged config produces the insecure behavior (for presence rules). That suite runs in CI (`rule-premises` job). Every finding must be actionable with specific fix guidance.
+See CONTRIBUTING.md for the full checklist. Every rule must cite OWASP, CIS, or Docker docs **that demonstrate the need in a container context** — generic host/Linux hardening a container's defaults already neutralize is not enough (see CL-0022/CL-0023). If a container-context source is thin, the rule's premise must be **validated at runtime**: a rule that describes container runtime state gets a check in `scripts/validate_rule_premises.py`, which proves the insecure state is Docker's *default* (for absence rules) or that the flagged config produces the insecure behavior (for presence rules). That suite runs in CI (`rule-premises` job), and asserts the daemon is at Docker's defaults before measuring — a premise measured on a departed posture cannot ground a rule. Every finding must be actionable with specific fix guidance.
+
+A new rule also needs its derivation block (with an **Evidence** line naming the premise check or captured observation), a row in `docs/severity.md`'s assignment table, a listing on the README/`docs/index.md`/mkdocs-nav surfaces, and an ATT&CK mapping in `src/compose_lint/attack.py` or a recorded reason none fits. Each is enforced by a test.
 
 ## Contributor workflow
 
