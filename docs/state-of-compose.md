@@ -72,10 +72,17 @@ The MEDIUM-heavy distribution is a property of compose-lint's rule design: the t
 > has landed, and it moves the tier of rules that fire on most files: CL-0007
 > (`read_only` absent, 90.8% of files) and CL-0017 went to LOW, CL-0005 (57.8%)
 > went to MEDIUM, CL-0016 went to CRITICAL, and CL-0026 — a new near-universal
-> MEDIUM — did not exist when this run was taken. The distribution below
-> inverts: LOW becomes the largest tier by finding count, and the "MEDIUM-heavy"
-> reading no longer holds. Two rules counted here (CL-0012, CL-0015) have since
-> been removed, and CL-0011 and CL-0013 have each been split.
+> MEDIUM — did not exist when this run was taken. Two rules counted here
+> (CL-0012, CL-0015) have since been removed, and CL-0011 and CL-0013 have each
+> been split.
+>
+> **MEDIUM stays the largest tier, contrary to what the rework was expected to
+> do.** Re-linting 883 of the corpus files with the new rule set gives roughly
+> MEDIUM 77%, LOW 16%, HIGH 6%, CRITICAL 1%. CL-0007 vacating MEDIUM was
+> expected to make LOW dominant, but CL-0026 was added afterwards and fires on
+> almost exactly the same population, so it backfills the tier CL-0007 left.
+> That is a sanity check on two curated tiers, not the refreshed report — treat
+> the direction as reliable and the digits as provisional.
 >
 > **What survives unchanged:** the prevalence figures — how many files carry a
 > given finding — because they count rule hits rather than tiers. The 91%
