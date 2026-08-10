@@ -77,12 +77,22 @@ The MEDIUM-heavy distribution is a property of compose-lint's rule design: the t
 > been split.
 >
 > **MEDIUM stays the largest tier, contrary to what the rework was expected to
-> do.** Re-linting 883 of the corpus files with the new rule set gives roughly
-> MEDIUM 77%, LOW 16%, HIGH 6%, CRITICAL 1%. CL-0007 vacating MEDIUM was
-> expected to make LOW dominant, but CL-0026 was added afterwards and fires on
-> almost exactly the same population, so it backfills the tier CL-0007 left.
-> That is a sanity check on two curated tiers, not the refreshed report — treat
-> the direction as reliable and the digits as provisional.
+> do.** A full re-lint with the new rule set — 5,417 files fetched 2026-08-10,
+> 5,279 linted — gives **MEDIUM 76.3%, LOW 16.9%, HIGH 5.6%, CRITICAL 1.2%**.
+> CL-0007 vacating MEDIUM was expected to make LOW dominant, but CL-0026 was
+> added afterwards and fires on almost exactly the same population (4,727 files
+> against CL-0007's 4,791), so it backfills the tier CL-0007 left. Two rules
+> swapped places and the shape barely moved.
+>
+> **This is not the refreshed report, and the numbers above should not be cited
+> as one.** That re-lint ran against a *re-fetched* corpus, not the pinned one:
+> 5,417 files against 6,444, with the longtail tier at 1,125 against 1,552,
+> because the longtail sweep is a stratified code search that GitHub does not
+> reproduce. Publishing its headline figures here would conflate corpus drift
+> with the rule changes. What it is good for is direction and sanity: every one
+> of the 24 rules fires on real files, none is dead, there were zero crashes and
+> zero timeouts across 5,279 files, and the share of files carrying at least one
+> finding came out at **91.2%** — the same figure this report already cites.
 >
 > **What survives unchanged:** the prevalence figures — how many files carry a
 > given finding — because they count rule hits rather than tiers. The 91%
