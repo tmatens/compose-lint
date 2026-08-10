@@ -259,7 +259,7 @@ link. `tests/test_severity_matrix.py` enforces all four properties.
 | [CL-0022](rules/CL-0022.md) | A | Removes a mitigation | Single container | — | LOW | LOW | — |
 | [CL-0024](rules/CL-0024.md) | A | Direct | Host | — | CRITICAL | CRITICAL | — |
 | [CL-0025](rules/CL-0025.md) | A | Direct | Host | — | CRITICAL | CRITICAL | — |
-| [CL-0026](rules/CL-0026.md) | A | Second flaw | Cross-container | availability-only | MEDIUM | MEDIUM | — |
+| [CL-0026](rules/CL-0026.md) | A | Removes a mitigation | Host | availability-only | MEDIUM | MEDIUM | — |
 | [CL-0027](rules/CL-0027.md) | A | Technique | Host | read-only | HIGH | MEDIUM | `detection-precision` — cannot tell a debugger or NTP sidecar, which need these, from a workload that does not ([ADR-020](adr/020-severity-scoping-and-overrides.md)) |
 
 ### Notes on individual derivations
