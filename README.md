@@ -181,7 +181,7 @@ If you need broad IaC coverage across Terraform, Kubernetes, and more, KICS cove
 | [CL-0008](https://tmatens.github.io/compose-lint/rules/CL-0008/) | HIGH | Host network mode | [Rule #5](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5-be-mindful-of-inter-container-connectivity) | 5.10 |
 | [CL-0009](https://tmatens.github.io/compose-lint/rules/CL-0009/) | HIGH | Security profile disabled | [Rule #6](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-6-use-linux-security-module-seccomp-apparmor-or-selinux-for-runtime-security) | 5.2, 5.3, 5.22 |
 | [CL-0010](https://tmatens.github.io/compose-lint/rules/CL-0010/) | HIGH | Host namespace sharing | [Rule #3][owasp3] | 5.16, 5.17, 5.21, 5.31 |
-| [CL-0011](https://tmatens.github.io/compose-lint/rules/CL-0011/) | HIGH | Dangerous capabilities added | [Rule #3][owasp3] | 5.4 |
+| [CL-0011](https://tmatens.github.io/compose-lint/rules/CL-0011/) | HIGH | Strong host-adjacent capability added | [Rule #3][owasp3] | 5.4 |
 | [CL-0012](https://tmatens.github.io/compose-lint/rules/CL-0012/) | MEDIUM | PIDs cgroup limit disabled | — | 5.29 |
 | [CL-0013](https://tmatens.github.io/compose-lint/rules/CL-0013/) | HIGH | Sensitive host path mounted | [Rule #8][owasp8] | 5.6 |
 | [CL-0014](https://tmatens.github.io/compose-lint/rules/CL-0014/) | LOW | Logging driver disabled | — | — |
@@ -193,7 +193,9 @@ If you need broad IaC coverage across Terraform, Kubernetes, and more, KICS cove
 | [CL-0020](https://tmatens.github.io/compose-lint/rules/CL-0020/) | HIGH | Credential-shaped env key with literal value | [Rule #12][owasp12] | — |
 | [CL-0021](https://tmatens.github.io/compose-lint/rules/CL-0021/) | HIGH | Credential embedded in connection-string env value | [Rule #12][owasp12] | — |
 | [CL-0022](https://tmatens.github.io/compose-lint/rules/CL-0022/) | LOW | tmpfs mount re-enables exec/suid/dev | [Rule #8][owasp8] | — |
+| [CL-0024](https://tmatens.github.io/compose-lint/rules/CL-0024/) | CRITICAL | Host-code-execution capability added | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3-limit-capabilities-grant-only-specific-capabilities-needed-by-a-container) | 5.4 |
 | [CL-0026](https://tmatens.github.io/compose-lint/rules/CL-0026/) | MEDIUM | No resource limits (memory/CPU) | [Rule #7](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-7-limit-resources-memory-cpu-file-descriptors-processes-restarts) | 5.10, 5.11 |
+| [CL-0027](https://tmatens.github.io/compose-lint/rules/CL-0027/) | MEDIUM | Bounded-grant capability added | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3-limit-capabilities-grant-only-specific-capabilities-needed-by-a-container) | 5.4 |
 
 ## Severity Levels
 

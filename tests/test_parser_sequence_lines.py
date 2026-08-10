@@ -169,7 +169,9 @@ def test_scalar_items_get_lines(tmp_path: Path) -> None:
             ),
             [5, 6, 7],
         ),
-        # CL-0011: cap_add — each dangerous cap on its own line
+        # CL-0011: cap_add — the strong-tier cap on its own line (SYS_ADMIN
+        # moved to CL-0024 in the three-way split, so only NET_ADMIN is this
+        # rule's; the line-attribution behaviour under test is unchanged)
         (
             "CL-0011",
             "compose_lint.rules.CL0011_dangerous_cap_add",
@@ -179,8 +181,23 @@ def test_scalar_items_get_lines(tmp_path: Path) -> None:
                 "  s:\n"
                 "    image: x\n"
                 "    cap_add:\n"
-                "      - SYS_ADMIN\n"
+                "      - BPF\n"
                 "      - NET_ADMIN\n"
+            ),
+            [5, 6],
+        ),
+        # CL-0024: the same attribution through the shared cap_add scan
+        (
+            "CL-0024",
+            "compose_lint.rules.CL0024_host_exec_cap_add",
+            "HostExecCapAddRule",
+            (
+                "services:\n"
+                "  s:\n"
+                "    image: x\n"
+                "    cap_add:\n"
+                "      - SYS_ADMIN\n"
+                "      - SYS_MODULE\n"
             ),
             [5, 6],
         ),

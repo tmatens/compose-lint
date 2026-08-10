@@ -34,12 +34,13 @@ RULE_ID_RE = re.compile(r"^CL-\d{4}$")
 # Rules that deliberately raise a finding's severity above the documented
 # baseline in ``metadata.severity``. Each value is the COMPLETE set of
 # severities the rule may emit and must contain the metadata baseline:
-#   CL-0011 raises ``cap_add: [ALL]`` from HIGH to CRITICAL.
 #   CL-0013 raises a full host-root bind mount from HIGH to CRITICAL.
+# CL-0011 left this list when ``cap_add`` was split into three rules, one per
+# tier; CL-0013 leaves it when the writable-mount split lands, after which the
+# list should be empty and stay that way.
 # Any other rule emitting a non-baseline severity is intentionally a failure
 # below, so per-finding escalation stays a deliberate, reviewed decision.
 VARIABLE_SEVERITY_RULES: dict[str, set[Severity]] = {
-    "CL-0011": {Severity.HIGH, Severity.CRITICAL},
     "CL-0013": {Severity.HIGH, Severity.CRITICAL},
 }
 

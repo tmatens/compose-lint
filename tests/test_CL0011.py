@@ -1,4 +1,12 @@
-"""Tests for CL-0011: Dangerous capabilities added."""
+"""Tests for CL-0011: strong host-adjacent capabilities added.
+
+CL-0011 is one of three rules over ``cap_add``, split by what the capability
+grants (``docs/severity.md``): CL-0024 for host code execution, CL-0011 here
+for the strong host-adjacent tier, CL-0027 for the bounded grants. The
+membership boundary is the thing worth testing — each rule must claim its own
+capabilities and stay silent on the other tiers', or a config gets graded
+twice.
+"""
 
 from __future__ import annotations
 
@@ -10,10 +18,20 @@ from compose_lint.rules.CL0011_dangerous_cap_add import DangerousCapAddRule
 
 FIXTURES = Path(__file__).parent / "compose_files"
 
+# Capabilities owned by the other two tiers. CL-0011 must not fire on any.
+OTHER_TIERS = (
+    "ALL",
+    "SYS_ADMIN",
+    "SYS_MODULE",
+    "SYS_RAWIO",
+    "SYS_PTRACE",
+    "PERFMON",
+    "SYS_TIME",
+    "DAC_READ_SEARCH",
+)
+
 
 class TestDangerousCapAddRule:
-    """Tests for dangerous cap_add detection."""
-
     def setup_method(self) -> None:
         self.rule = DangerousCapAddRule()
 
@@ -23,24 +41,45 @@ class TestDangerousCapAddRule:
             self.rule.check(service_name, data["services"][service_name], data, lines)
         )
 
-    def test_detects_sys_admin(self) -> None:
-        findings = self._check("sys_admin")
-        assert len(findings) == 1
-        assert findings[0].rule_id == "CL-0011"
-        assert "SYS_ADMIN" in findings[0].message
-
     def _check_cap(self, cap: str) -> list:
         data, lines = loads(
             f"services:\n  a:\n    image: nginx:1.27\n    cap_add: [{cap}]\n"
         )
         return list(self.rule.check("a", data["services"]["a"], data, lines))
 
+    def test_metadata(self) -> None:
+        meta = self.rule.metadata
+        assert meta.id == "CL-0011"
+        assert meta.severity.value == "high"
+        assert len(meta.references) > 0
+
+    def test_detects_net_admin(self) -> None:
+        findings = self._check("net_admin")
+        assert len(findings) == 1
+        assert findings[0].rule_id == "CL-0011"
+        assert findings[0].severity == Severity.HIGH
+        assert "NET_ADMIN" in findings[0].message
+
+    def test_detects_bpf(self) -> None:
+        findings = self._check_cap("BPF")
+        assert len(findings) == 1
+        assert "BPF" in findings[0].message
+
     def test_detects_sys_boot(self) -> None:
-        # Curated-list additions (issue #279 R5).
         findings = self._check_cap("SYS_BOOT")
         assert len(findings) == 1
         assert findings[0].severity == Severity.HIGH
         assert "SYS_BOOT" in findings[0].message
+
+    def test_sys_boot_message_does_not_claim_kexec(self) -> None:
+        """kexec_load returns EPERM even with SYS_BOOT held (verified)."""
+        message = self._check_cap("SYS_BOOT")[0].message
+        assert "reboot" in message
+        assert "kexec_load is blocked" in message
+
+    def test_stays_silent_on_the_other_tiers(self) -> None:
+        for cap in OTHER_TIERS:
+            assert self._check_cap(cap) == [], f"CL-0011 claimed {cap}"
 
     def test_ignores_dac_override(self) -> None:
         # DAC_OVERRIDE is one of Docker's 14 default capabilities, so adding it
@@ -48,122 +87,44 @@ class TestDangerousCapAddRule:
         # the container holds it either way. Flagging it inverted the gate:
         # `cap_drop: [ALL]` + `cap_add: [DAC_OVERRIDE]` (one capability) failed
         # at --fail-on high while no cap_drop at all (fourteen, DAC_OVERRIDE
-        # among them) passed. Same reasoning already excludes MKNOD and
-        # SYS_CHROOT; DAC_OVERRIDE was missed (issue #492).
+        # among them) passed. Same reasoning excludes MKNOD and SYS_CHROOT
+        # (issue #492).
         assert self._check_cap("DAC_OVERRIDE") == []
 
-    def test_detects_bpf(self) -> None:
-        findings = self._check_cap("BPF")
-        assert len(findings) == 1
-        assert "BPF" in findings[0].message
-
-    def test_detects_perfmon(self) -> None:
-        # Split out of SYS_ADMIN in Linux 5.8, like BPF (issue #192).
-        findings = self._check_cap("PERFMON")
-        assert len(findings) == 1
-        assert findings[0].severity == Severity.HIGH
-        assert "PERFMON" in findings[0].message
-
     def test_detects_cap_prefixed_capability(self) -> None:
-        # Docker treats `CAP_SYS_ADMIN` == `SYS_ADMIN`; the rule keyed on the
-        # bare name and missed the prefixed form, including `CAP_ALL` (#277 F2).
-        data, lines = loads(
-            "services:\n  a:\n    image: nginx:1.27\n    cap_add: [CAP_SYS_ADMIN]\n"
-        )
-        findings = list(self.rule.check("a", data["services"]["a"], data, lines))
+        # Docker treats `CAP_NET_ADMIN` == `NET_ADMIN` (issue #277 F2).
+        findings = self._check_cap("CAP_NET_ADMIN")
         assert len(findings) == 1
-        assert findings[0].rule_id == "CL-0011"
-        assert "CAP_SYS_ADMIN" in findings[0].message
+        assert "CAP_NET_ADMIN" in findings[0].message
 
-    def test_detects_cap_all_prefixed(self) -> None:
-        data, lines = loads(
-            "services:\n  a:\n    image: nginx:1.27\n    cap_add: [CAP_ALL]\n"
-        )
-        findings = list(self.rule.check("a", data["services"]["a"], data, lines))
-        assert len(findings) == 1
-        assert findings[0].severity is Severity.CRITICAL
-
-    def test_detects_sys_ptrace(self) -> None:
-        findings = self._check("sys_ptrace")
-        assert len(findings) == 1
-        assert "SYS_PTRACE" in findings[0].message
-
-    def test_detects_net_admin(self) -> None:
-        findings = self._check("net_admin")
+    def test_lowercase_normalized(self) -> None:
+        findings = self._check_cap("net_admin")
         assert len(findings) == 1
         assert "NET_ADMIN" in findings[0].message
 
-    def test_detects_multiple_dangerous(self) -> None:
+    def test_multiple_dangerous_yields_only_this_tier(self) -> None:
+        # The fixture service names SYS_ADMIN, SYS_PTRACE and NET_ADMIN — one
+        # per tier — so exactly one belongs to this rule.
         findings = self._check("multiple_dangerous")
-        assert len(findings) == 3
+        assert len(findings) == 1
+        assert "NET_ADMIN" in findings[0].message
 
     def test_safe_caps_no_findings(self) -> None:
-        findings = self._check("safe_caps")
-        assert len(findings) == 0
+        assert self._check("safe_caps") == []
 
     def test_no_cap_add_no_findings(self) -> None:
-        findings = self._check("no_cap_add")
-        assert len(findings) == 0
+        assert self._check("no_cap_add") == []
 
-    def test_lowercase_normalized(self) -> None:
-        findings = self._check("lowercase_cap")
-        assert len(findings) == 1
-        assert "SYS_MODULE" in findings[0].message
-
-    def test_all_seven_dangerous(self) -> None:
-        findings = self._check("all_dangerous")
-        assert len(findings) == 7
-
-    def test_detects_cap_all_critical(self) -> None:
-        findings = self._check("cap_all")
-        assert len(findings) == 1
-        assert findings[0].severity == Severity.CRITICAL
-        assert "ALL" in findings[0].message
-
-    def test_detects_cap_all_lowercase(self) -> None:
-        findings = self._check("cap_all_lowercase")
-        assert len(findings) == 1
-        assert findings[0].severity == Severity.CRITICAL
-        assert "ALL" in findings[0].message
-
-    def test_named_cap_still_high(self) -> None:
-        findings = self._check("sys_admin")
-        assert findings[0].severity == Severity.HIGH
-
-    def test_has_fix_guidance(self) -> None:
-        findings = self._check("sys_admin")
+    def test_has_fix_guidance_and_references(self) -> None:
+        findings = self._check("net_admin")
         assert findings[0].fix is not None
-        assert "SYS_ADMIN" in findings[0].fix
-
-    def test_has_references(self) -> None:
-        findings = self._check("sys_admin")
+        assert "NET_ADMIN" in findings[0].fix
         assert len(findings[0].references) > 0
-
-    def test_metadata(self) -> None:
-        meta = self.rule.metadata
-        assert meta.id == "CL-0011"
-        assert meta.severity.value == "high"
 
     def test_safe_drop_all_add_safe_no_findings(self) -> None:
         data, lines = load_compose(FIXTURES / "safe_cap_hardened.yml")
-        findings = list(
-            self.rule.check(
-                "drop_all_add_safe",
-                data["services"]["drop_all_add_safe"],
-                data,
-                lines,
+        for service in ("drop_all_add_safe", "drop_all_lower_add_safe"):
+            findings = list(
+                self.rule.check(service, data["services"][service], data, lines)
             )
-        )
-        assert len(findings) == 0
-
-    def test_safe_drop_all_lower_add_safe_no_findings(self) -> None:
-        data, lines = load_compose(FIXTURES / "safe_cap_hardened.yml")
-        findings = list(
-            self.rule.check(
-                "drop_all_lower_add_safe",
-                data["services"]["drop_all_lower_add_safe"],
-                data,
-                lines,
-            )
-        )
-        assert len(findings) == 0
+            assert findings == []

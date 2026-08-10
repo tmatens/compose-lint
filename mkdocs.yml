@@ -50,7 +50,7 @@ nav:
       - "CL-0008 network_mode: host": rules/CL-0008.md
       - "CL-0009 Disabled seccomp / AppArmor profiles": rules/CL-0009.md
       - "CL-0010 Host PID / IPC / UTS namespaces": rules/CL-0010.md
-      - "CL-0011 Dangerous cap_add capabilities": rules/CL-0011.md
+      - "CL-0011 Strong host-adjacent capabilities": rules/CL-0011.md
       - "CL-0012 pids_limit — fork failures": rules/CL-0012.md
       - "CL-0013 Sensitive host bind mounts": rules/CL-0013.md
       - "CL-0014 Logging driver none": rules/CL-0014.md
@@ -62,7 +62,9 @@ nav:
       - "CL-0020 Credential-shaped env keys": rules/CL-0020.md
       - "CL-0021 Credentials in connection strings": rules/CL-0021.md
       - "CL-0022 tmpfs exec — running from tmpfs": rules/CL-0022.md
+      - "CL-0024 Host-code-execution capabilities": rules/CL-0024.md
       - "CL-0026 Resource limits (memory/CPU)": rules/CL-0026.md
+      - "CL-0027 Bounded-grant capabilities": rules/CL-0027.md
   - Examples:
       - "Real-world examples": examples/index.md
       - "1 — Delete the service": examples/portainer-removed/index.md

@@ -243,7 +243,7 @@ link. `tests/test_severity_matrix.py` enforces all four properties.
 | [CL-0008](rules/CL-0008.md) | A | Technique | Cross-container | — | HIGH | HIGH | — |
 | [CL-0009](rules/CL-0009.md) | A | Second flaw | Cross-container | — | HIGH | HIGH | — |
 | [CL-0010](rules/CL-0010.md) | A | Technique | Cross-container | — | HIGH | HIGH | — |
-| [CL-0011](rules/CL-0011.md) | A | Direct | Host | — | CRITICAL | HIGH | `pending-split` — priced at `ALL`, its most dangerous member ([#503](https://github.com/tmatens/compose-lint/issues/503)) |
+| [CL-0011](rules/CL-0011.md) | A | Technique | Cross-container | — | HIGH | HIGH | — |
 | [CL-0012](rules/CL-0012.md) | A | Second flaw | Single container | availability-only | LOW | MEDIUM | `pending-move` — premise refuted; removal not yet landed ([CL-0012](rules/CL-0012.md)) |
 | [CL-0013](rules/CL-0013.md) | A | Direct | Host | — | CRITICAL | HIGH | `pending-split` — priced at a writable host root, its most dangerous member ([#503](https://github.com/tmatens/compose-lint/issues/503)) |
 | [CL-0014](rules/CL-0014.md) | A | Removes a mitigation | Single container | — | LOW | LOW | — |
@@ -255,7 +255,9 @@ link. `tests/test_severity_matrix.py` enforces all four properties.
 | [CL-0020](rules/CL-0020.md) | B | Direct | Single container | — | HIGH | HIGH | — |
 | [CL-0021](rules/CL-0021.md) | B | Direct | Single container | — | HIGH | HIGH | — |
 | [CL-0022](rules/CL-0022.md) | A | Removes a mitigation | Single container | — | LOW | LOW | — |
+| [CL-0024](rules/CL-0024.md) | A | Direct | Host | — | CRITICAL | CRITICAL | — |
 | [CL-0026](rules/CL-0026.md) | A | Second flaw | Cross-container | availability-only | MEDIUM | MEDIUM | — |
+| [CL-0027](rules/CL-0027.md) | A | Technique | Single container | — | HIGH | MEDIUM | `detection-precision` — cannot tell a debugger or NTP sidecar, which need these, from a workload that does not ([ADR-020](adr/020-severity-scoping-and-overrides.md)) |
 
 ### Notes on individual derivations
 
@@ -284,11 +286,15 @@ link. `tests/test_severity_matrix.py` enforces all four properties.
   PID/IPC hand over visibility immediately, but converting that visibility into
   impact (sniffing, ARP spoofing, abusing a loopback-trusted service, host
   `/dev/shm`) takes a published technique rather than a supported API call.
-- **CL-0011 / CL-0013** — heterogeneous today; each is priced at its most
-  dangerous member per the edge rule above, which is why the emitted finding can
-  be CRITICAL while the rule descriptor says HIGH. That mismatch is the subject
-  of [#503](https://github.com/tmatens/compose-lint/issues/503) and resolves
-  when the rules split.
+- **CL-0011 / CL-0024 / CL-0027** — `cap_add` is graded by what the capability
+  grants, across three rules rather than one branching rule, because SARIF
+  advertises `security-severity` on the rule descriptor. CL-0011 keeps the
+  strong host-adjacent tier; `ALL`, `SYS_ADMIN`, `SYS_MODULE` and `SYS_RAWIO`
+  move to CL-0024, and `SYS_PTRACE`, `PERFMON`, `SYS_TIME` and
+  `DAC_READ_SEARCH` to CL-0027. Resolves the descriptor/finding mismatch in
+  [#503](https://github.com/tmatens/compose-lint/issues/503) for capabilities.
+- **CL-0013** — still heterogeneous, and priced at its most dangerous member per
+  the edge rule above, until the writable-mount split lands.
 - **CL-0017** — the leg that works unaided is host → container: the container
   passively receives whatever the host later mounts under the shared path. It
   needs no capability, but it also needs a host operator action that no attacker
