@@ -6,7 +6,11 @@ from typing import TYPE_CHECKING, Any
 
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
-from compose_lint.rules._mounts import iter_bind_mounts, match_prefix
+from compose_lint.rules._mounts import (
+    TIMEZONE_FILES,
+    iter_bind_mounts,
+    match_prefix,
+)
 from compose_lint.rules.CL0025_writable_host_root import ROOT_EQUIVALENT_PATHS
 
 if TYPE_CHECKING:
@@ -41,12 +45,6 @@ _EXPOSED_PATHS: tuple[str, ...] = (
     "/home",
 )
 
-# The timezone-config pattern `- /etc/localtime:/etc/localtime:ro` (and
-# /etc/timezone) is near-universal and, read-only, exposes only the host's UTC
-# offset — not host configuration. A read-only mount of exactly these files is
-# exempt; /etc itself, /etc/shadow, or a read-write timezone mount still fire.
-_BENIGN_READONLY_FILES = frozenset({"/etc/localtime", "/etc/timezone"})
-
 
 @register_rule
 class SensitiveMountRule(BaseRule):
@@ -76,24 +74,32 @@ class SensitiveMountRule(BaseRule):
         for mount in iter_bind_mounts(service_name, service_config, lines):
             normalized = mount.host_path.rstrip("/")
 
-            # Exempt the read-only timezone-config pattern (issue #509).
-            if mount.read_only and normalized in _BENIGN_READONLY_FILES:
-                continue
-
             matched = match_prefix(mount.host_path, _EXPOSED_PATHS)
             reason = "exposes host kernel interfaces, devices or user data"
             if matched is None:
-                # A read-only mount of a root-equivalent path is disclosure
-                # rather than takeover, so it lands here instead of CL-0025.
-                if not mount.read_only:
-                    continue
                 matched = match_prefix(mount.host_path, ROOT_EQUIVALENT_PATHS)
                 if matched is None:
                     continue
-                reason = (
-                    "is read-only, so it discloses host configuration and "
-                    "credentials without granting host write"
-                )
+                if normalized in TIMEZONE_FILES:
+                    # Read-only, this is the exempt timezone pattern (#509).
+                    # Writable, the container can change what the host reads as
+                    # local time — worth a finding, but not CL-0025's tier,
+                    # because writing this file is not host root.
+                    if mount.read_only:
+                        continue
+                    reason = (
+                        "is writable, letting the container change the host's "
+                        "timezone configuration"
+                    )
+                elif mount.read_only:
+                    # A read-only mount of a root-equivalent path is disclosure
+                    # rather than takeover, so it lands here instead of CL-0025.
+                    reason = (
+                        "is read-only, so it discloses host configuration and "
+                        "credentials without granting host write"
+                    )
+                else:
+                    continue  # writable root-equivalent — CL-0025's
 
             yield Finding(
                 rule_id="CL-0013",

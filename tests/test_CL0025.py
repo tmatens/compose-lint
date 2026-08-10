@@ -51,6 +51,16 @@ class TestWritableHostRootMountRule:
         for path in ("/etc", "/root", "/boot", "/var/lib/docker", "/proc", "/"):
             assert self._inline(f'"{path}:/host:ro"') == [], path
 
+    def test_timezone_files_are_not_root_equivalent(self) -> None:
+        """Under /etc, but writing one changes a clock, not the host's root.
+
+        Grading these CRITICAL would repeat issue #509 one tier up — the
+        near-universal timezone bind is often written without `:ro`.
+        """
+        for path in ("/etc/localtime", "/etc/timezone"):
+            assert self._inline(f"{path}:{path}") == [], path
+            assert self._inline(f"{path}:{path}:ro") == [], path
+
     def test_subpaths_are_covered(self) -> None:
         findings = self._inline("/etc/cron.d:/host-cron")
         assert len(findings) == 1

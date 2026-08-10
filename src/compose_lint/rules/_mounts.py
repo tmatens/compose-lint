@@ -25,6 +25,16 @@ _SHORT_VOLUME_RE = re.compile(
 )
 
 
+# `- /etc/localtime:/etc/localtime:ro` (and /etc/timezone) is a near-universal
+# timezone-config pattern. Read-only it exposes only the host's UTC offset;
+# *writable* it lets a container change the host's clock display — annoying, but
+# not host root, so these two paths are not root-equivalent in either mode even
+# though they sit under /etc. Flagging the read-only form HIGH failed the default
+# gate on otherwise-hardened files (issue #509); grading the writable form
+# CRITICAL would repeat that mistake one tier up.
+TIMEZONE_FILES = frozenset({"/etc/localtime", "/etc/timezone"})
+
+
 class BindMount(NamedTuple):
     """One bind mount as written, with its position in ``volumes:``.
 

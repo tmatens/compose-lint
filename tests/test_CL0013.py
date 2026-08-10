@@ -167,17 +167,25 @@ class TestTimezoneExemption:
         )
         assert self._check(content) == []
 
-    def test_readwrite_localtime_is_now_cl0025(self) -> None:
-        """A writable /etc subpath is a host-root write, so CL-0025 owns it.
+    def test_readwrite_localtime_still_fires_here(self) -> None:
+        """Writable, it stays this rule's HIGH — it is not a host-root write.
 
-        The exemption is deliberately read-only-scoped: it exists for the
-        near-universal `:ro` timezone pattern, not for a writable /etc mount.
+        The exemption is read-only-scoped, so a writable timezone bind is still
+        a finding. It is deliberately *not* CL-0025's: overwriting that one file
+        changes what the host reads as local time, which is not host root. The
+        split escalated it to CRITICAL for a while, which would have repeated
+        issue #509's mistake one tier up.
         """
-        content = (
-            "services:\n  a:\n    image: nginx\n    volumes:\n"
-            "      - /etc/localtime:/etc/localtime\n"
-        )
-        assert self._check(content) == []
+        for path in ("/etc/localtime", "/etc/timezone"):
+            content = (
+                "services:\n  a:\n    image: nginx\n    volumes:\n"
+                f"      - {path}:{path}\n"
+            )
+            findings = self._check(content)
+            assert len(findings) == 1, path
+            assert findings[0].rule_id == "CL-0013"
+            assert findings[0].severity == Severity.HIGH
+            assert "timezone" in findings[0].message
 
     def test_etc_directory_still_fires_readonly(self) -> None:
         content = (
