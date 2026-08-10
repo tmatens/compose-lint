@@ -866,6 +866,59 @@ def _cl0026() -> tuple[bool, str]:
     return ok, f"default={base!r} limited={limited!r}"
 
 
+_PTRACE_PROBE = (
+    "import ctypes,os,subprocess,time,sys\n"
+    "libc=ctypes.CDLL('libc.so.6',use_errno=True)\n"
+    # Target runs as a DIFFERENT uid: same-uid tracing needs no capability at
+    # all, so tracing a peer uid is the only thing SYS_PTRACE actually adds.
+    "t=subprocess.Popen(['sleep','30'],user=65534)\n"
+    "time.sleep(0.5)\n"
+    "ctypes.set_errno(0)\n"
+    "r=libc.ptrace(16,t.pid,0,0)\n"
+    "e=ctypes.get_errno()\n"
+    "print('ATTACH_OK' if r==0 else os.strerror(e))\n"
+)
+
+
+def _t_sys_ptrace() -> tuple[bool, str]:
+    """SYS_PTRACE grants tracing of a *different-uid* process in this container.
+
+    CL-0027's impact is priced on this member, so it is the one reach that has
+    to be measured rather than reasoned. Same-uid tracing is not the grant --
+    it succeeds with every capability dropped -- and it is additionally
+    governed by ``kernel.yama.ptrace_scope``, which varies by distribution.
+    The cross-uid check is ``ptrace_may_access``'s capability test and does not
+    depend on that sysctl, which is why the probe crosses a uid boundary.
+
+    SETUID/SETGID are granted on *both* legs so the only variable is
+    SYS_PTRACE; without them the probe cannot spawn the target at all.
+    """
+    base = ["--cap-drop", "ALL", "--cap-add", "SETUID", "--cap-add", "SETGID"]
+    _, denied = _run(base, ["python", "-c", _PTRACE_PROBE], image=PY_IMAGE)
+    _, allowed = _run(
+        [*base, "--cap-add", "SYS_PTRACE"],
+        ["python", "-c", _PTRACE_PROBE],
+        image=PY_IMAGE,
+    )
+    ok = "ATTACH_OK" not in denied and "ATTACH_OK" in allowed
+    return ok, f"without SYS_PTRACE={denied!r}; with SYS_PTRACE={allowed!r}"
+
+
+def _t_dac_read_search() -> tuple[bool, str]:
+    """DAC_READ_SEARCH bypasses file-read checks *inside* the container.
+
+    The Shocker-style host read needs a host bind mount to resolve a handle
+    against, and that mount is flagged by CL-0013/CL-0025. Scored in isolation,
+    what the capability grants is this: reading a file the workload uid is
+    otherwise refused.
+    """
+    probe = "echo secret > /tmp/s; chmod 000 /tmp/s; chown 65534:65534 /tmp/s; cat /tmp/s"
+    _, denied = _run(["--cap-drop", "ALL"], ["sh", "-c", probe])
+    _, allowed = _run(["--cap-drop", "ALL", "--cap-add", "DAC_READ_SEARCH"], ["sh", "-c", probe])
+    ok = "secret" not in denied and allowed.strip() == "secret"
+    return ok, f"without={denied!r}; with={allowed!r}"
+
+
 # NOTE: CL-0006's ARP-overwrite leg (ADR-020 Appendix A, row 5) is not yet
 # automated. It needs two containers on a shared user-defined bridge, a
 # raw-socket ARP sender, and a victim whose cache is actively cycling — an
@@ -928,6 +981,12 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool, str]]]] = [
         _cl0025_core_pattern,
     ),
     ("CL-0026", "premise: memory and cpu are unbounded by default", _cl0026),
+    ("CL-0027", "premise: SYS_PTRACE traces a different-uid process", _t_sys_ptrace),
+    (
+        "CL-0027",
+        "premise: DAC_READ_SEARCH bypasses an in-container read check",
+        _t_dac_read_search,
+    ),
     # CL-0003 symptom mappings.
     ("CL-0003", "map: setuid bit inert (and silent) under nnp", _t3_setuid_inert),
     ("CL-0003", "premise: root privilege-drop unaffected by nnp", _t3_drop_unaffected),
