@@ -1,16 +1,20 @@
 services:
-  dev_mem:
+  block_vda:
     image: nginx:1.27-alpine
     devices:
-      - /dev/mem:/dev/mem
-  dev_kmem:
+      - /dev/vda:/dev/vda
+  block_xvda:
     image: nginx:1.27-alpine
     devices:
-      - /dev/kmem:/dev/kmem
-  dev_port:
+      - /dev/xvda:/dev/xvda
+  block_mmcblk:
     image: nginx:1.27-alpine
     devices:
-      - /dev/port:/dev/port
+      - /dev/mmcblk0:/dev/mmcblk0
+  block_md:
+    image: nginx:1.27-alpine
+    devices:
+      - /dev/md0:/dev/md0
   block_sda:
     image: nginx:1.27-alpine
     devices:
@@ -30,16 +34,23 @@ services:
   multiple:
     image: nginx:1.27-alpine
     devices:
-      - /dev/mem:/dev/mem
+      - /dev/vda:/dev/vda
       - /dev/sda:/dev/sda
-  dev_fuse:
-    image: nginx:1.27-alpine
-    devices:
-      - /dev/fuse:/dev/fuse
   dev_kmsg:
     image: nginx:1.27-alpine
     devices:
       - /dev/kmsg:/dev/kmsg
+  capability_gated:
+    image: nginx:1.27-alpine
+    devices:
+      - /dev/mem:/dev/mem
+      - /dev/port:/dev/port
+      - /dev/fuse:/dev/fuse
+  unreachable_devices:
+    image: nginx:1.27-alpine
+    devices:
+      - /dev/kmem:/dev/kmem
+      - /dev/raw:/dev/raw
   safe_device:
     image: nginx:1.27-alpine
     devices:

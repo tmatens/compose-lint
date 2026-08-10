@@ -242,7 +242,7 @@ def test_scalar_items_get_lines(tmp_path: Path) -> None:
                 "    image: x\n"
                 "    devices:\n"
                 "      - /dev/sda:/dev/sda\n"
-                "      - /dev/mem:/dev/mem\n"
+                "      - /dev/vda:/dev/vda\n"
             ),
             [5, 6],
         ),
