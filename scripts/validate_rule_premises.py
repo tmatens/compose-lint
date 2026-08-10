@@ -13,6 +13,16 @@ This gate runs a short ``docker run`` per runtime-testable rule and asserts the
 premise holds. It is the runtime arm of the rule-grounding bar: a new rule must
 either cite a container-context source or pass a check here.
 
+**This is a maintainer and CI tool, not part of the product.** Nothing in the
+installed package opens a socket: ``check``, ``fix`` and ``--explain`` are pure
+YAML analysis, the wheel does not ship this file, and the corpus pipeline never
+touches a daemon either. It runs in CI's ``rule-premises`` job and by hand — a
+user of compose-lint will never see its output, including the posture note.
+What it validates is a rule's *premise*, on a daemon at Docker's documented
+defaults, so that the word "verified" on a rule page means something specific.
+It says nothing about the daemon a compose file will eventually be deployed to
+(ADR-020) — compose-lint never sees that host.
+
 Usage: ``python scripts/validate_rule_premises.py`` (needs a working **rootful**
 Docker). Under rootless Docker several checks fail spuriously: the kernel
 authorizes SYS_NICE/SYS_TIME/IPC_LOCK in the *init* user namespace, so their
@@ -68,51 +78,66 @@ def _info(field: str) -> str:
     return proc.stdout.strip()
 
 
-def _posture() -> tuple[bool, str]:
-    """Assert the daemon under test is at the defaults every premise assumes.
+def _posture() -> tuple[list[tuple[str, str, str]], str]:
+    """Report how the daemon under test departs from Docker's defaults.
 
     ADR-020 grounds every rule against rootful Docker Engine at its default
-    configuration. A premise measured against a hardened or loosened daemon
-    returns a confidently wrong answer — which is the exact failure mode this
-    suite exists to catch — so the posture is checked before any premise is.
+    configuration, so a premise measured elsewhere cannot be cited as evidence
+    for one. A departure does not stop the run: measured on a no-AppArmor
+    desktop, all 41 checks returned verdicts identical to the grounded host, so
+    refusing outright threw away a run that was almost entirely valid. What a
+    departure does is cost the run its authority — the caller marks it
+    non-authoritative and exits non-zero.
+
+    Note what this is *not*. It says nothing about the daemon a compose file
+    will eventually run on: compose-lint never sees that host (ADR-020). This
+    is about where the measurement was taken.
+
+    **A clause exists here only when a check depends on it.** The first draft
+    asserted five facts; two of them — an active LSM, and ``icc`` left on —
+    were not measured by any check in the suite, and the LSM clause was the one
+    that fired on the desktop run described above. Asserting a condition
+    speculatively, in case something later needs it, buys nothing and costs
+    false alarms. When the deferred CL-0006 ARP check lands it will depend on
+    ``icc``, and the ``icc`` clause lands with it.
+
+    Currently asserted, with what depends on each:
+
+    * **default capability set** — every "denied without the capability,
+      allowed with it" mapping.
+    * **builtin seccomp** — ``_cl0009``, which asserts a filter is active by
+      default.
+    * **no uid remapping** — ``_cl0018``, which asserts an explicit ``user:``
+      maps to that uid.
+
+    Returns ``(departures, security_options)``, where each departure is
+    ``(what departed, what was expected, what was observed)`` — a bare
+    "posture is wrong" leaves the reader to guess which setting and what to
+    change.
     """
-    problems: list[str] = []
+    problems: list[tuple[str, str, str]] = []
 
     opts = _info("{{.SecurityOptions}}")
     if "seccomp,profile=builtin" not in opts:
-        problems.append("seccomp is not the builtin profile")
-    if "name=apparmor" not in opts and "name=selinux" not in opts:
-        problems.append("no LSM confinement (AppArmor/SELinux) is active")
+        problems.append(
+            ("seccomp is not the builtin profile", "name=seccomp,profile=builtin", opts)
+        )
     if "name=userns" in opts:
-        problems.append("userns-remap is enabled")
-
-    icc = subprocess.run(
-        [
-            "docker",
-            "network",
-            "inspect",
-            "bridge",
-            "--format",
-            '{{index .Options "com.docker.network.bridge.enable_icc"}}',
-        ],
-        capture_output=True,
-        text=True,
-        timeout=60,
-    ).stdout.strip()
-    # Unset is the default (on). Only an explicit "false" is a departure.
-    if icc == "false":
-        problems.append("inter-container communication is disabled (icc=false)")
+        problems.append(("userns-remap is enabled", "no name=userns", opts))
 
     _, caps = _run([], ["sh", "-c", "grep ^CapEff /proc/self/status | tr -d '\t'"])
     if not caps.endswith(DEFAULT_CAPEFF):
-        problems.append(f"capability set is not the default 14 ({caps})")
+        problems.append(
+            ("capability set is not Docker's default 14", DEFAULT_CAPEFF, caps)
+        )
 
     _, uid_map = _run([], ["cat", "/proc/self/uid_map"])
     if uid_map.split()[:2] != ["0", "0"]:
-        problems.append(f"uid namespace is remapped ({uid_map})")
+        problems.append(
+            ("uid namespace is remapped", "uid_map starting '0 0'", uid_map)
+        )
 
-    detail = "; ".join(problems) if problems else f"at defaults — {opts}"
-    return (not problems), detail
+    return problems, opts
 
 
 def _run(args: list[str], cmd: list[str], image: str = IMAGE) -> tuple[int, str]:
@@ -958,19 +983,37 @@ def main() -> int:
             )
             return 1
 
-    ok, detail = _posture()
-    mark = "PASS" if ok else "FAIL"
-    print(f"  [{mark}] posture  daemon is at Docker defaults\n          {detail}")
-    if not ok:
+    departures, opts = _posture()
+    if departures:
+        print(f"  [WARN] posture  NOT at Docker defaults — {opts}")
+        for what, expected, observed in departures:
+            print(f"          · {what}")
+            print(f"              expected: {expected}")
+            print(f"              observed: {observed}")
         print(
-            "\nDAEMON POSTURE CHECK FAILED — refusing to validate premises.\n"
-            "Every rule is grounded against rootful Docker Engine at default\n"
-            "configuration (ADR-020). Measured against this daemon the results\n"
-            "would be confidently wrong, which is the failure mode this suite\n"
-            "exists to catch.",
+            "\n"
+            "POSTURE DEPARTS FROM DOCKER'S DEFAULTS — this run is NOT\n"
+            "authoritative, and exits non-zero for that reason alone.\n"
+            "\n"
+            "The checks below still run, and most do not depend on the setting\n"
+            "that departed. But rules are grounded against rootful Docker Engine\n"
+            "at default configuration (ADR-020), so a premise measured here\n"
+            "cannot be cited as evidence for one — and a check that *does*\n"
+            "depend on the departed setting will report a confident, wrong\n"
+            "answer rather than an error. Read the results; do not ground on\n"
+            "them.\n"
+            "\n"
+            "For an authoritative run, use a host at Docker's defaults, or\n"
+            "push the branch and read the `rule-premises` job, which does.\n"
+            "\n"
+            "This says nothing about the security of any deployment. It is about\n"
+            "where the *measurement* was taken. compose-lint never sees the\n"
+            "daemon a compose file will eventually run on (ADR-020), and this\n"
+            "check does not pretend otherwise.",
             file=sys.stderr,
         )
-        return 1
+    else:
+        print(f"  [PASS] posture  daemon is at Docker defaults — {opts}")
 
     failures = []
     for rule_id, label, check in CHECKS:
@@ -989,6 +1032,13 @@ def main() -> int:
     print(f"not runtime-testable (grounded by source): {', '.join(_NON_RUNTIME)}")
     if failures:
         print(f"RESULT: FAIL ({len(failures)}): {', '.join(failures)}")
+        return 1
+    if departures:
+        print(
+            f"RESULT: NOT AUTHORITATIVE — {len(CHECKS)} premises ran and none "
+            "failed, but the daemon is not at Docker's defaults, so this run "
+            "cannot ground a rule. See the posture note above."
+        )
         return 1
     print(f"RESULT: PASS ({len(CHECKS)} premises validated)")
     return 0

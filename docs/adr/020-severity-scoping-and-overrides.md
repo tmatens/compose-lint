@@ -105,11 +105,36 @@ the table as though it were a derivation.
   `--seccomp-profile` under-scores several CL-0011 members; `--icc=false`
   removes CL-0006's cross-container reach; `--userns-remap` makes
   `userns_mode: host` real.
-- **`scripts/validate_rule_premises.py` must first assert the daemon under test
-  is at defaults** — builtin seccomp, AppArmor enforcing, no userns-remap, icc
-  on — and fail loudly otherwise. A premise measured in the wrong posture
-  returns a confidently wrong answer, which is the failure mode this whole audit
-  kept finding.
+- **`scripts/validate_rule_premises.py` checks the daemon's posture before
+  measuring anything**, and names any departure with what was expected and what
+  was observed.
+
+  It asserts a fact only where a check depends on it: the default capability
+  set (every capability mapping), builtin seccomp (`_cl0009`), and no uid
+  remapping (`_cl0018`). An earlier draft also required an active LSM and `icc`
+  left on — neither of which any check measures — and the LSM clause was the
+  one that fired on a desktop run where all 41 verdicts were provably correct.
+  A clause arrives with the check that needs it, not ahead of it.
+
+  A departure costs the run its **authority**, not its results. The run
+  continues, reports every verdict, and exits non-zero having declared itself
+  non-authoritative. That is deliberate: measured on a desktop with no AppArmor
+  at all, every one of the 41 checks returned a verdict identical to the
+  grounded host, so refusing outright discarded a run that was almost entirely
+  valid — and left a contributor without Docker-at-defaults unable to check
+  their work at all. What matters is that a non-default run can never be
+  mistaken for grounding evidence, and a non-zero exit with a stated reason
+  achieves that.
+
+  The check is about **where the measurement was taken**, and says nothing
+  about the daemon a compose file will eventually run on — compose-lint never
+  sees that host. Someone reading a posture failure should not conclude
+  anything about their deployment.
+
+  It is also invisible to users. The validator is a maintainer and CI tool: it
+  is not shipped in the wheel, nothing in the installed package opens a socket,
+  and the corpus pipeline is pure YAML analysis. Linting files never involves a
+  daemon or a posture — only *grounding a rule's premise* does.
 - **`userns_mode: host` collapses to a no-op.** Under an assumption of engine
   defaults there is no remap to opt out of; `/proc/self/uid_map` is identical
   with and without it, exactly like `uts: host`. Both branches leave CL-0010.
