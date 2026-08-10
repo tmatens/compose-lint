@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 from compose_lint.models import Finding, RuleMetadata, Severity
@@ -39,6 +40,22 @@ def _deploy_limits(service_config: dict[str, Any]) -> dict[str, Any]:
     return limits if isinstance(limits, dict) else {}
 
 
+_INTERPOLATION_DEFAULT_RE = re.compile(r"^\$\{[A-Za-z_][A-Za-z0-9_]*:?[-=]([^}]*)\}$")
+
+
+def _interpolation_default(text: str) -> str | None:
+    """Return the fallback in ``${VAR:-512m}``/``${VAR:=0}``, if there is one.
+
+    A bare ``${VAR}`` is genuinely unknowable and stays a limit. A *defaulted*
+    interpolation is not: the value the file ships with is written in the file.
+    ``${MEM:-0}`` is the likeliest way a parameterised stack ends up unbounded —
+    the operator simply never sets the variable — and treating the whole family
+    as unknowable let it through.
+    """
+    match = _INTERPOLATION_DEFAULT_RE.match(text)
+    return match.group(1).strip() if match else None
+
+
 def _is_set(value: Any) -> bool:
     """Whether a limit key actually bounds anything.
 
@@ -57,17 +74,22 @@ def _is_set(value: Any) -> bool:
         text = value.strip()
         if not text:
             return False
+        default = _interpolation_default(text)
+        if default is not None:
+            # "${MEM:-0}" — the fallback is written right here, so it is not
+            # unknowable. Judge the value the file actually ships with.
+            return _is_set(default)
         # "512M", "1.5", "0", "0m" — a size/quantity with an optional unit
         # suffix. If the numeric part is non-positive it bounds nothing.
         number = text.rstrip("bBkKmMgG")
         try:
             return float(number) > 0
         except ValueError:
-            # Not a plain quantity (an interpolation such as "${MEM_LIMIT}",
-            # say). Treat it as a limit — the value is unknowable from the
-            # file, and assuming the worst would fire on every parameterised
-            # compose file.
-            return True
+            # A bare interpolation such as "${MEM_LIMIT}". Treat it as a limit:
+            # the value is unknowable from the file, and assuming the worst
+            # would fire on every parameterised compose file. Anything else is
+            # not a quantity Docker accepts, so it bounds nothing.
+            return "$" in text
     return True
 
 

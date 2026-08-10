@@ -139,3 +139,38 @@ class TestResourceLimitsRule:
         assert findings[0].line == 2
         assert findings[0].service == "app"
         assert findings[0].fix
+
+
+class TestInterpolationDefaults:
+    """A default written in the file is not "unknowable".
+
+    A bare ``${MEM}`` genuinely is — assuming the worst would fire on every
+    parameterised compose file — but ``${MEM:-0}`` ships a value, and it is the
+    likeliest way a parameterised stack ends up unbounded: the operator simply
+    never sets the variable. Verified against cgroups: with ``MEM`` unset,
+    ``mem_limit: ${MEM:-0}`` yields ``memory.max = max``.
+    """
+
+    def test_non_positive_default_is_not_a_limit(self) -> None:
+        for spelling in ("${MEM:-0}", "${MEM:=0}", "${MEM-0}", "${MEM:-0m}"):
+            findings = _findings(_svc(f"    mem_limit: '{spelling}'\n    cpus: 2\n"))
+            assert len(findings) == 1, f"{spelling!r} was accepted as a limit"
+            assert "no memory limit" in findings[0].message
+
+    def test_positive_default_is_a_limit(self) -> None:
+        assert _findings(_svc("    mem_limit: '${MEM:-512m}'\n    cpus: 2\n")) == []
+
+    def test_bare_interpolation_is_still_a_limit(self) -> None:
+        assert _findings(_svc("    mem_limit: '${MEM}'\n    cpus: '${CPUS}'\n")) == []
+
+    def test_cpu_default_is_judged_too(self) -> None:
+        findings = _findings(_svc("    mem_limit: 512m\n    cpus: '${CPUS:-0}'\n"))
+        assert len(findings) == 1
+        assert "no CPU limit" in findings[0].message
+
+    def test_unparseable_value_is_not_a_limit(self) -> None:
+        # Docker rejects these outright; reporting "bounded" about a value we
+        # did not understand is the wrong direction to fail.
+        for junk in ("notanumber", "m", "gb"):
+            findings = _findings(_svc(f"    mem_limit: {junk}\n    cpus: 2\n"))
+            assert len(findings) == 1, f"{junk!r} was accepted as a limit"
