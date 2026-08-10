@@ -40,7 +40,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Rules:
-      - "CL-0001 Docker socket (docker.sock) mounts": rules/CL-0001.md
+      - "CL-0001 Host control socket exposed": rules/CL-0001.md
       - "CL-0002 privileged: true — grants and replacement": rules/CL-0002.md
       - "CL-0003 no-new-privileges — privilege escalation": rules/CL-0003.md
       - "CL-0004 Unpinned image tags (:latest)": rules/CL-0004.md

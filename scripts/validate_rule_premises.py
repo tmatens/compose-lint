@@ -861,7 +861,8 @@ def _cl0026() -> tuple[bool, str]:
     read = "echo $(cat /sys/fs/cgroup/memory.max)/$(cat /sys/fs/cgroup/cpu.max)"
     _, base = _run([], ["sh", "-c", read])
     _, limited = _run(["--memory", "64m", "--cpus", "0.5"], ["sh", "-c", read])
-    ok = base.startswith("max/max ") and not limited.startswith("max/")
+    mem, _, cpu = limited.partition("/")
+    ok = base.startswith("max/max ") and mem != "max" and not cpu.startswith("max")
     return ok, f"default={base!r} limited={limited!r}"
 
 
