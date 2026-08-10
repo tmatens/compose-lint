@@ -2,6 +2,11 @@ services:
   watchtower:
     image: containrrr/watchtower:1.7.1
     read_only: true
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.50'
     security_opt:
       - no-new-privileges:true
     cap_drop:

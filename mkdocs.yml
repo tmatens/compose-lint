@@ -62,6 +62,7 @@ nav:
       - "CL-0020 Credential-shaped env keys": rules/CL-0020.md
       - "CL-0021 Credentials in connection strings": rules/CL-0021.md
       - "CL-0022 tmpfs exec — running from tmpfs": rules/CL-0022.md
+      - "CL-0026 Resource limits (memory/CPU)": rules/CL-0026.md
   - Examples:
       - "Real-world examples": examples/index.md
       - "1 — Delete the service": examples/portainer-removed/index.md

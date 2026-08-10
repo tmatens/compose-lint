@@ -8,6 +8,11 @@ services:
     cap_drop:
       - ALL
     read_only: true
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.50'
     tmpfs:
       - /tmp:noexec,nosuid,nodev
       - /run:noexec,nosuid,nodev
@@ -18,6 +23,11 @@ services:
     cap_drop:
       - ALL
     read_only: true
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.50'
     tmpfs:
       - /tmp:noexec,nosuid,nodev
       - /run:noexec,nosuid,nodev

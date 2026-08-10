@@ -8,6 +8,11 @@ services:
     security_opt:
       - no-new-privileges:true
     pids_limit: 256
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.50'
     network_mode: none
     volumes:
       - type: bind

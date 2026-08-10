@@ -255,6 +255,7 @@ link. `tests/test_severity_matrix.py` enforces all four properties.
 | [CL-0020](rules/CL-0020.md) | B | Direct | Single container | — | HIGH | HIGH | — |
 | [CL-0021](rules/CL-0021.md) | B | Direct | Single container | — | HIGH | HIGH | — |
 | [CL-0022](rules/CL-0022.md) | A | Removes a mitigation | Single container | — | LOW | LOW | — |
+| [CL-0026](rules/CL-0026.md) | A | Second flaw | Cross-container | availability-only | MEDIUM | MEDIUM | — |
 
 ### Notes on individual derivations
 

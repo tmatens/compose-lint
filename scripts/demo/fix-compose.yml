@@ -1,6 +1,11 @@
 services:
   api:
     image: ghcr.io/acme/api:2.4.0
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.50'
     ports:
       - "8080:8080"
     cap_drop:
