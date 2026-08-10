@@ -40,6 +40,8 @@ rules (split it) or has a scoping assumption it must state.
 
 ### Grounded posture
 
+*Adopted in [ADR-020](adr/020-severity-scoping-and-overrides.md).*
+
 Every rule's premise and severity assume **rootful Docker Engine on Linux at
 default configuration** — the most severe supported posture. Rules are not
 scored against hardened or loosened daemons, and other runtimes that consume
@@ -137,9 +139,17 @@ primitives at HIGH. That is a convention of *their* scales, not a disagreement
 about the mechanism: the tier here is an internal triage distinction —
 "game over" versus "serious" — and all severities are default-posture, so
 hardened deployments read them down (see [Grounded posture](#grounded-posture)).
-It is **not** a claim that Compose is more dangerous than Kubernetes.
+It is **not** a claim that Compose is more dangerous than Kubernetes. The full
+argument, including the framing that was withdrawn, is in
+[ADR-021](adr/021-critical-tier-posture.md).
+
+The rule set is mapped to MITRE ATT&CK for Containers (pinned to v18) and the
+scoring axes are crosswalked against CVSS 4.0 — see
+[ADR-022](adr/022-threat-model-grounding.md).
 
 ## Calibration overrides
+
+*Adopted in [ADR-020](adr/020-severity-scoping-and-overrides.md).*
 
 A rule may ship a severity different from the one its cell derives, but only by
 declaring it:
@@ -228,7 +238,7 @@ link. `tests/test_severity_matrix.py` enforces all four properties.
 | [CL-0003](rules/CL-0003.md) | A | Second flaw | Single container | — | MEDIUM | MEDIUM | — |
 | [CL-0004](rules/CL-0004.md) | B | Second flaw | Single container | — | MEDIUM | MEDIUM | — |
 | [CL-0005](rules/CL-0005.md) | A | Second flaw | Single container | pre-foothold reach | HIGH | HIGH | — |
-| [CL-0006](rules/CL-0006.md) | A | Technique | Cross-container | — | HIGH | MEDIUM | `detection-precision` — fires on every service, not only those with a reachable neighbour ([CL-0006](rules/CL-0006.md)) |
+| [CL-0006](rules/CL-0006.md) | A | Technique | Cross-container | — | HIGH | MEDIUM | `detection-precision` — fires on every service, not only those with a reachable neighbour ([ADR-020](adr/020-severity-scoping-and-overrides.md)) |
 | [CL-0007](rules/CL-0007.md) | A | Removes a mitigation | Single container | — | LOW | MEDIUM | `pending-move` — relabel to LOW not yet landed ([CL-0007](rules/CL-0007.md)) |
 | [CL-0008](rules/CL-0008.md) | A | Technique | Cross-container | — | HIGH | HIGH | — |
 | [CL-0009](rules/CL-0009.md) | A | Second flaw | Cross-container | — | HIGH | HIGH | — |
