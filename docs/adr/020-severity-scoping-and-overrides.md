@@ -52,7 +52,14 @@ the table as though it were a derivation.
    Docker Engine on Linux at default configuration** — the most severe supported
    posture. Rules are not scored against hardened or loosened daemons. Other
    Docker postures (rootless, Docker Desktop's LinuxKit VM, Swarm) reduce these
-   severities rather than increase them.
+   severities rather than increase them. **The ceiling extends below the
+   daemon.** Where a premise depends on a kernel setting rather than on Docker
+   configuration, it is grounded at the **upstream kernel default**; a
+   distribution shipping a stricter value is hardening, and reads the severity
+   down exactly as rootless mode or a sandboxed runtime does. A rule whose
+   premise depends on such a setting names it in `Daemon assumptions:`, and the
+   premise check that measures it asserts the setting alongside the daemon
+   posture.
 2. **Docker Engine is the only supported target.** Podman (`podman compose`,
    `podman-compose`) and nerdctl are out of scope. A rule whose grounding rests
    on non-Docker behaviour fails review.
@@ -76,12 +83,28 @@ the table as though it were a derivation.
    a number that silently averages postures.
 2. **Naming the posture buys a conservatism argument rather than a hedge.** It
    pre-empts "but on Docker Desktop…" without weakening any rule, because the
-   named posture is the ceiling.
+   named posture is the ceiling. The ceiling has to reach past the daemon,
+   because there is no neutral "host default" to fall back on. Measured on the
+   two hosts this project grounds against, `kernel.perf_event_paranoid` is 2 on
+   Arch — the mainline value — and 3 on Debian 13, a downstream hardening
+   patch; `kernel.yama.ptrace_scope` is 1 on Arch and 0 on Debian. The two
+   depart from mainline in *opposite* directions. Grounding on "whatever the
+   measurement host reports" would make a severity a property of the machine it
+   was measured on, which is precisely how `CAP_PERFMON` came to be priced as a
+   host read and then refuted by the same host. Upstream defaults are the only
+   reference that does not move when the lab does.
 3. **The Docker-only scope closes arguments, not just instances.** CL-0012's
    last defence was that Podman ships `pids_limit = 2048`, making `pids_limit: -1`
    a genuine opt-out *there*; on Docker, `-1`, `0`, and omitting the key all
-   produce `pids.max = 18751`. A stated boundary removes the whole category of
-   error.
+   produce the same `pids.max`. A stated boundary removes the whole category of
+   error. One correction the kernel-default clause forces: the value observed
+   there, 18751, is systemd's `DefaultTasksMax` — a *host* default, not
+   Docker's — so it is hardening rather than the grounded baseline, and
+   "the premise is refuted" is not the reason CL-0012 was removed. The removal
+   stands on its other grounds: the genuinely dangerous spelling (a large
+   explicit limit) has near-zero prevalence, and on any host where pids is
+   unbounded memory is unbounded too, which [CL-0026](../rules/CL-0026.md)
+   already flags as the dominant exhaustion vector.
 4. **The file-only constraint turns three arbitrary-looking decisions into
    consequences of a stated rule** — CL-0018 not flagging an absent `user:` (the
    image's `USER` is unknowable), CL-0015 not flagging an absent `HEALTHCHECK`,

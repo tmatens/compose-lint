@@ -49,6 +49,14 @@ compose files (Podman, nerdctl) are out of scope. Other Docker postures
 (rootless, Docker Desktop's LinuxKit VM, Swarm) *reduce* these severities rather
 than increase them.
 
+**The ceiling extends below the daemon.** Where a premise depends on a kernel
+setting rather than on Docker configuration, it is grounded at the **upstream
+kernel default**. A distribution shipping a stricter value is hardening, and
+reads the severity down the same way rootless mode does — there is no neutral
+"host default" to ground on, since real hosts depart from mainline in both
+directions (Debian 13 ships `perf_event_paranoid=3` against mainline's 2, while
+Arch ships `yama.ptrace_scope=1` against mainline's 0).
+
 A rule that departs from this baseline states the departure on its own page in a
 `Daemon assumptions:` field. That field is an exception list, not something
 every rule repeats.
@@ -67,6 +75,8 @@ If your daemon is **not** at defaults, some findings become unreliable:
 | `--icc=false` | CL-0006's cross-container reach is removed |
 | `--userns-remap` | `userns_mode: host` becomes a real finding rather than a no-op |
 | `--default-runtime` other than `runc` | any rule's premise may be rewritten before `runc` sees the spec |
+| `kernel.perf_event_paranoid` above 2 | `PERFMON` (CL-0027) grants nothing — Debian and Ubuntu ship 3 |
+| `kernel.yama.ptrace_scope` above 0 | `SYS_PTRACE`'s same-uid reach narrows; its cross-uid reach is unaffected |
 
 ## Axes
 

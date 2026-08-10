@@ -212,7 +212,7 @@ def test_closed_reason_list_matches_the_document() -> None:
 
 DERIVATION_FIELD_RE = re.compile(
     r"^- \*\*(Baseline|Precondition|Impact|Qualifier/modifier|Derived|Shipped|"
-    r"Scoping assumptions|Evidence):\*\* (.+)$",
+    r"Scoping assumptions|Daemon assumptions|Evidence):\*\* (.+)$",
     re.MULTILINE,
 )
 
