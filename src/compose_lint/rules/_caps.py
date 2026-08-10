@@ -43,8 +43,15 @@ def iter_cap_add(
     ``as_written`` preserves the spelling in the file so the message quotes
     what the author typed; ``bare_name`` is the key into ``members``. Docker
     treats a ``CAP_`` prefix as optional — ``CAP_SYS_ADMIN`` and ``SYS_ADMIN``
-    name the same capability, and so does ``CAP_ALL`` — so the prefix is
-    stripped before lookup (issue #277 F2).
+    name the same capability — so the prefix is stripped before lookup
+    (issue #277 F2).
+
+    ``ALL`` is the exception, and it does not generalise: Docker special-cases
+    it *before* applying the prefix, so ``CAP_ALL`` falls through to the
+    capability table and is rejected outright — ``docker run --cap-add CAP_ALL``
+    fails with ``invalid CapAdd: unknown capability: "CAP_ALL"`` (verified,
+    Docker 29.1.3). Flagging it would be a CRITICAL finding on a file that
+    cannot start, so the prefixed spelling is not accepted for ``ALL``.
     """
     cap_add = service_config.get("cap_add", [])
     if not isinstance(cap_add, list):
@@ -53,6 +60,8 @@ def iter_cap_add(
     for i, cap in enumerate(cap_add):
         as_written = str(cap).strip().upper()
         bare = as_written.removeprefix("CAP_")
+        if bare == "ALL" and as_written != "ALL":
+            continue  # CAP_ALL is not a capability Docker accepts — see above
         if bare not in members:
             continue
         line = lines.get(f"services.{service_name}.cap_add[{i}]") or lines.get(

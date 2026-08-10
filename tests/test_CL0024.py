@@ -61,8 +61,10 @@ class TestHostExecCapAddRule:
         for cap in OTHER_TIERS:
             assert self._check_cap(cap) == [], f"CL-0024 claimed {cap}"
 
-    def test_cap_all_prefixed_and_lowercase(self) -> None:
-        for spelling in ("CAP_ALL", "all"):
+    def test_all_is_case_insensitive(self) -> None:
+        # "CAP_ALL" is deliberately absent here: Docker rejects it outright.
+        # See TestCapAllPrefix at the bottom of this file.
+        for spelling in ("ALL", "all"):
             findings = self._check_cap(spelling)
             assert len(findings) == 1, spelling
             assert findings[0].severity is Severity.CRITICAL
@@ -90,3 +92,34 @@ class TestHostExecCapAddRule:
         fix = self._check_cap("SYS_ADMIN")[0].fix
         assert fix is not None
         assert "VM or a host process" in fix
+
+
+class TestCapAllPrefix:
+    """``CAP_ALL`` is not a capability Docker accepts.
+
+    The ``CAP_`` prefix is optional for real capability names, but Docker
+    special-cases ``ALL`` before applying it, so ``CAP_ALL`` reaches the
+    capability table and is rejected: ``invalid CapAdd: unknown capability:
+    "CAP_ALL"``. Treating it as ``ALL`` produced a CRITICAL finding on a file
+    that cannot start.
+    """
+
+    def _caps(self, cap: str) -> list:
+        data, lines = loads(
+            f"services:\n  app:\n    image: nginx\n    cap_add:\n      - {cap}\n"
+        )
+        return list(
+            HostExecCapAddRule().check("app", data["services"]["app"], data, lines)
+        )
+
+    def test_bare_all_still_fires(self) -> None:
+        assert len(self._caps("ALL")) == 1
+        assert len(self._caps("all")) == 1
+
+    def test_prefixed_all_is_not_a_capability(self) -> None:
+        assert self._caps("CAP_ALL") == []
+        assert self._caps("cap_all") == []
+
+    def test_prefix_still_works_for_real_capabilities(self) -> None:
+        for spelling in ("SYS_ADMIN", "CAP_SYS_ADMIN", "cap_sys_admin"):
+            assert len(self._caps(spelling)) == 1, spelling
