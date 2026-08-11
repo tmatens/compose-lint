@@ -72,6 +72,7 @@ _INERT_DEVICES: frozenset[str] = frozenset(
 # Neither alternative bounds the underlying host-wide resource (the huge-page
 # pool is global), which is what `deploy.resources.limits` is for.
 _SCOPED_ALTERNATIVES: dict[str, str] = {
+    # nosec B108 - naming the path is the rule's job, not a temp-file use
     "/dev/shm": (
         "Don't bind the host's /dev/shm. If the container only needs a larger "
         "shared-memory segment than the 64 MiB default, set `shm_size:` on the "
