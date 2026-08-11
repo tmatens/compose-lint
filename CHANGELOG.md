@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A mount below `/run` or `/var/run` is flagged again (CL-0013, HIGH).** The
+  runtime directories moved to [CL-0001](docs/rules/CL-0001.md), which owns a
+  socket directory and its *ancestors* — the paths that actually hold the
+  control socket. CL-0013 had matched the same directories by *descent*, so the
+  move left everything strictly below them owned by neither rule and 35 HIGH
+  findings disappeared silently: `/var/run/dbus` (the system bus reaches systemd
+  and PolicyKit), `/var/run/libvirt/libvirt-sock` (VM control), `/run/udev`,
+  `/var/run/utmp`, `/run/systemd/journal`. A descendant that *is* a control
+  socket stays CL-0001's at CRITICAL, so nothing double-reports.
+- **`/dev/null` and the other inert character devices are no longer flagged
+  (CL-0013).** `/dev/null`, `/dev/zero`, `/dev/full`, `/dev/random` and
+  `/dev/urandom` disclose no host state and grant no access — mounting
+  `/dev/null` over a config file the image expects is a near-universal idiom,
+  and the `/dev` descent match priced it HIGH. 17 findings removed across the
+  corpus. The rest of `/dev`, including `/dev/shm`, is unchanged.
+
 - **A bind source written as `${VAR:-/some/path}` is now matched on its
   default.** With no `.env` and no exported variable, Compose substitutes the
   default, so the default *is* the configuration the file ships — what a fresh

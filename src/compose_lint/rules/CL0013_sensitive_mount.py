@@ -12,6 +12,7 @@ from compose_lint.rules._mounts import (
     match_prefix,
     normalize_host_path,
 )
+from compose_lint.rules.CL0001_docker_socket import claims_host_path
 from compose_lint.rules.CL0025_writable_host_root import match_root_equivalent
 
 if TYPE_CHECKING:
@@ -44,6 +45,39 @@ _EXPOSED_PATHS: tuple[str, ...] = (
     # --device, which is why CL-0016 owns raw device access, not this rule.
     "/dev",
 )
+
+# Character devices that convey nothing. Mounting /dev/null into a container
+# discloses no host state and grants no access -- it is a bit bucket, and a
+# near-universal way to blank out a config file the image expects. They are
+# excluded rather than left to the /dev descent match, which priced them as
+# "exposes host kernel interfaces, devices or user data".
+_INERT_DEVICES: frozenset[str] = frozenset(
+    {"/dev/null", "/dev/zero", "/dev/full", "/dev/random", "/dev/urandom"}
+)
+
+# The runtime directories. CL-0001 owns these and their ancestors, because they
+# hold the control sockets; it does not own what sits *below* them, which holds
+# host service state instead -- the system D-Bus, the libvirt control socket,
+# udev's device database, utmp. CL-0013 matched all of it by descent until the
+# directories moved to CL-0001, and the move left the descendants claimed by
+# neither rule: measured over the corpus, 35 HIGH findings disappeared,
+# /var/run/dbus and /var/run/libvirt/libvirt-sock among them.
+_RUNTIME_DIRS: tuple[str, ...] = ("/run", "/var/run")
+
+
+def _match_runtime_descendant(normalized: str) -> str | None:
+    """The runtime directory this mount sits strictly below, or ``None``.
+
+    Callers must first confirm CL-0001 does not claim the path
+    (:func:`claims_host_path`) — a descendant that *is* a control socket, or a
+    socket directory in its own right like ``/run/containerd``, is CL-0001's at
+    CRITICAL and must not be double-reported here at HIGH.
+    """
+    for directory in _RUNTIME_DIRS:
+        if normalized.startswith(directory + "/"):
+            return directory
+    return None
+
 
 _HOME_ROOT = "/home"
 
@@ -114,10 +148,20 @@ class SensitiveMountRule(BaseRule):
         ):
             normalized = normalize_host_path(mount.host_path)
 
+            if normalized in _INERT_DEVICES:
+                continue  # a bit bucket discloses nothing
+
             matched = match_prefix(mount.host_path, _EXPOSED_PATHS) or _match_home_tree(
                 normalized
             )
             reason = "exposes host kernel interfaces, devices or user data"
+            if matched is None and not claims_host_path(mount.host_path):
+                matched = _match_runtime_descendant(normalized)
+                if matched is not None:
+                    reason = (
+                        "exposes host runtime state — service sockets, the "
+                        "system bus and device state live here"
+                    )
             if matched is None:
                 matched = match_root_equivalent(mount.host_path)
                 if matched is None:

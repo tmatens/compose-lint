@@ -26,6 +26,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from compose_lint.engine import run_rules
+from compose_lint.parser import loads
 from compose_lint.rules._mounts import TIMEZONE_FILES, match_prefix
 from compose_lint.rules.CL0001_docker_socket import _RUNTIME_SOCKETS, _SOCKET_DIRS
 from compose_lint.rules.CL0011_dangerous_cap_add import STRONG_CAPS
@@ -355,3 +357,61 @@ class TestDeviceMembership:
         """
         assert r"^/dev/loop" in self._patterns()
         assert r"^/dev/kmsg$" in self._patterns()
+
+
+class TestRuntimeDirectoryPartition:
+    """`/run` and `/var/run` split between CL-0001 and CL-0013 by direction.
+
+    CL-0001 owns a socket directory and its *ancestors*, because those hold the
+    control socket. What sits strictly *below* holds host service state instead
+    -- the system bus, the libvirt socket, udev's database -- and that is
+    CL-0013's. CL-0013 matched all of it by descent until the directories moved
+    to CL-0001; the move left the descendants owned by neither, and 35 HIGH
+    findings vanished from the corpus without anything recording the decision.
+    """
+
+    def _owners(self, host_path: str) -> set[str]:
+        data, lines = loads(
+            f"services:\n  a:\n    image: x\n    volumes:\n      - {host_path}:/mnt\n"
+        )
+        return {
+            f.rule_id
+            for f in run_rules(data, lines)
+            if f.rule_id in {"CL-0001", "CL-0013", "CL-0025"}
+        }
+
+    def test_socket_directories_and_ancestors_are_cl0001s(self) -> None:
+        for path in ("/", "/var", "/run", "/var/run", "/run/containerd"):
+            assert self._owners(path) == {"CL-0001"}, path
+
+    def test_strict_descendants_are_cl0013s(self) -> None:
+        # None of these holds a control socket, so CRITICAL would be false --
+        # but they are not nothing either.
+        for path in (
+            "/run/dbus",
+            "/var/run/dbus",
+            "/var/run/libvirt/libvirt-sock",
+            "/run/udev",
+            "/run/user/1000",
+            "/run/myapp",
+        ):
+            assert self._owners(path) == {"CL-0013"}, path
+
+    def test_a_descendant_that_is_a_socket_stays_cl0001s(self) -> None:
+        # The socket-name match still wins, so these must not double-report.
+        for path in (
+            "/run/docker.sock",
+            "/var/run/docker.sock",
+            "/run/systemd/private",
+        ):
+            assert self._owners(path) == {"CL-0001"}, path
+
+    def test_inert_devices_are_claimed_by_nobody(self) -> None:
+        # A bit bucket discloses nothing. /dev/null:/some/config is a common way
+        # to blank a file the image expects, and it was priced HIGH.
+        for path in ("/dev/null", "/dev/zero", "/dev/urandom", "/dev/random"):
+            assert self._owners(path) == set(), path
+
+    def test_the_rest_of_dev_is_untouched(self) -> None:
+        for path in ("/dev", "/dev/shm", "/dev/sda"):
+            assert "CL-0013" in self._owners(path), path

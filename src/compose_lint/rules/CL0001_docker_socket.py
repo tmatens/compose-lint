@@ -93,6 +93,22 @@ def _matched_socket_dir(host_path: str) -> str | None:
     return None
 
 
+def claims_host_path(host_path: str) -> bool:
+    """Whether CL-0001 owns this mount — by socket directory or socket name.
+
+    Exported so CL-0013 can claim what is left under ``/run`` and ``/var/run``
+    without guessing at the boundary. CL-0001 matches a socket directory or an
+    **ancestor** of one, so a strict descendant like ``/run/dbus`` is not its:
+    that path holds no control socket. Before the runtime directories moved
+    here, CL-0013 matched them by descent and covered those descendants; the
+    move left them claimed by neither rule, which is the gap this predicate
+    closes rather than papers over.
+    """
+    if _matched_socket_dir(host_path) is not None:
+        return True
+    return any(marker in host_path for marker in _RUNTIME_SOCKETS)
+
+
 @register_rule
 class DockerSocketRule(BaseRule):
     """Detects container-runtime control-socket mounts in service volumes."""
