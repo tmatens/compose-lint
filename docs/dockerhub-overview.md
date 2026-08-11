@@ -2,7 +2,7 @@
 
 **Security-focused linter for Docker Compose files.** Catches dangerous misconfigurations before they reach production — and auto-fixes the unambiguous ones, dry-run first. Grounded in the [OWASP Docker Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html) and [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker).
 
-In a scan of 6,444 public Docker Compose files on GitHub, **91% of those that parse had at least one security finding** — 68% had a finding rated HIGH or CRITICAL. [Read the full *State of Docker Compose Security* report →](https://github.com/tmatens/compose-lint/blob/main/docs/state-of-compose.md)
+In a scan of 5,417 public Docker Compose files on GitHub, **91% of those that parse had at least one security finding** — 32% had a finding rated HIGH or CRITICAL, and 10% had a CRITICAL. [Read the full *State of Docker Compose Security* report →](https://github.com/tmatens/compose-lint/blob/main/docs/state-of-compose.md)
 
 ![compose-lint scanning a docker-compose.yml: severity-sorted findings with fix guidance and reference URLs, then the FAIL verdict.](https://raw.githubusercontent.com/tmatens/compose-lint/main/docs/assets/demo.gif)
 
