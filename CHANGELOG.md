@@ -82,104 +82,38 @@ diff <(jq -S '[.findings[]|{rule_id,line,service}]' before.json) \
 
 The diff catches the moved-waiver case, which no warning can reach.
 
-
-### Fixed
-
-- **A mount below `/run` or `/var/run` is flagged again (CL-0013, HIGH).** The
-  runtime directories moved to [CL-0001](docs/rules/CL-0001.md), which owns a
-  socket directory and its *ancestors* — the paths that actually hold the
-  control socket. CL-0013 had matched the same directories by *descent*, so the
-  move left everything strictly below them owned by neither rule and 35 HIGH
-  findings disappeared silently: `/var/run/dbus` (the system bus reaches systemd
-  and PolicyKit), `/var/run/libvirt/libvirt-sock` (VM control), `/run/udev`,
-  `/var/run/utmp`, `/run/systemd/journal`. A descendant that *is* a control
-  socket stays CL-0001's at CRITICAL, so nothing double-reports.
-- **`/dev/null` and the other inert character devices are no longer flagged
-  (CL-0013).** `/dev/null`, `/dev/zero`, `/dev/full`, `/dev/random` and
-  `/dev/urandom` disclose no host state and grant no access — mounting
-  `/dev/null` over a config file the image expects is a near-universal idiom,
-  and the `/dev` descent match priced it HIGH. 17 findings removed across the
-  corpus. The rest of `/dev`, including `/dev/shm`, is unchanged.
-
-- **A bind source written as `${VAR:-/some/path}` is now matched on its
-  default.** With no `.env` and no exported variable, Compose substitutes the
-  default, so the default *is* the configuration the file ships — what a fresh
-  clone, a reviewer and a CI gate all get. compose-lint matched the string as
-  written, so `${DOCKER_SOCKET_PATH:-/var/run/docker.sock}` mounted the live
-  control socket and reported nothing: measured over a 5,417-file corpus, 14
-  CRITICAL findings were missing on that spelling alone, plus writable `/etc`
-  paths and `~/.ssh` reached the same way. A reference with **no** default
-  (`${VAR}`, `${VAR:?err}`, `$VAR`) is still left alone — the host path is not
-  knowable from the file, and guessing one would invent a finding. **New
-  findings**, up to CRITICAL, on files using an interpolated bind source with a
-  default that names a flagged host path.
-
 ### Added
 
-- **CL-0028: host-reaching capabilities (`PERFMON`, `SYS_TIME`), HIGH.** Split
-  out of CL-0027. Both reach the host with no other key in the compose file and
-  nothing from the image — `SYS_TIME` writes the host's wall clock, because
-  Docker does not namespace `CLOCK_REALTIME`, and `PERFMON` opens a host-wide
-  `perf_event_open` at the upstream kernel default. That is `Direct × Host`,
-  not CL-0027's `Second flaw × Single container`, so under one-rule-one-severity
-  they are two rules. **New HIGH findings:** a service adding `SYS_TIME` or
-  `PERFMON` now crosses the default `--fail-on high` gate where it previously
-  reported MEDIUM. A `CL-0027` waiver does not cover them — re-waive as
-  CL-0028. The severity model gains an `integrity-only` qualifier (one tier
-  down) alongside `read-only` and `availability-only`, which is what the impact
-  axis was missing for a host effect that corrupts without disclosing or
-  granting control.
-
-### Fixed
-
-- **A writable `/var/lib` mount is now CRITICAL (CL-0025), and read-only HIGH
-  (CL-0013).** Host paths are matched by descent, so an ancestor of a listed
-  path went unclaimed even though it grants everything below it. Verified on
-  Docker 29.4.3: a container given only `-v /var/lib`, unprivileged and at
-  default capabilities, read a second container's private file and appended to
-  it, and the victim saw the change live. `/var/lib` is matched **exactly**,
-  because its grant comes from what it contains rather than from what lies
-  below it — `-v /var/lib/mysql`, `/var/lib/postgresql/data` and other service
-  data directories are *not* flagged. `/var/lib/containerd`, which nothing
-  named before, is a member in its own right and is matched by descent — on
-  Docker 29 the containerd snapshotter keeps its trees there. **New findings**
-  on `/var/lib`, `/var/lib/containerd` and paths below the latter; existing
-  `CL-0025`/`CL-0013` waivers cover them without migration, which also means
-  they arrive inside an existing suppression rather than announcing themselves.
-- **`/dev/md/<name>` is flagged (CL-0016).** mdadm creates a named symlink per
-  array alongside the numeric node, and `^/dev/md\d` cannot match it — the
-  character after `md` is `/`, not a digit — so a named array passed clean
-  while `/dev/md0` beside it was CRITICAL. Added as a second pattern rather
-  than by loosening the first, which is what keeps `/dev/mdadm` out.
-- **Relative and `~` bind sources are resolved instead of ignored.** Compose
-  resolves a relative mount source against the compose file's directory and
-  expands a leading `~`; compose-lint matched the string as written, so
-  `- ../../../../../..:/host` mounted the host root filesystem and reported
-  nothing at all. Verified against Docker Compose. **New findings**, up to
-  CRITICAL, on files using relative or `~` bind sources that resolve onto a
-  flagged host path — `./data:/data` and other in-project mounts are
-  unaffected.
-- **A named volume that is really a bind mount is now seen as one.**
-  `driver_opts: {type: none, device: <host path>, o: bind}` is the standard way
-  to pin a bind mount's options, and the host path lives in the top-level
-  `volumes:` block, which the mount rules never read. `device: /var/run/docker.sock`
-  reached a container at a clean pass. **New findings**, up to CRITICAL, for
-  bind-backed named volumes; `external: true` volumes are left alone, since
-  their host path is not in the file.
+- **CL-0026 — no memory or CPU resource limits** (MEDIUM). Docker imposes
+  neither by default: a container's `memory.max` is `max` and its `cpu.max` is
+  `max 100000` unless a limit is set. Fires when a service declares no memory
+  limit, no CPU limit, or neither, and names which is missing. Reservations
+  (`mem_reservation`, `cpu_shares`) express priority under contention and do not
+  satisfy it; `cpu_quota` does. Covers both halves of ATT&CK T1496 Resource
+  Hijacking — the memory-exhaustion denial of service and the CPU-bound
+  cryptomining that a memory limit does not bound at all.
+- Every rule page carries a derivation block — baseline, precondition, impact,
+  qualifier, derived, shipped, and an **Evidence** line naming a premise check
+  or a captured observation. A test asserts the page and the severity table
+  state the same derivation.
+- `scripts/validate_rule_premises.py` asserts the daemon under test is at
+  Docker's defaults before measuring anything, and aborts if it is not — a
+  premise measured against a hardened or loosened daemon returns a confidently
+  wrong answer. Five new premise checks: a `:ro` socket is still a working API
+  endpoint, a raw host-disk read at default capabilities, the `/dev`-bind
+  negative control for it, `core_pattern` writable through an rw `/proc` bind,
+  and memory/CPU unbounded by default.
+- CI smoke-tests `.pre-commit-hooks.yaml` with the real tool
+  (`precommit-smoke`). `action.yml`, the image and the wheel each had an
+  end-to-end smoke job; the pre-commit hook had none, which is how issue #465 —
+  a `files` pattern that made the hook unable to pass — reached a user.
+  `pre-commit try-repo` runs the manifest from the working tree, so `entry`,
+  `language` and hook installation are exercised on the PR that changes them.
+  `.pre-commit-hooks.yaml` was also missing from the `code` path filter, so a
+  manifest-only edit previously skipped the jobs that check it.
 
 ### Changed
 
-- **CL-0013 matches the home tree by depth, not by subtree.** `/home` and a
-  single user's home directory (`/home/alice`) are still flagged in either
-  mode, and so are the credential directories `~/.ssh`, `~/.docker`, `~/.aws`,
-  `~/.kube` and `~/.gnupg` together with everything below them. A deeper
-  project path — `/home/alice/projects/app/data` — is the application's own
-  directory and is no longer flagged. **Fewer findings** on absolute
-  `/home/<user>/<project>/…` mounts, **new findings** on `~/.ssh`-style
-  credential mounts. This pairs with relative-source resolution above: `./data`
-  resolves to an absolute path under wherever the compose file sits, which for
-  most projects is under `/home`, so a subtree match would have flagged the
-  commonest bind idiom in Compose.
 - **BREAKING — the severity model was rebuilt, and rule ids moved with it.**
   Severities are now *derived* from a documented two-axis matrix under a stated
   attacker baseline and a stated Docker posture, and any rule shipping a
@@ -197,26 +131,45 @@ The diff catches the moved-waiver case, which no warning can reach.
 
   **Rules split.** `cap_add` is now four rules by what the capability grants:
   CL-0024 (CRITICAL: `ALL`, `SYS_ADMIN`, `SYS_MODULE`, `SYS_RAWIO`), CL-0011
-  (HIGH, unchanged id: `NET_ADMIN`, `BPF`, `SYS_BOOT`), CL-0028 (HIGH:
-  `PERFMON`, `SYS_TIME`) and CL-0027 (MEDIUM: `SYS_PTRACE`,
-  `DAC_READ_SEARCH`). Host paths are two:
-  CL-0025 (CRITICAL) for writable mounts of `/`, `/etc`, `/root`, `/boot`,
-  `/var/lib/docker` and `/proc`, and CL-0013 (HIGH, unchanged id) for `/sys`,
-  `/dev`, `/home` and read-only mounts of CL-0025's paths. Neither rule
-  branches severity any more, which fixes the SARIF descriptor/finding
-  mismatch in #503.
+  (HIGH, unchanged id: `NET_ADMIN`, `BPF`, `SYS_BOOT`), **CL-0028** (HIGH:
+  `PERFMON`, `SYS_TIME`) and CL-0027 (MEDIUM: `SYS_PTRACE`, `DAC_READ_SEARCH`).
+  CL-0028 is new: both its members reach the host with no other key in the file
+  and nothing from the image — `SYS_TIME` writes the host's wall clock, because
+  Docker does not namespace `CLOCK_REALTIME`, and `PERFMON` opens a host-wide
+  `perf_event_open` at the upstream kernel default. A service adding either now
+  crosses the default gate where it previously reported MEDIUM. The severity
+  model gains an `integrity-only` qualifier (one tier down) alongside
+  `read-only` and `availability-only`, which is what the impact axis was missing
+  for a host effect that corrupts without disclosing or granting control.
 
-  A whole-root mount (`/`) belongs to CL-0025 (writable subdirectory list) no
-  longer: it contains the daemon control socket, so CL-0001 owns it in either
-  mode. CL-0025 covers `/etc`, `/root`, `/boot`, `/var/lib/docker` and `/proc`.
+  Host paths are two rules: CL-0025 (CRITICAL) for writable mounts of `/etc`,
+  `/root`, `/boot`, `/proc`, `/var/lib/docker`, `/var/lib/containerd` and
+  `/var/lib`, and CL-0013 (HIGH, unchanged id) for `/sys`, `/dev`, the home tree
+  and read-only mounts of CL-0025's paths. A whole-root mount (`/`) is CL-0001's
+  in either mode, because it contains the daemon control socket. Neither rule
+  branches severity any more, which fixes the SARIF descriptor/finding mismatch
+  in #503.
 
   **Suppression migration.** A `CL-0011` waiver now covers only `NET_ADMIN`,
   `BPF` and `SYS_BOOT`; the other capabilities move to CL-0024, CL-0027 and
-  CL-0028 and are no longer covered by it. A `CL-0013` waiver no longer covers a writable
-  root-equivalent path (CL-0025) or a `/run`-family mount (CL-0001), and a
-  waiver of a whole-root mount moves to CL-0001 (from CL-0025 when writable, or
-  from CL-0013 when read-only). Waivers for CL-0012, CL-0015 and
-  `/var/lib/kubelet` are dead and can be deleted.
+  CL-0028 and are no longer covered by it. A `CL-0027` waiver does not cover
+  `PERFMON` or `SYS_TIME` — re-waive as CL-0028. A `CL-0013` waiver no longer
+  covers a writable root-equivalent path (CL-0025) or a `/run`-family mount
+  (CL-0001), and a waiver of a whole-root mount moves to CL-0001 (from CL-0025
+  when writable, or from CL-0013 when read-only). Waivers for CL-0012, CL-0015
+  and `/var/lib/kubelet` are dead and can be deleted.
+
+- **CL-0013 matches the home tree by depth, not by subtree.** `/home` and a
+  single user's home directory (`/home/alice`) are still flagged in either mode,
+  and so are the credential directories `~/.ssh`, `~/.docker`, `~/.aws`,
+  `~/.kube` and `~/.gnupg` together with everything below them. A deeper project
+  path — `/home/alice/projects/app/data` — is the application's own directory
+  and is no longer flagged. **Fewer findings** on absolute
+  `/home/<user>/<project>/…` mounts, **new findings** on `~/.ssh`-style
+  credential mounts. This pairs with relative-source resolution below: `./data`
+  resolves to an absolute path under wherever the compose file sits, which for
+  most projects is under `/home`, so a subtree match would have flagged the
+  commonest bind idiom in Compose.
 
 - CL-0016's device list is reconciled with what a device actually grants. It
   **gains** `/dev/vd*`, `/dev/xvd*`, `/dev/mmcblk*` and `/dev/md*` — the host
@@ -226,6 +179,15 @@ The diff catches the moved-waiver case, which no warning can reach.
   CL-0024 or CL-0009 already flags, and `/dev/kmem` and `/dev/raw`, for which
   Docker refuses to create the container. Suppressions for the dropped devices
   are dead and can be deleted.
+
+- CL-0001 flags any mount that exposes a host control socket, including a
+  directory that merely contains one — `/run`, `/var/run`, `/run/containerd`,
+  `/run/systemd`, or the whole root `/` — and is mode-independent, because `:ro`
+  applies to the socket file rather than to the read-write API behind it. A
+  read-only `/` used to be graded CL-0013 HIGH, a tier below the socket it
+  exposes. It also matches a socket name on the **host** side of a mount only:
+  `- /tmp/fake:/var/run/docker.sock` is no longer reported as a socket mount,
+  since the container path is where a socket would land, not where it comes from.
 
 - Host paths are normalised before the mount rules match them, so `.` and `..`
   segments no longer hide a mount. `- /.:/host`, `- /..:/host` and `- /./:/host`
@@ -238,44 +200,10 @@ The diff catches the moved-waiver case, which no warning can reach.
   container and are now flagged; a bare `${MEM}` still counts as a limit,
   because its value is genuinely unknowable from the file.
 
-- CL-0001 matches a socket name on the **host** side of a mount only.
-  `- /tmp/fake:/var/run/docker.sock` is no longer reported as a socket mount —
-  the container path is where a socket would land, not where it comes from.
-
-- CL-0006 and the `cap_add` rules now share one capability normaliser, so
+- CL-0006 and the `cap_add` rules share one capability normaliser, so
   `cap_drop: [CAP_ALL]` and `cap_drop: ["  ALL  "]` are read the same way
   `cap_add` reads them. `cap_add: [CAP_ALL]` is no longer flagged at all:
   Docker rejects that spelling outright, so the file could never start.
-
-- CL-0001 now flags any mount that exposes a host control socket, including a
-  directory that merely contains one — `/run`, `/var/run`, `/run/containerd`,
-  `/run/systemd`, or the whole root `/` — and is mode-independent, because `:ro`
-  applies to the socket file rather than to the read-write API behind it. A
-  read-only `/` used to be graded CL-0013 HIGH, a tier below the socket it
-  exposes, because CL-0025 declines read-only mounts and CL-0001 deferred the
-  whole-root case to it.
-
-### Added
-
-- **CL-0026 — no memory or CPU resource limits** (MEDIUM). Docker imposes
-  neither by default: a container's `memory.max` is `max` and its `cpu.max` is
-  `max 100000` unless a limit is set. Fires when a service declares no memory
-  limit, no CPU limit, or neither, and names which is missing. Reservations
-  (`mem_reservation`, `cpu_shares`) express priority under contention and do
-  not satisfy it; `cpu_quota` does. Covers both halves of ATT&CK T1496 Resource
-  Hijacking — the memory-exhaustion denial of service and the CPU-bound
-  cryptomining that a memory limit does not bound at all.
-- Every rule page now carries a derivation block — baseline, precondition,
-  impact, qualifier, derived, shipped, and an **Evidence** line naming a premise
-  check or a captured observation. A test asserts the page and the severity
-  table state the same derivation.
-- `scripts/validate_rule_premises.py` asserts the daemon under test is at
-  Docker's defaults before measuring anything, and aborts if it is not — a
-  premise measured against a hardened or loosened daemon returns a confidently
-  wrong answer. Five new premise checks: a `:ro` socket is still a working API
-  endpoint, a raw host-disk read at default capabilities, the `/dev`-bind
-  negative control for it, `core_pattern` writable through an rw `/proc` bind,
-  and memory/CPU unbounded by default.
 
 ### Removed
 
@@ -297,73 +225,95 @@ The diff catches the moved-waiver case, which no warning can reach.
 
 ### Fixed
 
+- **The mount rules see host paths they were missing.** Each of these mounted a
+  real host path and reported clean:
+  - **A relative or `~` source.** Compose resolves a relative mount source
+    against the compose file's directory and expands a leading `~`; the source
+    was matched as written, so `- ../../../../../..:/host` mounted the host root
+    filesystem and reported nothing. `./data:/data` and other in-project mounts
+    are unaffected.
+  - **An interpolated default.** With no `.env` and no exported variable,
+    Compose substitutes the default, so `${DOCKER_SOCKET_PATH:-/var/run/docker.sock}`
+    mounts the live control socket. A reference with **no** default (`${VAR}`,
+    `${VAR:?err}`, `$VAR`) is still left alone — the host path is not knowable
+    from the file, and guessing one would invent a finding.
+  - **A bind-backed named volume.** `driver_opts: {type: none, device: <host
+    path>, o: bind}` is the standard way to pin a bind mount's options, and the
+    host path lives in the top-level `volumes:` block, which the mount rules
+    never read. `external: true` volumes are left alone, since their host path
+    is not in the file.
+  - **A writable `/var/lib`** (CL-0025 CRITICAL; read-only, CL-0013 HIGH). It
+    contains the container store, so a mount of it grants what `/var/lib/docker`
+    does — verified on Docker 29.4.3, a container given only `-v /var/lib` read
+    and modified a second container's files. It is matched **exactly**, because
+    its grant comes from what it contains rather than from what lies below it:
+    `-v /var/lib/mysql`, `/var/lib/postgresql/data` and other service data
+    directories are *not* flagged. `/var/lib/containerd` is a member in its own
+    right and is matched by descent.
+  - **A path below `/run` or `/var/run`** (CL-0013 HIGH) — `/var/run/dbus`,
+    which reaches systemd and PolicyKit; `/var/run/libvirt/libvirt-sock`, which
+    is VM control; `/run/udev`, `/var/run/utmp`, `/run/systemd/journal`. CL-0001
+    owns those directories and their ancestors, because those hold the control
+    socket; what sits strictly below holds host service state instead. A
+    descendant that *is* a socket stays CL-0001's at CRITICAL.
+  - **`/dev/md/<name>`** (CL-0016). mdadm creates a named symlink per array
+    alongside the numeric node, and `^/dev/md\d` cannot match it — the character
+    after `md` is `/`, not a digit — so a named array passed clean while
+    `/dev/md0` beside it was CRITICAL. Added as a second pattern rather than by
+    loosening the first, which is what keeps `/dev/mdadm` out.
+
+- **`/dev/null` and the other inert character devices are no longer flagged**
+  (CL-0013). `/dev/null`, `/dev/zero`, `/dev/full`, `/dev/random` and
+  `/dev/urandom` disclose no host state and grant no access — mounting
+  `/dev/null` over a config file the image expects is a near-universal idiom,
+  and the `/dev` descent match priced it HIGH. The rest of `/dev`, including
+  `/dev/shm`, is unchanged.
+
+- CL-0011 no longer flags `DAC_OVERRIDE`, which inverted the default gate
+  (issue #492). `DAC_OVERRIDE` is one of Docker's 14 default capabilities, so a
+  container holds it whether or not the file names it — flagging it on `cap_add`
+  scored the declaration rather than the runtime state. The effect was that
+  hardening a service made it fail: `cap_drop: [ALL]` plus
+  `cap_add: [DAC_OVERRIDE]` — one capability — exited 1 at the default
+  `--fail-on high`, while the same service with no `cap_drop` at all — fourteen
+  capabilities, `DAC_OVERRIDE` among them — exited 0. The fastest way back to
+  green was to delete the hardening. CL-0011 already excluded `MKNOD` and
+  `SYS_CHROOT` for exactly this reason; `DAC_OVERRIDE` was the one default
+  capability the list still carried. CL-0006 now names it among the retained
+  defaults, so both rules describe the same capability the same way.
+
+- CL-0020 and CL-0021 no longer skip credentials containing `$$`, Compose's
+  escape for a literal dollar (issue #502). CL-0020's variable-reference regex
+  read the second dollar of `pa$$w0rd` as starting a `$w0rd` substitution, and
+  CL-0021 exempted any value containing `$` at all — so exactly the passwords a
+  careful user escaped correctly went unchecked, and the two rules disagreed on
+  values like `hunter2$`. Both now share one classifier that consumes `$$`
+  escapes left-to-right, as Compose does, before testing for a reference.
+
+- Handing compose-lint its own config file no longer fails the run (issue #499).
+  `.compose-lint.yml` parses as YAML but has no `services:` key, and its shape
+  matched neither of ADR-013's not-applicable buckets, so it fell through to
+  `Not a valid Compose file` and exit 2. It is now recognised as a third
+  not-applicable shape and skipped with exit 0, like fragments and Compose v1
+  files. This is the root cause behind issue #465: `compose-lint init` followed
+  by a pre-commit sweep could never pass. Genuinely malformed Compose files
+  still exit 2; the check requires *every* non-meta top-level key to be a config
+  key, so it cannot swallow a broken file.
+
 - Fourteen false claims across the rule docs, each re-verified against a live
   daemon. The worst was CL-0006's documented `## Fix`, which crash-looped:
   `cap_drop: [ALL]` plus `cap_add: [NET_BIND_SERVICE]` exits with
-  `chown("/var/cache/nginx/client_temp") failed (Operation not permitted)`.
-  Also corrected: seccomp and AppArmor *do* survive `execve` of a setuid binary;
+  `chown("/var/cache/nginx/client_temp") failed (Operation not permitted)`. Also
+  corrected: seccomp and AppArmor *do* survive `execve` of a setuid binary;
   `bpf` and `init_module` are capability-gated rather than blocked outright;
   `SYS_BOOT` does not load a kernel via kexec; `pid: host` does not expose
   `/proc/[pid]/environ` at default capabilities; `uts: host` cannot change the
   hostname; a `/dev` bind is not equivalent to `devices:`; `read_only` does not
   prevent persistence through a volume; and `user: root` does not undo a
   gosu/su-exec image's privilege drop.
+
 - CL-0019 was ungrounded — its only citation contained no digest guidance at
   all. It now cites Docker's pull-by-digest documentation and CIS 5.28.
-
-### Added
-
-- CI now smoke-tests `.pre-commit-hooks.yaml` with the real tool
-  (`precommit-smoke`). `action.yml`, the image, and the wheel each had an
-  end-to-end smoke job; the pre-commit hook had none, which is how issue
-  #465 — a `files` pattern that made the hook unable to pass — reached a
-  user. `pre-commit try-repo` runs the manifest from the working tree, so
-  `entry`, `language`, and hook installation are exercised on the PR that
-  changes them. Covers both directions (a clean stack passes, an insecure
-  one fails), asserts the hook actually matched files rather than passing
-  trivially on an empty set, and pins the #465 case directly by keeping a
-  config file in the test tree. `.pre-commit-hooks.yaml` was also missing
-  from the `code` path filter, so a manifest-only edit previously skipped
-  the very jobs that check it.
-
-### Fixed
-
-- CL-0011 no longer flags `DAC_OVERRIDE`, which inverted the default gate
-  (issue #492). `DAC_OVERRIDE` is one of Docker's 14 default capabilities,
-  so a container holds it whether or not the file names it — flagging it on
-  `cap_add` scored the declaration rather than the runtime state. The effect
-  was that hardening a service made it fail: `cap_drop: [ALL]` plus
-  `cap_add: [DAC_OVERRIDE]` — one capability — exited 1 at the default
-  `--fail-on high`, while the same service with no `cap_drop` at all —
-  fourteen capabilities, `DAC_OVERRIDE` among them — exited 0. The fastest
-  way back to green was to delete the hardening. CL-0011 already excluded
-  `MKNOD` and `SYS_CHROOT` for exactly this reason; `DAC_OVERRIDE` was the
-  one default capability the list still carried, and so was the whole of the
-  inversion. CL-0006 now names it among the retained defaults, so both rules
-  describe the same capability the same way.
-
-- CL-0020 and CL-0021 no longer skip credentials containing `$$`, Compose's
-  escape for a literal dollar (issue #502). CL-0020's variable-reference
-  regex read the second dollar of `pa$$w0rd` as starting a `$w0rd`
-  substitution, and CL-0021 exempted any value containing `$` at all — so
-  exactly the passwords a careful user escaped correctly went unchecked,
-  and the two rules disagreed on values like `hunter2$` (flagged as an env
-  key, silent in a connection string). Both rules now share one classifier
-  that consumes `$$` escapes left-to-right, as Compose does, before testing
-  for a `${VAR}`/`$VAR` reference.
-
-- Handing compose-lint its own config file no longer fails the run
-  (issue #499). `.compose-lint.yml` parses as YAML but has no `services:`
-  key, and its shape matched neither of ADR-013's not-applicable buckets,
-  so it fell through to `Not a valid Compose file` and exit 2. It is now
-  recognised as a third not-applicable shape and skipped with exit 0, like
-  fragments and Compose v1 files. This is the root cause behind issue #465:
-  `compose-lint init` followed by a pre-commit sweep could never pass. The
-  0.15.2 hook-pattern fix mitigated that at the config layer, but a user who
-  sets their own `exclude:` in `.pre-commit-config.yaml` replaces ours and
-  could reintroduce it — the linter is now robust regardless. Genuinely
-  malformed Compose files still exit 2; the check requires *every* non-meta
-  top-level key to be a config key, so it cannot swallow a broken file.
 
 ## [0.15.2] - 2026-08-08
 
