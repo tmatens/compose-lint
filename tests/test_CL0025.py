@@ -148,3 +148,49 @@ class TestPathNormalisation:
         findings = self._inline("/etc/./cron.d:/x")
         assert len(findings) == 1
         assert findings[0].severity is Severity.CRITICAL
+
+
+class TestVarLibAncestor:
+    """A writable /var/lib mount reaches the container store below it.
+
+    Measured on Docker 29.4.3: a container given only ``-v /var/lib``, at
+    default capabilities and unprivileged, read a second container's private
+    file and appended to it, and the victim saw the change live. /var/lib also
+    covers /var/lib/containerd, which nothing else named -- on Docker 29 the
+    snapshotter keeps its trees there, while each container's live rootfs stays
+    reachable under /var/lib/docker as well.
+    """
+
+    def setup_method(self) -> None:
+        self.rule = WritableHostRootMountRule()
+
+    def _findings(self, mount: str) -> list:
+        data, lines = loads(
+            f"services:\n  svc:\n    image: nginx\n    volumes:\n      - {mount}\n"
+        )
+        return list(self.rule.check("svc", data["services"]["svc"], data, lines))
+
+    def test_writable_var_lib_is_critical(self) -> None:
+        findings = self._findings("/var/lib:/x")
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.CRITICAL
+
+    def test_writable_containerd_store_is_critical(self) -> None:
+        # Where the filesystems actually are on Docker 29; claimed by descent
+        # from /var/lib.
+        assert len(self._findings("/var/lib/containerd:/x")) == 1
+
+    def test_the_docker_entry_still_supplies_its_own_message(self) -> None:
+        # /var/lib/docker precedes /var/lib in the tuple, so the more specific
+        # entry wins and the message does not degrade to the parent's.
+        message = self._findings("/var/lib/docker:/x")[0].message
+        assert "/var/lib/docker" in message
+
+    def test_read_only_var_lib_is_not_this_rules(self) -> None:
+        # Disclosure rather than takeover -- CL-0013 owns it, as for every
+        # other root-equivalent path.
+        assert self._findings("/var/lib:/x:ro") == []
+
+    def test_a_sibling_of_the_store_is_not_claimed(self) -> None:
+        # /var/log is not under /var/lib; the entry must not widen to /var.
+        assert self._findings("/var/log:/x") == []

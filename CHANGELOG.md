@@ -25,6 +25,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A writable `/var/lib` mount is now CRITICAL (CL-0025), and read-only HIGH
+  (CL-0013).** Host paths are matched by descent, so an ancestor of a listed
+  path went unclaimed even though it grants everything below it. This one
+  also covers `/var/lib/containerd`, which nothing named — on Docker 29 the
+  containerd snapshotter keeps its trees there. Verified on Docker 29.4.3: a
+  container given only `-v /var/lib`, unprivileged and at default
+  capabilities, read a second container's private file and appended to it,
+  and the victim saw the change live. **New findings** on `/var/lib` and
+  `/var/lib/containerd` mounts; existing `CL-0025`/`CL-0013` waivers cover
+  them without migration, which also means they arrive inside an existing
+  suppression rather than announcing themselves.
+- **`/dev/md/<name>` is flagged (CL-0016).** mdadm creates a named symlink per
+  array alongside the numeric node, and `^/dev/md\d` cannot match it — the
+  character after `md` is `/`, not a digit — so a named array passed clean
+  while `/dev/md0` beside it was CRITICAL. Added as a second pattern rather
+  than by loosening the first, which is what keeps `/dev/mdadm` out.
 - **Relative and `~` bind sources are resolved instead of ignored.** Compose
   resolves a relative mount source against the compose file's directory and
   expands a leading `~`; compose-lint matched the string as written, so

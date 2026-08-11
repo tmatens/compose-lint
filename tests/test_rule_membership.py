@@ -114,13 +114,28 @@ class TestMountOwnership:
 
     def test_root_equivalent_paths_are_cl0025s(self) -> None:
         # Writable, these are host root through ordinary file writes.
+        # /var/lib contains /var/lib/docker, so it grants what that entry
+        # describes; verified, a container given only -v /var/lib, at default
+        # capabilities, read and modified a second container's files. It also
+        # covers /var/lib/containerd, which nothing else named -- on Docker 29
+        # the snapshotter keeps its trees there, though each container's live
+        # rootfs stays reachable under /var/lib/docker too. Listed explicitly
+        # rather than by a general ancestry rule, which would also claim "/"
+        # and "/var" -- both CL-0001's -- and double-report them.
         assert set(ROOT_EQUIVALENT_PATHS) == {
             "/etc",
             "/root",
             "/boot",
             "/var/lib/docker",
+            "/var/lib",
             "/proc",
         }
+
+    def test_the_more_specific_root_equivalent_entry_wins(self) -> None:
+        # match_prefix returns the first entry in order, so /var/lib/docker
+        # must precede /var/lib or the message names the vaguer parent.
+        paths = list(ROOT_EQUIVALENT_PATHS)
+        assert paths.index("/var/lib/docker") < paths.index("/var/lib")
 
     def test_whole_root_is_not_cl0025s(self) -> None:
         # "/" contains the daemon control socket, so it is host root in *either*
@@ -186,6 +201,7 @@ class TestDeviceMembership:
             r"^/dev/xvd[a-z]",
             r"^/dev/mmcblk",
             r"^/dev/md\d",
+            r"^/dev/md/",
             r"^/dev/dm-",
             r"^/dev/rbd",
             # Symlinks and control nodes that reach the same devices.
@@ -210,6 +226,7 @@ class TestDeviceMembership:
             r"^/dev/xvd[a-z]",
             r"^/dev/mmcblk",
             r"^/dev/md\d",
+            r"^/dev/md/",
         } <= self._patterns()
 
     def test_capability_gated_devices_are_not_claimed(self) -> None:

@@ -36,11 +36,42 @@ REFERENCES = [OWASP_REF, CIS_REF]
 # control socket, so it is host root in *either* mode, not only when writable.
 # CL-0001 owns it, mode-independent — grading a read-only "/" here (or as
 # CL-0013's HIGH disclosure) would under-price the socket it exposes.
+#
+# Matching is by descent (a mount at or under a listed path), so an *ancestor*
+# of a listed path is not claimed even though it grants everything below it.
+# "/var/lib" was the uncovered case: it contains /var/lib/docker, so a writable
+# mount of it grants what that entry describes, and it produced no finding.
+#
+# Verified on Docker 29.4.3, both legs, against a second container started for
+# the purpose: a container given only `-v /var/lib`, unprivileged and at
+# default capabilities, read that container's private file and appended to it,
+# and the victim saw the change live.
+#
+# It also covers /var/lib/containerd, which nothing here named. Where the data
+# sits is version-dependent, and both layouts keep it inside /var/lib:
+#   * Docker 29 + containerd snapshotter (measured on both grounding hosts):
+#     snapshot trees are in /var/lib/containerd/io.containerd.snapshotter.*/,
+#     while each running container's live rootfs is still reachable under
+#     /var/lib/docker/rootfs/overlayfs/<id>/ — verified, the same read and
+#     write succeeded through a /var/lib/docker mount alone.
+#   * classic overlay2 graph driver (pre-29 default): layers and the merged
+#     rootfs are under /var/lib/docker/overlay2/<id>/. Not measured here — no
+#     host on hand runs it — so it is cited as the documented layout, not as a
+#     capture.
+# Either way /var/lib/docker keeps its grant; /var/lib/containerd is the part
+# that had no owner.
+#
+# "/var/lib" is listed explicitly rather than fixed by matching ancestors
+# generally, because a general ancestry rule would also claim "/" and "/var" —
+# both of which CL-0001 owns, since they contain the control socket — and that
+# is a double-report, not a gap. Ordered after "/var/lib/docker" so the more
+# specific entry still supplies the message.
 ROOT_EQUIVALENT_PATHS: tuple[str, ...] = (
     "/etc",
     "/root",
     "/boot",
     "/var/lib/docker",
+    "/var/lib",
     "/proc",
 )
 
@@ -51,6 +82,9 @@ _GRANTS: dict[str, str] = {
     "/boot": "the kernel and initramfs — a persistent rootkit surviving reboot",
     "/var/lib/docker": "every other container's filesystem and image layers — "
     "tamper with one and it escapes on next start",
+    "/var/lib": "/var/lib/docker and /var/lib/containerd below it, and with "
+    "them every other container's filesystem — verified, a container holding "
+    "only this mount read and modified a neighbour's files",
     "/proc": "core_pattern — the host's core-dump handler runs a program of the "
     "attacker's choosing, as root, on the next crash",
 }
