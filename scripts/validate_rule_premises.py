@@ -933,10 +933,10 @@ _PERF_PROBE = (
 )
 
 
-def _t_perfmon() -> tuple[bool, str]:
+def _t_perfmon() -> tuple[bool | None, str]:
     """PERFMON opens a system-wide ``perf_event_open``; without it, nothing.
 
-    That is the premise CL-0027 prices its host-read member on, asserted at the
+    That is the premise CL-0028 prices its host-read member on, asserted at the
     grounded posture (ADR-020: upstream kernel defaults), where ``perfmon_capable()``
     lets the capability bypass ``perf_event_paranoid`` at any level.
 
@@ -948,9 +948,15 @@ def _t_perfmon() -> tuple[bool, str]:
     demands CAP_SYS_ADMIN instead of CAP_PERFMON, and that is not visible in
     the number.
 
-    So this asserts the upstream behaviour plainly. A failure here means the
-    daemon's host carries that downstream hardening, not that the premise is
-    wrong -- the message says so, and names the sysctl for triage.
+    Returns ``None`` -- not applicable -- on a host carrying that patch, rather
+    than failing. But it does not take the hardening on trust: it *proves* it,
+    by confirming that CAP_SYS_ADMIN opens the same event the capability was
+    refused. If neither opens it, something other than the known downstream
+    patch is in play and the check fails properly.
+
+    Without the third outcome this returned False on every Debian and Ubuntu
+    host -- including the project's own grounding host -- so the suite could
+    not be run to completion where its measurements were taken.
     """
     _, paranoid = _run([], ["cat", "/proc/sys/kernel/perf_event_paranoid"])
     _, denied = _run(
@@ -961,19 +967,29 @@ def _t_perfmon() -> tuple[bool, str]:
         ["python", "-c", _PERF_PROBE],
         image=PY_IMAGE,
     )
-    no_cap = "PERF_DENIED" in denied
-    with_cap = "PERF_OK" in granted
-    ok = no_cap and with_cap
-    note = (
-        ""
-        if ok
-        else " -- this host carries downstream perf hardening (CAP_SYS_ADMIN "
-        "required instead of CAP_PERFMON), so it cannot validate this premise; "
-        "the reach itself is not in question"
-    )
-    return ok, (
+    detail = (
         f"perf_event_paranoid={paranoid.strip()}; without PERFMON="
-        f"{denied.strip()!r} with PERFMON={granted.strip()!r}{note}"
+        f"{denied.strip()!r} with PERFMON={granted.strip()!r}"
+    )
+    if "PERF_DENIED" not in denied:
+        return False, f"{detail} -- perf is open without the capability"
+    if "PERF_OK" in granted:
+        return True, detail
+    _, admin = _run(
+        ["--cap-drop", "ALL", "--cap-add", "SYS_ADMIN"],
+        ["python", "-c", _PERF_PROBE],
+        image=PY_IMAGE,
+    )
+    if "PERF_OK" in admin:
+        return None, (
+            f"{detail}; with SYS_ADMIN={admin.strip()!r} -- this host carries "
+            "the downstream perf patch (CAP_SYS_ADMIN required instead of "
+            "CAP_PERFMON), proven by the SYS_ADMIN leg, so it cannot ground "
+            "this premise. The reach itself is not in question"
+        )
+    return False, (
+        f"{detail}; with SYS_ADMIN={admin.strip()!r} -- neither capability "
+        "opens the event, which is not the known downstream patch"
     )
 
 
@@ -983,7 +999,11 @@ def _t_perfmon() -> tuple[bool, str]:
 # orchestration this single-container harness has no shape for. The capability
 # gate underneath it (`_t_net_raw`) *is* checked on every run; the overwrite
 # itself is captured evidence in the ADR until a multi-container harness exists.
-CHECKS: list[tuple[str, str, Callable[[], tuple[bool, str]]]] = [
+# A check returns True (premise held), False (premise refuted) or None (not
+# measurable on this host -- the posture that would prove it is absent). None
+# is reported as SKIP and does not fail the run, because "this host cannot
+# ground this premise" is a different statement from "the premise is wrong".
+CHECKS: list[tuple[str, str, Callable[[], tuple[bool | None, str]]]] = [
     ("CL-0001", "docker socket mount is root-equivalent", _cl0001),
     (
         "CL-0001",
@@ -1041,7 +1061,7 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool, str]]]] = [
     ("CL-0026", "premise: memory and cpu are unbounded by default", _cl0026),
     ("CL-0027", "premise: SYS_PTRACE traces a different-uid process", _t_sys_ptrace),
     (
-        "CL-0027",
+        "CL-0028",
         "premise: PERFMON opens system-wide perf, nothing without it",
         _t_perfmon,
     ),
@@ -1139,22 +1159,40 @@ def main() -> int:
         print(f"  [PASS] posture  daemon is at Docker defaults — {opts}")
 
     failures = []
+    skipped = []
     for rule_id, label, check in CHECKS:
         try:
             ok, detail = check()
         except Exception as exc:  # noqa: BLE001 - a crashed check is a failure
             ok, detail = False, f"{type(exc).__name__}: {exc}"
-        mark = "PASS" if ok else "FAIL"
+        mark = "SKIP" if ok is None else ("PASS" if ok else "FAIL")
         print(f"  [{mark}] {rule_id}  {label}\n          {detail}")
-        if not ok:
+        if ok is None:
+            # Not measurable here: the posture that would prove the premise is
+            # absent from this host. Reported, and counted against the run's
+            # authority below, but not a failure — "this host cannot ground
+            # this premise" is not "the premise is wrong".
+            skipped.append(f"{rule_id} ({label})")
+        elif not ok:
             # Include the label: 12 rows share rule_id CL-0006, and a bare
             # "CL-0006, CL-0006" summary hides which mapping broke.
             failures.append(f"{rule_id} ({label})")
 
     print()
     print(f"not runtime-testable (grounded by source): {', '.join(_NON_RUNTIME)}")
+    if skipped:
+        print(f"not measurable on this host: {', '.join(skipped)}")
     if failures:
         print(f"RESULT: FAIL ({len(failures)}): {', '.join(failures)}")
+        return 1
+    if skipped:
+        # Same standing as a posture departure: the run proved everything it
+        # could, and cannot ground what it skipped.
+        print(
+            f"RESULT: NOT AUTHORITATIVE — {len(CHECKS) - len(skipped)} premises "
+            f"held and none failed, but {len(skipped)} could not be measured on "
+            "this host, so this run cannot ground them."
+        )
         return 1
     if departures:
         print(
