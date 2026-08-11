@@ -24,13 +24,17 @@ membership change from an accident.
 
 from __future__ import annotations
 
-from compose_lint.rules._mounts import TIMEZONE_FILES
+from compose_lint.rules._mounts import TIMEZONE_FILES, match_prefix
 from compose_lint.rules.CL0001_docker_socket import _RUNTIME_SOCKETS, _SOCKET_DIRS
 from compose_lint.rules.CL0011_dangerous_cap_add import STRONG_CAPS
-from compose_lint.rules.CL0013_sensitive_mount import _EXPOSED_PATHS
+from compose_lint.rules.CL0013_sensitive_mount import _EXPOSED_PATHS, _match_home_tree
 from compose_lint.rules.CL0016_dangerous_devices import _DANGEROUS_DEVICE_PATTERNS
 from compose_lint.rules.CL0024_host_exec_cap_add import HOST_EXEC_CAPS
-from compose_lint.rules.CL0025_writable_host_root import ROOT_EQUIVALENT_PATHS
+from compose_lint.rules.CL0025_writable_host_root import (
+    ROOT_EQUIVALENT_EXACT_PATHS,
+    ROOT_EQUIVALENT_PATHS,
+    match_root_equivalent,
+)
 from compose_lint.rules.CL0027_lesser_cap_add import LESSER_CAPS
 from compose_lint.rules.CL0028_host_reach_cap_add import HOST_REACH_CAPS
 
@@ -113,29 +117,58 @@ class TestMountOwnership:
     """
 
     def test_root_equivalent_paths_are_cl0025s(self) -> None:
-        # Writable, these are host root through ordinary file writes.
-        # /var/lib contains /var/lib/docker, so it grants what that entry
-        # describes; verified, a container given only -v /var/lib, at default
-        # capabilities, read and modified a second container's files. It also
-        # covers /var/lib/containerd, which nothing else named -- on Docker 29
-        # the snapshotter keeps its trees there, though each container's live
-        # rootfs stays reachable under /var/lib/docker too. Listed explicitly
-        # rather than by a general ancestry rule, which would also claim "/"
-        # and "/var" -- both CL-0001's -- and double-report them.
+        # Writable, these are host root through ordinary file writes, and they
+        # stay root-equivalent all the way down -- everything under /etc or
+        # /var/lib/docker carries the same grant, so descent is the right match.
         assert set(ROOT_EQUIVALENT_PATHS) == {
             "/etc",
             "/root",
             "/boot",
             "/var/lib/docker",
-            "/var/lib",
+            "/var/lib/containerd",
             "/proc",
         }
 
-    def test_the_more_specific_root_equivalent_entry_wins(self) -> None:
-        # match_prefix returns the first entry in order, so /var/lib/docker
-        # must precede /var/lib or the message names the vaguer parent.
+    def test_var_lib_is_matched_exactly_not_by_descent(self) -> None:
+        # /var/lib is root-equivalent because of what it *contains* -- the
+        # container store -- not because of what lies below it. Those are
+        # different sets: /var/lib/mysql contains neither /var/lib/docker nor
+        # /var/lib/containerd. Matching it by descent priced every stateful
+        # service's own data directory as host root (24 of 25 corpus hits).
+        assert set(ROOT_EQUIVALENT_EXACT_PATHS) == {"/var/lib"}
+        assert "/var/lib" not in ROOT_EQUIVALENT_PATHS
+
+        # The behaviour the split exists to produce.
+        assert match_root_equivalent("/var/lib") == "/var/lib"
+        assert match_root_equivalent("/var/lib/docker") == "/var/lib/docker"
+        assert match_root_equivalent("/var/lib/docker/volumes") == "/var/lib/docker"
+        assert match_root_equivalent("/var/lib/containerd") == "/var/lib/containerd"
+        for benign in (
+            "/var/lib/mysql",
+            "/var/lib/postgresql/data",
+            "/var/lib/grafana",
+            "/var/lib/redis",
+        ):
+            assert match_root_equivalent(benign) is None, benign
+
+    def test_no_root_equivalent_entry_shadows_another(self) -> None:
+        # match_prefix returns the *first* matching entry, so a member that is a
+        # prefix of another makes the message depend on list order. Keeping the
+        # descent members mutually disjoint removes that coupling entirely --
+        # which is what the /var/lib split bought. If a future member does nest,
+        # this fails and the ordering has to be made explicit again.
         paths = list(ROOT_EQUIVALENT_PATHS)
-        assert paths.index("/var/lib/docker") < paths.index("/var/lib")
+        for outer in paths:
+            for inner in paths:
+                if outer is not inner:
+                    assert not inner.startswith(outer + "/"), (
+                        f"{inner} sits under {outer}; ordering now decides the "
+                        "message, so assert it explicitly"
+                    )
+        # An exact-only member must not also be reachable by descent, or the two
+        # lists would disagree about which grant text applies.
+        for exact in ROOT_EQUIVALENT_EXACT_PATHS:
+            assert match_prefix(exact, ROOT_EQUIVALENT_PATHS) is None
 
     def test_whole_root_is_not_cl0025s(self) -> None:
         # "/" contains the daemon control socket, so it is host root in *either*
@@ -145,9 +178,34 @@ class TestMountOwnership:
     def test_exposed_paths_are_cl0013s(self) -> None:
         # Disclosure or a weakened boundary in either mode. /var/lib/kubelet was
         # dropped: its danger is conditional on Kubernetes, so it cannot be
-        # premise-checked on the grounded target.
-        assert set(_EXPOSED_PATHS) == {"/sys", "/dev", "/home"}
+        # premise-checked on the grounded target. /home is not here because it
+        # is not a descent match -- see the home-tree tests below.
+        assert set(_EXPOSED_PATHS) == {"/sys", "/dev"}
         assert "/var/lib/kubelet" not in _EXPOSED_PATHS
+        assert "/home" not in _EXPOSED_PATHS
+
+    def test_the_home_tree_is_matched_by_depth_not_descent(self) -> None:
+        # Exposing the home tree is a disclosure; sitting inside it is not.
+        # Resolving relative sources made "./data" absolute under the compose
+        # file's directory, which for almost every real file is under /home --
+        # so a descent match turned the commonest bind idiom in Compose into a
+        # HIGH finding (4,598 findings over 1,712 of 5,417 corpus files).
+        assert _match_home_tree("/home") == "/home"
+        assert _match_home_tree("/home/alice") == "/home/alice"
+
+        # Credential directories keep a descent match: the grant does not
+        # weaken with depth the way a project directory's does.
+        assert _match_home_tree("/home/alice/.ssh") == "/home/alice/.ssh"
+        assert _match_home_tree("/home/alice/.ssh/id_ed25519") == "/home/alice/.ssh"
+        assert _match_home_tree("/home/alice/.docker") == "/home/alice/.docker"
+
+        # A project directory is the application's own, not host user data.
+        for benign in (
+            "/home/alice/projects/app/data",
+            "/home/alice/stacks/blog/config/nginx.conf",
+            "/home/alice/compose-data",
+        ):
+            assert _match_home_tree(benign) is None, benign
 
     def test_socket_directories_are_cl0001s(self) -> None:
         # Mounting one hands over the socket inside it, mode-independently.

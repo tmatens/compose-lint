@@ -641,7 +641,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
         # the combined edits do not produce valid Compose, that is a fixer bug,
         # not user error — refuse the whole apply, write nothing, and surface the
         # diff plus the parse error so it is diagnosable (issue #261).
-        guard_error = reparse_or_error(patched)
+        guard_error = reparse_or_error(patched, Path(filepath).absolute().parent)
         if guard_error is not None:
             print(
                 render_file_diff(filepath, text, patched, result.caveats),
@@ -665,6 +665,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             findings,
             result,
             patched,
+            base_dir=Path(filepath).absolute().parent,
             only=only,
             disabled_rules=disabled_rules,
             severity_overrides=severity_overrides,

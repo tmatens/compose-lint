@@ -596,8 +596,15 @@ def _resolved_bind_source(source: str, base_dir: Path) -> str | None:
     (29.4.3): a long-syntax bind with twelve ``..`` segments mounted the host
     root filesystem, and ``~:/probe`` mounted the home directory.
 
-    ``~user`` is deliberately not expanded — Compose does not, and guessing
-    another account's home would invent a host path.
+    ``~user`` is deliberately left as written, but *not* because Compose
+    ignores it. Measured against Docker Compose 29.4.3: Compose strips the
+    ``~`` and joins the remainder onto the invoking user's ``$HOME``, so
+    ``~root/.ssh`` becomes ``$HOME/root/.ssh`` and ``~someone/x`` becomes
+    ``$HOME/someone/x``. It never resolves another account's home directory.
+    Reproducing that would mean asserting a host path from the *linting*
+    user's environment for a spelling that almost always indicates the author
+    meant a different account, so the source is left alone and no host path is
+    claimed for it.
 
     Anything else — an absolute path, a named volume, an unresolved
     ``${VAR}`` — is returned as ``None`` and left exactly as written.
@@ -678,11 +685,17 @@ def load_compose(
     except OSError as e:
         raise ComposeError(f"Cannot read file: {e}") from e
 
-    # ``.resolve()`` first: the parent of a bare "docker-compose.yml" is ".",
+    # ``.absolute()`` first: the parent of a bare "docker-compose.yml" is ".",
     # and joining a relative source onto that leaves it relative, which is the
-    # unresolved state this exists to remove. Resolving also follows symlinks,
-    # as Docker does when it hands the path to the kernel.
-    return loads(content, base_dir=filepath.resolve().parent)
+    # unresolved state this exists to remove.
+    #
+    # Deliberately *not* ``.resolve()``, which would follow symlinks. Compose
+    # resolves a relative source lexically against the project directory as
+    # given. Verified against Docker Compose 29.4.3: for a compose file reached
+    # through a symlinked directory, "../etc" is the parent of the *link* path,
+    # not of the link's target. Resolving physically named a different host path
+    # than the one Compose actually mounts, in either direction.
+    return loads(content, base_dir=filepath.absolute().parent)
 
 
 def loads(

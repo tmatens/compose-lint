@@ -12,7 +12,7 @@ from compose_lint.rules._mounts import (
     match_prefix,
     normalize_host_path,
 )
-from compose_lint.rules.CL0025_writable_host_root import ROOT_EQUIVALENT_PATHS
+from compose_lint.rules.CL0025_writable_host_root import match_root_equivalent
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -43,8 +43,45 @@ _EXPOSED_PATHS: tuple[str, ...] = (
     # verified: the same raw read fails through a bind and succeeds through
     # --device, which is why CL-0016 owns raw device access, not this rule.
     "/dev",
-    "/home",
 )
+
+_HOME_ROOT = "/home"
+
+# Credential material kept at a fixed path inside a home directory. These keep a
+# descent match: exposing ~/.ssh is a disclosure whatever sits below it, and the
+# grant does not weaken with depth the way a project directory's does.
+_HOME_CREDENTIAL_DIRS: frozenset[str] = frozenset(
+    {".ssh", ".docker", ".aws", ".kube", ".gnupg"}
+)
+
+
+def _match_home_tree(normalized: str) -> str | None:
+    """The home path this mount exposes, or ``None``.
+
+    ``/home`` is a disclosure when the *tree* is exposed — /home itself, or one
+    user's home directory — or when a known credential directory inside one is.
+    It is **not** a disclosure merely because a path happens to sit inside it.
+
+    That distinction did not matter while only a deliberately absolute source
+    could reach here. Resolving relative sources changed it: ``./data`` becomes
+    an absolute path under the compose file's directory, and for the
+    overwhelming majority of real files that lands under /home. Matched by
+    descent, the single most common bind idiom in Compose became a HIGH
+    finding — measured over the corpus, 4,598 findings across 1,712 of 5,417
+    files, none of them real. Depth is what separates the two cases:
+    /home/alice is host user data, /home/alice/projects/app/data is the
+    application's own directory.
+    """
+    if normalized == _HOME_ROOT:
+        return _HOME_ROOT
+    if not normalized.startswith(_HOME_ROOT + "/"):
+        return None
+    parts = normalized.split("/")  # ["", "home", <user>, ...]
+    if len(parts) == 3:
+        return normalized  # a whole user's home directory
+    if parts[3] in _HOME_CREDENTIAL_DIRS:
+        return "/".join(parts[:4])
+    return None
 
 
 @register_rule
@@ -77,10 +114,12 @@ class SensitiveMountRule(BaseRule):
         ):
             normalized = normalize_host_path(mount.host_path)
 
-            matched = match_prefix(mount.host_path, _EXPOSED_PATHS)
+            matched = match_prefix(mount.host_path, _EXPOSED_PATHS) or _match_home_tree(
+                normalized
+            )
             reason = "exposes host kernel interfaces, devices or user data"
             if matched is None:
-                matched = match_prefix(mount.host_path, ROOT_EQUIVALENT_PATHS)
+                matched = match_root_equivalent(mount.host_path)
                 if matched is None:
                     continue
                 if normalized in TIMEZONE_FILES:

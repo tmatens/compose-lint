@@ -195,3 +195,24 @@ def match_prefix(host_path: str, paths: tuple[str, ...]) -> str | None:
         if normalized == candidate or normalized.startswith(candidate + "/"):
             return candidate
     return None
+
+
+def match_exact(host_path: str, paths: tuple[str, ...]) -> str | None:
+    """Return the entry in ``paths`` that ``host_path`` names exactly.
+
+    For a member whose grant comes from what it *contains* rather than from
+    what lies below it, where :func:`match_prefix` would draw in the wrong
+    set. ``/var/lib`` is root-equivalent because ``/var/lib/docker`` and
+    ``/var/lib/containerd`` sit inside it — but ``/var/lib/mysql`` contains
+    neither, so matching it by descent priced a database's own state
+    directory as host root (measured: 24 of 25 corpus hits were that shape).
+
+    An ancestor-aware :func:`match_prefix` would cover this case generally,
+    but it also has to re-settle the CL-0001 boundary — ``/`` and ``/var``
+    contain root-equivalent paths *and* the control socket — so it is a
+    larger change than the member it fixes.
+    """
+    normalized = normalize_host_path(host_path)
+    if not normalized:
+        return None
+    return normalized if normalized in paths else None

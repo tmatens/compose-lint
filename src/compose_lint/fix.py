@@ -31,6 +31,7 @@ from compose_lint._yaml_edit import (
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from pathlib import Path
 
     from compose_lint.models import Finding, Severity, TextEdit
 
@@ -454,7 +455,7 @@ def render_caveat_banner(caveats: list[tuple[str, str]]) -> str:
     )
 
 
-def reparse_or_error(patched: str) -> str | None:
+def reparse_or_error(patched: str, base_dir: Path | None = None) -> str | None:
     """Return a parse-error message if ``patched`` is not valid Compose, else None.
 
     The fix engine's last safety net (ADR-014: a fixer must leave a valid Compose
@@ -468,11 +469,16 @@ def reparse_or_error(patched: str) -> str | None:
     non-destructive, so a fixer that drops an unrelated key or comment and still
     emits valid YAML passes this check. Catching *that* would need a structural
     before/after comparison, which is a separate, heavier mechanism.
+
+    ``base_dir`` is the directory the file being fixed sits in. Pass it whenever
+    there is one: relative and ``~`` bind sources resolve against it, so without
+    it the candidate is parsed as a *different document* than the one that was
+    linted, and the comparison downstream is not like-for-like.
     """
     from compose_lint.parser import ComposeError, loads
 
     try:
-        loads(patched)
+        loads(patched, base_dir=base_dir)
     except ComposeError as e:
         return str(e)
     return None
@@ -517,6 +523,7 @@ def verify_apply(
     result: FixResult,
     patched: str,
     *,
+    base_dir: Path | None = None,
     only: set[str] | None = None,
     disabled_rules: dict[str, str | None] | None = None,
     severity_overrides: dict[str, Severity] | None = None,
@@ -551,7 +558,7 @@ def verify_apply(
     from compose_lint.parser import ComposeError, loads
 
     try:
-        re_data, re_lines = loads(patched)
+        re_data, re_lines = loads(patched, base_dir=base_dir)
     except ComposeError as e:  # pragma: no cover - reparse guard runs first
         return f"computed fix does not parse as Compose ({e})"
 

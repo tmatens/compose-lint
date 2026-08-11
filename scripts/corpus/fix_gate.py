@@ -44,6 +44,13 @@ CACHE = Path.home() / ".cache" / "compose-lint-corpus"
 FILES = CACHE / "files"
 WORKERS = int(os.environ.get("LINT_WORKERS", str(os.cpu_count() or 4)))
 
+# Candidates are written into the corpus directory itself (they have to be: a
+# relative bind source resolves against the file's own directory, so a candidate
+# parked elsewhere is a different document). They are unlinked in a finally, but
+# a hard kill can leave one behind — so they carry a distinctive prefix and the
+# sweep skips it, rather than silently linting its own leftovers next run.
+_CANDIDATE_PREFIX = ".fix_gate_candidate_"
+
 
 def check_file(path: Path) -> dict:
     """Run the three fix-gate invariants on one file; return a result record."""
@@ -68,8 +75,19 @@ def check_file(path: Path) -> dict:
         result["by_rule"][finding.rule_id] += 1
     patched = apply_edits(text, collected.edits)
 
+    # The temp file must sit in the *original's* directory. Relative and "~"
+    # bind sources resolve against the compose file's own directory, so a
+    # candidate re-parsed from /tmp is a different document than the one that
+    # was linted -- "../x" names a different host path at a different depth.
+    # Parking it in /tmp reported 69 spurious "introduced new finding" hits,
+    # all of them the gate measuring its own relocation.
     with tempfile.NamedTemporaryFile(
-        "w", suffix=".yml", delete=False, encoding="utf-8"
+        "w",
+        prefix=_CANDIDATE_PREFIX,
+        suffix=".yml",
+        delete=False,
+        encoding="utf-8",
+        dir=path.parent,
     ) as handle:
         handle.write(patched)
         patched_path = Path(handle.name)
@@ -93,7 +111,9 @@ def check_file(path: Path) -> dict:
 
 
 def main() -> int:
-    files = sorted(FILES.glob("*.yml"))
+    files = sorted(
+        p for p in FILES.glob("*.yml") if not p.name.startswith(_CANDIDATE_PREFIX)
+    )
     if not files:
         print(f"no corpus files under {FILES}", file=sys.stderr)
         return 2
