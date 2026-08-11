@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os.path
 import re
 from pathlib import Path
 from typing import Any
@@ -586,6 +587,70 @@ def _resolve_in_file_extends(data: dict[str, Any]) -> None:
         services[name] = _resolve(name, ())
 
 
+def _resolved_bind_source(source: str, base_dir: Path) -> str | None:
+    """The host path a relative or ``~`` bind source names, else ``None``.
+
+    Compose resolves a relative source (``./x``, ``../x``, ``.``, ``..``)
+    against the directory holding the compose file, and expands a leading
+    ``~`` to the invoking user's home. Both verified against Docker Compose
+    (29.4.3): a long-syntax bind with twelve ``..`` segments mounted the host
+    root filesystem, and ``~:/probe`` mounted the home directory.
+
+    ``~user`` is deliberately not expanded — Compose does not, and guessing
+    another account's home would invent a host path.
+
+    Anything else — an absolute path, a named volume, an unresolved
+    ``${VAR}`` — is returned as ``None`` and left exactly as written.
+    """
+    if source.startswith("~"):
+        if source == "~" or source.startswith("~/"):
+            return os.path.normpath(os.path.expanduser(source))
+        return None
+    if source in {".", ".."} or source.startswith(("./", "../")):
+        return os.path.normpath(os.path.join(base_dir, source))
+    return None
+
+
+def _resolve_bind_sources(data: dict[str, Any], base_dir: Path) -> None:
+    """Rewrite relative and ``~`` bind sources to the host paths they name.
+
+    Left as written, neither shape reaches the host-path rules: ``../../../..``
+    matches no entry in any path list, and the short-syntax pattern does not
+    recognise a non-absolute source as a bind mount at all. A bind spelled with
+    enough ``..`` segments therefore mounted the host root filesystem — the
+    live ``docker.sock`` included — and was reported as a clean pass, the same
+    defect class as the whole-root mount spelled ``/.``.
+
+    This belongs here rather than in the rules because this is the only place
+    that knows where the file sits: rules receive the parsed document and never
+    learn its path. :func:`_resolve_in_file_extends` resolves the same way, for
+    the same reason.
+    """
+    services = data.get("services")
+    if not isinstance(services, dict):
+        return
+    for service in services.values():
+        if not isinstance(service, dict):
+            continue
+        volumes = service.get("volumes")
+        if not isinstance(volumes, list):
+            continue
+        for i, volume in enumerate(volumes):
+            if isinstance(volume, str):
+                source, sep, rest = volume.partition(":")
+                if not sep:
+                    continue  # a lone name is an anonymous volume, not a bind
+                resolved = _resolved_bind_source(source, base_dir)
+                if resolved is not None:
+                    volumes[i] = f"{resolved}:{rest}"
+            elif isinstance(volume, dict):
+                source_value = volume.get("source")
+                if isinstance(source_value, str):
+                    resolved = _resolved_bind_source(source_value, base_dir)
+                    if resolved is not None:
+                        volume["source"] = resolved
+
+
 def load_compose(
     path: str | Path,
 ) -> tuple[dict[str, Any], dict[str, int]]:
@@ -613,10 +678,16 @@ def load_compose(
     except OSError as e:
         raise ComposeError(f"Cannot read file: {e}") from e
 
-    return loads(content)
+    # ``.resolve()`` first: the parent of a bare "docker-compose.yml" is ".",
+    # and joining a relative source onto that leaves it relative, which is the
+    # unresolved state this exists to remove. Resolving also follows symlinks,
+    # as Docker does when it hands the path to the kernel.
+    return loads(content, base_dir=filepath.resolve().parent)
 
 
-def loads(content: str) -> tuple[dict[str, Any], dict[str, int]]:
+def loads(
+    content: str, base_dir: Path | None = None
+) -> tuple[dict[str, Any], dict[str, int]]:
     """Parse and validate Compose from an in-memory string.
 
     The string form of :func:`load_compose`: identical YAML parsing, line
@@ -624,6 +695,11 @@ def loads(content: str) -> tuple[dict[str, Any], dict[str, int]]:
     fix engine re-parse its own candidate output before persisting it (ADR-014's
     "leave a valid Compose file" safety net) without round-tripping through a
     temporary file.
+
+    ``base_dir`` is the directory the content came from, and is what relative
+    and ``~`` bind sources resolve against (see :func:`_resolve_bind_sources`).
+    Omitted, those sources are left as written — correct for a caller that has
+    no file, such as the fix engine's validation re-parse.
 
     Raises:
         ComposeError: If the text is not valid YAML or not a valid Compose file.
@@ -659,5 +735,7 @@ def loads(content: str) -> tuple[dict[str, Any], dict[str, int]]:
     lines = _collect_lines(raw, seq_lines)
     data = _strip_lines(raw)
     _resolve_in_file_extends(data)
+    if base_dir is not None:
+        _resolve_bind_sources(data, base_dir)
 
     return data, lines
