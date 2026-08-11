@@ -491,32 +491,111 @@ _DOCKER_DEFAULT_CAPABILITIES: frozenset[str] = frozenset(
 )
 
 # Considered and deliberately not graded, with the reason on record.
+#
+# The entries below MAC_OVERRIDE were measured against Docker 29.4.3 on
+# 2026-08-11, each by holding the single capability under `--cap-drop ALL` and
+# comparing against the same run without it. They fall into two families.
+#
+# **Reach needs a sibling key another rule already scores.** The capability is
+# real and confers what its man page says, but only once the file also sets a
+# key that is itself a HIGH finding. Grading the capability would double-report
+# the same configuration. This is the ADR-020 scoping clause, and the same
+# treatment SYS_PTRACE's host-PID reach and DAC_READ_SEARCH's host leg already
+# get. Measured: with the capability alone every one of these is denied.
+#
+# **Inert or negligible at Docker's default posture.** Either the default
+# seccomp profile, the read-only /sys, or the device cgroup neutralises the
+# grant, or the grant lands somewhere that is not a security boundary. Grading
+# one would be the CL-0022/CL-0023 failure mode -- a rule that fires on a
+# configuration the runtime already defends.
 _EXCLUDED_WITH_REASON: dict[str, str] = {
     "MAC_ADMIN": "verified inert under Docker's masked /sys/kernel/security",
     "MAC_OVERRIDE": "verified inert, same reason",
+    # --- reach gated behind a sibling key that another rule scores ---
+    "AUDIT_CONTROL": (
+        "audit netlink requires the initial PID namespace: AUDIT_GET is EPERM "
+        "with the capability alone and with --privileged, and succeeds only "
+        "with `pid: host`, which CL-0010 scores"
+    ),
+    "AUDIT_READ": (
+        "the capability opens the audit multicast socket but records are "
+        "delivered per network namespace: 0 records with the capability "
+        "alone, 40 host records with `network_mode: host`, which CL-0008 "
+        "scores"
+    ),
+    "IPC_OWNER": (
+        "SysV IPC objects are namespaced -- a container gets its own IPC "
+        "namespace, so the permission bypass reaches nothing until "
+        "`ipc: host`, which CL-0010 scores"
+    ),
+    "SYS_PACCT": (
+        "BSD process accounting is per-PID-namespace: a container enabling it "
+        "captured 1 of its own process exits and none of 25 host exits, "
+        "against 122 host records under `pid: host`, which CL-0010 scores"
+    ),
+    "LINUX_IMMUTABLE": (
+        "sets the immutable flag on host files, but only through a *writable* "
+        "bind mount -- EROFS through a read-only one -- and the paths worth "
+        "protecting are CL-0013's and CL-0025's"
+    ),
+    # --- inert or negligible at Docker's default posture ---
+    "CHECKPOINT_RESTORE": (
+        "grants clone3(set_tid), but Docker's default seccomp profile admits "
+        "clone3 only for CAP_SYS_ADMIN: ENOSYS with the capability, and it "
+        "succeeds only under `seccomp:unconfined`, which CL-0009 scores"
+    ),
+    "SYS_TTY_CONFIG": (
+        "vhangup() succeeds but reaches only the container's own pty; "
+        "/dev/console and the host VTs are absent under the device cgroup, "
+        "and exposing one is CL-0016's"
+    ),
+    "BLOCK_SUSPEND": (
+        "the wake_lock interface lives under /sys, which Docker mounts "
+        "read-only: EROFS with the capability held. Not proven from the "
+        "other side -- the measuring kernel had CONFIG_PM_WAKELOCKS unset"
+    ),
+    "WAKE_ALARM": (
+        "grant confirmed (timerfd_create(CLOCK_REALTIME_ALARM) is EPERM "
+        "without it), but the reach is waking a suspended host, which is not "
+        "a boundary a Compose file defends"
+    ),
+    "NET_BROADCAST": (
+        "confers nothing observable -- the kernel does not check it; a UDP "
+        "broadcast sends identically with and without the capability"
+    ),
+    "SYS_RESOURCE": (
+        "raises the process's own hard rlimits, which stays inside the "
+        "container's cgroup; the host-sysctl leg is EROFS on /proc/sys until "
+        "`privileged`, which CL-0002 scores"
+    ),
 }
 
 # Not granted by default, not graded, and no reason recorded anywhere. This is
 # a hole, and it is enumerated rather than described so that it shrinks
 # visibly: moving one of these into a tier, or into the excluded list with a
 # reason, is a one-line edit here. It is NOT an assertion that these are safe.
+#
+# These four are the opposite of safe: each was measured reaching the host with
+# no other key in the file, so each is owed a rule rather than an exclusion.
+# They are held here, visible, until those rules land.
+#
+#   SYSLOG    read 1,967 lines of the host kernel ring buffer; Docker's own
+#             seccomp profile admits syslog(2) only for CAP_SYSLOG, so the
+#             reach does not depend on the host's kernel.dmesg_restrict
+#   SYS_NICE  took SCHED_FIFO priority 50 on host CPUs; EPERM without it
+#   IPC_LOCK  locked 128 MiB past an 8 MiB RLIMIT_MEMLOCK. A cgroup memory
+#             limit bounds it, but that is a key the file has to *add* -- the
+#             default is unbounded, so the rule prices the default
+#   LEASE     took a write lease on a host file through a bind mount and
+#             stalled a host open() for 21.9s against 0.00s unleased. Works
+#             through a *read-only* bind, and on any path, so neither CL-0013
+#             nor CL-0025 covers the configuration that enables it
 _UNGRADED_NO_RECORDED_REASON: frozenset[str] = frozenset(
     {
-        "AUDIT_CONTROL",
-        "AUDIT_READ",
-        "BLOCK_SUSPEND",
-        "CHECKPOINT_RESTORE",
         "IPC_LOCK",
-        "IPC_OWNER",
         "LEASE",
-        "LINUX_IMMUTABLE",
-        "NET_BROADCAST",
         "SYSLOG",
         "SYS_NICE",
-        "SYS_PACCT",
-        "SYS_RESOURCE",
-        "SYS_TTY_CONFIG",
-        "WAKE_ALARM",
     }
 )
 
