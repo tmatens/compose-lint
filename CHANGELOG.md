@@ -27,15 +27,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A writable `/var/lib` mount is now CRITICAL (CL-0025), and read-only HIGH
   (CL-0013).** Host paths are matched by descent, so an ancestor of a listed
-  path went unclaimed even though it grants everything below it. This one
-  also covers `/var/lib/containerd`, which nothing named — on Docker 29 the
-  containerd snapshotter keeps its trees there. Verified on Docker 29.4.3: a
-  container given only `-v /var/lib`, unprivileged and at default
-  capabilities, read a second container's private file and appended to it,
-  and the victim saw the change live. **New findings** on `/var/lib` and
-  `/var/lib/containerd` mounts; existing `CL-0025`/`CL-0013` waivers cover
-  them without migration, which also means they arrive inside an existing
-  suppression rather than announcing themselves.
+  path went unclaimed even though it grants everything below it. Verified on
+  Docker 29.4.3: a container given only `-v /var/lib`, unprivileged and at
+  default capabilities, read a second container's private file and appended to
+  it, and the victim saw the change live. `/var/lib` is matched **exactly**,
+  because its grant comes from what it contains rather than from what lies
+  below it — `-v /var/lib/mysql`, `/var/lib/postgresql/data` and other service
+  data directories are *not* flagged. `/var/lib/containerd`, which nothing
+  named before, is a member in its own right and is matched by descent — on
+  Docker 29 the containerd snapshotter keeps its trees there. **New findings**
+  on `/var/lib`, `/var/lib/containerd` and paths below the latter; existing
+  `CL-0025`/`CL-0013` waivers cover them without migration, which also means
+  they arrive inside an existing suppression rather than announcing themselves.
 - **`/dev/md/<name>` is flagged (CL-0016).** mdadm creates a named symlink per
   array alongside the numeric node, and `^/dev/md\d` cannot match it — the
   character after `md` is `/`, not a digit — so a named array passed clean
@@ -59,6 +62,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **CL-0013 matches the home tree by depth, not by subtree.** `/home` and a
+  single user's home directory (`/home/alice`) are still flagged in either
+  mode, and so are the credential directories `~/.ssh`, `~/.docker`, `~/.aws`,
+  `~/.kube` and `~/.gnupg` together with everything below them. A deeper
+  project path — `/home/alice/projects/app/data` — is the application's own
+  directory and is no longer flagged. **Fewer findings** on absolute
+  `/home/<user>/<project>/…` mounts, **new findings** on `~/.ssh`-style
+  credential mounts. This pairs with relative-source resolution above: `./data`
+  resolves to an absolute path under wherever the compose file sits, which for
+  most projects is under `/home`, so a subtree match would have flagged the
+  commonest bind idiom in Compose.
 - **BREAKING — the severity model was rebuilt, and rule ids moved with it.**
   Severities are now *derived* from a documented two-axis matrix under a stated
   attacker baseline and a stated Docker posture, and any rule shipping a

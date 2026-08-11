@@ -86,6 +86,13 @@ def bind_backed_volumes(global_config: dict[str, Any]) -> dict[str, tuple[str, b
     for name, spec in volumes.items():
         if not isinstance(spec, dict) or as_bool(spec.get("external")) is True:
             continue
+        driver = spec.get("driver")
+        if driver is not None and driver != "local":
+            # Only the local driver reads `device` as a host path. Under a
+            # third-party driver the same key names something else entirely --
+            # an EBS volume, a Ceph image -- so treating it as a bind would
+            # invent a host path the way an `external: true` volume would.
+            continue
         driver_opts = spec.get("driver_opts")
         if not isinstance(driver_opts, dict):
             continue

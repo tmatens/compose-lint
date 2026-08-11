@@ -322,6 +322,43 @@ class TestBindBackedNamedVolumes:
             "      - extvol:/var/run/docker.sock\n"
         )
 
+    def test_a_third_party_driver_device_is_not_a_host_path(self) -> None:
+        # Only the local driver reads `device` as a host path. Under another
+        # driver the same key names an EBS volume, a Ceph image, something
+        # else -- so treating it as a bind invents a host path the same way
+        # guessing an external volume's would.
+        assert not self._findings(
+            "volumes:\n"
+            "  ebsvol:\n"
+            "    driver: rexray/ebs\n"
+            "    driver_opts:\n"
+            "      device: /var/run/docker.sock\n"
+            "      o: bind\n"
+            "services:\n"
+            "  svc:\n"
+            "    image: nginx\n"
+            "    volumes:\n"
+            "      - ebsvol:/sock\n"
+        )
+
+    def test_an_explicit_local_driver_is_still_a_bind(self) -> None:
+        # The idiom usually spells `driver: local` out; excluding other drivers
+        # must not exclude the one that does read `device` as a host path.
+        assert self._findings(
+            "volumes:\n"
+            "  sockvol:\n"
+            "    driver: local\n"
+            "    driver_opts:\n"
+            "      type: none\n"
+            "      device: /var/run/docker.sock\n"
+            "      o: bind\n"
+            "services:\n"
+            "  svc:\n"
+            "    image: nginx\n"
+            "    volumes:\n"
+            "      - sockvol:/sock\n"
+        )
+
     def test_ordinary_named_volume_is_still_not_a_bind(self) -> None:
         # A plain named volume shadows the path with an empty volume and
         # grants nothing -- the false positive the host-side match removed.

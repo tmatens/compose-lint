@@ -24,10 +24,16 @@ membership change from an accident.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from compose_lint.rules._mounts import TIMEZONE_FILES, match_prefix
 from compose_lint.rules.CL0001_docker_socket import _RUNTIME_SOCKETS, _SOCKET_DIRS
 from compose_lint.rules.CL0011_dangerous_cap_add import STRONG_CAPS
-from compose_lint.rules.CL0013_sensitive_mount import _EXPOSED_PATHS, _match_home_tree
+from compose_lint.rules.CL0013_sensitive_mount import (
+    _EXPOSED_PATHS,
+    _HOME_CREDENTIAL_DIRS,
+    _match_home_tree,
+)
 from compose_lint.rules.CL0016_dangerous_devices import _DANGEROUS_DEVICE_PATTERNS
 from compose_lint.rules.CL0024_host_exec_cap_add import HOST_EXEC_CAPS
 from compose_lint.rules.CL0025_writable_host_root import (
@@ -169,6 +175,37 @@ class TestMountOwnership:
         # lists would disagree about which grant text applies.
         for exact in ROOT_EQUIVALENT_EXACT_PATHS:
             assert match_prefix(exact, ROOT_EQUIVALENT_PATHS) is None
+
+    def test_every_member_path_appears_in_its_rule_doc(self) -> None:
+        """A member a user cannot read about is a member they cannot waive.
+
+        The lists above pin the *code*, and nothing tied them to the page the
+        finding's `--explain` sends people to. `/var/lib` shipped as a CRITICAL
+        member of CL-0025 with no mention on `docs/rules/CL-0025.md` at all --
+        the membership guard passed, because it only ever compared the list to
+        itself.
+        """
+        repo = Path(__file__).parent.parent
+        expected = {
+            "CL-0025": (
+                *ROOT_EQUIVALENT_PATHS,
+                *ROOT_EQUIVALENT_EXACT_PATHS,
+            ),
+            "CL-0013": (
+                *_EXPOSED_PATHS,
+                "/home",
+                *(f".{d.lstrip('.')}" for d in _HOME_CREDENTIAL_DIRS),
+            ),
+        }
+        for rule_id, members in expected.items():
+            doc = (repo / "docs" / "rules" / f"{rule_id}.md").read_text(
+                encoding="utf-8"
+            )
+            for member in members:
+                assert member in doc, (
+                    f"{member} is a {rule_id} member but appears nowhere in "
+                    f"docs/rules/{rule_id}.md"
+                )
 
     def test_whole_root_is_not_cl0025s(self) -> None:
         # "/" contains the daemon control socket, so it is host root in *either*
