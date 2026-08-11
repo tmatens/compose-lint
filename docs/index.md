@@ -43,6 +43,7 @@ reading here) in the terminal.
 | [CL-0026](rules/CL-0026.md) | No resource limits (memory/CPU) |
 | [CL-0027](rules/CL-0027.md) | Bounded-grant capability added |
 | [CL-0028](rules/CL-0028.md) | Host-reaching capability added |
+| [CL-0029](rules/CL-0029.md) | Host-availability capability added |
 
 ## Where to start
 

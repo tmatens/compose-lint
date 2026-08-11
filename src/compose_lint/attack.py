@@ -134,6 +134,7 @@ RULE_TECHNIQUES: dict[str, tuple[Technique, ...]] = {
     # consequence, T1499 because cert validation and Kerberos fail machine-wide.
     # PERFMON samples every process on the host, hence T1003.
     "CL-0028": (T1070, T1499, T1003),
+    "CL-0029": (T1499, T1496),
 }
 
 #: Techniques a rule *enables* rather than mitigates, kept out of the mapping

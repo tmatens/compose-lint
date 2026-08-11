@@ -552,6 +552,75 @@ def _t_ipc_lock() -> tuple[bool, str]:
     )
 
 
+# --- CL-0029 premise checks (docs/rules/CL-0029.md) -------------------------
+#
+# CL-0029's members are priced on host *availability*, and two of the three
+# already have a live mapping above: `_t_sys_nice` (renice) and `_t_ipc_lock`
+# (mlockall past the rlimit). Those prove the capability is honoured; they do
+# not reach the lever the rule is priced on. These two do.
+#
+# Both stop at *acquiring* the primitive. Neither exercises it — a check that
+# actually starved the CI runner's CPUs, pinned its RAM, or stalled its opens
+# would be a self-inflicted outage, and acquisition is the part that can be
+# asserted deterministically anyway. That the host is what degrades follows
+# from the scheduler and the lease-break path not being namespaced, and is
+# recorded as reasoned in the rule's Evidence line.
+
+def _cl0029_sys_nice() -> tuple[bool, str]:
+    """SCHED_FIFO — real-time priority on the host's CPUs — needs SYS_NICE.
+
+    ``renice`` (``_t_sys_nice``, above) proves the capability is honoured, but
+    a nicer process still yields to everything; real-time priority is the lever
+    this rule is priced on, because a SCHED_FIFO thread outranks every ordinary
+    host process rather than competing with them.
+
+    busybox ``chrt`` rather than a libc or raw-syscall probe. musl stubs
+    ``sched_setscheduler`` to ENOSYS, so the pinned python image reports
+    "denied" whatever the capability is; and the raw syscall needs a number
+    that differs per architecture — 144 on x86_64, 119 on arm64 — which is a
+    wrong answer waiting for the first non-amd64 runner.
+    """
+    return _mapping(
+        ["SYS_NICE"],
+        ["chrt", "-f", "50", "true"],
+        "chrt: can't set pid 0's policy: Operation not permitted",
+    )
+
+
+# F_SETLEASE(F_WRLCK) on a file the caller does not own. Ownership is the
+# discriminator -- leasing a file you own needs no capability -- so the probe
+# chowns the file away from itself first, which is why CHOWN is on *both* legs.
+# That leaves LEASE as the only difference between them.
+_LEASE_PROBE = (
+    "import fcntl,os,sys\n"
+    "open('/tmp/leased','w').close()\n"
+    "os.chown('/tmp/leased',12345,12345)\n"
+    "fd=os.open('/tmp/leased',os.O_RDONLY)\n"
+    "try:\n"
+    "    fcntl.fcntl(fd,1024,1)\n"
+    "except OSError as e:\n"
+    "    print('F_SETLEASE: '+os.strerror(e.errno),file=sys.stderr)\n"
+    "    sys.exit(1)\n"
+    "fcntl.fcntl(fd,1024,2)\n"
+)
+
+
+def _cl0029_lease() -> tuple[bool, str]:
+    """A write lease on a file the process does not own needs CAP_LEASE.
+
+    Held against a bind-mounted host file this is what stalls the host's own
+    ``open()``; the probe leases a container-local file, because blocking a
+    real host path is the part that must not run on a CI machine.
+    """
+    deny = ["--cap-drop", "ALL", "--cap-add", "CHOWN"]
+    allow = [*deny, "--cap-add", "LEASE"]
+    cmd = ["python", "-c", _LEASE_PROBE]
+    rc_deny, err = _run_err(deny, cmd, PY_IMAGE)
+    rc_allow, _ = _run_err(allow, cmd, PY_IMAGE)
+    ok = rc_deny != 0 and "F_SETLEASE: Permission denied" in err and rc_allow == 0
+    return ok, f"denied rc={rc_deny} msg={err!r}; with LEASE rc={rc_allow}"
+
+
 # --- CL-0007 symptom-table mappings (docs/rules/CL-0007.md) -----------------
 #
 # Same contract as the CL-0006 mapping checks (ADR-016 amendment): each row of
@@ -1058,6 +1127,8 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool | None, str]]]] = [
     ("CL-0006", "map: set clock -> SYS_TIME", _t_sys_time),
     ("CL-0006", "map: cross-uid signal -> KILL", _t_kill),
     ("CL-0006", "map: mlockall -> IPC_LOCK", _t_ipc_lock),
+    ("CL-0029", "SCHED_FIFO on host CPUs needs SYS_NICE", _cl0029_sys_nice),
+    ("CL-0029", "write lease on an unowned file needs LEASE", _cl0029_lease),
     # CL-0007 symptom-table mappings — one per row of the rule doc's table.
     ("CL-0007", "map: touch EROFS -> tmpfs", _t7_touch_tmpfs),
     ("CL-0007", "map: mkdir EROFS -> tmpfs", _t7_mkdir_tmpfs),

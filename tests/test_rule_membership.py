@@ -46,6 +46,9 @@ from compose_lint.rules.CL0025_writable_host_root import (
 )
 from compose_lint.rules.CL0027_lesser_cap_add import LESSER_CAPS
 from compose_lint.rules.CL0028_host_reach_cap_add import HOST_REACH_CAPS
+from compose_lint.rules.CL0029_host_availability_cap_add import (
+    HOST_AVAILABILITY_CAPS,
+)
 
 
 class TestCapabilityTiers:
@@ -592,10 +595,7 @@ _EXCLUDED_WITH_REASON: dict[str, str] = {
 #             nor CL-0025 covers the configuration that enables it
 _UNGRADED_NO_RECORDED_REASON: frozenset[str] = frozenset(
     {
-        "IPC_LOCK",
-        "LEASE",
         "SYSLOG",
-        "SYS_NICE",
     }
 )
 
@@ -616,6 +616,7 @@ class TestCapabilityCompleteness:
                 set(HOST_EXEC_CAPS)
                 | set(STRONG_CAPS)
                 | set(HOST_REACH_CAPS)
+                | set(HOST_AVAILABILITY_CAPS)
                 | set(LESSER_CAPS)
             )
             - {"ALL"}  # a keyword, not a capability
