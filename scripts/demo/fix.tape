@@ -8,12 +8,12 @@ Output fix.gif
 Require compose-lint
 
 # Same terminal as the hero cast (demo.tape) so the two GIFs sit at the same
-# width in the README. `tput rmam` turns off line wrapping so the two long
+# width in the README. `tput rmam` turns off line wrapping so the three long
 # behavior-changing caveat lines clip at the right edge instead of wrapping
 # and pushing the diff off screen.
 #
-# Height gives 25 rows, one more than the taller of the two screens needs:
-#   screen 1 — command + 22 lines of dry-run output + prompt       = 24 rows
+# Height gives 30 rows, one more than the taller of the two screens needs:
+#   screen 1 — command + 27 lines of dry-run output + prompt       = 29 rows
 #   screen 2 — apply (command + 4) + check (command + 15) + prompt = 22 rows
 # A release that adds a line to either output overflows and scrolls, which
 # tests/test_demo_fixture.py is what catches (it pins the finding set the two
@@ -21,7 +21,7 @@ Require compose-lint
 Set Shell bash
 Set FontSize 22
 Set Width 1500
-Set Height 790
+Set Height 940
 Set Padding 20
 Set Theme "Dracula"
 Set TypingSpeed 45ms

@@ -37,11 +37,12 @@ Show
 
 Sleep 1s
 
-# 1. Lint a small, mostly-hardened compose file. Three findings, severity-sorted
-#    so the CRITICAL one leads — a mounted Docker socket (CL-0001, with a
-#    box-drawing underline) above a HIGH sensitive host mount (CL-0013) and a
-#    MEDIUM tag-only image pin (CL-0019) — then the FAIL verdict. Pause on the
-#    typed command, then on the output.
+# 1. Lint a small, mostly-hardened compose file. Three findings, one per tier,
+#    grouped by service and severity-sorted within each — under `watchtower`, a
+#    mounted Docker socket (CL-0001, CRITICAL, with a box-drawing underline)
+#    above a tag-only image pin (CL-0019, MEDIUM); under `db`, a plaintext
+#    credential (CL-0020, HIGH) — then the FAIL verdict. Pause on the typed
+#    command, then on the output.
 Type "compose-lint docker-compose.yml"
 Sleep 1900ms
 Enter

@@ -25,15 +25,17 @@ they can be refreshed against any release.
 
 ## What each cast shows
 
-**Hero** (`demo.tape`) lints `docker-compose.yml` — three findings: a CRITICAL
-mounted Docker socket, a HIGH sensitive host mount, and a MEDIUM tag-only image
-pin — then runs `compose-lint --explain CL-0001` to show the offline rule docs.
-The service is mostly hardened so only those three fire; severity-sort puts the
-CRITICAL socket finding, the one with the box-drawing underline, at the top,
-leading the report above the `FAIL` verdict.
+**Hero** (`demo.tape`) lints `docker-compose.yml` — three findings, one per
+tier: a CRITICAL mounted Docker socket (CL-0001) and a MEDIUM tag-only image
+pin (CL-0019) on `watchtower`, and a HIGH plaintext credential (CL-0020,
+`POSTGRES_PASSWORD`) on `db` — then runs `compose-lint --explain CL-0001` to
+show the offline rule docs. Both services are otherwise hardened so only those
+three fire; the report groups by service and severity-sorts within each, so the
+CRITICAL socket finding, the one with the box-drawing underline, leads the
+report above the `FAIL` verdict.
 
 **Fix** (`fix.tape`) runs `compose-lint fix` on `fix-compose.yml`, an app
-service that never had its hardening filled in. The dry run prints the two
+service that never had its hardening filled in. The dry run prints the three
 `⚠ behavior-changing` caveats and the diff it *would* apply — `read_only`,
 `no-new-privileges`, and rebinding the published port to `127.0.0.1` — writes
 nothing, and names the one finding it refuses to touch (CL-0019, a tag-only
@@ -71,6 +73,16 @@ The pin records which release the committed GIFs were rendered on — the banner
 in the hero cast shows that version. Renovate keeps pillow/numpy fresh in the
 lock but deliberately never touches the compose-lint pin.
 
+Because the toolchain installs from PyPI, a cast can only ever show a
+*released* version — so a change to rule output is re-recorded **after** the
+release that ships it, as the demo step in `docs/RELEASING.md` describes.
+
+Each cast is sized to its output in the tape's `Set Height`, and the arithmetic
+is written down beside it. After rendering, check neither screen scrolled: a
+release that adds a line to `check` or `fix` output overflows the terminal and
+silently cuts the top of the screen off. Raise the tape's `Height` by 30px per
+extra row and re-render.
+
 Bump the digest-pinned VHS base image via Renovate, same as any other base
 image (see CLAUDE.md).
 
@@ -98,17 +110,3 @@ could land on the blink's off-phase and freeze a cursorless screen for ~2s.
 `render.sh` passes `--min-seconds` per cast so that if a future VHS really does
 collapse the timings, the render fails instead of shipping a GIF that flashes
 past unreadably.
-
-## Regenerating after the severity-model release
-
-Both casts are **stale on this branch and cannot be fixed here.** The toolchain
-image installs compose-lint from PyPI (pinned in `requirements.in`), so a cast
-always shows a *released* version — that is deliberate, and it means a change to
-rule output can only be re-recorded once it has shipped.
-
-Both fixtures, both tapes, the test expectations and the README alt text already
-describe the post-release output. After publishing, follow the demo step in
-`docs/RELEASING.md`: bump the `compose-lint==` pin, recompile the lock, run
-`render.sh` for **both** casts, and check neither screen scrolled — the hero
-tape grew to 32 rows for a second service, and `fix.tape` to 25 for an extra
-caveat line.
