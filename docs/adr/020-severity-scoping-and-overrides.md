@@ -60,6 +60,26 @@ the table as though it were a derivation.
    premise depends on such a setting names it in `Daemon assumptions:`, and the
    premise check that measures it asserts the setting alongside the daemon
    posture.
+
+   **This clause covers kernel *settings* — sysctls and kernel config — not
+   security policy Docker itself ships and applies.** The `docker-default`
+   AppArmor profile and the builtin seccomp profile are part of the *Docker*
+   posture, and are grounded as present. The distinction matters in both
+   directions. Reading AppArmor as host hardening would put the grounded
+   posture on a host with no LSM policy at all, which would refute CL-0009's
+   premise outright — `apparmor=unconfined` cannot remove a control that the
+   baseline says is absent — and CL-0009 is a sound rule. Reading it as Docker
+   posture, as here, keeps that premise intact.
+
+   The cost is that an LSM-dependent premise **cannot be measured on a host
+   without the LSM**, and the two hosts this project grounds against differ
+   exactly there. Measured: `mount(2)` inside a container is refused at
+   defaults on both; with `CAP_SYS_ADMIN` alone it **succeeds** on Arch (no
+   AppArmor) and is still **refused** on Debian 13 (AppArmor enforcing), where
+   it needs `apparmor=unconfined` as well. Any claim of the form "this needs
+   `SYS_ADMIN` *and* an unconfined profile" is therefore a measurement of the
+   AppArmor host, and must say so — it is captured evidence with its posture
+   named, not a fact reproducible anywhere.
 2. **Docker Engine is the only supported target.** Podman (`podman compose`,
    `podman-compose`) and nerdctl are out of scope. A rule whose grounding rests
    on non-Docker behaviour fails review.

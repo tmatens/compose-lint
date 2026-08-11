@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CL-0028: host-reaching capabilities (`PERFMON`, `SYS_TIME`), HIGH.** Split
+  out of CL-0027. Both reach the host with no other key in the compose file and
+  nothing from the image — `SYS_TIME` writes the host's wall clock, because
+  Docker does not namespace `CLOCK_REALTIME`, and `PERFMON` opens a host-wide
+  `perf_event_open` at the upstream kernel default. That is `Direct × Host`,
+  not CL-0027's `Second flaw × Single container`, so under one-rule-one-severity
+  they are two rules. **New HIGH findings:** a service adding `SYS_TIME` or
+  `PERFMON` now crosses the default `--fail-on high` gate where it previously
+  reported MEDIUM. A `CL-0027` waiver does not cover them — re-waive as
+  CL-0028. The severity model gains an `integrity-only` qualifier (one tier
+  down) alongside `read-only` and `availability-only`, which is what the impact
+  axis was missing for a host effect that corrupts without disclosing or
+  granting control.
+
+### Fixed
+
+- **Relative and `~` bind sources are resolved instead of ignored.** Compose
+  resolves a relative mount source against the compose file's directory and
+  expands a leading `~`; compose-lint matched the string as written, so
+  `- ../../../../../..:/host` mounted the host root filesystem and reported
+  nothing at all. Verified against Docker Compose. **New findings**, up to
+  CRITICAL, on files using relative or `~` bind sources that resolve onto a
+  flagged host path — `./data:/data` and other in-project mounts are
+  unaffected.
+- **A named volume that is really a bind mount is now seen as one.**
+  `driver_opts: {type: none, device: <host path>, o: bind}` is the standard way
+  to pin a bind mount's options, and the host path lives in the top-level
+  `volumes:` block, which the mount rules never read. `device: /var/run/docker.sock`
+  reached a container at a clean pass. **New findings**, up to CRITICAL, for
+  bind-backed named volumes; `external: true` volumes are left alone, since
+  their host path is not in the file.
+
 ### Changed
 
 - **BREAKING — the severity model was rebuilt, and rule ids moved with it.**
@@ -24,10 +58,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   intended-public exposure. Use `--fail-on medium`, or override CL-0005 back to
   HIGH in `.compose-lint.yml`, to keep the old behaviour.
 
-  **Rules split.** `cap_add` is now three rules by what the capability grants:
+  **Rules split.** `cap_add` is now four rules by what the capability grants:
   CL-0024 (CRITICAL: `ALL`, `SYS_ADMIN`, `SYS_MODULE`, `SYS_RAWIO`), CL-0011
-  (HIGH, unchanged id: `NET_ADMIN`, `BPF`, `SYS_BOOT`) and CL-0027 (MEDIUM:
-  `SYS_PTRACE`, `PERFMON`, `SYS_TIME`, `DAC_READ_SEARCH`). Host paths are two:
+  (HIGH, unchanged id: `NET_ADMIN`, `BPF`, `SYS_BOOT`), CL-0028 (HIGH:
+  `PERFMON`, `SYS_TIME`) and CL-0027 (MEDIUM: `SYS_PTRACE`,
+  `DAC_READ_SEARCH`). Host paths are two:
   CL-0025 (CRITICAL) for writable mounts of `/`, `/etc`, `/root`, `/boot`,
   `/var/lib/docker` and `/proc`, and CL-0013 (HIGH, unchanged id) for `/sys`,
   `/dev`, `/home` and read-only mounts of CL-0025's paths. Neither rule
@@ -39,8 +74,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mode. CL-0025 covers `/etc`, `/root`, `/boot`, `/var/lib/docker` and `/proc`.
 
   **Suppression migration.** A `CL-0011` waiver now covers only `NET_ADMIN`,
-  `BPF` and `SYS_BOOT`; the other capabilities move to CL-0024 and CL-0027 and
-  are no longer covered by it. A `CL-0013` waiver no longer covers a writable
+  `BPF` and `SYS_BOOT`; the other capabilities move to CL-0024, CL-0027 and
+  CL-0028 and are no longer covered by it. A `CL-0013` waiver no longer covers a writable
   root-equivalent path (CL-0025) or a `/run`-family mount (CL-0001), and a
   waiver of a whole-root mount moves to CL-0001 (from CL-0025 when writable, or
   from CL-0013 when read-only). Waivers for CL-0012, CL-0015 and

@@ -26,8 +26,14 @@ CIS_REF = (
 #   /dev/mem, /dev/port  — EPERM without CAP_SYS_RAWIO (CL-0024, CRITICAL); and
 #                          /dev/mem is bounded to the sub-1MB region even with
 #                          it, because CONFIG_STRICT_DEVMEM restricts the rest
-#   /dev/fuse            — mount(2) needs CAP_SYS_ADMIN (CL-0024) *and* an
-#                          unconfined AppArmor profile (CL-0009), both flagged
+#   /dev/fuse            — mount(2) needs CAP_SYS_ADMIN, which CL-0024 flags at
+#                          CRITICAL. On an AppArmor host it additionally needs
+#                          an unconfined profile (CL-0009): measured, SYS_ADMIN
+#                          alone mounts on Arch with no AppArmor and is refused
+#                          on Debian 13 with it. That second gate is captured
+#                          evidence from the AppArmor host, not a fact that
+#                          holds everywhere (ADR-020) — the drop rests on the
+#                          SYS_ADMIN gate, which does
 #
 # Removed as unreachable: /dev/kmem and /dev/raw, for which Docker refuses to
 # create the container at all (and CONFIG_DEVKMEM is off on modern kernels).
