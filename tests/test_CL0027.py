@@ -1,9 +1,11 @@
 """Tests for CL-0027: capabilities with a bounded grant.
 
-The MEDIUM tier of the three-way cap_add split (see tests/test_CL0011.py). This
-tier exists as a precision win: NTP clients, debuggers and profilers
-legitimately need these, and grading them alongside escape paths made the
-higher tiers less believable.
+The MEDIUM tier of the four-way cap_add split (see tests/test_CL0011.py). This
+tier exists as a precision win: debuggers legitimately need these, and grading
+them alongside escape paths made the higher tiers less believable.
+
+PERFMON and SYS_TIME are deliberately *not* here -- they reach the host with no
+sibling key and nothing from the image, so they are CL-0028's.
 """
 
 from __future__ import annotations
@@ -24,6 +26,8 @@ OTHER_TIERS = (
     "NET_ADMIN",
     "BPF",
     "SYS_BOOT",
+    "PERFMON",
+    "SYS_TIME",
 )
 
 
@@ -50,7 +54,7 @@ class TestLesserCapAddRule:
         assert len(meta.references) > 0
 
     def test_detects_each_member_at_medium(self) -> None:
-        for cap in ("SYS_PTRACE", "PERFMON", "SYS_TIME", "DAC_READ_SEARCH"):
+        for cap in ("SYS_PTRACE", "DAC_READ_SEARCH"):
             findings = self._check_cap(cap)
             assert len(findings) == 1, cap
             assert findings[0].rule_id == "CL-0027"
@@ -69,20 +73,17 @@ class TestLesserCapAddRule:
         """The host read needs a bind mount, which another rule flags."""
         assert "bind mount" in self._check_cap("DAC_READ_SEARCH")[0].message
 
-    def test_sys_time_message_says_the_clock_is_host_global(self) -> None:
-        assert "host-global" in self._check_cap("SYS_TIME")[0].message
-
-    def test_fix_names_the_legitimate_workloads(self) -> None:
-        fix = self._check_cap("SYS_TIME")[0].fix
+    def test_fix_names_the_legitimate_workload(self) -> None:
+        fix = self._check_cap("SYS_PTRACE")[0].fix
         assert fix is not None
-        assert "NTP" in fix
+        assert "debugger" in fix
 
     def test_fixture_services(self) -> None:
         """The committed fixture's bounded-grant services, by name."""
         assert len(self._check("sys_ptrace")) == 1
-        # all_dangerous names seven caps; three belong to this tier
-        # (SYS_PTRACE, SYS_TIME, DAC_READ_SEARCH).
-        assert len(self._check("all_dangerous")) == 3
+        # all_dangerous names seven caps; two belong to this tier
+        # (SYS_PTRACE, DAC_READ_SEARCH). SYS_TIME moved to CL-0028.
+        assert len(self._check("all_dangerous")) == 2
 
     def test_safe_caps_no_findings(self) -> None:
         assert self._check("safe_caps") == []

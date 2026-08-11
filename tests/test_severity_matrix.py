@@ -47,6 +47,7 @@ ADJUSTMENTS: dict[str, int] = {
     "—": 0,
     "read-only": -1,
     "availability-only": -1,
+    "integrity-only": -1,
     "pre-foothold reach": +1,
 }
 
@@ -208,6 +209,21 @@ def test_closed_reason_list_matches_the_document() -> None:
         for cell in row[:1]
     }
     assert documented == set(OVERRIDE_REASONS)
+
+
+def test_qualifier_list_matches_the_document() -> None:
+    """The arithmetic this test applies is the arithmetic the document prints.
+
+    ``ADJUSTMENTS`` is the only part of the model the suite hard-codes rather
+    than reading back, so without this the page and the test could drift into
+    agreeing about a rule while disagreeing about the rule that priced it —
+    the failure mode the whole enforcement suite exists to remove.
+    """
+    documented: dict[str, int] = {}
+    for row in _table_after("### Qualifiers and modifiers")[1:]:
+        name = row[0].split("`")[1]
+        documented[name] = -1 if "**down**" in row[1] else +1
+    assert documented == {k: v for k, v in ADJUSTMENTS.items() if k != NONE_CELL}
 
 
 DERIVATION_FIELD_RE = re.compile(

@@ -75,7 +75,7 @@ If your daemon is **not** at defaults, some findings become unreliable:
 | `--icc=false` | CL-0006's cross-container reach is removed |
 | `--userns-remap` | `userns_mode: host` becomes a real finding rather than a no-op |
 | `--default-runtime` other than `runc` | any rule's premise may be rewritten before `runc` sees the spec |
-| `kernel.perf_event_paranoid` above 2 | `PERFMON` (CL-0027) grants nothing — Debian and Ubuntu ship 3 |
+| `kernel.perf_event_paranoid` above 2 | `PERFMON` (CL-0028) grants nothing — Debian and Ubuntu ship 3 |
 | `kernel.yama.ptrace_scope` above 0 | `SYS_PTRACE`'s same-uid reach narrows; its cross-uid reach is unaffected |
 
 ## Axes
@@ -124,13 +124,19 @@ What can the attacker reach once the precondition is met?
 ### Qualifiers and modifiers
 
 Apply **at most one qualifier and at most one modifier**. They exist because the
-impact axis has nowhere to put host *read* or host *denial of service*, which is
-how a resource-exhaustion rule once ended up labelled Cross-container.
+impact axis measures *reach* and cannot express *what kind of harm* — it has
+nowhere to put host read, host denial of service, or host corruption, which is
+how a resource-exhaustion rule once ended up labelled Cross-container. The three
+qualifiers are the three kinds of loss: confidentiality (`read-only`),
+availability (`availability-only`) and integrity (`integrity-only`). A rule
+whose impact reaches the host but grants no control over it takes the one that
+fits, rather than being dropped from its rule's pricing.
 
 | Adjustment | Effect | When |
 |---|---|---|
 | `read-only` (qualifier) | one tier **down** | The realised impact is disclosure or observation, with no write and no execution. |
 | `availability-only` (qualifier) | one tier **down** | The realised impact is denial of service, with no confidentiality or integrity loss. |
+| `integrity-only` (qualifier) | one tier **down** | The realised impact is corruption of host or container state, with no disclosure and no control gained. |
 | `pre-foothold reach` (modifier) | one tier **up** | The impact is reachable by an attacker who has no foothold anywhere — scored on Baseline A because the rule's subject is a runtime primitive, not the file's contents. |
 
 Tiers are clamped at CRITICAL and LOW.
@@ -271,6 +277,7 @@ link. `tests/test_severity_matrix.py` enforces all four properties.
 | [CL-0025](rules/CL-0025.md) | A | Direct | Host | — | CRITICAL | CRITICAL | — |
 | [CL-0026](rules/CL-0026.md) | A | Removes a mitigation | Host | availability-only | MEDIUM | MEDIUM | — |
 | [CL-0027](rules/CL-0027.md) | A | Second flaw | Single container | — | MEDIUM | MEDIUM | — |
+| [CL-0028](rules/CL-0028.md) | A | Direct | Host | integrity-only | HIGH | HIGH | — |
 
 ### Notes on individual derivations
 
@@ -299,13 +306,21 @@ link. `tests/test_severity_matrix.py` enforces all four properties.
   PID/IPC hand over visibility immediately, but converting that visibility into
   impact (sniffing, ARP spoofing, abusing a loopback-trusted service, host
   `/dev/shm`) takes a published technique rather than a supported API call.
-- **CL-0011 / CL-0024 / CL-0027** — `cap_add` is graded by what the capability
-  grants, across three rules rather than one branching rule, because SARIF
-  advertises `security-severity` on the rule descriptor. CL-0011 keeps the
+- **CL-0011 / CL-0024 / CL-0027 / CL-0028** — `cap_add` is graded by what the
+  capability grants, across four rules rather than one branching rule, because
+  SARIF advertises `security-severity` on the rule descriptor. CL-0011 keeps the
   strong host-adjacent tier; `ALL`, `SYS_ADMIN`, `SYS_MODULE` and `SYS_RAWIO`
-  move to CL-0024, and `SYS_PTRACE`, `PERFMON`, `SYS_TIME` and
+  move to CL-0024, `PERFMON` and `SYS_TIME` to CL-0028, and `SYS_PTRACE` and
   `DAC_READ_SEARCH` to CL-0027. Resolves the descriptor/finding mismatch in
   [#503](https://github.com/tmatens/compose-lint/issues/503) for capabilities.
+- **CL-0027 vs CL-0028** — the two were one rule, and should not have been.
+  CL-0027's members convert into impact only where the *image* supplies
+  something this file cannot see, and stay inside the container; CL-0028's
+  reach the host with no sibling key and nothing from the image. Different
+  cells, so [one rule, one severity](#edge-rules) requires two rules. Priced as
+  one, the rule had to set `SYS_TIME` and `PERFMON` aside as scoping
+  assumptions — a clause reserved for reach that *depends* on a sibling key,
+  which neither does.
 - **CL-0013 / CL-0025** — host paths are graded by what the mount *grants*, not
   by which directory it names. A writable mount of a root-equivalent path is
   host root through ordinary file writes (CL-0025); the same path read-only

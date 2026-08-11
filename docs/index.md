@@ -42,6 +42,7 @@ reading here) in the terminal.
 | [CL-0025](rules/CL-0025.md) | Root-equivalent host path mounted writable |
 | [CL-0026](rules/CL-0026.md) | No resource limits (memory/CPU) |
 | [CL-0027](rules/CL-0027.md) | Bounded-grant capability added |
+| [CL-0028](rules/CL-0028.md) | Host-reaching capability added |
 
 ## Where to start
 

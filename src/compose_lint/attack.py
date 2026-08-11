@@ -129,7 +129,11 @@ RULE_TECHNIQUES: dict[str, tuple[Technique, ...]] = {
     "CL-0024": (T1611,),
     "CL-0025": (T1611,),
     "CL-0026": (T1496, T1499),
-    "CL-0027": (T1055, T1003, T1552_001, T1611, T1070),
+    "CL-0027": (T1055, T1003, T1552_001, T1611),
+    # SYS_TIME moves the host clock: T1070 for the detection/correlation
+    # consequence, T1499 because cert validation and Kerberos fail machine-wide.
+    # PERFMON samples every process on the host, hence T1003.
+    "CL-0028": (T1070, T1499, T1003),
 }
 
 #: Techniques a rule *enables* rather than mitigates, kept out of the mapping

@@ -11,25 +11,23 @@ from compose_lint.rules._caps import REFERENCES, iter_cap_add
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-# Capabilities worth flagging, but whose grant is bounded: an intra-container
-# primitive, a kernel *read*, a host-integrity effect short of takeover, or a
-# host read that needs a bind mount another rule already flags. Splitting these
-# out of CL-0011's HIGH tier is a precision win: the legitimate workloads that
-# need them (an NTP client, a debugger sidecar, a profiler) stop being graded
-# as though they were escape paths.
+# Capabilities whose grant is real but bounded twice over: it is confined to
+# this container, and it converts into impact only where the *image* supplies
+# something this file cannot see — a process running as a different uid to
+# trace, or a file the workload uid cannot already read. Same-uid tracing and
+# same-uid reads need no capability at all.
+#
+# PERFMON and SYS_TIME were members until the CL-0028 split. They did not
+# belong: both reach the host with no sibling key and no help from the image,
+# so they sit in a different cell, and keeping them here meant pricing the rule
+# on SYS_PTRACE while setting them aside as "scoping assumptions" — a clause
+# the model reserves for reach that depends on a sibling key. Splitting these
+# two out of CL-0011's HIGH tier is still the precision win the tier exists
+# for: a debugger sidecar stops being graded as though it were an escape path.
 LESSER_CAPS: dict[str, str] = {
     "SYS_PTRACE": (
         "trace and read the memory of other processes — confined to this "
         "container's own PID namespace unless pid: host is also set"
-    ),
-    "PERFMON": (
-        "perf_event_open — a kernel read primitive enabling timing and "
-        "side-channel attacks and kernel info disclosure"
-    ),
-    "SYS_TIME": (
-        "set the system clock, which is host-global — Docker does not isolate "
-        "CLOCK_REALTIME, so this breaks certificate validation, TOTP, and "
-        "Kerberos for every workload on the host"
     ),
     "DAC_READ_SEARCH": (
         "bypass file-read permission checks, and read host files via "
@@ -49,10 +47,10 @@ class LesserCapAddRule(BaseRule):
             id="CL-0027",
             name="Bounded-grant capability added",
             description=(
-                "Adding SYS_PTRACE, PERFMON, SYS_TIME, or DAC_READ_SEARCH "
-                "weakens isolation without granting an escape: an "
-                "intra-container primitive, a kernel read, or a host-integrity "
-                "effect short of takeover."
+                "Adding SYS_PTRACE or DAC_READ_SEARCH weakens isolation "
+                "inside this container without granting an escape, and only "
+                "where the image supplies a different-uid process or an "
+                "otherwise-unreadable file."
             ),
             severity=Severity.MEDIUM,
             references=REFERENCES,
@@ -76,9 +74,10 @@ class LesserCapAddRule(BaseRule):
                 line=line,
                 fix=(
                     f"Remove {as_written} from cap_add unless the workload "
-                    "demonstrably needs it (NTP clients need SYS_TIME, "
-                    "debugger and profiler sidecars need SYS_PTRACE or "
-                    "PERFMON). Where it is genuinely required, suppress with "
+                    "demonstrably needs it (debugger sidecars need "
+                    "SYS_PTRACE). Scope a debugger to the container it "
+                    'inspects with pid: "service:<name>" rather than '
+                    "pid: host. Where it is genuinely required, suppress with "
                     "a reason naming the workload.\n"
                     "Full guide: compose-lint --explain CL-0027"
                 ),
