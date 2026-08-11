@@ -238,3 +238,60 @@ class TestRunMount:
             "      - /run/containerd:/x\n"
         )
         assert self._check(content) == []
+
+
+class TestScopedAlternatives:
+    """/dev/shm and /dev/hugepages get guidance a reader can act on.
+
+    Both still fire — a host bind of either exposes segments belonging to the
+    host and to every other container, which is the same reach `ipc: host`
+    carries at HIGH under CL-0010. What the generic advice got wrong is the
+    remedy: "copy them into the image at build time" is not something a
+    workload wanting a bigger /dev/shm or a huge-page pool can do. Compose has
+    a scoped alternative for each, so the finding names it.
+    """
+
+    def setup_method(self) -> None:
+        self.rule = SensitiveMountRule()
+
+    def _check(self, host_path: str, service: str = "a") -> list:
+        content = (
+            f"services:\n  {service}:\n    image: nginx\n    volumes:\n"
+            f"      - {host_path}:/x\n"
+        )
+        data, lines = loads(content)
+        return list(self.rule.check(service, data["services"][service], data, lines))
+
+    def test_dev_shm_still_fires_at_high(self) -> None:
+        findings = self._check("/dev/shm")
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.HIGH
+
+    def test_dev_shm_names_shm_size_and_scoped_ipc(self) -> None:
+        fix = self._check("/dev/shm")[0].fix
+        assert "shm_size:" in fix
+        assert "ipc: shareable" in fix
+        assert "copy them into the image" not in fix
+
+    def test_dev_hugepages_names_a_hugetlbfs_volume(self) -> None:
+        fix = self._check("/dev/hugepages")[0].fix
+        assert "hugetlbfs" in fix
+        assert "copy them into the image" not in fix
+
+    def test_guidance_survives_docker_path_normalisation(self) -> None:
+        """Docker cleans a mount source before using it, so the alternatives
+        must key off the normalised path rather than the string as written."""
+        for spelling in ("/dev/shm/", "/dev/./shm", "//dev/shm", "/dev/foo/../shm"):
+            assert "shm_size:" in self._check(spelling)[0].fix, spelling
+
+    def test_other_dev_paths_keep_the_generic_remedy(self) -> None:
+        """Only the two paths with a scoped alternative are special-cased."""
+        fix = self._check("/dev/disk")[0].fix
+        assert "copy them into the image" in fix
+        assert "shm_size:" not in fix
+
+    def test_every_finding_still_points_at_the_full_guide(self) -> None:
+        for path in ("/dev/shm", "/dev/hugepages", "/dev/disk", "/sys"):
+            assert self._check(path)[0].fix.endswith(
+                "Full guide: compose-lint --explain CL-0013"
+            ), path

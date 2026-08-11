@@ -55,6 +55,41 @@ _INERT_DEVICES: frozenset[str] = frozenset(
     {"/dev/null", "/dev/zero", "/dev/full", "/dev/random", "/dev/urandom"}
 )
 
+# Paths where "remove the bind mount" is not a followable instruction, because
+# the workload needs the facility the mount provides. Compose has a scoped
+# alternative for each that keeps the facility and drops the host exposure, so
+# the finding stays and the guidance names the alternative instead.
+#
+# Verified against Docker 29.4.3, and each is clean under this rule set:
+#   /dev/shm       `shm_size:` resizes the container's own /dev/shm (64 MiB by
+#                  default) without exposing the host's; `ipc: shareable` plus
+#                  `ipc: service:<owner>` shares one segment between named
+#                  services with the host and every other container excluded.
+#   /dev/hugepages a local volume with `type: hugetlbfs` mounts a *fresh*
+#                  hugetlbfs instance — a file created in it is invisible both
+#                  on the host's /dev/hugepages and through a bind of it.
+#
+# Neither alternative bounds the underlying host-wide resource (the huge-page
+# pool is global), which is what `deploy.resources.limits` is for.
+_SCOPED_ALTERNATIVES: dict[str, str] = {
+    "/dev/shm": (
+        "Don't bind the host's /dev/shm. If the container only needs a larger "
+        "shared-memory segment than the 64 MiB default, set `shm_size:` on the "
+        "service. If two services genuinely need to share one, set "
+        "`ipc: shareable` on the owner and `ipc: service:<owner>` on the "
+        "other — that scopes the segment to those services instead of exposing "
+        "every segment on the host."
+    ),
+    "/dev/hugepages": (
+        "Don't bind the host's /dev/hugepages. Declare a volume with "
+        "`driver_opts: {type: hugetlbfs, device: hugetlbfs}` and mount that "
+        "instead: the container gets its own hugetlbfs instance, so it can "
+        "still use huge pages but cannot read or corrupt the pages another "
+        "workload mapped. The page pool stays host-wide, so also bound the "
+        "service with `deploy.resources.limits`."
+    ),
+}
+
 # The runtime directories. CL-0001 owns these and their ancestors, because they
 # hold the control sockets; it does not own what sits *below* them, which holds
 # host service state instead -- the system D-Bus, the libvirt control socket,
@@ -187,6 +222,12 @@ class SensitiveMountRule(BaseRule):
                 else:
                     continue  # writable root-equivalent — CL-0025's
 
+            remedy = _SCOPED_ALTERNATIVES.get(normalized) or (
+                f"Remove the bind mount for {mount.host_path}. If the "
+                "container needs specific files, copy them into the image at "
+                "build time or use a named volume with only the required data."
+            )
+
             yield Finding(
                 rule_id="CL-0013",
                 severity=Severity.HIGH,
@@ -196,12 +237,6 @@ class SensitiveMountRule(BaseRule):
                     f"(under {matched}). The mount {reason}."
                 ),
                 line=mount.line,
-                fix=(
-                    f"Remove the bind mount for {mount.host_path}. If the "
-                    "container needs specific files, copy them into the image "
-                    "at build time or use a named volume with only the "
-                    "required data.\n"
-                    "Full guide: compose-lint --explain CL-0013"
-                ),
+                fix=f"{remedy}\nFull guide: compose-lint --explain CL-0013",
                 references=REFERENCES,
             )
