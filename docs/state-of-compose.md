@@ -89,7 +89,15 @@ The MEDIUM-heavy distribution is a property of compose-lint's rule design: the t
 > 5,417 files against 6,444, with the longtail tier at 1,125 against 1,552,
 > because the longtail sweep is a stratified code search that GitHub does not
 > reproduce. Publishing its headline figures here would conflate corpus drift
-> with the rule changes. What it is good for is direction and sanity: every one
+> with the rule changes.
+>
+> **The pinned 6,444-file corpus no longer exists**, and because the longtail
+> tier does not reproduce it cannot be rebuilt. The next refresh is therefore a
+> new baseline rather than a comparison, and the delta across it is not
+> measurable — a discontinuity worth stating plainly rather than papering over
+> with a like-for-like claim the data cannot support. The 5,417-file snapshot
+> that replaces it is archived rather than left in a cache directory, so the
+> same break does not happen twice. What it is good for is direction and sanity: every one
 > of the 24 rules fires on real files, none is dead, there were zero crashes and
 > zero timeouts across 5,279 files, and the share of files carrying at least one
 > finding came out at **91.2%** — the same figure this report already cites.
