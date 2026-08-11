@@ -48,6 +48,10 @@ _DANGEROUS_DEVICE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^/dev/xvd[a-z]"), "/dev/xvd* — Xen block device (EC2)"),
     (re.compile(r"^/dev/mmcblk"), "/dev/mmcblk* — SD/eMMC block device (Raspberry Pi)"),
     (re.compile(r"^/dev/md\d"), "/dev/md* — Linux software RAID array"),
+    # mdadm also creates a named symlink per array at /dev/md/<name>, which the
+    # \d pattern above cannot match. Kept as a separate entry rather than
+    # loosening that one to [\d/], because the \d is what keeps /dev/mdadm out.
+    (re.compile(r"^/dev/md/"), "/dev/md/* — named software RAID array"),
     (re.compile(r"^/dev/disk/"), "/dev/disk/* — block device symlinks"),
     (
         re.compile(r"^/dev/loop"),

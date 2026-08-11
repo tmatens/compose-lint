@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from compose_lint.parser import load_compose
+from compose_lint.parser import load_compose, loads
 from compose_lint.rules.CL0016_dangerous_devices import DangerousDevicesRule
 
 FIXTURES = Path(__file__).parent / "compose_files"
@@ -122,3 +122,34 @@ class TestMembershipBoundary:
 
     def test_unreachable_devices_are_not_flagged(self) -> None:
         assert self._check("unreachable_devices") == []
+
+
+class TestNamedRaidArrays:
+    """mdadm's /dev/md/<name> symlinks are the same device class as /dev/md0.
+
+    ``^/dev/md\\d`` cannot match them -- the character after "md" is "/", not a
+    digit -- so a named array was unflagged while the numeric node beside it
+    was CRITICAL. The \\d is kept as-is and a second pattern added, because \\d
+    is what keeps /dev/mdadm out.
+    """
+
+    def setup_method(self) -> None:
+        self.rule = DangerousDevicesRule()
+
+    def _findings(self, device: str) -> list:
+        data, lines = loads(
+            f'services:\n  svc:\n    image: nginx\n    devices: ["{device}:{device}"]\n'
+        )
+        return list(self.rule.check("svc", data["services"]["svc"], data, lines))
+
+    def test_named_array_is_flagged(self) -> None:
+        for device in ("/dev/md/0", "/dev/md/raid1", "/dev/md/data"):
+            assert len(self._findings(device)) == 1, device
+
+    def test_numeric_node_still_flagged(self) -> None:
+        for device in ("/dev/md0", "/dev/md127"):
+            assert len(self._findings(device)) == 1, device
+
+    def test_mdadm_is_not_a_device(self) -> None:
+        # The over-match the \d guards against; /dev/md/ must not reopen it.
+        assert self._findings("/dev/mdadm") == []
