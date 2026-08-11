@@ -59,34 +59,91 @@ def _extract_short(volume: str) -> tuple[str, bool] | None:
     return m.group("host"), read_only
 
 
+def _opt_flags(driver_opts: dict[str, Any]) -> set[str]:
+    """The comma-separated flags in a volume's ``o:`` driver option."""
+    return {part.strip() for part in str(driver_opts.get("o", "")).split(",")}
+
+
+def bind_backed_volumes(global_config: dict[str, Any]) -> dict[str, tuple[str, bool]]:
+    """Named volumes that are host bind mounts under another name.
+
+    ``driver_opts: {type: none, device: <host path>, o: bind}`` is the standard
+    idiom for pinning a bind mount's options, and Compose honours it — verified
+    on Docker 29.4.3, where a container read host-side content through such a
+    volume. The host path lives in the **top-level** ``volumes:`` block, not in
+    the service entry, so a rule reading only ``services.*.volumes`` sees a
+    plain named volume and finds no host path at all. That is how
+    ``device: /var/run/docker.sock`` reached a container at a clean pass.
+
+    Returns ``{volume name: (host path, read_only)}``. A volume declared
+    ``external: true`` is skipped: its host path is not in this file, and
+    guessing one would invent a finding.
+    """
+    found: dict[str, tuple[str, bool]] = {}
+    volumes = global_config.get("volumes")
+    if not isinstance(volumes, dict):
+        return found
+    for name, spec in volumes.items():
+        if not isinstance(spec, dict) or as_bool(spec.get("external")) is True:
+            continue
+        driver_opts = spec.get("driver_opts")
+        if not isinstance(driver_opts, dict):
+            continue
+        device = driver_opts.get("device")
+        flags = _opt_flags(driver_opts)
+        if isinstance(device, str) and device and "bind" in flags:
+            found[str(name)] = (device, "ro" in flags)
+    return found
+
+
 def iter_bind_mounts(
     service_name: str,
     service_config: dict[str, Any],
     lines: dict[str, int],
+    global_config: dict[str, Any] | None = None,
 ) -> Iterator[BindMount]:
-    """Yield every host bind mount a service declares, in either syntax."""
+    """Yield every host bind mount a service declares, in either syntax.
+
+    ``global_config`` supplies the top-level ``volumes:`` block, without which
+    a bind-backed named volume (see :func:`bind_backed_volumes`) is invisible.
+    """
     volumes = service_config.get("volumes", [])
     if not isinstance(volumes, list):
         return
+    named_binds = bind_backed_volumes(global_config or {})
 
     for i, volume in enumerate(volumes):
         if isinstance(volume, str):
             short = _extract_short(volume)
             if short is None:
-                continue
-            host_path, read_only = short
+                # Not a host path — but it may name a bind-backed volume,
+                # which is a host path one level of indirection away.
+                name, sep, rest = volume.partition(":")
+                if not sep or name not in named_binds:
+                    continue
+                host_path, volume_read_only = named_binds[name]
+                _, _, mode = rest.partition(":")
+                read_only = volume_read_only or "ro" in (
+                    part.strip() for part in mode.split(",")
+                )
+            else:
+                host_path, read_only = short
         elif isinstance(volume, dict):
             # Long syntax. Treat as a bind when type == "bind" OR when source
             # is an absolute path — Compose infers bind from an absolute source
             # even with type omitted.
             source = volume.get("source")
             vtype = volume.get("type")
-            if not (
-                isinstance(source, str) and (vtype == "bind" or source.startswith("/"))
-            ):
+            if not isinstance(source, str):
                 continue
-            host_path = source
-            read_only = as_bool(volume.get("read_only")) is True
+            if vtype == "bind" or source.startswith("/"):
+                host_path = source
+                read_only = as_bool(volume.get("read_only")) is True
+            elif source in named_binds:
+                host_path, volume_read_only = named_binds[source]
+                read_only = volume_read_only or as_bool(volume.get("read_only")) is True
+            else:
+                continue
         else:
             continue
 

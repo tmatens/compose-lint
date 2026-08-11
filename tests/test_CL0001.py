@@ -239,3 +239,98 @@ class TestHostSideMatching:
             "        target: /var/run/docker.sock\n"
         )
         assert list(self.rule.check("svc", data["services"]["svc"], data, lines)) == []
+
+
+class TestBindBackedNamedVolumes:
+    """A named volume can be a host bind mount under another name.
+
+    ``driver_opts: {type: none, device: <path>, o: bind}`` is the standard way
+    to pin a bind mount's options. The host path sits in the top-level
+    ``volumes:`` block, so a rule reading only the service entry sees a plain
+    named volume -- which is how a bind-backed ``/var/run/docker.sock`` reached
+    a container at a clean pass.
+    """
+
+    def setup_method(self) -> None:
+        self.rule = DockerSocketRule()
+
+    def _findings(self, body: str, service: str = "svc") -> list:
+        data, lines = loads(body)
+        return list(self.rule.check(service, data["services"][service], data, lines))
+
+    def test_short_syntax_bind_backed_volume_is_a_socket_mount(self) -> None:
+        findings = self._findings(
+            "volumes:\n"
+            "  sockvol:\n"
+            "    driver: local\n"
+            "    driver_opts:\n"
+            "      type: none\n"
+            "      device: /var/run/docker.sock\n"
+            "      o: bind\n"
+            "services:\n"
+            "  svc:\n"
+            "    image: nginx\n"
+            "    volumes:\n"
+            # Target deliberately unlike the source: the old whole-entry
+            # substring match only caught this when the *container* path
+            # happened to spell the socket.
+            "      - sockvol:/tmp/innocuous.sock\n"
+        )
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.CRITICAL
+
+    def test_long_syntax_bind_backed_volume_is_a_socket_mount(self) -> None:
+        findings = self._findings(
+            "volumes:\n"
+            "  sockvol:\n"
+            "    driver_opts: {type: none, device: /var/run/docker.sock, o: bind}\n"
+            "services:\n"
+            "  svc:\n"
+            "    image: nginx\n"
+            "    volumes:\n"
+            "      - {type: volume, source: sockvol, target: /tmp/d.sock}\n"
+        )
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.CRITICAL
+
+    def test_bind_backed_whole_root_is_a_socket_mount_read_only(self) -> None:
+        # ':ro' on the volume applies to the socket file, not to the API
+        # behind it, so the root mount is CL-0001's in either mode.
+        findings = self._findings(
+            "volumes:\n"
+            "  rootvol:\n"
+            '    driver_opts: {type: none, device: /, o: "bind,ro"}\n'
+            "services:\n"
+            "  svc:\n"
+            "    image: nginx\n"
+            "    volumes:\n"
+            "      - rootvol:/hostfs\n"
+        )
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.CRITICAL
+
+    def test_external_volume_is_not_guessed_at(self) -> None:
+        # Its host path is not in this file; inventing one invents a finding.
+        assert not self._findings(
+            "volumes:\n"
+            "  extvol:\n"
+            "    external: true\n"
+            "services:\n"
+            "  svc:\n"
+            "    image: nginx\n"
+            "    volumes:\n"
+            "      - extvol:/var/run/docker.sock\n"
+        )
+
+    def test_ordinary_named_volume_is_still_not_a_bind(self) -> None:
+        # A plain named volume shadows the path with an empty volume and
+        # grants nothing -- the false positive the host-side match removed.
+        assert not self._findings(
+            "volumes:\n"
+            "  plainvol: {}\n"
+            "services:\n"
+            "  svc:\n"
+            "    image: nginx\n"
+            "    volumes:\n"
+            "      - plainvol:/var/run/docker.sock\n"
+        )

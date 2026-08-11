@@ -82,7 +82,9 @@ class WritableHostRootMountRule(BaseRule):
         global_config: dict[str, Any],
         lines: dict[str, int],
     ) -> Iterator[Finding]:
-        for mount in iter_bind_mounts(service_name, service_config, lines):
+        for mount in iter_bind_mounts(
+            service_name, service_config, lines, global_config
+        ):
             if mount.read_only:
                 continue  # disclosure only — CL-0013 owns it
             if normalize_host_path(mount.host_path) in TIMEZONE_FILES:

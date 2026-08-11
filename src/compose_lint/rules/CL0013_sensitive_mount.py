@@ -72,7 +72,9 @@ class SensitiveMountRule(BaseRule):
         global_config: dict[str, Any],
         lines: dict[str, int],
     ) -> Iterator[Finding]:
-        for mount in iter_bind_mounts(service_name, service_config, lines):
+        for mount in iter_bind_mounts(
+            service_name, service_config, lines, global_config
+        ):
             normalized = normalize_host_path(mount.host_path)
 
             matched = match_prefix(mount.host_path, _EXPOSED_PATHS)

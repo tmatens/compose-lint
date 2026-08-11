@@ -130,7 +130,9 @@ class DockerSocketRule(BaseRule):
         # enumerating it instead would be off-by-N.
         host_paths = {
             mount.position: mount.host_path
-            for mount in iter_bind_mounts(service_name, service_config, lines)
+            for mount in iter_bind_mounts(
+                service_name, service_config, lines, global_config
+            )
         }
 
         for i, volume in enumerate(volumes):
