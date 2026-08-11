@@ -24,6 +24,7 @@ membership change from an accident.
 
 from __future__ import annotations
 
+import itertools
 from pathlib import Path
 
 from compose_lint.engine import run_rules
@@ -415,3 +416,154 @@ class TestRuntimeDirectoryPartition:
     def test_the_rest_of_dev_is_untouched(self) -> None:
         for path in ("/dev", "/dev/shm", "/dev/sda"):
             assert "CL-0013" in self._owners(path), path
+
+
+# Every capability the kernel defines, CAP_CHOWN (0) through CAP_LAST_CAP.
+# Linux 6.x defines 41. Listed in full so a capability cannot be omitted by
+# never being thought about -- the disjointness tests above prove the four
+# tiers do not overlap, which is a different claim from proving nothing was
+# forgotten, and only the first was checked.
+_ALL_LINUX_CAPABILITIES: frozenset[str] = frozenset(
+    {
+        "AUDIT_CONTROL",
+        "AUDIT_READ",
+        "AUDIT_WRITE",
+        "BLOCK_SUSPEND",
+        "BPF",
+        "CHECKPOINT_RESTORE",
+        "CHOWN",
+        "DAC_OVERRIDE",
+        "DAC_READ_SEARCH",
+        "FOWNER",
+        "FSETID",
+        "IPC_LOCK",
+        "IPC_OWNER",
+        "KILL",
+        "LEASE",
+        "LINUX_IMMUTABLE",
+        "MAC_ADMIN",
+        "MAC_OVERRIDE",
+        "MKNOD",
+        "NET_ADMIN",
+        "NET_BIND_SERVICE",
+        "NET_BROADCAST",
+        "NET_RAW",
+        "PERFMON",
+        "SETFCAP",
+        "SETGID",
+        "SETPCAP",
+        "SETUID",
+        "SYSLOG",
+        "SYS_ADMIN",
+        "SYS_BOOT",
+        "SYS_CHROOT",
+        "SYS_MODULE",
+        "SYS_NICE",
+        "SYS_PACCT",
+        "SYS_PTRACE",
+        "SYS_RAWIO",
+        "SYS_RESOURCE",
+        "SYS_TIME",
+        "SYS_TTY_CONFIG",
+        "WAKE_ALARM",
+    }
+)
+
+# Docker grants these to every container by default, so naming one in cap_add
+# is a no-op and there is nothing to grade. Dropping them is CL-0006's.
+_DOCKER_DEFAULT_CAPABILITIES: frozenset[str] = frozenset(
+    {
+        "AUDIT_WRITE",
+        "CHOWN",
+        "DAC_OVERRIDE",
+        "FOWNER",
+        "FSETID",
+        "KILL",
+        "MKNOD",
+        "NET_BIND_SERVICE",
+        "NET_RAW",
+        "SETFCAP",
+        "SETGID",
+        "SETPCAP",
+        "SETUID",
+        "SYS_CHROOT",
+    }
+)
+
+# Considered and deliberately not graded, with the reason on record.
+_EXCLUDED_WITH_REASON: dict[str, str] = {
+    "MAC_ADMIN": "verified inert under Docker's masked /sys/kernel/security",
+    "MAC_OVERRIDE": "verified inert, same reason",
+}
+
+# Not granted by default, not graded, and no reason recorded anywhere. This is
+# a hole, and it is enumerated rather than described so that it shrinks
+# visibly: moving one of these into a tier, or into the excluded list with a
+# reason, is a one-line edit here. It is NOT an assertion that these are safe.
+_UNGRADED_NO_RECORDED_REASON: frozenset[str] = frozenset(
+    {
+        "AUDIT_CONTROL",
+        "AUDIT_READ",
+        "BLOCK_SUSPEND",
+        "CHECKPOINT_RESTORE",
+        "IPC_LOCK",
+        "IPC_OWNER",
+        "LEASE",
+        "LINUX_IMMUTABLE",
+        "NET_BROADCAST",
+        "SYSLOG",
+        "SYS_NICE",
+        "SYS_PACCT",
+        "SYS_RESOURCE",
+        "SYS_TTY_CONFIG",
+        "WAKE_ALARM",
+    }
+)
+
+
+class TestCapabilityCompleteness:
+    """Every Linux capability has a recorded disposition.
+
+    The tier tests prove the four graded sets are disjoint. Disjointness says
+    nothing about coverage: a capability omitted from all four passes every one
+    of them. This closes that by requiring each of the kernel's 41 to land in
+    exactly one bucket -- graded, Docker default, excluded with a reason, or
+    explicitly ungraded.
+    """
+
+    def _graded(self) -> set[str]:
+        return (
+            (
+                set(HOST_EXEC_CAPS)
+                | set(STRONG_CAPS)
+                | set(HOST_REACH_CAPS)
+                | set(LESSER_CAPS)
+            )
+            - {"ALL"}  # a keyword, not a capability
+        )
+
+    def test_every_capability_has_exactly_one_disposition(self) -> None:
+        buckets = {
+            "graded": self._graded(),
+            "docker default": set(_DOCKER_DEFAULT_CAPABILITIES),
+            "excluded with reason": set(_EXCLUDED_WITH_REASON),
+            "ungraded, no reason": set(_UNGRADED_NO_RECORDED_REASON),
+        }
+        for a, b in itertools.combinations(sorted(buckets), 2):
+            overlap = buckets[a] & buckets[b]
+            assert not overlap, f"{sorted(overlap)} is both '{a}' and '{b}'"
+
+        covered = set().union(*buckets.values())
+        missing = _ALL_LINUX_CAPABILITIES - covered
+        assert not missing, (
+            f"{sorted(missing)} has no recorded disposition -- grade it, or add "
+            "it to the excluded or explicitly-ungraded list with a reason"
+        )
+        invented = covered - _ALL_LINUX_CAPABILITIES
+        assert not invented, f"{sorted(invented)} is not a Linux capability"
+
+    def test_no_graded_capability_is_a_docker_default(self) -> None:
+        # Grading one would flag a cap_add that changes nothing, which is the
+        # CL-0022/CL-0023 failure mode: a rule firing on a Docker default.
+        overlap = self._graded() & _DOCKER_DEFAULT_CAPABILITIES
+        assert not overlap, f"{sorted(overlap)} is granted by default"

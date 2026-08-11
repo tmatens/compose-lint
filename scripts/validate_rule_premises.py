@@ -949,10 +949,22 @@ def _t_perfmon() -> tuple[bool | None, str]:
     the number.
 
     Returns ``None`` -- not applicable -- on a host carrying that patch, rather
-    than failing. But it does not take the hardening on trust: it *proves* it,
-    by confirming that CAP_SYS_ADMIN opens the same event the capability was
-    refused. If neither opens it, something other than the known downstream
-    patch is in play and the check fails properly.
+    than failing. It does not take the hardening on trust: it confirms that
+    CAP_SYS_ADMIN opens the same event the capability was refused. If neither
+    opens it, something other than the known downstream patch is in play and
+    the check fails properly.
+
+    **That signature is suggestive, not conclusive, and the skip says so.**
+    "PERFMON refused, SYS_ADMIN granted" is also exactly what an upstream
+    kernel that stopped honouring ``perfmon_capable()`` would look like -- a
+    genuine refutation of this premise -- and SYS_ADMIN opening perf is very
+    nearly unconditional, so that leg carries little discriminating power. The
+    two cannot be told apart from behaviour on a single host; separating them
+    needs the kernel's patch state, which this harness does not have. The skip
+    therefore records the kernel version alongside the sysctl so a reader can
+    make the call, and CI is where the question is actually settled: the
+    ubuntu-24.04 runner grants PERFMON, so the check reaches a real verdict
+    there rather than skipping.
 
     Without the third outcome this returned False on every Debian and Ubuntu
     host -- including the project's own grounding host -- so the suite could
@@ -981,11 +993,15 @@ def _t_perfmon() -> tuple[bool | None, str]:
         image=PY_IMAGE,
     )
     if "PERF_OK" in admin:
+        _, kernel = _run([], ["uname", "-sr"])
         return None, (
-            f"{detail}; with SYS_ADMIN={admin.strip()!r} -- this host carries "
-            "the downstream perf patch (CAP_SYS_ADMIN required instead of "
-            "CAP_PERFMON), proven by the SYS_ADMIN leg, so it cannot ground "
-            "this premise. The reach itself is not in question"
+            f"{detail}; with SYS_ADMIN={admin.strip()!r}; kernel="
+            f"{kernel.strip()!r} -- consistent with the downstream perf patch "
+            "(CAP_SYS_ADMIN required instead of CAP_PERFMON), so this host "
+            "cannot ground the premise. NOTE: an upstream kernel that stopped "
+            "honouring perfmon_capable() would present identically, and that "
+            "would be a refutation -- the two are indistinguishable from "
+            "behaviour here, which is why this is a skip and not a pass"
         )
     return False, (
         f"{detail}; with SYS_ADMIN={admin.strip()!r} -- neither capability "
