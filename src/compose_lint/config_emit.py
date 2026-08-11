@@ -62,8 +62,18 @@ def render_config(findings: list[Finding]) -> str:
     severities: dict[str, Severity] = {}
     for f in findings:
         by_rule.setdefault(f.rule_id, set()).add(f.service)
-        # Severity is rule-stable under the empty config init runs with, so the
-        # last writer per rule is as good as any.
+        # Last writer per rule wins, which is only sound because severity is
+        # rule-stable here: init runs with an empty config, so no per-rule
+        # override applies, and every rule emits exactly one severity — an
+        # invariant tests/test_rule_consistency.py enforces through its
+        # deliberately empty VARIABLE_SEVERITY_RULES allow-list.
+        #
+        # This was false when #503 was filed: CL-0011 and CL-0013 branched, and
+        # this line labelled them by whichever finding the rule emitted last.
+        # Both stopped branching when the capability and host-path splits gave
+        # each tier its own id. Putting an entry back on that allow-list
+        # silently reinstates the mislabelling here, so a branching rule needs
+        # this to take the highest severity per rule rather than the last.
         severities[f.rule_id] = f.severity
 
     names = _rule_names()
