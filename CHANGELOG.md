@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A bind source written as `${VAR:-/some/path}` is now matched on its
+  default.** With no `.env` and no exported variable, Compose substitutes the
+  default, so the default *is* the configuration the file ships — what a fresh
+  clone, a reviewer and a CI gate all get. compose-lint matched the string as
+  written, so `${DOCKER_SOCKET_PATH:-/var/run/docker.sock}` mounted the live
+  control socket and reported nothing: measured over a 5,417-file corpus, 14
+  CRITICAL findings were missing on that spelling alone, plus writable `/etc`
+  paths and `~/.ssh` reached the same way. A reference with **no** default
+  (`${VAR}`, `${VAR:?err}`, `$VAR`) is still left alone — the host path is not
+  knowable from the file, and guessing one would invent a finding. **New
+  findings**, up to CRITICAL, on files using an interpolated bind source with a
+  default that names a flagged host path.
+
 ### Added
 
 - **CL-0028: host-reaching capabilities (`PERFMON`, `SYS_TIME`), HIGH.** Split

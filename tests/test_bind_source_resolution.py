@@ -214,3 +214,73 @@ def test_loads_without_a_base_dir_leaves_sources_as_written() -> None:
         'services:\n  svc:\n    image: nginx\n    volumes: ["../../x:/x"]\n'
     )
     assert data["services"]["svc"]["volumes"] == ["../../x:/x"]
+
+
+def test_an_interpolated_default_resolves_to_its_default(base_dir: Path) -> None:
+    # With no .env and no exported variable, Compose substitutes the default,
+    # so the default is the configuration the file ships. Verified against
+    # Compose 29.4.3. Both spellings: ":-" (unset or empty) and "-" (unset).
+    for source in (
+        "${DOCKER_SOCKET_PATH:-/var/run/docker.sock}",
+        "${DOCKER_SOCKET_PATH-/var/run/docker.sock}",
+    ):
+        path = _write(
+            base_dir / source.replace("$", "").replace("{", "").replace("}", "")[:20],
+            f'services:\n  svc:\n    image: nginx\n    volumes: ["{source}:/s"]\n',
+        )
+        assert _mount_findings(path).get("svc") == {"CL-0001"}, source
+
+
+def test_a_default_is_resolved_before_the_relative_and_tilde_shapes(
+    base_dir: Path,
+) -> None:
+    # The two compose: a default may itself be relative, or carry a literal
+    # suffix. "${DIR:-/srv}/data" must become "/srv/data", not stay as written.
+    path = _write(
+        base_dir,
+        "services:\n  svc:\n    image: nginx\n"
+        '    volumes: ["${DIR:-/srv}/data:/d", "${DATA:-./local}:/l"]\n',
+    )
+    data, _ = load_compose(path)
+    volumes = data["services"]["svc"]["volumes"]
+    assert volumes[0] == "/srv/data:/d"
+    assert volumes[1].endswith("/local:/l")
+    assert volumes[1].startswith("/")  # the relative default was resolved too
+
+
+def test_a_reference_without_a_default_is_still_left_alone(base_dir: Path) -> None:
+    # Nothing to resolve to: the host path is genuinely not knowable from this
+    # file, and guessing one would invent a finding.
+    for source in ("${UNSET}", "${REQUIRED:?boom}", "$BARE"):
+        path = _write(
+            base_dir / source.replace("$", "").replace("{", "").replace("}", "")[:16],
+            f'services:\n  svc:\n    image: nginx\n    volumes: ["{source}:/s"]\n',
+        )
+        data, _ = load_compose(path)
+        assert data["services"]["svc"]["volumes"] == [f"{source}:/s"], source
+
+
+def test_the_separator_split_ignores_a_colon_inside_a_substitution() -> None:
+    # A plain partition(":") splits inside "${VAR:-...}", yielding a source of
+    # "${VAR" -- which silently skipped the commonest spelling while the "-"
+    # form worked.
+    from compose_lint.parser import _split_short_volume
+
+    assert _split_short_volume("${SOCK:-/var/run/docker.sock}:/s") == (
+        "${SOCK:-/var/run/docker.sock}",
+        ":",
+        "/s",
+    )
+    assert _split_short_volume("/etc:/host:ro") == ("/etc", ":", "/host:ro")
+    assert _split_short_volume("plainvol") == ("plainvol", "", "")
+
+
+def test_an_escaped_dollar_is_not_a_substitution(base_dir: Path) -> None:
+    # Compose writes a literal dollar as "$$" (issue #502), so this is a named
+    # volume called pa$w0rd_vol, not a reference.
+    path = _write(
+        base_dir,
+        'services:\n  svc:\n    image: nginx\n    volumes: ["pa$$w0rd_vol:/d"]\n',
+    )
+    data, _ = load_compose(path)
+    assert data["services"]["svc"]["volumes"] == ["pa$$w0rd_vol:/d"]

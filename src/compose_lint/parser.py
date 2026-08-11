@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 
 from compose_lint.config import KNOWN_TOP_LEVEL_KEYS
+from compose_lint.rules._interpolation import substitute_defaults
 
 
 class _LinesKey:
@@ -609,6 +610,17 @@ def _resolved_bind_source(source: str, base_dir: Path) -> str | None:
     Anything else — an absolute path, a named volume, an unresolved
     ``${VAR}`` — is returned as ``None`` and left exactly as written.
     """
+    # Resolve "${VAR:-default}" first, so the shapes below see the path the
+    # file actually ships. The two compose: "${DATA:-./data}" is a relative
+    # source, "${SOCK:-/var/run/docker.sock}" an absolute one.
+    substituted = substitute_defaults(source)
+    if substituted is None:
+        return None  # a reference with no default -- not knowable from this file
+    if substituted != source:
+        resolved = _resolved_bind_source(substituted, base_dir)
+        # An absolute default resolves to itself, which the recursion reports as
+        # None (nothing to rewrite); the substitution still has to be applied.
+        return resolved if resolved is not None else substituted
     if source.startswith("~"):
         if source == "~" or source.startswith("~/"):
             return os.path.normpath(os.path.expanduser(source))
@@ -616,6 +628,29 @@ def _resolved_bind_source(source: str, base_dir: Path) -> str | None:
     if source in {".", ".."} or source.startswith(("./", "../")):
         return os.path.normpath(os.path.join(base_dir, source))
     return None
+
+
+def _split_short_volume(volume: str) -> tuple[str, str, str]:
+    """Split ``source:target[:mode]`` at the separator, ignoring ``${...}``.
+
+    A plain ``partition(":")`` splits inside the substitution:
+    ``${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/s`` has its first colon in
+    the ``:-``, yielding a source of ``${DOCKER_SOCKET_PATH``. That silently
+    skipped every ``:-`` default -- the commonest spelling by far -- while the
+    ``-`` form worked, which is exactly the sort of near-miss that looks
+    correct in a test written around one example.
+
+    Returns the same 3-tuple shape as :meth:`str.partition`.
+    """
+    depth = 0
+    for i, ch in enumerate(volume):
+        if ch == "{" and i and volume[i - 1] == "$":
+            depth += 1
+        elif ch == "}" and depth:
+            depth -= 1
+        elif ch == ":" and not depth:
+            return volume[:i], ":", volume[i + 1 :]
+    return volume, "", ""
 
 
 def _resolve_bind_sources(data: dict[str, Any], base_dir: Path) -> None:
@@ -644,7 +679,7 @@ def _resolve_bind_sources(data: dict[str, Any], base_dir: Path) -> None:
             continue
         for i, volume in enumerate(volumes):
             if isinstance(volume, str):
-                source, sep, rest = volume.partition(":")
+                source, sep, rest = _split_short_volume(volume)
                 if not sep:
                     continue  # a lone name is an anonymous volume, not a bind
                 resolved = _resolved_bind_source(source, base_dir)
