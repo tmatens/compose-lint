@@ -44,6 +44,7 @@ reading here) in the terminal.
 | [CL-0027](rules/CL-0027.md) | Bounded-grant capability added |
 | [CL-0028](rules/CL-0028.md) | Host-reaching capability added |
 | [CL-0029](rules/CL-0029.md) | Host-availability capability added |
+| [CL-0030](rules/CL-0030.md) | Host-disclosure capability added |
 
 ## Where to start
 

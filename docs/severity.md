@@ -279,6 +279,7 @@ link. `tests/test_severity_matrix.py` enforces all four properties.
 | [CL-0027](rules/CL-0027.md) | A | Second flaw | Single container | — | MEDIUM | MEDIUM | — |
 | [CL-0028](rules/CL-0028.md) | A | Direct | Host | integrity-only | HIGH | HIGH | — |
 | [CL-0029](rules/CL-0029.md) | A | Direct | Host | availability-only | HIGH | HIGH | — |
+| [CL-0030](rules/CL-0030.md) | A | Direct | Host | read-only | HIGH | HIGH | — |
 
 ### Notes on individual derivations
 

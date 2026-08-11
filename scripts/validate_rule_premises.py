@@ -621,6 +621,35 @@ def _cl0029_lease() -> tuple[bool, str]:
     return ok, f"denied rc={rc_deny} msg={err!r}; with LEASE rc={rc_allow}"
 
 
+# --- CL-0030 premise check (docs/rules/CL-0030.md) --------------------------
+
+
+def _cl0030_syslog() -> tuple[bool, str]:
+    """SYSLOG reads the host kernel ring buffer, which is not namespaced.
+
+    Compares **line counts, never content**: the host's kernel log is not
+    something a CI log should carry, and the claim under test is reachability,
+    not what happens to be in the buffer.
+
+    Deliberately not conditioned on the host's ``kernel.dmesg_restrict``.
+    Docker's default seccomp profile admits ``syslog(2)`` only for
+    ``CAP_SYSLOG``, so the capless leg reads nothing even where that sysctl is
+    0 and any *host* user could read everything -- measured, not assumed.
+    """
+    _, capless = _run(["--cap-drop", "ALL"], ["sh", "-c", "dmesg 2>/dev/null | wc -l"])
+    _, granted = _run(
+        ["--cap-drop", "ALL", "--cap-add", "SYSLOG"],
+        ["sh", "-c", "dmesg 2>/dev/null | wc -l"],
+    )
+    try:
+        none_capless, some_granted = int(capless) == 0, int(granted) > 0
+    except ValueError:
+        return False, f"unparsable line counts: capless={capless!r} SYSLOG={granted!r}"
+    return (
+        none_capless and some_granted
+    ), f"host kernel log lines: capless={capless}, with SYSLOG={granted}"
+
+
 # --- CL-0007 symptom-table mappings (docs/rules/CL-0007.md) -----------------
 #
 # Same contract as the CL-0006 mapping checks (ADR-016 amendment): each row of
@@ -1129,6 +1158,7 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool | None, str]]]] = [
     ("CL-0006", "map: mlockall -> IPC_LOCK", _t_ipc_lock),
     ("CL-0029", "SCHED_FIFO on host CPUs needs SYS_NICE", _cl0029_sys_nice),
     ("CL-0029", "write lease on an unowned file needs LEASE", _cl0029_lease),
+    ("CL-0030", "host kernel ring buffer needs SYSLOG", _cl0030_syslog),
     # CL-0007 symptom-table mappings — one per row of the rule doc's table.
     ("CL-0007", "map: touch EROFS -> tmpfs", _t7_touch_tmpfs),
     ("CL-0007", "map: mkdir EROFS -> tmpfs", _t7_mkdir_tmpfs),

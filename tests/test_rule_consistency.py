@@ -50,7 +50,7 @@ VARIABLE_SEVERITY_RULES: dict[str, set[Severity]] = {}
 INLINE_TRIGGERS: tuple[str, ...] = (
     "services:\n  tmpfs_exec:\n    image: nginx:1.27\n    tmpfs:\n      - /tmp:exec\n",
     "services:\n  host_availability_caps:\n    image: nginx:1.27\n    cap_add:\n"
-    "      - SYS_NICE\n      - IPC_LOCK\n      - LEASE\n",
+    "      - SYS_NICE\n      - IPC_LOCK\n      - LEASE\n      - SYSLOG\n",
 )
 
 _RULES: list[BaseRule] = [cls() for cls in get_registered_rules()]

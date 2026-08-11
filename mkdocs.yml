@@ -66,6 +66,7 @@ nav:
       - "CL-0027 Bounded-grant capabilities": rules/CL-0027.md
       - "CL-0028 Host-reaching capabilities": rules/CL-0028.md
       - "CL-0029 Host-availability capabilities": rules/CL-0029.md
+      - "CL-0030 Host-disclosure capability": rules/CL-0030.md
   - Examples:
       - "Real-world examples": examples/index.md
       - "1 — Delete the service": examples/portainer-removed/index.md

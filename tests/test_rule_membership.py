@@ -49,6 +49,9 @@ from compose_lint.rules.CL0028_host_reach_cap_add import HOST_REACH_CAPS
 from compose_lint.rules.CL0029_host_availability_cap_add import (
     HOST_AVAILABILITY_CAPS,
 )
+from compose_lint.rules.CL0030_host_disclosure_cap_add import (
+    HOST_DISCLOSURE_CAPS,
+)
 
 
 class TestCapabilityTiers:
@@ -573,31 +576,20 @@ _EXCLUDED_WITH_REASON: dict[str, str] = {
     ),
 }
 
-# Not granted by default, not graded, and no reason recorded anywhere. This is
-# a hole, and it is enumerated rather than described so that it shrinks
-# visibly: moving one of these into a tier, or into the excluded list with a
-# reason, is a one-line edit here. It is NOT an assertion that these are safe.
+# Not granted by default, not graded, and no reason recorded anywhere.
 #
-# These four are the opposite of safe: each was measured reaching the host with
-# no other key in the file, so each is owed a rule rather than an exclusion.
-# They are held here, visible, until those rules land.
+# **It is empty, and that is the point.** This set was the hole §47.4 of the
+# severity review named: fifteen capabilities that passed every disjointness
+# test by being in none of the tiers. Eleven now carry a measured reason in
+# _EXCLUDED_WITH_REASON; the other four were measured reaching the host with no
+# other key in the file and were owed rules rather than exclusions, which is
+# what CL-0029 (SYS_NICE, IPC_LOCK, LEASE) and CL-0030 (SYSLOG) are.
 #
-#   SYSLOG    read 1,967 lines of the host kernel ring buffer; Docker's own
-#             seccomp profile admits syslog(2) only for CAP_SYSLOG, so the
-#             reach does not depend on the host's kernel.dmesg_restrict
-#   SYS_NICE  took SCHED_FIFO priority 50 on host CPUs; EPERM without it
-#   IPC_LOCK  locked 128 MiB past an 8 MiB RLIMIT_MEMLOCK. A cgroup memory
-#             limit bounds it, but that is a key the file has to *add* -- the
-#             default is unbounded, so the rule prices the default
-#   LEASE     took a write lease on a host file through a bind mount and
-#             stalled a host open() for 21.9s against 0.00s unleased. Works
-#             through a *read-only* bind, and on any path, so neither CL-0013
-#             nor CL-0025 covers the configuration that enables it
-_UNGRADED_NO_RECORDED_REASON: frozenset[str] = frozenset(
-    {
-        "SYSLOG",
-    }
-)
+# Keep it empty. A capability landing here is not a neutral "to be decided" --
+# it is a capability the tool has no opinion about, which is the state this set
+# exists to make visible. Grading it, or excluding it with a reason someone can
+# check, is a one-line edit either way.
+_UNGRADED_NO_RECORDED_REASON: frozenset[str] = frozenset()
 
 
 class TestCapabilityCompleteness:
@@ -617,6 +609,7 @@ class TestCapabilityCompleteness:
                 | set(STRONG_CAPS)
                 | set(HOST_REACH_CAPS)
                 | set(HOST_AVAILABILITY_CAPS)
+                | set(HOST_DISCLOSURE_CAPS)
                 | set(LESSER_CAPS)
             )
             - {"ALL"}  # a keyword, not a capability

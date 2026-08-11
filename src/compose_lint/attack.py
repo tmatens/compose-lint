@@ -135,6 +135,7 @@ RULE_TECHNIQUES: dict[str, tuple[Technique, ...]] = {
     # PERFMON samples every process on the host, hence T1003.
     "CL-0028": (T1070, T1499, T1003),
     "CL-0029": (T1499, T1496),
+    "CL-0030": (T1613,),
 }
 
 #: Techniques a rule *enables* rather than mitigates, kept out of the mapping
