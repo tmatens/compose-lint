@@ -21,7 +21,7 @@ Three more stacks, each carrying a lesson the ladder doesn't.
 
 | Example | The lesson |
 |---|---|
-| [Two rules in tension](read-only-in-tension/index.md) | Satisfying one rule means violating another. Buying a read-only root by accepting a CL-0022 — a medium traded for a low. |
+| [Two rules in tension](read-only-in-tension/index.md) | Satisfying one rule means violating another. Buying a read-only root by accepting a CL-0022 — one low traded for another, so the output says nothing about which posture is better. |
 | [A true premise and a false conclusion](read-only-multi-service/index.md) | A four-service stack whose waiver said read-only was impossible because the services write to volumes. True, and it doesn't follow: volumes stay writable. |
 | [The clean one](clean-edge-proxy/index.md) | The public entry point, with one waiver for the whole stack and a forward-auth service that holds *no capabilities at all*. |
 
@@ -30,20 +30,23 @@ Three more stacks, each carrying a lesson the ladder doesn't.
 Every example ships the Compose file and the `.compose-lint.yml` that goes with it, so you can reproduce these numbers:
 
 ```
-portainer-removed            exit=1   2 high            1 suppressed
-logging-without-the-socket   exit=0   0 issues          1 suppressed
-netdata-socket-proxy         exit=0   0 issues         14 suppressed
-ci-runner-suppression        exit=0   4 medium          6 suppressed
-read-only-in-tension         exit=0   0 issues          2 suppressed
-read-only-multi-service      exit=0   0 issues          3 suppressed
-clean-edge-proxy             exit=0   0 issues          2 suppressed
+portainer-removed                                   exit=0   1 medium                1 suppressed
+logging-without-the-socket                          exit=0   3 medium                1 suppressed
+netdata-socket-proxy  docker-compose.yml            exit=1   1 critical, 2 medium   10 suppressed
+netdata-socket-proxy  docker-compose.hardened.yml   exit=0   3 medium               11 suppressed
+ci-runner-suppression                               exit=0   4 medium, 2 low         3 suppressed
+read-only-in-tension                                exit=0   0 issues                1 suppressed
+read-only-multi-service                             exit=0   3 medium                2 suppressed
+clean-edge-proxy                                    exit=0   2 medium                2 suppressed
 ```
 
-Two of these deserve comment, because they are the opposite of what a "findings went down" summary would suggest.
+Most of those mediums are the same finding. [CL-0026](../rules/CL-0026.md) — no memory or CPU limit — landed in 0.16.0 and fires on nearly every service here, because these stacks were deployed before the rule existed and nobody has sized the limits yet. They are left open rather than waived, which is the state [rung 4](ci-runner-suppression/index.md) argues for: a finding you have not decided about is more truthful open than behind a waiver that says "pending".
 
-**The socket-proxy example did not reduce its finding count.** Before hardening it reported 14 findings; after hardening it reports 14 findings. What changed is that the critical one moved from a container with host networking, the host PID namespace and an unconfined AppArmor profile, onto a scratch-image container that is read-only, capability-less and answers `403` to every API path it does not need. The number is identical and the blast radius is not. Counting findings is a bad proxy for security, and this is the clearest example of it we have.
+Two rows deserve comment, because they are the opposite of what a "findings went down" summary would suggest.
 
-**The CI-runner example still has four open medium findings.** They are not suppressed, on purpose — see [that page](ci-runner-suppression/index.md). Leaving a finding open is a valid state, and often a more honest one than a waiver that says "pending investigation" and then does not expire.
+**The socket-proxy example increased its finding count.** Before hardening it reported 13 findings; after hardening, 14. The critical one moved from a container with host networking, the host PID namespace and an unconfined AppArmor profile onto a scratch-image container that is read-only, capability-less and answers `403` to every API path it does not need — and the proxy, being a service, brought its own resource-limit finding with it. The number went the wrong way and the blast radius collapsed. Counting findings is a bad proxy for security, and this is the clearest example of it we have.
+
+**The CI-runner example has six findings open on purpose.** They are not suppressed — see [that page](ci-runner-suppression/index.md). Leaving a finding open is a valid state, and often a more honest one than a waiver that says "pending investigation" and then does not expire.
 
 ## How suppressions are written here
 

@@ -1,6 +1,6 @@
 # Rung 1 — Delete the service
 
-**Verified against:** compose-lint 0.15.1, 2026-08-08
+**Verified against:** compose-lint 0.16.0, 2026-08-11
 
 The cheapest fix for a critical finding is the one nobody proposes: stop running the thing.
 
@@ -9,20 +9,20 @@ This example is a container-management UI that mounted the Docker socket. It was
 ## What the linter says
 
 ```
-  service: portainer  (line 24)
+  service: portainer  (line 11)
     line  severity    rule     message
       24  CRITICAL    CL-0001  Docker runtime socket mounted via
                                '/var/run/docker.sock:/var/run/docker.sock'. This gives the
                                container full control over the Docker runtime — equivalent
                                to root on the host.
-      24  HIGH        CL-0013  Service mounts sensitive host path '/var/run/docker.sock'
-                               (under /var/run). This exposes host system files to the
-                               container.
-      26  HIGH        CL-0013  Service mounts sensitive host path
-                               '/home/deploy/.local/bin/curl-static' (under /home).
+      11  MEDIUM      CL-0026  Service declares no memory limit and no CPU limit. Docker
+                               imposes neither by default, so the container can consume
+                               the host's memory or CPU until other workloads are starved.
 ```
 
-The third finding is worth a moment. A static `curl` binary was bind-mounted from the host purely so the healthcheck had something to run, because the image ships no shell. It is unrelated to the socket, and it is the kind of thing that accumulates around a service you are keeping alive.
+One finding, one rung. The socket line is the whole example, and CL-0026 is the ambient one every service in this library reports until someone sizes it.
+
+Two findings this file used to report are worth naming, because both left in 0.16.0 and neither left because the file changed. A second HIGH used to fire on the socket path itself, from the sensitive-host-path rule — the same mount counted twice, once as the daemon API and once as a file under `/var/run`. That path is [CL-0001](../../rules/CL-0001.md)'s alone now. And a static `curl` binary is bind-mounted at line 26 from `/home/deploy/.local/bin`, put there so the healthcheck had something to run against an image that ships no shell; that used to report as a sensitive home-directory mount. [CL-0013](../../rules/CL-0013.md) now matches the home tree by depth — `/home`, a user's home directory, and the credential directories below it — so an application's own path further down is no longer flagged. It is still the kind of thing that accumulates around a service you are keeping alive; it is no longer something the linter will point at.
 
 ## The suppression that was there
 

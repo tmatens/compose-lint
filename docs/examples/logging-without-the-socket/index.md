@@ -1,6 +1,6 @@
 # Rung 2 — Re-architect so the socket isn't needed
 
-**Verified against:** compose-lint 0.15.1, 2026-08-08
+**Verified against:** compose-lint 0.16.0, 2026-08-11
 
 The management UI in [rung 1](../portainer-removed/index.md) was mounting the Docker socket, but almost all of what it was used for was reading container logs and checking whether services were up. That is a data problem, not a control problem — and the data is available without the Docker API.
 
@@ -37,11 +37,13 @@ No capability, no root, no socket — to do the job that a moment ago justified 
 ## What the linter says
 
 ```
-docker-compose.yml: 0 issues  ·  1 suppressed (not counted)
-✓ PASS  ·  threshold: high
+docker-compose.yml: 3 medium  ·  1 suppressed (not counted)
+✓ PASS  ·  threshold: high  ·  below: 3 medium
 ```
 
-One finding, on the collector, for its two host mounts:
+Nothing at or above the gate. The three mediums are [CL-0026](../../rules/CL-0026.md), one per service, none of which has a memory or CPU limit — the same finding this library reports on almost every stack in it, and a fair one: an unbounded collector on a busy host is a denial of service waiting for a log storm.
+
+One suppression, on the collector, for a host mount:
 
 ```yaml
 rules:
@@ -53,6 +55,8 @@ rules:
         and /etc/machine-id is the single file journal entries need in order to
         resolve which host they came from. No writable host path is exposed.
 ```
+
+The reason names both host mounts, and as of 0.16.0 only one of them still reports: `/etc/machine-id` is under `/etc`, and a read-only mount of a CL-0025 path is [CL-0013](../../rules/CL-0013.md) at HIGH. `/var/log/journal` is not on the sensitive-path list at all. The waiver is left as written rather than narrowed to the one path, because it documents a decision about the collector's whole mount set, and a reason that only survives as long as the rule's path list does is a worse artifact than one that says what was actually decided.
 
 Note what this suppression does *not* have to say. There is no residual risk paragraph, because there is no residual risk to state: the mount is read-only, it contains log data, and a compromise of this container yields the logs it was already reading. Compare that with the suppression in [rung 4](../ci-runner-suppression/index.md), which has to be explicit that the risk is accepted rather than mitigated. The difference in how those two reasons read is a decent smell test for which rung you are actually on.
 

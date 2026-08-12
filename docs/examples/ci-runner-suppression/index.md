@@ -1,6 +1,6 @@
 # Rung 4 — Suppress it, with the risk written down
 
-**Verified against:** compose-lint 0.15.1, 2026-08-08
+**Verified against:** compose-lint 0.16.0, 2026-08-11
 
 A CI runner starts a container per job. Starting containers means calling `POST /containers/create` and `POST /containers/<id>/start`. There is no filtered subset of the Docker API that permits creating containers while withholding host compromise — the two are the same capability. `POST /containers/create` with a bind mount of `/` is the whole exploit, and it is also just how the runner does its job.
 
@@ -45,17 +45,36 @@ Worth flagging as dependent rather than justifying separately. `user: "0:${DOCKE
 
 The same goes for `no-new-privileges: true` on that service: it is set, it is not useless, and it does not contain a process that can ask the daemon to start a privileged container on its behalf. Controls that do not apply to the actual threat are worth being explicit about, or someone will read the file and conclude the runner is contained.
 
-## Four findings are left open on purpose
+## Two of these waivers no longer cover anything
+
+The `.compose-lint.yml` here is reproduced as deployed, and 0.16.0 retired a third of it without saying so. The block not quoted yet:
+
+```yaml
+  CL-0013:
+    exclude_services:
+      forge-runner: >-
+        The /var/run/docker.sock mount reported by the host-path rule is the
+        same finding as CL-0001 above.
+      forge: >-
+        /etc/timezone and /etc/localtime are read-only single files, mounted so
+        that timestamps in the UI and in commit metadata match the host.
+```
+
+The first entry was an observation about double-reporting; it is now the rule. A control-socket mount is [CL-0001](../../rules/CL-0001.md)'s alone, so the entry waives a finding that no longer exists. The second is dead for a different reason: `/etc/timezone` and `/etc/localtime` are excluded from [CL-0013](../../rules/CL-0013.md) outright.
+
+Neither is an error and nothing warns about either, because the rule ids they name are still live — a waiver only warns when its rule id is gone. This is the upgrade hazard worth internalising: **a waiver can keep parsing long after it stops covering anything**, and the only way to find out is to diff your findings across the upgrade. The reason to care is not the dead entry itself; it is that the same silence hides the opposite case, where a finding moved to a rule your config does not name and came back unwaived.
+
+## Findings left open on purpose
 
 ```
-docker-compose.yml: 4 medium  ·  6 suppressed (not counted)
+docker-compose.yml: 4 medium, 2 low  ·  3 suppressed (not counted)
 ```
 
-The open ones are CL-0006 (`cap_drop`) and CL-0007 (`read_only`), on both services. They are not suppressed, and the reason is written in the config:
+The open ones are CL-0006 (`cap_drop`) and CL-0007 (`read_only`) on both services, plus [CL-0026](../../rules/CL-0026.md), which every service in this library reports. `read_only` is a LOW rather than a MEDIUM as of 0.16.0. CL-0006 and CL-0007 are not suppressed, and the reason is written in the config:
 
 > The honest reason is that neither fix has been tested against the forge's first-boot behaviour or its backup path, and a suppression saying "pending live-test" would be the same expiry-free waiver the portainer example in this ladder exists to criticise. An open finding that is visible in every CI run is a more accurate record of the state than a waiver that says the same thing while turning the output green.
 
-This is the part most easily lost: **not every finding needs a suppression.** A waiver is a claim that you have considered the finding and decided. If you have not decided yet, an open medium finding is the truthful output, and it costs nothing as long as the failure threshold is set where you want it — here the gate is `--fail-on high`, so these four are visible without blocking.
+This is the part most easily lost: **not every finding needs a suppression.** A waiver is a claim that you have considered the finding and decided. If you have not decided yet, an open medium finding is the truthful output, and it costs nothing as long as the failure threshold is set where you want it — here the gate is `--fail-on high`, so all six are visible without blocking.
 
 The failure mode a suppression file drifts into is one entry per finding, each individually defensible, collectively meaning the tool reports nothing. Leaving things open is the pressure valve against that.
 

@@ -1,6 +1,6 @@
 # Two rules in tension — buying `read_only` with a CL-0022
 
-**Verified against:** compose-lint 0.15.1, 2026-08-08
+**Verified against:** compose-lint 0.16.0, 2026-08-11
 
 Most hardening advice reads as though the rules point the same direction. Sometimes satisfying one means violating another, and the useful skill is deciding which finding you would rather have.
 
@@ -51,15 +51,15 @@ A sound observation, a correct mechanism, and a conclusion that reached one step
 `:exec` re-enables execution on a writable in-memory filesystem. That is a genuine weakening and CL-0022 exists to flag it. The finding does not go away — it is traded:
 
 ```
-before:  CL-0007  medium   writable root filesystem
+before:  CL-0007  low      writable root filesystem
 after:   CL-0022  low      /run permits execution
 ```
 
-Both files also carry an unrelated CL-0011 for the capability add-backs, unchanged by any of this.
+The trade is worth taking. Before, the *entire* root filesystem was writable, and a tmpfs at `/run` was writable and executable anyway once the container booted. After, exactly one mount is writable-and-executable and everything else is read-only. The attack surface strictly shrinks.
 
-The trade is worth taking. Before, the *entire* root filesystem was writable, and a tmpfs at `/run` was writable and executable anyway once the container booted. After, exactly one mount is writable-and-executable and everything else is read-only. The attack surface strictly shrinks, and this time the linter agrees — a medium becomes a low.
+**The output does not shrink with it.** One low leaves and one low arrives, so a reader comparing severities across the change sees no movement at all, and a reader comparing counts sees none either. That is not the linter failing to notice — it is the linter declining to price two different weaknesses against each other, which is not something a static rule can do without knowing what writes to `/run`. The decision here was made by reading the posture, and the output is the same either way. Elsewhere in this library the number moves the *wrong* way against a real improvement ([that one](../read-only-multi-service/index.md#when-the-number-and-the-posture-disagree)); this is the quieter version of the same warning.
 
-That agreement is not guaranteed. Hardening can move the output the wrong way; there is [an example of that](../read-only-multi-service/index.md#when-the-number-and-the-posture-disagree) elsewhere in this library. Here the number and the posture move together, which is the easy case.
+Neither file reports anything for the capability add-backs. `DAC_OVERRIDE` and `NET_RAW` are both in Docker's default set, so adding them back after `cap_drop: ALL` returns the container to the default posture rather than exceeding it — and a rule that flagged them would be scoring the declaration rather than the runtime state. `DAC_OVERRIDE` was flagged here until 0.16.0, which is why an earlier version of this page named a capability finding that no longer exists. The comments in the file explaining why each one is needed are still worth keeping: they are the record of a drop-test, and the next person to prune that list needs them whether or not a rule fires.
 
 ## Scoping the exception
 

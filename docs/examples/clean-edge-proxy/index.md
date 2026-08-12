@@ -1,18 +1,20 @@
 # The clean one
 
-**Verified against:** compose-lint 0.15.1, 2026-08-08
+**Verified against:** compose-lint 0.16.0, 2026-08-11
 
 Every other example in this library is a story about a finding. This one is here because a library made only of those teaches the wrong lesson — that real infrastructure inevitably needs a pile of waivers, and that a suppression file with six entries is just how it goes.
 
 It isn't. This is the public entry point for every service in the deployment, and its entire suppression file covers **one rule on one service**:
 
 ```
-docker-compose.yml: 0 issues  ·  2 suppressed (not counted)
+docker-compose.yml: 2 medium  ·  2 suppressed (not counted)
 ```
 
-The two suppressed findings are ports 80 and 443 on the proxy. The forward-auth service alongside it produces **no findings at all** and appears nowhere in the config.
+The two suppressed findings are ports 80 and 443 on the proxy. The two mediums are [CL-0026](../../rules/CL-0026.md) — neither service sets a memory or CPU limit — and they are the one honest gap on this page: the rule landed in 0.16.0, this stack predates it, and nobody has sized the limits yet. Left open rather than waived, for the reason [rung 4](../ci-runner-suppression/index.md) gives: an undecided finding is more truthful open than behind a waiver that says "pending".
 
-## What a zero-finding service looks like
+Apart from that, the forward-auth service alongside the proxy appears nowhere in the config and needs nothing waived.
+
+## What a service with nothing to waive looks like
 
 ```yaml
   auth:

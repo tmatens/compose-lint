@@ -1,6 +1,6 @@
 # Rung 3 — Constrain it when the need is real
 
-**Verified against:** compose-lint 0.15.1, 2026-08-08
+**Verified against:** compose-lint 0.16.0, 2026-08-11
 
 A host-metrics agent needs the Docker API. Not log data, not "container state" in the abstract — it calls `/containers/json` to enumerate containers and `/containers/<id>/json` to map a cgroup back to a container name. There is no journal file that answers those, so [rung 2](../logging-without-the-socket/index.md) does not apply.
 
@@ -70,13 +70,13 @@ BLOCKED methods:
 
 The proxy logs each rejection, so attempts show up in the same log pipeline as everything else rather than failing silently.
 
-## The finding count did not go down
+## The finding count went up
 
-Before: 14 findings. After: 14 findings.
+Before: 13 findings. After: 14.
 
-The critical one moved from the metrics agent — host network, host PID namespace, unconfined AppArmor, several sensitive host mounts — to a scratch-image container that is read-only, has no capabilities, runs as `nobody` and answers `403` to everything it does not need. Same number, different blast radius.
+The critical one moved from the metrics agent — host network, host PID namespace, unconfined AppArmor, several sensitive host mounts — to a scratch-image container that is read-only, has no capabilities, runs as `nobody` and answers `403` to everything it does not need. Nothing else about the agent changed, so its twelve other findings are still there, and the fourteenth is new: the proxy is a service, and a service with no memory or CPU limit reports [CL-0026](../../rules/CL-0026.md) like any other.
 
-If you are tracking a finding count as a security metric, this refactor is invisible to you. That is a problem with the metric.
+So the refactor that collapsed the blast radius made the number worse. If you are tracking a finding count as a security metric, this looks like a regression. That is a problem with the metric, and it is worth seeing in the direction that stings — an architecture that introduces a container to *contain* something will usually cost you findings on that container.
 
 ## Capabilities, and a failure the healthcheck did not catch
 
@@ -243,6 +243,12 @@ A global `enabled: false` would have been shorter and would have quietly re-perm
 
 The remaining suppressions cover what a host-metrics agent inherently needs — host networking for interface metrics, host PID for process attribution, read-only `/proc`, `/sys`, `/etc/passwd` and `/etc/group` to attribute metrics to real users, and an unconfined AppArmor profile for that access. Each is scoped to the agent, so the proxy is still held to the default standard, which it meets.
 
+### What 0.16.0 did to this file
+
+The config is reproduced as deployed, and the capability split moved out from under two of its entries. The `CL-0011` waiver covered `DAC_OVERRIDE` and `SYS_PTRACE`; `DAC_OVERRIDE` is a Docker default and is no longer flagged at all, and `SYS_PTRACE` is [CL-0027](../../rules/CL-0027.md) now. So the waiver still parses, still names a live rule, and covers neither capability — while the `SYS_PTRACE` finding it was written for is back in the output as an unwaived MEDIUM. A `CL-0013` entry on the proxy is dead for the same reason as in [rung 4](../ci-runner-suppression/index.md#two-of-these-waivers-no-longer-cover-anything): the socket path belongs to CL-0001 alone.
+
+This is the more dangerous half of that hazard. A waiver that covers nothing is untidy; a finding that reappears *unwaived* is a re-opened decision nobody was told about, and it looks exactly like a new problem to whoever sees it next. The reason text here is still true — the drop-test above is what established it — so migrating it is a rename, not a re-derivation. Finding out that it needed one took diffing the findings across the upgrade.
+
 ## Scope note
 
-Files are sanitized: hostnames, paths and the docker group id are replaced. The finding set of the sanitized file was compared against the deployed original and is identical — 14 findings, same rules, same services. Capability and mount claims were verified against the running containers.
+Files are sanitized: hostnames, paths and the docker group id are replaced. The finding set of the sanitized file was compared against the deployed original when it landed and was identical — same count, same rules, same services. Capability and mount claims were verified against the running containers.

@@ -1,6 +1,6 @@
 # A true premise and a false conclusion
 
-**Verified against:** compose-lint 0.15.2 plus the CL-0011 fix from issue #492, 2026-08-09
+**Verified against:** compose-lint 0.16.0, 2026-08-11
 
 A four-service stack — application server, database, cache, machine-learning worker — where every service runs with a read-only root filesystem. For a long time its config said that was impossible:
 
@@ -75,15 +75,15 @@ The entrypoint starts as root, and root without `DAC_OVERRIDE` cannot traverse a
 
 The compose file records that next to the `cap_add`, so the next person to re-derive it does not repeat the shortcut.
 
-## A warning this page used to carry
+## When the number and the posture disagree
 
 Until recently this section said that dropping capabilities could make the linter's output *worse*, and it was right.
 
 A service with no `cap_drop` holds roughly fourteen default capabilities, several of them dangerous, and reports a single CL-0006 **medium**. Converting it to `cap_drop: ALL` plus explicit add-backs turned `DAC_OVERRIDE` — one of those same fourteen — into a CL-0011 **high**. A strictly smaller set of privileges, reported more severely, because the implicit ones were never visible and the explicit one was.
 
-That was a defect in the linter rather than a fact about capabilities, and it is fixed (issue #492). CL-0011 no longer flags Docker's default capabilities, on the same reasoning that already excluded `MKNOD` and `SYS_CHROOT`: the container holds them either way, so flagging them scored the declaration rather than the runtime state. The waiver this stack needed for `DAC_OVERRIDE` is gone from its config as a result — nothing about the deployment changed.
+That was a defect in the linter rather than a fact about capabilities, and it is fixed (issue #492, shipped in 0.16.0). No capability rule flags Docker's default set any more, on the same reasoning that already excluded `MKNOD` and `SYS_CHROOT`: the container holds them either way, so flagging them scored the declaration rather than the runtime state. The waiver this stack needed for `DAC_OVERRIDE` is gone from its config as a result — nothing about the deployment changed.
 
-Adding back a capability that is **not** a default — `SYS_ADMIN`, `NET_ADMIN`, `SYS_MODULE` — is a genuine escalation above Docker's baseline and still reports HIGH. That is a different situation and the severity is correct there.
+Adding back a capability that is **not** a default is a genuine escalation above Docker's baseline, and 0.16.0 stopped pricing all of those the same. `cap_add` is four rules now, split by what the capability actually grants: `SYS_ADMIN` and `SYS_MODULE` are [CL-0024](../../rules/CL-0024.md) at CRITICAL, because each is a path to the host on its own; `NET_ADMIN` stays [CL-0011](../../rules/CL-0011.md) at HIGH; `SYS_PTRACE` is [CL-0027](../../rules/CL-0027.md) at MEDIUM. The severity is a statement about the specific capability, not about the act of adding one.
 
 The habit is worth keeping even though the bug is gone: read a suppression file for what it *permits*, not for how many entries it has.
 
