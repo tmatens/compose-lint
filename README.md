@@ -431,7 +431,7 @@ jobs:
         run: |
           apt-get update -qq
           apt-get install -yqq --no-install-recommends python3-pip
-          pip3 install --break-system-packages --no-cache-dir compose-lint==0.16.0
+          pip3 install --break-system-packages --no-cache-dir compose-lint==0.17.0
       - name: Run compose-lint
         run: compose-lint --fail-on high
 ```
@@ -450,7 +450,7 @@ compose-lint --format sarif docker-compose.yml > results.sarif
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/tmatens/compose-lint
-    rev: v0.16.0
+    rev: v0.17.0
     hooks:
       - id: compose-lint
 ```
