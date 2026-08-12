@@ -52,7 +52,7 @@ dependencies = [
 # "Development dependencies" — and Dependabot's weekly pass bumps
 # them.
 lint = [
-    "ruff==0.16.1",
+    "ruff==0.16.2",
 ]
 security = [
     "bandit==1.9.4",
@@ -90,13 +90,13 @@ docs = [
 dev = [
     # Self-reference so the ruff pin lives only in [lint]; no drift.
     "compose-lint[lint]",
-    "check-jsonschema==0.37.4",
+    "check-jsonschema==0.38.0",
     "mutmut==3.7.0",
     "mypy==2.3.0",
     # Drives the `precommit-smoke` job: `pre-commit try-repo` runs
     # .pre-commit-hooks.yaml from the working tree, so a broken `entry` or
     # `language` is caught here rather than by a user (issue #465).
-    "pre-commit==4.6.1",
+    "pre-commit==4.6.2",
     "pytest==9.1.1",
     # Statement coverage gate (>=80%) is enforced by the `coverage` CI job.
     # Threshold lives in [tool.coverage.report] below.
