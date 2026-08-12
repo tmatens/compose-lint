@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
+from compose_lint.rules._interpolation import ships_no_literal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -85,11 +86,16 @@ def _is_set(value: Any) -> bool:
         try:
             return float(number) > 0
         except ValueError:
-            # A bare interpolation such as "${MEM_LIMIT}". Treat it as a limit:
-            # the value is unknowable from the file, and assuming the worst
-            # would fire on every parameterised compose file. Anything else is
-            # not a quantity Docker accepts, so it bounds nothing.
-            return "$" in text
+            # A *defaulted* interpolation never reaches here: the parser
+            # resolved it to the value the file ships, so "${MEM:-0}m" arrives
+            # as "0m" and parses as unbounded. A bare "${MEM_LIMIT}" is
+            # genuinely unknowable from this file and keeps its exemption —
+            # assuming the worst would fire on every parameterised stack.
+            # Anything else is not a quantity Docker accepts and so bounds
+            # nothing; the old "$" in text answer credited any unparseable
+            # dollar-bearing string as a limit, which is what let "${MEM:-0}m"
+            # through.
+            return ships_no_literal(text)
     return True
 
 

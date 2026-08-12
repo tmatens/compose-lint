@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
-from compose_lint.rules._interpolation import contains_var_ref
+from compose_lint.rules._interpolation import ships_no_literal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -85,10 +85,14 @@ def _is_literal_credential_value(raw: Any) -> bool:
     - Booleans (a YAML `yes`/`no`/`true`/`false` toggle, not a credential)
     - Non-string, non-numeric, and empty-string values (env unset)
     - Boolean / numeric toggles like "yes", "true", "1"
-    - Any value containing a ${VAR} substitution (parameterized); the
-      credential is sourced from process env, which is the documented
-      secure-ish pattern. Compose's escaped literal dollar (`$$`) is not
-      a substitution, so `pa$$w0rd` still counts as literal (issue #502).
+    - Any value Compose ships as empty — one made only of references with
+      no default (`${PW}`, `"${PW}"`). The credential is sourced from process
+      env, the documented secure-ish pattern. A value that merely *contains* a
+      reference is not skipped: `hunter2$X` ships the literal `hunter2`, and a
+      *defaulted* reference ships its default, so `${PW:-hunter2}` is a
+      hardcoded credential (the parser resolves it before this rule runs).
+      Compose's escaped literal dollar (`$$`) is not a substitution, so
+      `pa$$w0rd` still counts as literal (issue #502).
 
     An unquoted numeric value (`DB_PASSWORD: 12345678`) decodes to a Python
     int/float; it is coerced to its string form so a numeric literal secret is
@@ -105,7 +109,7 @@ def _is_literal_credential_value(raw: Any) -> bool:
         return False
     if raw.strip().lower() in _FLAG_VALUES:
         return False
-    return not contains_var_ref(raw)
+    return not ships_no_literal(raw)
 
 
 def _iter_env(env_block: Any) -> Iterator[tuple[str, Any, int | None]]:

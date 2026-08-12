@@ -1,25 +1,27 @@
-"""Shared classification of Compose variable substitution in env values."""
+"""Shared classification of Compose variable substitution.
+
+:func:`substitute_defaults` is applied by the parser to every string leaf in the
+document (``parser._substitute_interpolation_defaults``), so a rule compares
+against the value Compose actually ships rather than the ``${VAR:-...}`` source
+text. Rules therefore do **not** re-implement interpolation handling; the one
+question left for them is whether a value that *survived* normalization ships
+anything literal at all, which :func:`ships_no_literal` answers.
+"""
 
 from __future__ import annotations
 
 import re
 
+# Upper bound on a scalar these regexes will scan. Both the pattern below and
+# the two in `substitute_defaults` are quadratic on pathological input (measured
+# 4x per doubling: 80 KB -> 0.49 s, 160 KB -> 1.94 s), and the parser now runs
+# substitution over *every* string in the document rather than bind sources
+# alone. A Compose scalar this long carries no classification signal worth that
+# cost, so beyond the cap the conservative answer is returned without scanning.
+_MAX_SCAN_LEN = 8192
+
 # An active variable substitution ("${VAR}", "${VAR:-default}", "$VAR").
 _VAR_REF_RE = re.compile(r"\$\{[^}]+\}|\$[A-Za-z_][A-Za-z0-9_]*")
-
-
-def contains_var_ref(value: str) -> bool:
-    """Return True if ``value`` contains a ``$VAR``/``${VAR}`` substitution.
-
-    Compose writes a literal dollar as ``$$`` and consumes those escapes
-    left-to-right before interpolation, so ``pa$$w0rd`` is a literal
-    credential, not a reference to ``$w0rd`` (issue #502). ``str.replace``
-    removes non-overlapping ``$$`` pairs in the same left-to-right order,
-    so exactly the dollars Compose would treat as syntax remain to be
-    tested against the reference pattern.
-    """
-    return _VAR_REF_RE.search(value.replace("$$", "")) is not None
-
 
 # "${VAR:-default}" and "${VAR-default}". Compose distinguishes them -- ":-"
 # substitutes when unset *or empty*, "-" only when unset -- but both yield the
@@ -33,6 +35,39 @@ _VAR_DEFAULT_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*):?-([^}]*)\}")
 _VAR_NO_DEFAULT_RE = re.compile(
     r"\$\{[A-Za-z_][A-Za-z0-9_]*(:?[?+][^}]*)?\}|\$[A-Za-z_][A-Za-z0-9_]*"
 )
+
+
+def ships_no_literal(value: str) -> bool:
+    """Whether Compose ships ``value`` as empty, leaving nothing to classify.
+
+    This is the exemption a credential rule should grant, and it is stated as
+    what Compose *does* rather than as a shape the text happens to have. An
+    unset reference with no default substitutes to nothing — ``${PW}`` ships
+    ``POSTGRES_PASSWORD: ""`` (verified with ``docker compose config``) — so a
+    value made only of such references carries no secret.
+
+    Asking instead whether a value merely *contains* a reference exempted
+    ``hunter2$X``, which ships the literal ``hunter2``: one appended character
+    silenced the rule. Asking whether it is *exactly* one reference is the
+    opposite error — it flagged ``- SECRET_KEY="${PLANKA_SECRET_KEY}"``, where
+    the quotes are literal characters of a list-form entry and the secret is
+    properly externalized (8 such values across the corpus). Resolving to empty
+    is the test that gets both right.
+
+    ``$$`` is Compose's literal-dollar escape, consumed before interpolation,
+    so stripping the escapes first leaves exactly the dollars Compose treats as
+    syntax. A *defaulted* reference is deliberately not removed: its default is
+    the literal the file ships.
+    """
+    if len(value) > _MAX_SCAN_LEN:
+        return False  # too long to classify; not exempt
+    text = value.replace("$$", "")
+    # A list-form entry ("- KEY=value") is one plain scalar, so quotes around
+    # the value are literal characters rather than YAML syntax. They carry no
+    # secret, so judge what they wrap.
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
+        text = text[1:-1]
+    return _VAR_NO_DEFAULT_RE.sub("", text) == ""
 
 
 def substitute_defaults(value: str) -> str | None:
@@ -50,6 +85,11 @@ def substitute_defaults(value: str) -> str | None:
     file do on its own", not "what will it do in your deployment", and a
     deployment that sets the variable is the case suppressions exist for.
     """
+    if len(value) > _MAX_SCAN_LEN:
+        # Conservative: report the value as unknowable rather than spend
+        # quadratic time proving it. Callers leave such a scalar as written,
+        # which is exactly the behavior before substitution was document-wide.
+        return None
     escaped = value.replace("$$", "")
     if not _VAR_REF_RE.search(escaped):
         return value  # nothing to substitute

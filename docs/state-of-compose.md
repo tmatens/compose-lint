@@ -221,7 +221,7 @@ Read this section before citing any number from the report. The corpus is a desc
 ### Tool caveats
 
 - **Rules are based on hardening guidance, not on incident response data.** Each rule cites OWASP, CIS, or Docker docs. A rule firing means the file diverges from authoritative hardening guidance, not that an attacker would necessarily exploit the divergence on a given deployment.
-- **compose-lint does not validate the full Compose schema.** Files that fail to parse as v2/v3 Compose are bucketed by error class and reported as a separate population, not silently dropped. The parser does not resolve `${VAR}` interpolation or merge external `extends:` files; rules see what is written in the file, not the runtime resolution.
+- **compose-lint does not validate the full Compose schema.** Files that fail to parse as v2/v3 Compose are bucketed by error class and reported as a separate population, not silently dropped. The parser resolves `${VAR:-default}` interpolation to the value Compose ships when the variable is unset, so rules grade the deployed configuration rather than the source text; a reference with no default is left as written, and external `extends:` files are not merged.
 
 The framing is: *here is what people put in their Compose files at corpus scale, scored against published hardening guidance, with the sampling design and tool boundaries spelled out so you can re-rank, re-bucket, or re-run against your own corpus*. It is not a runtime risk assessment, a CVE database, or a population estimate.
 

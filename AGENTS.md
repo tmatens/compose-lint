@@ -4,7 +4,7 @@ Security-focused linter for Docker Compose files. Python >=3.10, PyYAML only run
 
 ## Architecture
 
-- **Parser**: `LineLoader(yaml.SafeLoader)` captures line numbers. `load_compose(path) -> (data, lines)`. Handles v2/v3, anchors, merge keys (`<<:`), extension fields (`x-`). Leaves `${VAR}` unresolved. Validates `services:` exists and is a mapping. Does NOT do full Compose schema validation.
+- **Parser**: `LineLoader(yaml.SafeLoader)` captures line numbers. `load_compose(path) -> (data, lines)`. Handles v2/v3, anchors, merge keys (`<<:`), extension fields (`x-`). Normalizes `${VAR:-default}` document-wide to the value Compose ships with no `.env`, so rules classify what is deployed; a reference with no default (`${VAR}`) is left as written. Validates `services:` exists and is a mapping. Does NOT do full Compose schema validation.
 - **Rules**: Classes inheriting `BaseRule`, registered via `@register_rule`. IDs are `CL-XXXX`, zero-padded. From 1.0 they are permanent and never reused; pre-1.0 a rule that should not have shipped may be removed and its id reclaimed. Rules receive plain Python types (`dict`, `list`, `str`, `int`, `bool`), never parser-specific types.
 - **Findings**: Dataclasses in `models.py`, not dicts.
 - **Formatters**: Modules in `formatters/` exposing `format(findings) -> str`.

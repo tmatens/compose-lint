@@ -7,8 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrading
+
+**Rules now grade `${VAR:-default}` as the value it deploys, so files that
+passed may now fail.** With no `.env` and the variable unset, Compose ships the
+default — `privileged: ${P:-true}` deploys `privileged: true` — but only bind
+sources were being resolved, so every other rule compared its dangerous-value
+set against the literal text `"${P:-true}"` and found no match. Writing a
+dangerous value in interpolated form was a general-purpose bypass of twelve
+rules.
+
+Measured over the 5,417-file corpus: **286 files (5.3%) change findings, and
+100 (1.8%) go from pass to fail at the default `--fail-on high`.** One file
+goes the other way.
+
+| Trigger | before | after |
+|---|---|---|
+| `POSTGRES_PASSWORD: ${PW:-hunter2}` | *none* | **CL-0020** high |
+| `DATABASE_URL: postgres://${U:-u}:${P:-p}@db` | *none* | **CL-0021** high |
+| `image: nginx:${TAG:-latest}` | CL-0019 medium | **CL-0004** medium |
+| `ports: ["${BIND:-0.0.0.0}:80:80"]` | *none* | **CL-0005** medium |
+| `user: "${UID:-0}:${GID:-0}"` | *none* | **CL-0018** medium |
+| `mem_limit: "${MEM:-0}m"` | *none* | **CL-0026** medium |
+| `privileged: ${P:-true}` | *none* | **CL-0002** critical |
+
+The `image:` row is a reclassification, not a new failure: CL-0004 replaces
+CL-0019 at the same location and severity, because the tag resolves to the
+mutable `latest` rather than to an opaque `${TAG}`.
+
+Two changes go the other way and **remove** findings, both fixing false
+positives: a port whose default binds loopback (`"${PORT:-127.0.0.1:80}:80"`)
+no longer trips CL-0005, and an empty placeholder in a list-form entry
+(`- API_KEY=""`) no longer trips CL-0020 — the mapping form `API_KEY: ""` was
+already exempt.
+
+If a finding is genuinely parameterized in your deployment, that is what
+`.compose-lint.yml` suppressions are for. Writing the reference without a
+default (`${PW}` rather than `${PW:-hunter2}`) also stays exempt, because
+Compose then ships nothing.
+
 ### Changed
 
+- **`${VAR:-default}` is resolved document-wide before rules run.** The parser
+  normalizes every string leaf to the value Compose ships when the variable is
+  unset, so a rule classifies the deployed configuration instead of the source
+  text. Substitution had been wired into one call site (bind sources), leaving
+  CL-0002, CL-0004, CL-0005, CL-0008, CL-0009, CL-0010, CL-0011, CL-0014,
+  CL-0016, CL-0018, CL-0020, CL-0021, CL-0022, CL-0024, CL-0026 and the
+  capability rules grading a string that is never deployed. Doing it once in the
+  parser is what keeps it from being re-litigated per rule: a rule that adds a
+  dangerous literal to its set gets the interpolated spellings for free. See
+  **Upgrading** above for the measured impact. A reference with no default is
+  still left as written — Compose ships nothing for it, so there is nothing to
+  grade.
+- **The credential rules' interpolation exemption is stated as what Compose
+  does.** CL-0020 and CL-0021 previously skipped any value *containing* a
+  reference, so appending one character to a literal (`hunter2$X`) silenced
+  them, while Compose ships `hunter2`. The exemption is now "Compose resolves
+  this value to nothing", which also correctly exempts a quoted reference in a
+  list-form entry (`- SECRET_KEY="${KEY}"`, where the quotes are literal
+  characters) that a stricter shape test would have flagged.
+- **CL-0021's rule description** now says the password half is skipped when
+  Compose resolves it to nothing, and that a defaulted password still fires.
+  Visible in `--explain CL-0021`, the docs site and SARIF rule metadata.
+- **CL-0026 no longer treats an unparseable dollar-bearing value as a limit.**
+  `mem_limit: "${MEM:-0}m"` resolves to `0m`, which Docker reads as unlimited,
+  and now fires; a bare `${MEM_LIMIT}` stays exempt as genuinely unknowable.
+- Scalars longer than 8 KB are no longer scanned for interpolation. The two
+  substitution regexes are quadratic (measured 80 KB → 0.49 s, 160 KB →
+  1.94 s), and the pass above runs them over every string rather than bind
+  sources alone; past the cap the conservative answer is returned unscanned.
 - **A Compose file containing an ambiguous line break is now refused** (exit 2,
   reported per file, with a SARIF `toolExecutionNotifications` entry) instead of
   being linted with line numbers nothing else agrees with. A lone `\r`, U+0085,

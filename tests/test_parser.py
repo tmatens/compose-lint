@@ -290,10 +290,13 @@ class TestLoadCompose:
         assert "services" in data
         assert "web" in data["services"]
 
-    def test_env_interpolation_preserved(self) -> None:
+    def test_defaulted_interpolation_is_resolved(self) -> None:
+        # The parser normalizes "${VAR:-default}" document-wide to the value
+        # Compose ships with no .env, so rules classify what is deployed rather
+        # than the source text. A reference with no default stays as written.
         data, _lines = load_compose(FIXTURES / "valid_env_interpolation.yml")
         app = data["services"]["app"]
-        assert "${APP_VERSION:-latest}" in app["image"]
+        assert app["image"] == "myapp:latest"
 
     def test_file_not_found(self) -> None:
         with pytest.raises(FileNotFoundError):

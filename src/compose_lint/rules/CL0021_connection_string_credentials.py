@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
-from compose_lint.rules._interpolation import contains_var_ref
+from compose_lint.rules._interpolation import ships_no_literal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -57,8 +57,8 @@ def _iter_env(env_block: Any) -> Iterator[tuple[str, Any, int | None]]:
 def _find_inline_credential(value: str) -> tuple[str, str, str] | None:
     """Return (scheme, user, password) for an inline credential, else None.
 
-    Returns the first match whose *password* half is a literal. Only the
-    password being a `${VAR}` substitution means the secret is parameterized;
+    Returns the first match whose *password* half is a literal. Only a
+    password Compose ships as empty means the secret is parameterized;
     a substituted username with a literal password (e.g.
     `postgres://${DB_USER}:secret@db`) still leaks the credential, so it must
     not suppress the finding (issue #277 F6). The var-ref test is shared with
@@ -76,7 +76,7 @@ def _find_inline_credential(value: str) -> tuple[str, str, str] | None:
     for m in _URI_USERINFO_RE.finditer(value):
         user = m.group("user")
         password = m.group("password")
-        if contains_var_ref(password):
+        if ships_no_literal(password):
             continue
         return m.group("scheme"), user, password
     return None
@@ -102,8 +102,10 @@ class ConnectionStringCredentialsRule(BaseRule):
                 "config`, process listings, and CI logs. Where CL-0020 "
                 "matches credential-shaped *keys*, this rule matches "
                 "credential-shaped *values* regardless of the key name. "
-                "Skipped when either userinfo half is a `${VAR}` "
-                "substitution (the credential is parameterized)."
+                "Skipped when the password half is a `${VAR}` "
+                "substitution Compose resolves to nothing (the credential is "
+                "parameterized); a default such as `${PW:-hunter2}` is the "
+                "literal the file ships and still fires."
             ),
             severity=Severity.HIGH,
             references=[OWASP_REF, COMPOSE_SECRETS_REF, RFC3986_REF],

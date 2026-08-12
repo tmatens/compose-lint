@@ -631,6 +631,58 @@ def _resolved_bind_source(source: str, base_dir: Path) -> str | None:
     return None
 
 
+def _substitute_interpolation_defaults(data: Any) -> None:
+    """Rewrite every string leaf to the value Compose ships with no ``.env``.
+
+    Classification has to happen *after* canonicalization, not before. With
+    substitution wired into a single call site (bind sources), every other rule
+    compared its dangerous-value set against the literal text ``"${P:-true}"``
+    and found no match, while Compose deploys exactly ``true`` — verified with
+    ``docker compose config`` for ``privileged``, ``network_mode``, ``user``,
+    ``cap_add``, ``security_opt``, ``devices`` and image tags. Normalizing once
+    here is what keeps that from being re-litigated per rule: a rule that adds a
+    dangerous literal to its set gets the interpolated spellings for free, and
+    cannot forget to.
+
+    Only *values* are rewritten. Mapping keys are left alone because the
+    ``lines`` map is keyed by the raw key path, and rewriting a key would break
+    every line lookup that indexes it.
+
+    A reference with no default (``${VAR}``) is left exactly as written:
+    :func:`substitute_defaults` returns ``None`` for it, and inventing a value
+    would invent a finding. Walks are memoized by ``id`` so a document built
+    from YAML aliases is visited once per distinct object rather than once per
+    path through the alias graph.
+    """
+    seen: set[int] = set()
+
+    def resolve(value: str) -> str:
+        substituted = substitute_defaults(value)
+        return value if substituted is None else substituted
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            if id(node) in seen:
+                return
+            seen.add(id(node))
+            for key, value in node.items():
+                if isinstance(value, str):
+                    node[key] = resolve(value)
+                else:
+                    walk(value)
+        elif isinstance(node, list):
+            if id(node) in seen:
+                return
+            seen.add(id(node))
+            for index, value in enumerate(node):
+                if isinstance(value, str):
+                    node[index] = resolve(value)
+                else:
+                    walk(value)
+
+    walk(data)
+
+
 def _split_short_volume(volume: str) -> tuple[str, str, str]:
     """Split ``source:target[:mode]`` at the separator, ignoring ``${...}``.
 
@@ -808,6 +860,10 @@ def loads(
 
     lines = _collect_lines(raw, seq_lines)
     data = _strip_lines(raw)
+    # Canonicalize before anything classifies: rules and the extends/bind-source
+    # passes below all see the value the file actually ships (see the function's
+    # docstring for why this is document-wide rather than per rule).
+    _substitute_interpolation_defaults(data)
     _resolve_in_file_extends(data)
     if base_dir is not None:
         _resolve_bind_sources(data, base_dir)

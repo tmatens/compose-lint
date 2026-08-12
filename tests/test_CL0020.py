@@ -195,19 +195,26 @@ class TestCredentialEnvKeysRule:
         findings = self._check("skip_pure_var_ref")
         assert findings == []
 
-    def test_skip_pure_var_with_default(self) -> None:
+    def test_defaulted_var_is_graded_on_the_value_it_ships(self) -> None:
+        # "${POSTGRES_PASSWORD:-fallback}" ships the literal "fallback" with no
+        # .env set (verified with `docker compose config`), so the credential is
+        # in the file and the rule must say so. Previously exempted for carrying
+        # a reference at all, which made the default a free bypass.
         findings = self._check("skip_pure_var_default")
-        assert findings == []
+        assert len(findings) == 1
+        assert findings[0].rule_id == "CL-0020"
 
     def test_skip_short_var(self) -> None:
         findings = self._check("skip_short_var")
         assert findings == []
 
-    def test_skip_mixed_var_reference(self) -> None:
-        # Per design: any ${VAR} present → skip. Corpus shows 1 case in
-        # 1554 files; not worth bespoke handling.
+    def test_mixed_var_reference_is_not_exempt(self) -> None:
+        # Only a value that is *wholly* a reference is unknowable. A value that
+        # merely contains one still ships its literal part: "hunter2$X" ships
+        # "hunter2". The old "any reference → skip" rule made appending one
+        # character enough to silence the rule on a hardcoded credential.
         findings = self._check("skip_mixed_var_reference")
-        assert findings == []
+        assert len(findings) == 1
 
     # ---- $$ escape: a literal dollar is not a substitution (issue #502) ----
 
