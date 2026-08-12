@@ -113,9 +113,11 @@ runs:
         fi
 
         # Word-split the file list intentionally — it is space-separated
-        # by `Find Compose files` above.
+        # by `Find Compose files` above. `--` terminates the option namespace
+        # first, so a repository file named `--config=evil/compose.yml` arrives
+        # as a path instead of installing an attacker-authored policy.
         # shellcheck disable=SC2086
-        compose-lint "${ARGS[@]}" $CL_TARGET_FILES || TEXT_EXIT=$?
+        compose-lint "${ARGS[@]}" -- $CL_TARGET_FILES || TEXT_EXIT=$?
 
         # When a SARIF artifact is requested, re-run in SARIF mode. The first
         # run prints human-readable output to the job log and sets the exit
@@ -123,7 +125,7 @@ runs:
         # two runs report the same findings.
         if [ -n "$CL_SARIF_FILE" ]; then
           # shellcheck disable=SC2086
-          compose-lint --format sarif "${ARGS[@]}" $CL_TARGET_FILES \
+          compose-lint --format sarif "${ARGS[@]}" -- $CL_TARGET_FILES \
             > "$CL_SARIF_FILE" || true
         fi
 

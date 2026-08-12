@@ -71,6 +71,29 @@ If a finding is genuinely parameterized in your deployment, that is what
 default (`${PW}` rather than `${PW:-hunter2}`) also stays exempt, because
 Compose then ships nothing.
 
+### Security
+
+- **The shipped harnesses now terminate the option namespace with `--`.** A
+  repository can contain a directory named `--config=cfgdir` holding a
+  `compose.yml`; the resulting path `--config=cfgdir/compose.yml` matches the
+  pre-commit hook's `files:` pattern and the Action's discovery, so a harness
+  that globbed repo paths straight into argv handed argparse something it read
+  as an option. The crafted file left the lint set *and* an attacker-authored
+  policy disabling every rule was installed for the run — the gate went green
+  over a `privileged` stack mounting `/var/run/docker.sock`. Confirmed
+  end-to-end: the pre-commit hook reported `Passed` before this change and
+  `Failed` after, on the same repository.
+
+  The pre-commit hook ships `args: [--]` and the Action passes `--` before the
+  file list in both invocations (the text run and the SARIF re-run). Setting
+  `args:` in your `.pre-commit-config.yaml` replaces the default, so keep `--`
+  last if you pass flags — see README.
+
+  The separator is deliberately **not** inserted by the CLI's argv shim: it
+  cannot tell a genuine `--config=x` from a file named that, and terminating
+  before the first positional would break the documented
+  `compose-lint init docker-compose.yml -o ci.yml` form.
+
 ### Changed
 
 - **Coverage gaps are reported on every channel a consumer reads.** An

@@ -2,6 +2,18 @@
   name: compose-lint
   description: Security-focused linter for Docker Compose files
   entry: compose-lint
+  # pre-commit runs `entry + args + filenames`, so a trailing `--` here is
+  # what separates options from the paths it appends. Without it a
+  # repository path like `--config=cfgdir/compose.yml` (a directory named
+  # `--config=cfgdir`) is absorbed as a flag: the file leaves the lint set
+  # and an attacker-authored policy is installed for the run.
+  #
+  # It lives in `args` rather than at the end of `entry` because a user's
+  # own `args:` would land *after* an entry-level `--` and be read as
+  # paths, breaking every config that passes flags. Setting `args:`
+  # replaces this default, so a config that passes flags should end its
+  # list with `--` (see README).
+  args: [--]
   language: python
   types: [yaml]
   files: (^|/)(docker-)?compose[^/]*\.ya?ml$

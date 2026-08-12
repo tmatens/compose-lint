@@ -459,6 +459,13 @@ repos:
       - id: compose-lint
 ```
 
+The hook ships `args: [--]`. pre-commit builds the command as `entry + args + filenames`, so that trailing `--` is what stops a repository path from being read as an option — a directory named `--config=cfgdir` holding a `compose.yml` otherwise arrives as `--config=cfgdir/compose.yml` and installs an attacker-authored policy for the run. Setting `args:` **replaces** that default, so keep `--` last if you pass flags:
+
+```yaml
+      - id: compose-lint
+        args: [--fail-on, low, --]
+```
+
 ## Security posture
 
 compose-lint is built to be safe to depend on:
