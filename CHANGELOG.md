@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Upgrading
 
+**A file compose-lint cannot fully see is now an error (exit 2), not a pass.**
+`include:` and cross-file `extends: {file: ...}` reference services in other
+files, and compose-lint reads single files without following them — so those
+services were never linted. The gap was reported on stderr for `include:` and
+not at all for `extends:`, while the verdict, exit code, JSON `errors` and SARIF
+`executionSuccessful` all said the run was clean. A base carrying
+`privileged: true` and `network_mode: host` could sit unlinted behind a green
+check.
+
+Measured over the 5,417-file corpus: **31 files (0.6%) change exit code — 20
+from pass to error, 11 from fail to error.** Findings for the local services are
+still reported; the file is graded on what could be seen *and* the gap is
+recorded.
+
+```bash
+# Cover everything by linting the merged output (compose-lint reads files,
+# not stdin, so write it out first):
+docker compose config > merged.yml && compose-lint merged.yml
+
+# Or accept the gap and grade only what is visible:
+compose-lint --allow-partial-coverage docker-compose.yml
+```
+
+`fix` reports gaps but never fails on them — it is not the merge gate.
+
 **Rules now grade `${VAR:-default}` as the value it deploys, so files that
 passed may now fail.** With no `.env` and the variable unset, Compose ships the
 default — `privileged: ${P:-true}` deploys `privileged: true` — but only bind
@@ -48,6 +73,17 @@ Compose then ships nothing.
 
 ### Changed
 
+- **Coverage gaps are reported on every channel a consumer reads.** An
+  unresolved `include:` or cross-file `extends: {file: ...}` now produces a JSON
+  `errors[]` entry, a SARIF `toolExecutionNotifications` record with
+  `executionSuccessful: false`, and exit 2 — previously a stderr warning for
+  `include:` and complete silence for `extends:`. `parser.coverage_gaps(data)`
+  exposes the same list to library callers. The text verdict counts them
+  separately from parse failures, because those files parsed fine and saying
+  otherwise would misdescribe the run. See **Upgrading** above.
+- **New `--allow-partial-coverage` flag on `check`** to accept a coverage gap
+  and grade what is visible. It waives the gap, not the findings: a local
+  CRITICAL still fails the gate.
 - **`${VAR:-default}` is resolved document-wide before rules run.** The parser
   normalizes every string leaf to the value Compose ships when the variable is
   unset, so a rule classifies the deployed configuration instead of the source

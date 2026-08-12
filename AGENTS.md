@@ -18,7 +18,7 @@ CRITICAL > HIGH > MEDIUM > LOW. A rule's severity is **derived**, not chosen: it
 
 - 0: No findings at/above threshold
 - 1: Findings at/above threshold
-- 2: Usage error (bad args, file not found, invalid Compose)
+- 2: Usage error (bad args, file not found, invalid Compose) **or a coverage gap** — unresolved `include:` / cross-file `extends:`, where part of the stack was never linted. `--allow-partial-coverage` downgrades the gap to a stderr warning. `fix` reports gaps but never fails on them; it is not the gate.
 - Default threshold: HIGH. Configurable via `--fail-on`.
 
 ## CLI output

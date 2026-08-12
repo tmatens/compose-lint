@@ -631,6 +631,50 @@ def _resolved_bind_source(source: str, base_dir: Path) -> str | None:
     return None
 
 
+def coverage_gaps(data: dict[str, Any]) -> list[str]:
+    """Describe every part of ``data`` compose-lint could not actually lint.
+
+    compose-lint reads single files and does no I/O to follow references out of
+    them, so two spellings leave services ungraded: ``include:`` alongside
+    ``services:`` (the included files' services are never seen) and
+    ``extends: {file: ...}`` (the base is never merged, so the child is graded
+    on its own keys only). Both are invisible in the result — the run reports a
+    clean pass over a partial view, which for a merge gate is the one failure
+    mode that matters.
+
+    Returned as messages rather than raised, because the local services *can*
+    still be linted usefully; the caller decides whether the gap is fatal. An
+    ``include``-only file has no local services at all and is already rejected
+    at parse time, which is the precedent this generalizes.
+    """
+    gaps: list[str] = []
+    services = data.get("services")
+    if "include" in data and isinstance(services, dict):
+        gaps.append(
+            "'include:' is not resolved, so services from the included files "
+            "were not linted. Lint the merged output (docker compose config) "
+            "to cover them, or pass --allow-partial-coverage to accept the gap."
+        )
+    if isinstance(services, dict):
+        unmerged = sorted(
+            name
+            for name, config in services.items()
+            if isinstance(config, dict)
+            and isinstance(config.get("extends"), dict)
+            and config["extends"].get("file")
+        )
+        if unmerged:
+            listed = ", ".join(repr(name) for name in unmerged)
+            gaps.append(
+                f"cross-file 'extends: {{file: ...}}' is not resolved, so "
+                f"{listed} {'was' if len(unmerged) == 1 else 'were'} graded "
+                "without the inherited base. Lint the merged output "
+                "(docker compose config) to cover it, or pass "
+                "--allow-partial-coverage to accept the gap."
+            )
+    return gaps
+
+
 def _substitute_interpolation_defaults(data: Any) -> None:
     """Rewrite every string leaf to the value Compose ships with no ``.env``.
 

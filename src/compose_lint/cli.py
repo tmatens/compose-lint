@@ -38,7 +38,12 @@ from compose_lint.formatters.text import (
 )
 from compose_lint.formatters.text import format_findings as format_text
 from compose_lint.models import Finding, Severity
-from compose_lint.parser import ComposeError, ComposeNotApplicableError, load_compose
+from compose_lint.parser import (
+    ComposeError,
+    ComposeNotApplicableError,
+    coverage_gaps,
+    load_compose,
+)
 
 
 def _severity_type(value: str) -> Severity:
@@ -159,6 +164,17 @@ def _add_check_subparser(
         action="store_true",
         default=False,
         help="hide suppressed findings from output",
+    )
+    check.add_argument(
+        "--allow-partial-coverage",
+        action="store_true",
+        default=False,
+        help=(
+            "grade a file even though part of its stack could not be linted "
+            "(unresolved 'include:' or cross-file 'extends:'). Without this, "
+            "such a gap is an error (exit 2) so a merge gate cannot pass on a "
+            "partial view; with it, the gap is reported on stderr only"
+        ),
     )
     verbosity = check.add_mutually_exclusive_group()
     verbosity.add_argument(
@@ -335,21 +351,30 @@ def main(argv: list[str] | None = None) -> NoReturn:
     _run_check(args)
 
 
-def _warn_unresolved_include(filepath: str, data: dict[str, Any]) -> None:
-    """Warn that `include:` brings in services compose-lint does not lint.
+def _report_coverage_gaps(
+    filepath: str, data: dict[str, Any], *, fatal: bool
+) -> list[tuple[str, str]]:
+    """Report parts of ``filepath`` that were not linted; return them if fatal.
 
-    An include-*only* file is rejected at parse (ComposeError); here `include`
-    coexists with `services`, so the local services lint normally but services
-    from the included files are invisible. Surface the coverage gap (issue
-    #516) rather than reporting a clean pass over a partial view.
+    A coverage gap used to be a stderr warning, which is the one channel no
+    machine consumer reads: the verdict, the exit code, JSON ``errors`` and
+    SARIF ``executionSuccessful`` all still said clean while a service carrying
+    ``privileged: true`` sat unparsed in an included file. For a tool whose
+    shipped deployment model is a merge gate, "I could not see all of it" has
+    to reach the same channels as "I found something".
+
+    Returned entries join the parse-error channel, so they surface as JSON
+    ``errors[]`` and SARIF ``toolExecutionNotifications`` and force exit 2.
+    With ``--allow-partial-coverage`` the gap is stated on stderr and the run
+    is graded on what could be seen.
     """
-    if "include" in data:
-        print(
-            f"Warning: {filepath}: 'include:' is not resolved; services from "
-            "included files are not linted. Lint the merged output "
-            "(docker compose config) to cover them.",
-            file=sys.stderr,
-        )
+    gaps = coverage_gaps(data)
+    if not gaps:
+        return []
+    label = "Error" if fatal else "Warning"
+    for gap in gaps:
+        print(f"{label}: {filepath}: {gap}", file=sys.stderr)
+    return [(filepath, gap) for gap in gaps] if fatal else []
 
 
 def _run_check(args: argparse.Namespace) -> NoReturn:
@@ -420,6 +445,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     all_sarif: list[dict[str, object]] = []
     all_file_findings: list[tuple[list[Finding], str]] = []
     parse_errors: list[tuple[str, str]] = []
+    coverage_errors: list[tuple[str, str]] = []
     rule_errors: list[tuple[str, str]] = []
     has_errors = False
     seen_services: set[str] = set()
@@ -437,7 +463,9 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             parse_errors.append((filepath, _report_parse_error(filepath, e)))
             continue
 
-        _warn_unresolved_include(filepath, data)
+        coverage_errors.extend(
+            _report_coverage_gaps(filepath, data, fatal=not args.allow_partial_coverage)
+        )
         seen_services.update(data.get("services", {}).keys())
 
         def _record_rule_error(
@@ -515,25 +543,42 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                     file=sys.stderr,
                 )
 
+    # Coverage gaps ride the same structured channel as parse errors — JSON
+    # `errors[]`, SARIF `toolExecutionNotifications`, exit 2 — but are counted
+    # separately in the text verdict, because "could not be parsed" is not what
+    # happened and the tool must not report a state that is not true.
+    run_errors = parse_errors + coverage_errors
+
     if args.output_format == "text":
         if len(args.files) > 1:
             print()
-            print(format_aggregate_summary(all_file_findings, len(parse_errors)))
-        print(format_verdict(all_file_findings, args.fail_on, len(parse_errors)))
+            print(
+                format_aggregate_summary(
+                    all_file_findings, len(parse_errors), len(coverage_errors)
+                )
+            )
+        print(
+            format_verdict(
+                all_file_findings,
+                args.fail_on,
+                len(parse_errors),
+                len(coverage_errors),
+            )
+        )
     elif args.output_format == "json":
         # allow_nan=False makes a stray float NaN/Infinity raise rather than emit
         # bare `NaN`/`Infinity` tokens, which RFC 8259 forbids and strict parsers
         # reject. The formatter already coerces `service` to str, so this guards
         # any future numeric field; the same applies to the SARIF dump below.
-        json_log = build_json_log(all_json, parse_errors)
+        json_log = build_json_log(all_json, run_errors)
         print(json.dumps(json_log, indent=2, allow_nan=False))
     elif args.output_format == "sarif":
         sarif_log = build_sarif_log(
-            all_sarif, parse_errors, severity_overrides=severity_overrides
+            all_sarif, run_errors, severity_overrides=severity_overrides
         )
         print(json.dumps(sarif_log, indent=2, allow_nan=False))
 
-    if parse_errors or rule_errors:
+    if run_errors or rule_errors:
         sys.exit(2)
     sys.exit(1 if has_errors else 0)
 
@@ -611,7 +656,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             had_error = True
             continue
 
-        _warn_unresolved_include(filepath, data)
+        _report_coverage_gaps(filepath, data, fatal=False)
 
         try:
             # newline="" preserves the file's original line endings: read_text's

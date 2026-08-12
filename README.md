@@ -258,6 +258,8 @@ check options:
   -v, --verbose                Repeat the fix block and reference on every finding (text mode)
   -q, --quiet                  One line per finding — no fix, reference, or excerpt (text mode)
   --skip-suppressed            Hide suppressed findings from output
+  --allow-partial-coverage     Grade a file whose `include:` / cross-file `extends:`
+                               could not be resolved, instead of failing (exit 2)
   --config PATH                Path to config file (default: .compose-lint.yml)
   --strict-config              Treat config diagnostics (unknown rule id or key) as errors, not warnings
   --explain CL-XXXX            Print the full documentation for a single rule
@@ -370,7 +372,9 @@ CI log that renders ANSI.
 |------|---------|
 | 0 | No findings at or above the `--fail-on` threshold |
 | 1 | One or more findings at or above the `--fail-on` threshold |
-| 2 | compose-lint couldn't run (invalid args, file not found, invalid Compose file, or a rule crashed) |
+| 2 | compose-lint couldn't run, or couldn't see the whole stack (invalid args, file not found, invalid Compose file, a rule crashed, or a coverage gap — see below) |
+
+**Coverage gaps.** compose-lint reads single files and does no I/O to follow references out of them, so `include:` and cross-file `extends: {file: ...}` leave part of the stack unlinted. Reporting a pass over a partial view is the one failure mode a merge gate cannot have, so a gap is an error: exit 2, a JSON `errors[]` entry, and a SARIF `toolExecutionNotifications` record. Lint the merged output (`docker compose config`) to cover everything, or pass `--allow-partial-coverage` to accept the gap and grade what is visible.
 
 The default threshold is `high` — medium and low findings don't fail CI unless you opt in:
 

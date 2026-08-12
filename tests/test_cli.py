@@ -139,15 +139,29 @@ class TestCLI:
         assert result.returncode == 2
         assert "include" in result.stderr.lower()
 
-    def test_include_with_services_warns_and_still_lints(self, tmp_path: Path) -> None:
-        # When include coexists with services, the local services lint normally
-        # but a warning flags that the included files are not covered.
+    def test_include_with_services_is_a_coverage_error(self, tmp_path: Path) -> None:
+        # The local services still lint, but the included files were never seen,
+        # so the run cannot claim a verdict over the whole stack: exit 2, not the
+        # exit 1 that says "I checked this and it failed" (nor the exit 0 it used
+        # to give when nothing local was wrong).
         f = tmp_path / "docker-compose.yml"
         f.write_text(
             "include:\n  - base.yml\n"
             "services:\n  web:\n    image: nginx:1.27\n    privileged: true\n"
         )
         result = run_cli(str(f))
+        assert result.returncode == 2
+        assert "CL-0002" in result.stdout
+        assert "include" in result.stderr.lower()
+
+    def test_include_gap_can_be_accepted_explicitly(self, tmp_path: Path) -> None:
+        # Opting in grades what could be seen and returns the normal verdict.
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(
+            "include:\n  - base.yml\n"
+            "services:\n  web:\n    image: nginx:1.27\n    privileged: true\n"
+        )
+        result = run_cli("--allow-partial-coverage", str(f))
         assert result.returncode == 1
         assert "CL-0002" in result.stdout
         assert "include" in result.stderr.lower()
