@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`fix --apply` could edit the wrong line and silently delete config.** The
+  fix engine's offset table counted only `\n`, while the line numbers it
+  converted come from PyYAML, which also breaks on a lone `\r`, U+0085,
+  U+2028 and U+2029. One such codepoint inside a quoted scalar shifted every
+  later splice a line, so a fix could remove a line the user never selected —
+  and because the result was still valid Compose, every safety net passed and
+  the run exited 0. `compose_lint._lines` now owns a single definition of a
+  line break, with `split_lines` and `line_starts` derived from one scan so
+  they cannot disagree; the fixers, the fix engine and the text formatter's
+  source excerpt all use it. A CI guard fails the build on a bare
+  `str.splitlines()` in `src/`. Documents free of those four codepoints —
+  effectively all real Compose files — are unaffected: a 5,417-file corpus run
+  shows zero change in findings, exit codes or errors.
+- **A file whose fixes could not be computed no longer destroys the batch.**
+  The same desync could push a line number past the offset table and raise a
+  bare `IndexError`, which aborted the whole run: `check --format sarif` then
+  emitted a 0-byte document, discarding the findings of every other file
+  scanned alongside it. Out-of-range positions now raise a
+  `LineOutOfRangeError` that the CLI reports as a per-file failure (exit 2,
+  the usage-error code) while the rest of the batch still lints and still
+  ships its findings.
+
 ## [0.17.0] - 2026-08-12
 
 ### Upgrading from 0.16.x

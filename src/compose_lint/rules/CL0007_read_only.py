@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._lines import split_lines
 from compose_lint._yaml_edit import (
     first_child_indent,
     is_anchored_or_merged,
@@ -111,7 +112,7 @@ class ReadOnlyFilesystemRule(BaseRule):
         key_line = lines.get(f"services.{service}")
         if key_line is None:
             return None
-        source_lines = text.splitlines(keepends=True)
+        source_lines = split_lines(text)
         if not 1 <= key_line <= len(source_lines):
             return None
 

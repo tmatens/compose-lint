@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._lines import split_lines
 from compose_lint._yaml_edit import (
     DISABLED_SECURITY_PROFILES,
     delete_lines,
@@ -176,7 +177,7 @@ class SecurityProfileRule(BaseRule):
         if item_line is None or so_line is None or service_line is None:
             return None
 
-        source_lines = text.splitlines(keepends=True)
+        source_lines = split_lines(text)
         n = len(source_lines)
         if not (1 <= service_line <= n and 1 <= so_line <= n and 1 <= item_line <= n):
             return None

@@ -8,6 +8,7 @@ import sys
 import unicodedata
 from pathlib import Path
 
+from compose_lint._lines import BREAK_CHARS, split_lines
 from compose_lint.models import Finding, Severity
 
 _COLORS = {
@@ -200,10 +201,18 @@ def format_header(
 
 
 def _read_source_lines(filepath: str) -> list[str] | None:
+    """Read ``filepath`` as the line list :func:`_excerpt` indexes by line number.
+
+    Split with the parser's own line space rather than ``str.splitlines()``: the
+    ``line_num`` this list is indexed with came from PyYAML, so any disagreement
+    about what counts as a break would print a *different* line than the one the
+    finding is about (VULN-017's display-layer sibling).
+    """
     try:
-        return Path(filepath).read_text(encoding="utf-8").splitlines()
+        text = Path(filepath).read_text(encoding="utf-8")
     except OSError:
         return None
+    return [line.rstrip(BREAK_CHARS) for line in split_lines(text)]
 
 
 def _excerpt(

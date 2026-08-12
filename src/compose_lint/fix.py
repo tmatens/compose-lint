@@ -17,6 +17,7 @@ import difflib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._lines import line_starts, split_lines
 from compose_lint._yaml_edit import (
     DISABLED_SECURITY_PROFILES,
     _is_seq_item,
@@ -40,21 +41,30 @@ class OverlappingEditError(ValueError):
     """Raised when two edits target overlapping regions of the same file."""
 
 
-def _line_starts(text: str) -> list[int]:
-    """Return the absolute offset at which each 1-indexed line begins.
+class LineOutOfRangeError(ValueError):
+    """Raised when an edit names a line outside the file's line space.
 
-    ``starts[0]`` is line 1's offset (always 0). A position on line ``n`` is
-    ``starts[n - 1] + (col - 1)``.
+    The offset table and the ``source_lines`` fixers index are now derived from
+    one scan (:mod:`compose_lint._lines`), so a fixer can only land here through
+    a bug of its own. Failing with a named domain error keeps that diagnosable
+    and lets the CLI report a per-file failure instead of letting a bare
+    ``IndexError`` abort the whole batch (issue: VULN-017 consequence b/c).
     """
-    starts = [0]
-    for index, char in enumerate(text):
-        if char == "\n":
-            starts.append(index + 1)
-    return starts
 
 
 def _offset(starts: list[int], line: int, col: int) -> int:
-    """Convert a 1-indexed ``(line, col)`` position to an absolute offset."""
+    """Convert a 1-indexed ``(line, col)`` position to an absolute offset.
+
+    ``starts`` comes from :func:`compose_lint._lines.line_starts`, whose final
+    sentinel entry makes end-of-file addressable as the start of the line after
+    the last one.
+    """
+    if line < 1 or line > len(starts):
+        raise LineOutOfRangeError(
+            f"edit names line {line}, outside the file's {len(starts) - 1} line(s)"
+        )
+    if col < 1:
+        raise LineOutOfRangeError(f"edit names column {col}, which is below 1")
     return starts[line - 1] + (col - 1)
 
 
@@ -72,7 +82,7 @@ def apply_edits(text: str, edits: list[TextEdit]) -> str:
     if not edits:
         return text
 
-    starts = _line_starts(text)
+    starts = line_starts(text)
     spans = [
         (
             _offset(starts, edit.start_line, edit.start_col),
@@ -339,7 +349,7 @@ def collect_edits(
         and finding.rule_id in rules_by_id
     ]
 
-    source_lines = text.splitlines(keepends=True)
+    source_lines = split_lines(text)
 
     # Coordination pass first, per service, so consumed findings skip their own
     # (refusing) fixers below.
@@ -366,7 +376,7 @@ def collect_edits(
         else:
             manual.append(finding)
 
-    starts = _line_starts(text)
+    starts = line_starts(text)
 
     def spans_of(edits: list[TextEdit]) -> list[tuple[int, int]]:
         return [
@@ -426,8 +436,8 @@ def render_file_diff(
     """
     chunks: list[str] = []
     for line in difflib.unified_diff(
-        original.splitlines(keepends=True),
-        patched.splitlines(keepends=True),
+        split_lines(original),
+        split_lines(patched),
         fromfile=path,
         tofile=path,
     ):

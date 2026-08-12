@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._lines import split_lines
 from compose_lint._yaml_edit import is_anchored_or_merged, line_indent
 from compose_lint.models import Finding, RuleMetadata, Severity, TextEdit
 from compose_lint.rules import BaseRule, register_rule
@@ -235,7 +236,7 @@ class UnboundPortsRule(BaseRule):
         service_line = lines.get(f"services.{service}")
         if item_line is None or service_line is None:
             return None
-        source_lines = text.splitlines(keepends=True)
+        source_lines = split_lines(text)
         n = len(source_lines)
         if not (1 <= item_line <= n and 1 <= service_line <= n):
             return None

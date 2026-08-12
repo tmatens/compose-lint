@@ -18,6 +18,7 @@ from compose_lint.config_emit import render_config
 from compose_lint.engine import filter_findings, run_rules
 from compose_lint.explain import UnknownRuleError, load_rule_doc
 from compose_lint.fix import (
+    LineOutOfRangeError,
     apply_edits,
     collect_edits,
     render_caveat_banner,
@@ -486,7 +487,17 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                 parse_errors.append((filepath, str(e)))
                 print(f"Error: {filepath}: {e}", file=sys.stderr)
                 continue
-            fixes = collect_edits(findings, data, lines, text).fixed_edits
+            try:
+                fixes = collect_edits(findings, data, lines, text).fixed_edits
+            except LineOutOfRangeError as e:
+                # A fixer addressed a line this file does not have. Report the
+                # file and keep going: SARIF is serialized once for the whole
+                # batch, so letting this escape would destroy every *other*
+                # file's findings too (VULN-017 consequence c).
+                msg = f"could not compute fixes: {e}"
+                parse_errors.append((filepath, msg))
+                print(f"Error: {filepath}: {msg}", file=sys.stderr)
+                continue
             all_sarif.extend(format_sarif(findings, filepath, fixes=fixes))
         else:
             all_json.extend(format_json(findings, filepath))
@@ -622,7 +633,14 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             severity_overrides=severity_overrides,
             excluded_services=excluded_services,
         )
-        result = collect_edits(findings, data, lines, text, only=only)
+        try:
+            result = collect_edits(findings, data, lines, text, only=only)
+        except LineOutOfRangeError as e:
+            # Same fail-closed treatment as the check path: refuse this file,
+            # write nothing, let the rest of the batch run (VULN-017).
+            print(f"Error: {filepath}: could not compute fixes: {e}", file=sys.stderr)
+            had_error = True
+            continue
 
         if not result.edits:
             if result.manual:
@@ -635,7 +653,12 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
                 print(f"{filepath}: nothing to fix", file=sys.stderr)
             continue
 
-        patched = apply_edits(text, result.edits)
+        try:
+            patched = apply_edits(text, result.edits)
+        except LineOutOfRangeError as e:
+            print(f"Error: {filepath}: could not apply fixes: {e}", file=sys.stderr)
+            had_error = True
+            continue
 
         # Safety net (ADR-014): re-parse the candidate before persisting it. If
         # the combined edits do not produce valid Compose, that is a fixer bug,

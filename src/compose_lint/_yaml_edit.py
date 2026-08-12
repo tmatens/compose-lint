@@ -3,7 +3,9 @@
 Extracted from ``fix.py`` so the rule modules can import them as an explicit
 shared-primitive layer rather than reaching into the fix engine's internals;
 ``fix.py`` consumes them from here too. They operate on
-``source_lines = text.splitlines(keepends=True)`` where a 1-indexed line ``n`` is
+``source_lines = split_lines(text)`` (:mod:`compose_lint._lines`, the one
+definition of a line break — never ``str.splitlines()``, see VULN-017) where a
+1-indexed line ``n`` is
 ``source_lines[n - 1]``, so individual fixers infer indentation, block extent,
 and refusal conditions the same way (ADR-014, Part 1: "a shared helper layer so
 individual rules stay small") instead of each re-deriving them.
