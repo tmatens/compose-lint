@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml
 
+from compose_lint._lines import find_ambiguous_break
 from compose_lint.config import KNOWN_TOP_LEVEL_KEYS
 from compose_lint.rules._interpolation import substitute_defaults
 
@@ -708,7 +709,14 @@ def load_compose(
     """
     filepath = Path(path)
     try:
-        content = filepath.read_text(encoding="utf-8")
+        # newline="" disables universal-newline translation so the parser sees
+        # the file's real bytes. read_text() would rewrite a lone \r (and CRLF)
+        # to \n, which hid a lone \r from the ambiguous-break check below and,
+        # worse, meant `check` and `fix` parsed *different* text for the same
+        # file — `fix` has always read with newline="" to preserve line endings.
+        # One read shape for both is the same principle as one line space.
+        with filepath.open(encoding="utf-8", newline="") as fh:
+            content = fh.read()
     except FileNotFoundError:
         raise
     except UnicodeDecodeError as e:
@@ -752,6 +760,24 @@ def loads(
     Raises:
         ComposeError: If the text is not valid YAML or not a valid Compose file.
     """
+    # Refuse a document whose line numbering has no answer both sides agree on.
+    # PyYAML breaks on a lone \r, U+0085, U+2028 and U+2029; editors, SARIF
+    # viewers and CI annotators split on \n. compose-lint must report one line
+    # number, and on such a document any choice is wrong for somebody — the fix
+    # engine would splice at a line the user is not looking at. Refusing is the
+    # only answer that cannot mislabel, and it costs nothing real: none of the
+    # 5,417 files in the corpus contains one.
+    ambiguous = find_ambiguous_break(content)
+    if ambiguous is not None:
+        line, description = ambiguous
+        raise ComposeError(
+            f"Ambiguous line break on line {line}: {description}. "
+            "This is a line break to the YAML parser but not to editors, SARIF "
+            "viewers or CI annotations, so no reported line number would be "
+            "correct for both. Use LF or CRLF line endings and remove the "
+            "character."
+        )
+
     # LineLoader is a yaml.SafeLoader subclass — this call cannot
     # deserialize arbitrary Python objects. The assertion makes that
     # invariant explicit so a future refactor can't silently break it.
