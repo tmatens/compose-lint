@@ -126,11 +126,26 @@ class TestOverrideTags:
         )
         assert data["services"]["app"]["ports"] == ["8443:443"]
 
-    def test_reset_scalar_is_none(self) -> None:
+    def test_reset_deletes_the_key(self) -> None:
+        # `!reset` is a deletion directive, not a value. `docker compose config`
+        # on a file carrying it deploys a service without the key at all, so
+        # keeping the underlying value credited hardening Docker removes.
         data, _lines = loads(
             "services:\n  app:\n    image: nginx\n    ports: !reset null\n"
         )
-        assert data["services"]["app"]["ports"] is None
+        assert "ports" not in data["services"]["app"]
+
+    def test_reset_deletes_a_hardening_key_so_absence_rules_see_it(self) -> None:
+        data, _lines = loads(
+            "services:\n"
+            "  app:\n"
+            "    image: nginx\n"
+            "    read_only: !reset true\n"
+            "    cap_drop: !reset [ALL]\n"
+        )
+        app = data["services"]["app"]
+        assert "read_only" not in app
+        assert "cap_drop" not in app
 
     def test_override_scalar_keeps_implicit_type(self) -> None:
         # The override tag is stripped, so the scalar resolves to its plain type.

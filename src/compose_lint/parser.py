@@ -224,6 +224,9 @@ def _reject_duplicate_keys(loader: LineLoader, node: yaml.MappingNode) -> None:
         seen.add(key)
 
 
+_RESET_TAG = "!reset"
+
+
 def _construct_mapping(loader: LineLoader, node: yaml.MappingNode) -> dict[Any, Any]:
     _reject_duplicate_keys(loader, node)
     loader.flatten_mapping(node)
@@ -247,6 +250,16 @@ def _construct_mapping(loader: LineLoader, node: yaml.MappingNode) -> dict[Any, 
                 "Compose files may only use scalar keys",
                 key_node.start_mark,
             ) from e
+        if value_node.tag == _RESET_TAG:
+            # `!reset` deletes the key. Verified with `docker compose config`:
+            # a file carrying `read_only: !reset true`, `cap_drop: !reset [ALL]`
+            # and `security_opt: !reset [...]` deploys a service with *none* of
+            # them. Constructing the value as if the tag were absent credited
+            # the service with hardening Docker removes, so the absence rules
+            # (CL-0003/0006/0007) stayed silent on an unhardened container.
+            # Dropping the key models the deletion, which is what every rule
+            # already knows how to grade.
+            continue
         value = loader.construct_object(value_node)
         if isinstance(key, str):
             line_map[key] = key_node.start_mark.line + 1
@@ -270,11 +283,21 @@ def _construct_override_tag(loader: LineLoader, node: yaml.Node) -> Any:
     tags: ``!override`` replaces a value instead of merging it, and ``!reset``
     drops an inherited value. A ``SafeLoader`` has no constructor for them, so it
     raises ``ConstructorError`` and a valid override file is reported broken
-    (issue #277 B1). compose-lint only needs the underlying value to lint, so we
-    construct the node as if the tag were absent — delegating to the
-    line-capturing map/seq constructors so line tracking still works inside an
-    overridden block, and re-resolving a scalar's implicit type so
-    ``!override 8080`` stays an int and ``!reset null`` stays None.
+    (issue #277 B1).
+
+    ``!override`` is constructed as if the tag were absent, which is correct for
+    a single file: the directive changes how the value *merges*, not what it is.
+    Verified with `docker compose config` — ``privileged: !override true``
+    deploys ``privileged: true``.
+
+    ``!reset`` in the value position of a mapping key never reaches here:
+    :func:`_construct_mapping` drops the key outright, because the directive
+    deletes it. This constructor still handles the tag in any other position so
+    the document parses rather than erroring.
+
+    Delegates to the line-capturing map/seq constructors so line tracking still
+    works inside an overridden block, and re-resolves a scalar's implicit type
+    so ``!override 8080`` stays an int.
     """
     if isinstance(node, yaml.MappingNode):
         return _construct_mapping(loader, node)
@@ -298,7 +321,8 @@ LineLoader.add_constructor(
     yaml.resolver.BaseResolver.DEFAULT_SEQUENCE_TAG,
     _construct_sequence,
 )
-# Compose override-file tags: parse the value, ignore the merge directive.
+# Compose override-file tags. `!override` keeps its value; `!reset` deletes the
+# key it is attached to (see `_construct_mapping`).
 LineLoader.add_constructor("!reset", _construct_override_tag)
 LineLoader.add_constructor("!override", _construct_override_tag)
 

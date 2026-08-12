@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
+from compose_lint.rules._mounts import normalize_host_path
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -66,12 +67,21 @@ _DANGEROUS_DEVICE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 
 
 def _extract_host_device(device: Any) -> str | None:
-    """Extract the host device path from a device mapping string."""
+    """Extract and normalize the host device path from a device mapping.
+
+    Format: ``/dev/host:/dev/container[:permissions]``, or just ``/dev/host``.
+
+    The path is normalized before the patterns below see it. Every pattern is
+    anchored at ``^/dev/``, so the raw form let equivalent spellings through:
+    ``//dev/sda`` and ``/dev/./sdb`` name the same device node to the kernel
+    and are passed through verbatim by `docker compose config`, but matched
+    none of the sixteen patterns. `normalize_host_path` is the collapsing the
+    repo already owns and already applies to bind sources.
+    """
     if not isinstance(device, str):
         return None
-    # Format: /dev/host:/dev/container[:permissions]
-    # or just /dev/host
-    return device.split(":")[0]
+    host = device.split(":")[0]
+    return normalize_host_path(host) if host else host
 
 
 @register_rule

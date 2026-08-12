@@ -61,7 +61,32 @@ def _extract_short(volume: str) -> tuple[str, bool] | None:
 
 def _opt_flags(driver_opts: dict[str, Any]) -> set[str]:
     """The comma-separated flags in a volume's ``o:`` driver option."""
-    return {part.strip() for part in str(driver_opts.get("o", "")).split(",")}
+    return {part.strip().lower() for part in str(driver_opts.get("o", "")).split(",")}
+
+
+def _is_local_bind(driver_opts: dict[str, Any]) -> bool:
+    """Whether these ``driver_opts`` describe a host bind mount.
+
+    Keyed off the kernel-observable shape — ``type: none`` with an absolute
+    ``device`` path under the local driver — rather than the ``o:`` string
+    spelling ``bind`` exactly. ``o: rbind`` is a *recursive* bind: the kernel
+    mounts the host path just the same, and `docker compose config` passes it
+    through unchanged, but ``"bind" in flags`` was False so no host path was
+    visible to any rule and a ``device: /var/run`` volume linted clean.
+
+    ``type: none`` + a device path is what makes it a bind; the ``o:`` flags
+    then only modify *how*. The whole ``r``-prefixed family is accepted for the
+    same reason, and the flags are still read for ``ro``.
+    """
+    device = driver_opts.get("device")
+    if not isinstance(device, str) or not device.startswith("/"):
+        return False
+    fs_type = driver_opts.get("type")
+    if isinstance(fs_type, str) and fs_type.strip().lower() == "none":
+        return True
+    # `type:` omitted: fall back to the flag family, which is the only other
+    # signal that the local driver should treat `device` as a path to bind.
+    return any(flag in {"bind", "rbind"} for flag in _opt_flags(driver_opts))
 
 
 def bind_backed_volumes(global_config: dict[str, Any]) -> dict[str, tuple[str, bool]]:
@@ -97,9 +122,8 @@ def bind_backed_volumes(global_config: dict[str, Any]) -> dict[str, tuple[str, b
         if not isinstance(driver_opts, dict):
             continue
         device = driver_opts.get("device")
-        flags = _opt_flags(driver_opts)
-        if isinstance(device, str) and device and "bind" in flags:
-            found[str(name)] = (device, "ro" in flags)
+        if isinstance(device, str) and device and _is_local_bind(driver_opts):
+            found[str(name)] = (device, "ro" in _opt_flags(driver_opts))
     return found
 
 

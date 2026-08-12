@@ -12,8 +12,15 @@ from __future__ import annotations
 
 from typing import Any
 
-_TRUE = frozenset({"true", "yes", "on"})
-_FALSE = frozenset({"false", "no", "off"})
+# The full YAML 1.1 boolean set Compose's Go loader coerces. The
+# single-letter forms are not a curiosity: `privileged: y` is emitted as
+# `privileged: true` by `docker compose config` (verified on Compose
+# 29.7.2), so omitting "y" let one character hide the tool's
+# highest-severity finding. "n" is included for symmetry — it failed safe,
+# but a false-negative and a false-positive should not be split across the
+# same table.
+_TRUE = frozenset({"y", "yes", "true", "on"})
+_FALSE = frozenset({"n", "no", "false", "off"})
 
 
 def as_bool(value: Any) -> bool | None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -48,16 +49,34 @@ _PORT_PATTERN = re.compile(
 # rule targets (issue #279 R1). Anchored to reject non-port junk.
 _BARE_PORT_PATTERN = re.compile(rf"^{_PORT_PART}$")
 
-# Values that publish on all interfaces — equivalent to no bind address.
-# These are detection patterns, not actual bind addresses.
-_WILDCARD_IPS = frozenset({"0.0.0.0", "::", "[::]", "*"})  # nosec B104
+# `*` is not an address, so it is matched literally; everything else is
+# decided by parsing. A literal set cannot be right here: `::0`,
+# `0:0:0:0:0:0:0:0` and `::ffff:0.0.0.0` are all the unspecified address and
+# all publish on every interface (verified with `docker compose config`, which
+# emits each spelling verbatim for the daemon to resolve).
+_WILDCARD_LITERALS = frozenset({"*"})
 
 
 def _is_wildcard_ip(value: str) -> bool:
-    """Return True if the value publishes on all interfaces."""
+    """Return True if the value publishes on all interfaces.
+
+    Tests the *address*, not its spelling. `ipaddress.is_unspecified` covers
+    every way of writing the all-zeroes address in either family, including the
+    IPv4-mapped IPv6 form; brackets are stripped first because the port syntax
+    wraps IPv6 literals in them. An unparseable value is not a wildcard — it is
+    either a hostname or junk, and guessing would invent a finding.
+    """
     if not value:
         return True
-    return value in _WILDCARD_IPS
+    if value in _WILDCARD_LITERALS:
+        return True
+    candidate = value.strip()
+    if candidate.startswith("[") and candidate.endswith("]"):
+        candidate = candidate[1:-1]
+    try:
+        return ipaddress.ip_address(candidate).is_unspecified
+    except ValueError:
+        return False
 
 
 @register_rule

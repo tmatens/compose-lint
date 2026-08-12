@@ -73,6 +73,41 @@ Compose then ships nothing.
 
 ### Security
 
+- **Five rules now classify the normalized value instead of the spelling.**
+  Each decided what a value *was* by matching the raw token, so an equivalent
+  spelling walked past it. All five were verified against
+  `docker compose config`, and none of the 5,417 files in the corpus uses any
+  of them — these are evasion spellings, not things people write by accident,
+  so the added coverage costs no false positives.
+
+  | Spelling | before | after |
+  |---|---|---|
+  | `o: rbind` in `driver_opts` | *silent* | **CL-0001** critical (also CL-0013, CL-0025) |
+  | `//dev/sda`, `/dev/./sda` | *silent* | **CL-0016** critical |
+  | `privileged: y` / `Y` | *silent* | **CL-0002** critical |
+  | `[::0]`, `[0:0:0:0:0:0:0:0]`, `[::ffff:0.0.0.0]` | *silent* | **CL-0005** medium |
+  | `read_only: !reset true` | credited as hardened | **CL-0003/0006/0007** |
+
+  - **`o: rbind`** is a recursive bind of the same host path. Bind detection now
+    keys off the shape the kernel acts on — `type: none` with an absolute
+    `device` under the local driver — rather than the `o:` string being exactly
+    `bind`. `type: nfs` and `type: tmpfs` are still not claimed as host paths.
+  - **Device paths** run through `normalize_host_path` before the sixteen
+    `^/dev/`-anchored patterns see them.
+  - **`_TRUE`/`_FALSE`** cover YAML 1.1's single-letter forms. `privileged: y`
+    is emitted as `privileged: true` by `docker compose config`, so one
+    character hid the tool's highest-severity finding. `n`/`N` are added for
+    symmetry; they failed safe.
+  - **Bind addresses** are parsed, not matched against a literal set. Every
+    spelling of the unspecified address is now recognized in both families; a
+    value that is not an address (a hostname) is still not a wildcard.
+  - **`!reset` deletes the key it is attached to**, which is what Compose does:
+    a file carrying `read_only: !reset true`, `cap_drop: !reset [ALL]` and
+    `security_opt: !reset [...]` deploys a service with none of them. Keeping
+    the underlying value credited the service with hardening Docker removes, so
+    the absence rules stayed silent on an unhardened container. `!override`
+    still keeps its value — it changes how a value merges, not what it is.
+
 - **The shipped harnesses now terminate the option namespace with `--`.** A
   repository can contain a directory named `--config=cfgdir` holding a
   `compose.yml`; the resulting path `--config=cfgdir/compose.yml` matches the
