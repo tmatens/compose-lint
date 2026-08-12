@@ -61,42 +61,76 @@ def _write(path: Path, text: str) -> Path:
     return path
 
 
-@pytest.mark.parametrize("name,sep", sorted({"control": " ", **DESYNC_BREAKS}.items()))
-def test_fix_apply_deletes_only_the_requested_block(
-    tmp_path: Path, name: str, sep: str
-) -> None:
+def test_fix_apply_deletes_only_the_requested_block(tmp_path: Path) -> None:
     """`fix --only CL-0014 --apply` removes the logging block and nothing else."""
-    target = _write(tmp_path / f"{name}.yml", _compose(sep))
+    target = _write(tmp_path / "control.yml", _compose(" "))
 
     with pytest.raises(SystemExit) as exc:
         cli.main(["fix", "--only", "CL-0014", "--apply", str(target)])
-    assert exc.value.code == 0, name
+    assert exc.value.code == 0
 
     after = target.read_text(encoding="utf-8")
     # The requested edit completed...
-    assert "logging:" not in after, name
-    assert "driver: none" not in after, name
+    assert "logging:" not in after
+    assert "driver: none" not in after
     # ...and the security config the user never selected survives.
-    assert "networks: [internal]" in after, name
-    assert "read_only: true" in after, name
-    assert "cap_drop: [ALL]" in after, name
+    assert "networks: [internal]" in after
+    assert "read_only: true" in after
+    assert "cap_drop: [ALL]" in after
 
 
 @pytest.mark.parametrize("name,sep", sorted(DESYNC_BREAKS.items()))
-def test_sarif_fix_region_covers_the_logging_block(
+def test_fix_refuses_a_document_with_an_ambiguous_break(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     name: str,
     sep: str,
 ) -> None:
-    """The exported fix region names the lines the fixer actually meant.
+    """`fix` writes nothing when no line number could be reported correctly."""
+    target = _write(tmp_path / f"{name}.yml", _compose(sep))
+    before = target.read_bytes()
 
-    ``check --format sarif`` exports ``artifactChanges`` without going through
-    the apply-time safety nets, so the region is pinned directly.
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["fix", "--only", "CL-0014", "--apply", str(target)])
+
+    assert exc.value.code == 2, name
+    assert "Ambiguous line break on line 5" in capsys.readouterr().err, name
+    assert target.read_bytes() == before, f"{name}: the file was modified"
+
+
+@pytest.mark.parametrize("name,sep", sorted(DESYNC_BREAKS.items()))
+def test_sarif_reports_an_ambiguous_break_as_a_file_error(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    name: str,
+    sep: str,
+) -> None:
+    """The refusal is machine-readable, not stderr-only.
+
+    A coverage gap that only exists on stderr is invisible to the CI consumer
+    that decides whether the gate passes, so the SARIF document has to carry it.
     """
+    target = _write(tmp_path / f"sarif_{name}.yml", _compose(sep))
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["check", "--format", "sarif", str(target)])
+    assert exc.value.code == 2, name
+
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["runs"][0]["results"] == [], name
+    notifications = doc["runs"][0]["invocations"][0]["toolExecutionNotifications"]
+    assert any("Ambiguous line break" in n["message"]["text"] for n in notifications), (
+        name
+    )
+
+
+def test_sarif_fix_region_covers_the_logging_block(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The exported fix region names the lines the fixer actually meant."""
     from compose_lint._lines import split_lines
 
-    target = _write(tmp_path / f"sarif_{name}.yml", _compose(sep))
+    target = _write(tmp_path / "sarif_control.yml", _compose(" "))
 
     with pytest.raises(SystemExit):
         cli.main(["check", "--format", "sarif", str(target)])
@@ -108,13 +142,13 @@ def test_sarif_fix_region_covers_the_logging_block(
         for r in doc["runs"][0]["results"]
         if r["ruleId"] == "CL-0014" and r.get("fixes")
     ]
-    assert regions, f"{name}: no CL-0014 fix exported"
+    assert regions, "no CL-0014 fix exported"
     region = regions[0]
     end = region.get("endLine", region["startLine"])
     if region.get("endColumn", 1) == 1:
         end -= 1
     covered = [line.strip() for line in source[region["startLine"] - 1 : end]]
-    assert covered == ["logging:", "driver: none"], f"{name}: covered {covered}"
+    assert covered == ["logging:", "driver: none"], f"covered {covered}"
 
 
 def test_batch_sarif_survives_a_file_whose_fixes_cannot_be_computed(

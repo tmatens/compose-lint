@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A Compose file containing an ambiguous line break is now refused** (exit 2,
+  reported per file, with a SARIF `toolExecutionNotifications` entry) instead of
+  being linted with line numbers nothing else agrees with. A lone `\r`, U+0085,
+  U+2028 or U+2029 is a line break to the YAML parser but not to editors, SARIF
+  viewers or CI annotations, so on such a document *any* reported line number is
+  wrong for one side or the other — and the fix engine would splice at a line
+  the user is not looking at. There is no line numbering to fall back on, so the
+  file is refused rather than mislabeled. None of the 5,417 files in the corpus
+  contains one, and CRLF and LF are unaffected.
+- **The parser now reads files without universal-newline translation**, so
+  `check` and `fix` parse the same bytes for the same file. `fix` has always
+  read with `newline=""` to preserve line endings, while the parser rewrote a
+  lone `\r` to `\n` — a second, quieter version of the same disagreement.
+  Verified no behavior change: LF and CRLF documents produce byte-identical
+  findings and line numbers, and a full corpus run is unchanged.
+
 ### Fixed
 
 - **`fix --apply` could edit the wrong line and silently delete config.** The

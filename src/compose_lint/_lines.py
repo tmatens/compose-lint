@@ -78,3 +78,42 @@ def line_starts(text: str) -> list[int]:
         offset += len(line)
         starts.append(offset)
     return starts
+
+
+# Breaks PyYAML honors that a consumer splitting on ``\n`` does not see. A
+# document containing one has no line numbering both sides agree on: the number
+# compose-lint reports (PyYAML's, the only correct one for a YAML construct)
+# names a different line in the editor, the SARIF viewer, and the CI annotation.
+AMBIGUOUS_BREAKS = {
+    "\r": "U+000D CARRIAGE RETURN outside a CRLF pair",
+    "\x85": "U+0085 NEXT LINE",
+    "\u2028": "U+2028 LINE SEPARATOR",
+    "\u2029": "U+2029 PARAGRAPH SEPARATOR",
+}
+
+
+def find_ambiguous_break(text: str) -> tuple[int, str] | None:
+    """Return ``(line, description)`` of the first ambiguous break, else ``None``.
+
+    ``line`` is 1-indexed in :func:`split_lines`' space. ``\\n`` and ``\\r\\n``
+    are unambiguous and skipped; a ``\\r`` *not* followed by ``\\n`` is not.
+    """
+    line = 1
+    index = 0
+    length = len(text)
+    while index < length:
+        char = text[index]
+        if char == "\r":
+            if index + 1 < length and text[index + 1] == "\n":
+                index += 2
+                line += 1
+                continue
+            return line, AMBIGUOUS_BREAKS["\r"]
+        if char == "\n":
+            line += 1
+            index += 1
+            continue
+        if char in AMBIGUOUS_BREAKS:
+            return line, AMBIGUOUS_BREAKS[char]
+        index += 1
+    return None

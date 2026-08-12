@@ -16,9 +16,16 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from compose_lint._lines import BREAK_CHARS, line_starts, split_lines
+from compose_lint._lines import (
+    AMBIGUOUS_BREAKS,
+    BREAK_CHARS,
+    find_ambiguous_break,
+    line_starts,
+    split_lines,
+)
 from compose_lint.fix import LineOutOfRangeError, _offset, apply_edits
 from compose_lint.models import TextEdit
+from compose_lint.parser import ComposeError, loads
 
 # Every codepoint Python or PyYAML treats as a line break, split by whether
 # PyYAML accepts a document containing it. `str.splitlines()` breaks on all of
@@ -181,3 +188,43 @@ def test_edit_splices_at_the_pyyaml_line_for_every_break(name: str, sep: str) ->
     # ...and nothing else was touched.
     assert 'note: "one' in patched, name
     assert "image: nginx:1.25" in patched, name
+
+
+# --- Ambiguous breaks are refused at the parser boundary -------------------
+
+
+def test_find_ambiguous_break_ignores_lf_and_crlf() -> None:
+    assert find_ambiguous_break("a\nb\n") is None
+    assert find_ambiguous_break("a\r\nb\r\n") is None
+    assert find_ambiguous_break("") is None
+
+
+@pytest.mark.parametrize("name,sep", sorted(DESYNC_BREAKS.items()))
+def test_find_ambiguous_break_reports_line_and_character(name: str, sep: str) -> None:
+    found = find_ambiguous_break(f"a\nb\nc{sep}d")
+    assert found is not None, name
+    line, description = found
+    assert line == 3, name
+    assert description in AMBIGUOUS_BREAKS.values(), name
+
+
+def test_find_ambiguous_break_counts_preceding_crlf_lines() -> None:
+    """The reported line number is in the same space as everything else."""
+    found = find_ambiguous_break("a\r\nb\r\nc\x85d")
+    assert found == (3, AMBIGUOUS_BREAKS["\x85"])
+
+
+@pytest.mark.parametrize("name,sep", sorted(DESYNC_BREAKS.items()))
+def test_loads_refuses_a_document_with_an_ambiguous_break(name: str, sep: str) -> None:
+    source = f'services:\n  web:\n    image: nginx\n    labels:\n      n: "a{sep}b"\n'
+    with pytest.raises(ComposeError, match="Ambiguous line break"):
+        loads(source)
+
+
+def test_loads_accepts_lf_and_crlf_identically() -> None:
+    """The read-shape change must not move a single line number."""
+    source = "services:\n  web:\n    image: nginx\n    privileged: true\n"
+    lf_data, lf_lines = loads(source)
+    crlf_data, crlf_lines = loads(source.replace("\n", "\r\n"))
+    assert lf_data == crlf_data
+    assert lf_lines == crlf_lines
