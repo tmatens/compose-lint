@@ -1,6 +1,6 @@
 # Roadmap
 
-compose-lint today ships 25 security rules, PyPI distribution, a published GitHub Action and Docker image, SARIF/JSON/text output, pre-commit support, per-service rule overrides, and `--explain`. The foundation is solid; the next milestone is the 1.0 stability commitment. Remaining investments make the tool more useful to the users already running it, not chase speculative distribution channels.
+compose-lint today ships 27 security rules, PyPI distribution, a published GitHub Action and Docker image, SARIF/JSON/text output, pre-commit support, per-service rule overrides, and `--explain`. The foundation is solid; the next milestone is the 1.0 stability commitment. Remaining investments make the tool more useful to the users already running it, not chase speculative distribution channels.
 
 ## Strategic framing
 
@@ -68,6 +68,20 @@ Turn findings into fixes. This is where the product's differentiation grows the 
 
 ---
 
+## Milestone 3.5 — Severity Grounding (v0.16) [shipped]
+
+A prerequisite for the 1.0 freeze rather than a feature: after 1.0 a severity change is a breaking change, so the numbers have to be defensible before the contract closes over them.
+
+**Severities are derived, not chosen** _(shipped in 0.16.0)_ — a two-axis matrix under a stated attacker baseline and a stated Docker posture produces each rule's value; shipping a different one requires a declared override from a closed reason list, with a link. Every rule page carries its derivation block, and a test fails if the page and the severity table disagree. See [ADR-020](adr/020-severity-scoping-and-overrides.md), [ADR-021](adr/021-critical-tier-posture.md), [ADR-022](adr/022-threat-model-grounding.md).
+
+**Grounded against a live daemon, not against reasoning** _(shipped in 0.16.0)_ — `scripts/validate_rule_premises.py` asserts the daemon under test is at Docker's defaults before measuring anything, and aborts if it is not. A premise measured on a hardened or loosened daemon returns a confidently wrong answer.
+
+**Branching rules split by what they grant** — `cap_add` became CL-0011, CL-0024, CL-0027 and CL-0028 in 0.16.0; CL-0029 (host availability) and CL-0030 (host disclosure) followed, and every remaining capability now has a recorded disposition, so the ungraded set is closed. Host paths became CL-0013 and CL-0025. A rule that branched its severity could not be represented honestly in SARIF, where `security-severity` sits on the rule descriptor (issue #503) — the split fixes that as a side effect.
+
+_Not covered by this milestone:_ the fixers, the parser, line-number accuracy and the config layer have not had an equivalent audit. None of them is a severity question, and none blocks the freeze.
+
+---
+
 ## Milestone 4 — GA / 1.0
 
 v1.0 is the **stability commitment**: the CLI surface, exit codes, configuration schema, and the JSON/SARIF output shapes come under SemVer. Breaking any of them after 1.0 requires a major version bump. The VS Code extension is explicitly *not* a 1.0 blocker — it's a reach multiplier that doesn't gate stability, and moves to Milestone 5.
@@ -75,7 +89,7 @@ v1.0 is the **stability commitment**: the CLI surface, exit codes, configuration
 **GA criteria:**
 - **Stable, documented contract** — CLI flags, exit codes ([ADR-006](adr/006-exit-codes.md)), the `.compose-lint.yml` schema, and the JSON + SARIF output shapes are frozen and documented as the 1.0 surface. The JSON output gains a versioned envelope before the freeze, so run-level metadata (tool version, parse errors) can be added later without breaking consumers.
 - **`fix` resolved** — _done._ Shipped as GA and brought under the SemVer contract in 0.11.0 ([ADR-014](adr/014-fix-remediation.md)), independently of the 1.0 cut.
-- **Grounding + severity audit complete** — every rule cites OWASP/CIS/Docker, and no severity change is pending that would alter a CI gate after the freeze.
+- **Grounding + severity audit complete** — _done for severity._ Every rule cites OWASP/CIS/Docker and derives its severity from the documented model (Milestone 3.5). What remains before the freeze is confirming no further severity change is pending that would alter a CI gate.
 - **Documented upgrade/deprecation policy** — the SemVer stability promise (rule additions, severity changes, config and output-shape changes) and the deprecation lifecycle, in [compatibility.md](compatibility.md).
 
 **At GA:** bump the PyPI classifier from `4 - Beta` to `5 - Production/Stable` in the version→1.0.0 commit, and publish a moving `v1` Action tag so users can pin `uses: tmatens/compose-lint@v1`.
@@ -130,5 +144,6 @@ Python 3.10 is scheduled to age out of the matrix when it reaches upstream EOL i
 | Per-service rule overrides | v0.4 | complete |
 | CL-0006 capability guidance + real-world examples + Homebrew tap | v0.4.x | in progress |
 | Remediation (`--explain`, `fix`, SARIF fixes, shellcheck) | v0.5–0.11 | `fix` GA in 0.11.0; shellcheck pending |
+| Severity grounding — derived severities, capability + host-path splits | v0.16 | complete |
 | GA / 1.0 — stable contract + `fix` + upgrade policy | v1.0 | next |
 | Ecosystem integrations (VS Code, custom rules) | v1.x | |

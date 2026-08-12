@@ -104,7 +104,9 @@ Trusted Publishers (OIDC) only — no manual `twine upload`. Sigstore attestatio
 
 ## Docs surfaces
 
-`docs/dockerhub-overview.md` is the Docker Hub description — hard 25000-byte cap (CI-enforced by the `readme-size` job; Docker Hub 400s over it) and deliberately version-free so it never needs a per-release bump. `README.md` is GitHub/PyPI-facing, not synced anywhere, and has no byte cap — but its integration snippets carry version pins that the RELEASING.md checklist bumps each release (as does `docs/hardening.md`).
+`docs/dockerhub-overview.md` is the Docker Hub description — hard 25000-byte cap (CI-enforced by the `readme-size` job; Docker Hub 400s over it) and deliberately free of version pins so it never needs a per-release bump. `README.md` is GitHub/PyPI-facing, not synced anywhere, and has no byte cap — but its integration snippets carry version pins that the RELEASING.md checklist bumps each release (as does `docs/hardening.md`).
+
+Prose that states how many rules there are is a different kind of pin: it goes stale when a rule lands, not when a version ships, so no release checklist catches it. Four surfaces make that claim and `tests/test_rule_surfaces.py` holds all four to the registry count.
 
 ## Things to avoid
 

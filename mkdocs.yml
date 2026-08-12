@@ -5,7 +5,7 @@
 # inside code fences (CL-0004, CL-0019, hardening.md docker --format examples).
 site_name: compose-lint
 site_description: >-
-  Security linter for Docker Compose files — 25 rules with actionable,
+  Security linter for Docker Compose files — 27 rules with actionable,
   runtime-proven fix guidance.
 site_url: https://tmatens.github.io/compose-lint/
 repo_url: https://github.com/tmatens/compose-lint

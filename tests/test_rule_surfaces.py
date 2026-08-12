@@ -9,6 +9,15 @@ why a rule they hit is undocumented.
 `severity.md` and the ATT&CK map already have their own coverage tests; this
 covers the remaining surfaces, and does it as one parameterised check so a
 failure names the surface rather than making someone diff six lists by hand.
+
+It also covers the *counts* stated in prose, which are a separate failure. The
+lists above are edited by whoever adds the rule, because the new page has to go
+somewhere; a sentence elsewhere saying "25 rules" is edited by nobody. CL-0029
+and CL-0030 landed and four surfaces went on claiming 25 — including the
+mkdocs `site_description`, which is the meta description search engines index,
+and the Docker Hub overview, which syncs to the Hub on every push to the
+default branch. Neither the release checklist nor the CI version-pin check
+reaches them: they go stale when a rule lands, not when a version ships.
 """
 
 from __future__ import annotations
@@ -67,3 +76,54 @@ def test_retired_ids_are_not_reused() -> None:
 def test_retired_ids_are_gone_from_every_surface(surface: str) -> None:
     lingering = sorted(FALLOW & SURFACES[surface])
     assert not lingering, f"{surface} still lists retired {lingering}"
+
+
+# Files whose counts describe a moment rather than the current tool. ADRs and
+# `docs/publishing/` are records of what was true when they were written, and
+# `state-of-compose.md` is a report pinned to the release it was generated on —
+# the CI version-pin check excludes the same three for the same reason.
+_HISTORICAL_DIRS = ("docs/adr/", "docs/publishing/")
+_HISTORICAL_FILES = ("docs/state-of-compose.md",)
+
+# Counts of something other than the current rule set. Each is a claim about a
+# past release, which stays true as the tool grows.
+HISTORICAL_COUNTS = (
+    "Added 9 rules (CL-0011 – CL-0019)",
+    "bringing the total to 19 rules",
+    "| Rule Coverage (19 rules) | v0.3 | complete |",
+)
+
+# `(?<![\d.])` keeps "post-1.0 rules" in RELEASING.md from reading as "0 rules".
+COUNT_RE = re.compile(r"(?<![\d.])(\d+) (?:security )?rules\b")
+
+
+def _live_docs() -> list[Path]:
+    candidates = [
+        REPO / "README.md",
+        REPO / "mkdocs.yml",
+        *(REPO / "docs").rglob("*.md"),
+    ]
+    return [
+        p
+        for p in candidates
+        if not p.as_posix().endswith(_HISTORICAL_FILES)
+        and not any(d in p.as_posix() for d in _HISTORICAL_DIRS)
+    ]
+
+
+def test_prose_rule_counts_match_the_registry() -> None:
+    stale: list[str] = []
+    for path in _live_docs():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if any(known in line for known in HISTORICAL_COUNTS):
+                continue
+            for count in COUNT_RE.findall(line):
+                if int(count) != len(REGISTERED):
+                    rel = path.relative_to(REPO).as_posix()
+                    stale.append(f"{rel}: {line.strip()}")
+    assert not stale, (
+        f"{len(REGISTERED)} rules are registered, but these claim otherwise:\n"
+        + "\n".join(stale)
+        + "\n\nUpdate the count, or add the line to HISTORICAL_COUNTS if it is "
+        "describing a past release rather than the current rule set."
+    )
