@@ -923,10 +923,16 @@ def loads(
     # deserialize arbitrary Python objects. The assertion makes that
     # invariant explicit so a future refactor can't silently break it.
     assert issubclass(LineLoader, yaml.SafeLoader)  # noqa: S101
-    # Instantiate explicitly (instead of yaml.load) so we can read the
-    # per-load seq_lines sidecar after parsing finishes.
-    loader = LineLoader(content)  # noqa: S506  # nosec B506 - SafeLoader subclass
+    # Constructing the loader is *inside* the try: `Reader.__init__` runs the
+    # printable-character check, so a document carrying a C0 byte raises
+    # `ReaderError` here rather than at `get_single_data()`. Built outside, that
+    # walked straight past the fail-loud boundary and reached the CLI as an
+    # unhandled traceback with exit 1.
+    loader = None
     try:
+        # Instantiate explicitly (instead of yaml.load) so we can read the
+        # per-load seq_lines sidecar after parsing finishes.
+        loader = LineLoader(content)  # noqa: S506  # nosec B506 - SafeLoader subclass
         raw = loader.get_single_data()
         seq_lines = loader._seq_lines
     except yaml.YAMLError as e:
@@ -940,21 +946,35 @@ def loads(
         # contract holds for all malformed input.
         raise ComposeError("Invalid YAML: input is too deeply nested") from e
     finally:
-        loader.dispose()  # type: ignore[no-untyped-call]
+        if loader is not None:
+            loader.dispose()  # type: ignore[no-untyped-call]
 
     if raw is None:
         raise ComposeError("Not a valid Compose file: file is empty")
 
     _validate_compose(raw)
 
-    lines = _collect_lines(raw, seq_lines)
-    data = _strip_lines(raw)
-    # Canonicalize before anything classifies: rules and the extends/bind-source
-    # passes below all see the value the file actually ships (see the function's
-    # docstring for why this is document-wide rather than per rule).
-    _substitute_interpolation_defaults(data)
-    _resolve_in_file_extends(data)
-    if base_dir is not None:
-        _resolve_bind_sources(data, base_dir)
+    # The post-parse passes recurse too, and the guard above covered only the
+    # parse. A 2000-deep `extends:` chain, or a self-referential
+    # `${A:-${A:-...}}` in a bind source, exhausted the stack *after* the loader
+    # returned: a raw traceback, exit 1 where the contract says 2, and every
+    # later file in the batch never linted. The fail-loud boundary has to cover
+    # each pass that walks the document, not only the one that builds it.
+    try:
+        lines = _collect_lines(raw, seq_lines)
+        data = _strip_lines(raw)
+        # Canonicalize before anything classifies: rules and the extends and
+        # bind-source passes below all see the value the file actually ships
+        # (see that function's docstring for why this is document-wide).
+        _substitute_interpolation_defaults(data)
+        _resolve_in_file_extends(data)
+        if base_dir is not None:
+            _resolve_bind_sources(data, base_dir)
+    except RecursionError as e:
+        raise ComposeError(
+            "Invalid Compose file: resolving the document is too deeply nested "
+            "(check for a long `extends:` chain or a self-referential "
+            "`${VAR}` default)"
+        ) from e
 
     return data, lines

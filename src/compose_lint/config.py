@@ -162,6 +162,14 @@ def _read_raw_config(path: str | Path | None) -> dict[str, Any] | None:
         data = yaml.load(content, Loader=_StrictLoader)  # noqa: S506  # nosec B506
     except yaml.YAMLError as e:
         raise ConfigError(f"Invalid YAML in config file: {e}") from e
+    except RecursionError as e:
+        # PyYAML's composer recurses with no depth limit, and RecursionError is
+        # a RuntimeError rather than a YAMLError, so it walks straight past the
+        # clause above. The Compose loader already translates this; the config
+        # loader raised a traceback and exit 1 on the same class of input.
+        raise ConfigError(
+            "Invalid YAML in config file: input is too deeply nested"
+        ) from e
 
     if data is None:
         return None

@@ -71,6 +71,37 @@ If a finding is genuinely parameterized in your deployment, that is what
 default (`${PW}` rather than `${PW:-hunter2}`) also stays exempt, because
 Compose then ships nothing.
 
+### Fixed
+
+- **Malformed input is a per-file failure, never a traceback.** Four paths let
+  an exception escape the fail-loud boundary: the CLI printed a Python
+  traceback, exited **1** — which reads as "I linted it and it failed" rather
+  than "I could not lint it" — and abandoned every remaining file in the batch.
+  All four now surface as a clean error at exit 2 with the rest of the run
+  intact. Each had a correct sibling already in the repo.
+
+  - **Deep recursion in the post-parse passes.** The loader's
+    `RecursionError` guard covered the *parse* only, so a 2000-deep `extends:`
+    chain or a self-referential `${A:-${A:-…}}` in a bind source blew the stack
+    after the loader returned. The boundary now covers every pass that walks
+    the document.
+  - **`ReaderError` from the loader constructor.** `Reader.__init__` runs the
+    printable-character check, so a document carrying a C0 byte raises at
+    construction — which happened *outside* the `try`. The constructor is now
+    inside it.
+  - **`RecursionError` in the config loader.** `except yaml.YAMLError` does not
+    catch it, since it is a `RuntimeError`. The Compose loader already
+    translated this; the config loader did not.
+  - **Write failures from `fix --apply` / `init`.** An unwrapped `OSError` — a
+    read-only directory, a full disk — aborted the batch and printed the
+    absolute workspace path in a traceback. Failures are now attributed to the
+    file they belong to, and later files still lint. The message reports the
+    condition (`Permission denied`) rather than the errno decoration and the
+    internal temp filename the caller never chose.
+  - A write target that exists but is **not a regular file** is now named as
+    such. A directory has `st_nlink >= 2`, so it was previously reported as a
+    hard link, which is not what is wrong with it.
+
 ### Security
 
 - **Four places where the tool reported a state that was not true.**

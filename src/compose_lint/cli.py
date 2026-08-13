@@ -575,8 +575,23 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     sys.exit(1 if has_errors else 0)
 
 
+class UnwritableTargetError(OSError):
+    """Raised when a write target exists but is not a regular file."""
+
+
 class LinkedPathError(OSError):
     """Raised when a fix target is a symlink or a multiply-linked file."""
+
+
+def _write_failure(exc: OSError) -> str:
+    """Describe a write failure without echoing the internal temp path.
+
+    An unhandled ``OSError`` renders as ``[Errno 13] Permission denied:
+    '/abs/path/.compose.yml.k6ydh20a.tmp'`` — an errno decoration and a scratch
+    filename the caller never chose. The caller already names the file it was
+    asked to write, so only the condition belongs here.
+    """
+    return exc.strerror or str(exc)
 
 
 def _atomic_write(path: Path, content: str) -> None:
@@ -604,14 +619,18 @@ def _atomic_write(path: Path, content: str) -> None:
         info = None  # a new file (`init`): nothing to link past or preserve
     if info is not None and stat.S_ISLNK(info.st_mode):
         raise LinkedPathError(
-            f"{path} is a symbolic link; writing here would replace the link "
-            "and leave its target — the file that is actually deployed — "
-            "unchanged. Point the fix at the target instead."
+            "is a symbolic link; writing here would replace the link and leave "
+            "its target — the file that is actually deployed — unchanged; "
+            "point the fix at the target instead"
         )
+    if info is not None and not stat.S_ISREG(info.st_mode):
+        # A directory has st_nlink >= 2, so without this it would be reported
+        # as a hard link, which is not what is wrong with it.
+        raise UnwritableTargetError("not a regular file; refusing to write over it")
     if info is not None and info.st_nlink > 1:
         raise LinkedPathError(
-            f"{path} has {info.st_nlink} hard links; replacing it would break "
-            "the link and leave the other names on the old content."
+            f"has {info.st_nlink} hard links; replacing it would break the link "
+            "and leave the other names on the old content"
         )
 
     fd, tmp_name = tempfile.mkstemp(
@@ -775,8 +794,13 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
                 continue
             try:
                 _atomic_write(Path(filepath), patched)
-            except LinkedPathError as e:
-                emit(f"Error: {e}; no changes written")
+            except OSError as e:
+                # Any write failure — a link refusal, a full disk, a read-only
+                # mount, a directory that vanished — belongs to this file, not
+                # to the run. Unwrapped it reached the CLI as a traceback: exit
+                # 1 where the contract says 2, every later file in the batch
+                # never examined, and the absolute path printed into the log.
+                emit(f"Error: {filepath}: {_write_failure(e)}; no changes written")
                 had_error = True
                 continue
             # The behavior-changing caveats must surface here too, not only on
@@ -841,8 +865,8 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
     existed = out_path.exists()
     try:
         _atomic_write(out_path, render_config(findings))
-    except LinkedPathError as e:
-        emit(f"Error: {e}")
+    except OSError as e:
+        emit(f"Error: {out_path}: {_write_failure(e)}")
         sys.exit(2)
     if not existed:
         # _atomic_write carries over an existing file's mode but a fresh file
