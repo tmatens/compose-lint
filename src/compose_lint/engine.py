@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import sys
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._output import emit
 from compose_lint.models import Finding, Severity
 from compose_lint.rules import get_registered_rules
 
@@ -15,10 +15,9 @@ if TYPE_CHECKING:
 
 def _default_rule_error(rule_id: str, service_name: str, exc: Exception) -> None:
     """Report a crashed rule to stderr without aborting the run."""
-    print(
+    emit(
         f"Error: rule {rule_id} failed on service '{service_name}': "
-        f"{type(exc).__name__}: {exc}",
-        file=sys.stderr,
+        f"{type(exc).__name__}: {exc}"
     )
 
 

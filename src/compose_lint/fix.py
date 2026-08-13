@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from compose_lint._lines import line_starts, split_lines
+from compose_lint._output import sanitize, sanitize_line
 from compose_lint._yaml_edit import (
     DISABLED_SECURITY_PROFILES,
     _is_seq_item,
@@ -433,14 +434,23 @@ def render_file_diff(
     common Compose case) is followed by git's ``\\ No newline at end of file``
     marker. ``difflib`` omits it, which would otherwise glue that line and the
     next onto one line and garble the diff (issue #261 M2).
+
+    Content is sanitized here rather than at the three call sites, because this
+    is the surface a human reads to authorise a destructive write and it must
+    show what will actually be written. Bidi and zero-width codepoints are
+    YAML-printable, so they survive the parser's own check and reach the diff
+    intact — a right-to-left override can display a line in an order the file
+    does not have. Newlines survive sanitizing, so the diff's structure is
+    untouched.
     """
     chunks: list[str] = []
-    for line in difflib.unified_diff(
+    for raw_line in difflib.unified_diff(
         split_lines(original),
         split_lines(patched),
-        fromfile=path,
-        tofile=path,
+        fromfile=sanitize_line(path),
+        tofile=sanitize_line(path),
     ):
+        line = sanitize(raw_line)
         # Header lines (`---`/`+++`/`@@`) always end in a newline; only a final
         # content line can lack one. Re-terminate it and add the git sentinel.
         if line.endswith("\n"):

@@ -73,6 +73,44 @@ Compose then ships nothing.
 
 ### Security
 
+- **Everything compose-lint prints about a file is now sanitized at the sink.**
+  Escaping lived in a private helper inside the text formatter, so it covered
+  that formatter's own fields and nothing else: 26 other print sites emitted
+  attacker-derived text raw — service names, file paths, and parse-error text
+  that quotes the document — and a terminal or CI log renders control sequences.
+  The full CSI repertoire reaching stderr means the file being linted can erase
+  findings already on screen.
+
+  Escaping now lives in `compose_lint._output` and **every** stderr write goes
+  through `emit()`, so it is the default rather than something each new call
+  site must remember; a test fails the build on a raw
+  `print(..., file=sys.stderr)` anywhere in `src/`.
+
+  - **A newline can no longer forge a report line.** `_sanitize` passed `\n`
+    through "so excerpt layout survives", but the sink is a newline-delimited
+    report — a service name carrying one put attacker text in the report's own
+    left margin, indistinguishable from a line compose-lint wrote. Values
+    rendered as a single record are now escaped with `sanitize_line`, and
+    multi-line diagnostics indent their continuation lines so nothing after an
+    embedded newline can occupy column zero.
+  - **The `fix` dry-run diff is sanitized.** It is the surface a human reads to
+    authorise a destructive write, and it printed file content verbatim —
+    bidi and zero-width codepoints are YAML-printable, so they survive the
+    parser's own check and could display a line in an order the file does not
+    have. Sanitizing happens in `render_file_diff`, so all three emit sites are
+    covered at once. Display only: `fix --apply` still writes the original
+    bytes.
+  - **`format_header` sanitizes the config path**, the one unsanitized *stdout*
+    site — it sat immediately beside a correctly sanitized `files` argument.
+
+  Measured over the corpus: no findings, exit codes or errors change. Text
+  output is byte-identical on 299 of 300 sampled files; the exception is
+  PyYAML's parse-error context, whose continuation lines gain two spaces of
+  indent. Of the 16 corpus files containing a sanitizable codepoint (all
+  zero-width space or BOM), the only visible change is that a leading BOM now
+  shows as `\ufeff` in a `fix` diff instead of being invisible — which is the
+  point of the fix.
+
 - **The GitHub Action no longer passes where the CLI would fail.** Six defects
   shared that shape, and `action.yml` is fixed as one block.
 

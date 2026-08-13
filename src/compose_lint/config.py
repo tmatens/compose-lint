@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from compose_lint._output import emit
 from compose_lint.models import Severity
 
 # Top-level keys the config schema defines today (docs/configuration.md).
@@ -41,7 +41,7 @@ def _warn(message: str, strict: bool = False) -> None:
     """
     if strict:
         raise ConfigError(message)
-    print(f"Warning: {message}", file=sys.stderr)
+    emit(f"Warning: {message}")
 
 
 def _known_rule_ids() -> set[str]:

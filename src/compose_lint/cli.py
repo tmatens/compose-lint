@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 from compose_lint import __version__
+from compose_lint._output import emit, emit_block
 from compose_lint.config import ConfigError, load_config
 from compose_lint.config_emit import render_config
 from compose_lint.engine import filter_findings, run_rules
@@ -82,7 +83,7 @@ def _report_parse_error(filepath: str, exc: FileNotFoundError | ComposeError) ->
     handled separately by each caller.
     """
     reason = "file not found" if isinstance(exc, FileNotFoundError) else str(exc)
-    print(f"Error: {filepath}: {reason}", file=sys.stderr)
+    emit(f"Error: {filepath}: {reason}")
     return reason
 
 
@@ -373,7 +374,7 @@ def _report_coverage_gaps(
         return []
     label = "Error" if fatal else "Warning"
     for gap in gaps:
-        print(f"{label}: {filepath}: {gap}", file=sys.stderr)
+        emit(f"{label}: {filepath}: {gap}")
     return [(filepath, gap) for gap in gaps] if fatal else []
 
 
@@ -381,28 +382,21 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     """Run the `check` operation: lint files and exit with the verdict code."""
     if args.explain is not None:
         if args.files:
-            print(
-                "Error: --explain cannot be combined with FILE arguments",
-                file=sys.stderr,
-            )
+            emit("Error: --explain cannot be combined with FILE arguments")
             sys.exit(2)
         # --explain emits human-readable rule prose to stdout (the requested
         # artifact of this mode). There is no JSON/SARIF form, so reject those
         # rather than silently printing markdown when one is requested.
         if args.output_format != "text":
-            print(
+            emit(
                 "Error: --explain has no JSON or SARIF form; "
-                "use the default text output",
-                file=sys.stderr,
+                "use the default text output"
             )
             sys.exit(2)
         try:
             print(load_rule_doc(args.explain))
         except UnknownRuleError:
-            print(
-                f"Error: unknown rule id '{args.explain}' (expected format: CL-XXXX)",
-                file=sys.stderr,
-            )
+            emit(f"Error: unknown rule id '{args.explain}' (expected format: CL-XXXX)")
             sys.exit(2)
         sys.exit(0)
 
@@ -413,17 +407,16 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             args.config, strict=args.strict_config
         )
     except ConfigError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        emit(f"Error: {e}")
         sys.exit(2)
 
     if not args.files:
         args.files = _discover_compose_files()
         if not args.files:
-            print(
+            emit(
                 "Error: no Compose files found. Searched for: "
                 "compose.yml, compose.yaml, "
-                "docker-compose.yml, docker-compose.yaml",
-                file=sys.stderr,
+                "docker-compose.yml, docker-compose.yaml"
             )
             sys.exit(2)
 
@@ -457,7 +450,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             # v1 / fragment file: not malformed, just outside what we lint.
             # Per ADR-013 this is exit 0 (skipped, not a parse error). Must
             # precede the ComposeError clause below — it is a subclass.
-            print(f"{filepath}: {e}", file=sys.stderr)
+            emit(f"{filepath}: {e}")
             continue
         except (FileNotFoundError, ComposeError) as e:
             parse_errors.append((filepath, _report_parse_error(filepath, e)))
@@ -479,7 +472,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                 f"{type(exc).__name__}: {exc}"
             )
             rule_errors.append((_filepath, msg))
-            print(f"Error: {_filepath}: {msg}", file=sys.stderr)
+            emit(f"Error: {_filepath}: {msg}")
 
         findings = run_rules(
             data,
@@ -513,7 +506,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                 # unmounted, permission change). Record it and move on so one bad
                 # file can't abort the rest of the batch.
                 parse_errors.append((filepath, str(e)))
-                print(f"Error: {filepath}: {e}", file=sys.stderr)
+                emit(f"Error: {filepath}: {e}")
                 continue
             try:
                 fixes = collect_edits(findings, data, lines, text).fixed_edits
@@ -524,7 +517,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                 # file's findings too (VULN-017 consequence c).
                 msg = f"could not compute fixes: {e}"
                 parse_errors.append((filepath, msg))
-                print(f"Error: {filepath}: {msg}", file=sys.stderr)
+                emit(f"Error: {filepath}: {msg}")
                 continue
             all_sarif.extend(format_sarif(findings, filepath, fixes=fixes))
         else:
@@ -537,10 +530,9 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     for rule_id, services_map in excluded_services.items():
         for service_name in services_map:
             if service_name not in seen_services:
-                print(
+                emit(
                     f"Warning: exclude_services for {rule_id} references "
-                    f"unknown service '{service_name}'",
-                    file=sys.stderr,
+                    f"unknown service '{service_name}'"
                 )
 
     # Coverage gaps ride the same structured channel as parse errors — JSON
@@ -626,17 +618,16 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             args.config, strict=args.strict_config
         )
     except ConfigError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        emit(f"Error: {e}")
         sys.exit(2)
 
     if not args.files:
         args.files = _discover_compose_files()
         if not args.files:
-            print(
+            emit(
                 "Error: no Compose files found. Searched for: "
                 "compose.yml, compose.yaml, "
-                "docker-compose.yml, docker-compose.yaml",
-                file=sys.stderr,
+                "docker-compose.yml, docker-compose.yaml"
             )
             sys.exit(2)
 
@@ -649,7 +640,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
         except ComposeNotApplicableError as e:
             # v1 / fragment file: skipped, not an error (ADR-013). Must precede
             # the ComposeError clause below — it is a subclass.
-            print(f"{filepath}: {e}", file=sys.stderr)
+            emit(f"{filepath}: {e}")
             continue
         except (FileNotFoundError, ComposeError) as e:
             _report_parse_error(filepath, e)
@@ -668,7 +659,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
         except OSError as e:
             # Parsed above, but unreadable now (deleted, unmounted, permission
             # change) — record and continue so the rest of the batch still runs.
-            print(f"Error: {filepath}: {e}", file=sys.stderr)
+            emit(f"Error: {filepath}: {e}")
             had_error = True
             continue
         findings = run_rules(
@@ -683,25 +674,24 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
         except LineOutOfRangeError as e:
             # Same fail-closed treatment as the check path: refuse this file,
             # write nothing, let the rest of the batch run (VULN-017).
-            print(f"Error: {filepath}: could not compute fixes: {e}", file=sys.stderr)
+            emit(f"Error: {filepath}: could not compute fixes: {e}")
             had_error = True
             continue
 
         if not result.edits:
             if result.manual:
-                print(
+                emit(
                     f"{filepath}: nothing to auto-fix; "
-                    f"{len(result.manual)} finding(s) need manual review",
-                    file=sys.stderr,
+                    f"{len(result.manual)} finding(s) need manual review"
                 )
             else:
-                print(f"{filepath}: nothing to fix", file=sys.stderr)
+                emit(f"{filepath}: nothing to fix")
             continue
 
         try:
             patched = apply_edits(text, result.edits)
         except LineOutOfRangeError as e:
-            print(f"Error: {filepath}: could not apply fixes: {e}", file=sys.stderr)
+            emit(f"Error: {filepath}: could not apply fixes: {e}")
             had_error = True
             continue
 
@@ -711,15 +701,10 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
         # diff plus the parse error so it is diagnosable (issue #261).
         guard_error = reparse_or_error(patched, Path(filepath).absolute().parent)
         if guard_error is not None:
-            print(
-                render_file_diff(filepath, text, patched, result.caveats),
-                end="",
-                file=sys.stderr,
-            )
-            print(
+            emit_block(render_file_diff(filepath, text, patched, result.caveats))
+            emit(
                 f"Error: {filepath}: computed fix does not parse as Compose "
-                f"({guard_error}); no changes written",
-                file=sys.stderr,
+                f"({guard_error}); no changes written"
             )
             had_error = True
             continue
@@ -740,15 +725,8 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             excluded_services=excluded_services,
         )
         if verify_error is not None:
-            print(
-                render_file_diff(filepath, text, patched, result.caveats),
-                end="",
-                file=sys.stderr,
-            )
-            print(
-                f"Error: {filepath}: {verify_error}; no changes written",
-                file=sys.stderr,
-            )
+            emit_block(render_file_diff(filepath, text, patched, result.caveats))
+            emit(f"Error: {filepath}: {verify_error}; no changes written")
             had_error = True
             continue
 
@@ -758,25 +736,19 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
                 # modify" signal; os.replace would still swap it in via the
                 # writable parent directory. Warn and skip rather than override
                 # the user's intent silently.
-                print(
+                emit(
                     f"Warning: {filepath}: file is not writable; skipping "
-                    "(make it writable to allow `fix --apply` to modify it)",
-                    file=sys.stderr,
+                    "(make it writable to allow `fix --apply` to modify it)"
                 )
                 continue
             _atomic_write(Path(filepath), patched)
             # The behavior-changing caveats must surface here too, not only on
             # the dry run — nothing forces a dry run first, so a one-shot
             # `fix --apply` would otherwise mutate files silently (issue #428).
-            print(
-                render_caveat_banner(result.caveats),
-                end="",
-                file=sys.stderr,
-            )
-            print(
+            emit_block(render_caveat_banner(result.caveats))
+            emit(
                 f"{filepath}: applied {len(result.edits)} fix(es) across "
-                f"{len(result.fixed)} finding(s)",
-                file=sys.stderr,
+                f"{len(result.fixed)} finding(s)"
             )
         else:
             print(
@@ -784,10 +756,9 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
                 end="",
                 flush=True,
             )
-            print(
+            emit(
                 f"{filepath}: {len(result.edits)} fix(es) available; "
-                f"{len(result.manual)} finding(s) need manual review",
-                file=sys.stderr,
+                f"{len(result.manual)} finding(s) need manual review"
             )
 
     sys.exit(2 if had_error else 0)
@@ -809,7 +780,7 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
         # v1 / fragment file: skipped, not an error (ADR-013). Nothing to lint,
         # so nothing to bootstrap. Must precede the ComposeError clause below —
         # it is a subclass.
-        print(f"{args.file}: {e}", file=sys.stderr)
+        emit(f"{args.file}: {e}")
         sys.exit(0)
     except (FileNotFoundError, ComposeError) as e:
         _report_parse_error(args.file, e)
@@ -817,9 +788,8 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
 
     findings = run_rules(data, lines)
     if not findings:
-        print(
-            f"{args.file}: no findings; nothing to suppress, not writing {args.output}",
-            file=sys.stderr,
+        emit(
+            f"{args.file}: no findings; nothing to suppress, not writing {args.output}"
         )
         sys.exit(0)
 
@@ -828,10 +798,7 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
     # above already exited, so reaching here means there is a config to land.
     # Protect deliberate human suppression decisions from a silent clobber.
     if out_path.exists() and not args.force:
-        print(
-            f"Error: {out_path} already exists; pass --force to overwrite",
-            file=sys.stderr,
-        )
+        emit(f"Error: {out_path} already exists; pass --force to overwrite")
         sys.exit(2)
 
     existed = out_path.exists()
@@ -845,9 +812,7 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
 
     rule_count = len({f.rule_id for f in findings})
     pair_count = len({(f.rule_id, f.service) for f in findings})
-    print(
-        f"wrote {out_path} with {pair_count} suppression(s) across "
-        f"{rule_count} rule(s)",
-        file=sys.stderr,
+    emit(
+        f"wrote {out_path} with {pair_count} suppression(s) across {rule_count} rule(s)"
     )
     sys.exit(0)

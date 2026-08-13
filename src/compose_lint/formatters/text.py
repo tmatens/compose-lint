@@ -9,6 +9,8 @@ import unicodedata
 from pathlib import Path
 
 from compose_lint._lines import BREAK_CHARS, split_lines
+from compose_lint._output import sanitize as _sanitize
+from compose_lint._output import sanitize_line as _sanitize_line
 from compose_lint.models import Finding, Severity
 
 _COLORS = {
@@ -78,40 +80,6 @@ _PRESENCE_RULES = frozenset(
 )
 
 _QUOTED = re.compile(r"'([^']+)'")
-
-# Code-point ranges (inclusive) that can spoof or corrupt terminal output when
-# an untrusted string from the Compose file (image name, service name, env key,
-# or a source line read straight off disk) is printed: C0/C1 controls —
-# ANSI/escape-sequence injection, including the ESC and CSI introducers — plus
-# DEL, and the bidirectional and zero-width formatting characters that visually
-# reorder or hide text (e.g. U+202E RIGHT-TO-LEFT OVERRIDE rendering a malicious
-# tag as a benign one). Built from hex so no invisible literals live in source;
-# tab and newline are deliberately excluded so excerpt layout survives.
-_UNSAFE_RANGES = (
-    (0x00, 0x08),
-    (0x0B, 0x1F),
-    (0x7F, 0x9F),
-    (0x200B, 0x200F),
-    (0x202A, 0x202E),
-    (0x2060, 0x2064),
-    (0x2066, 0x206F),
-    (0xFEFF, 0xFEFF),
-)
-_UNSAFE_OUTPUT_CHARS = re.compile(
-    "[" + "".join(f"{chr(lo)}-{chr(hi)}" for lo, hi in _UNSAFE_RANGES) + "]"
-)
-
-
-def _sanitize(text: str) -> str:
-    """Render terminal-unsafe code points as visible ``\\uXXXX`` escapes.
-
-    Findings and source excerpts carry attacker-controlled text. The source
-    excerpt in particular is read directly off disk (``_read_source_lines``),
-    bypassing the parser's printable-character check, so a crafted Compose file
-    could otherwise inject raw ANSI escapes or bidi overrides into a terminal
-    or CI log. Clean ASCII/Unicode text is returned unchanged.
-    """
-    return _UNSAFE_OUTPUT_CHARS.sub(lambda m: f"\\u{ord(m.group()):04x}", text)
 
 
 def _color_enabled() -> bool:
@@ -191,9 +159,9 @@ def format_header(
 ) -> str:
     """Format a branded run header showing the tool version and active parameters."""
     sep = _colorize("·", _DIM)
-    config_str = config_path if config_path else "none"
+    config_str = _sanitize_line(config_path) if config_path else "none"
     params = (
-        f"files: {', '.join(_sanitize(f) for f in files)}"
+        f"files: {', '.join(_sanitize_line(f) for f in files)}"
         f"  {sep}  config: {config_str}"
         f"  {sep}  fail-on: {fail_on.value}"
     )
@@ -233,7 +201,7 @@ def _excerpt(
     """
     if line_num < 1 or line_num > len(source_lines):
         return []
-    raw = _sanitize(source_lines[line_num - 1].rstrip())
+    raw = _sanitize_line(source_lines[line_num - 1].rstrip())
     line_label = str(line_num)
     pad = " " * len(line_label)
     bar = _colorize("│", _DIM)
@@ -291,7 +259,7 @@ def format_findings(
     )
 
     out: list[str] = []
-    out.append(_colorize(_sanitize(filepath), _BOLD))
+    out.append(_colorize(_sanitize_line(filepath), _BOLD))
     out.append("")
 
     # Dedup on (rule_id, fix, references), not rule_id alone: one rule's fix can
@@ -306,7 +274,7 @@ def format_findings(
         svc_line = next((f.line for f in group if f.line is not None), None)
         header_suffix = f"  ({_colorize('line', _DIM)} {svc_line})" if svc_line else ""
         out.append(
-            f"  {_colorize('service:', _DIM)} {_sanitize(service)}{header_suffix}"
+            f"  {_colorize('service:', _DIM)} {_sanitize_line(service)}{header_suffix}"
         )
         out.append(
             _colorize(
@@ -328,18 +296,19 @@ def format_findings(
                     f"    {line_label.rjust(4)}  "
                     f"{marker}  "
                     f"{_colorize(f.rule_id, _DIM)}  "
-                    f"{_colorize(_sanitize(f.message), _SUPPRESSED_COLOR)}"
+                    f"{_colorize(_sanitize_line(f.message), _SUPPRESSED_COLOR)}"
                 )
                 if not quiet:
                     out.append(
-                        f"          {_colorize('reason:', _DIM)} {_sanitize(reason)}"
+                        f"          {_colorize('reason:', _DIM)} "
+                        f"{_sanitize_line(reason)}"
                     )
                 continue
 
             severity_label = f.severity.value.upper().ljust(_LABEL_WIDTH)
             color = _COLORS.get(f.severity, "")
             line_label = str(f.line) if f.line else "?"
-            message = _sanitize(f.message)
+            message = _sanitize_line(f.message)
 
             fix_key = (f.rule_id, f.fix or "", tuple(f.references or ()))
             already_shown = fix_key in seen_fixes
@@ -383,7 +352,7 @@ def format_summary(
     filepath: str,
 ) -> str:
     """Format a one-line summary of findings for a single file."""
-    filepath = _sanitize(filepath)
+    filepath = _sanitize_line(filepath)
     if not findings:
         return _colorize(f"{filepath}: no issues found", _GREEN)
 
