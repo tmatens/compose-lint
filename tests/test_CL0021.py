@@ -115,6 +115,32 @@ class TestConnectionStringCredentialsRule:
         findings = self._check("list_form_skipped_when_var")
         assert findings == []
 
+    def test_skip_required_var_halves(self) -> None:
+        # `${VAR:?err}` has no default, so Compose ships both halves empty and
+        # the value carries no credential. Splitting the userinfo on the first
+        # ':' landed inside the substitution, making the password half
+        # `?error}:${DB_PASSWORD:?error}` — not wholly a reference, so it read
+        # as a literal and the rule fired (issue #561).
+        findings = self._check_inline(
+            '"postgresql://${DB_USER:?error}:${DB_PASSWORD:?error}@postgres/db"'
+        )
+        assert findings == []
+
+    def test_skip_required_var_password_only(self) -> None:
+        # Control, not a regression: only the password half carries the ':?',
+        # which the old split already handled (the userinfo separator came
+        # first). It pins the behavior the fix must not change.
+        findings = self._check_inline('"postgres://app:${DB_PASSWORD:?err}@db/app"')
+        assert findings == []
+
+    def test_detect_literal_password_after_required_var_user(self) -> None:
+        # Control on the other side: making the split substitution-aware must
+        # not start exempting a literal password behind a `:?` username
+        # (issue #277 F6).
+        findings = self._check_inline('"postgres://${DB_USER:?err}:hunter2@db/app"')
+        assert len(findings) == 1
+        assert findings[0].rule_id == "CL-0021"
+
     # ---- $$ escape: a literal dollar is not a substitution (issue #502) ----
 
     def test_detect_dollar_escaped_password_in_url(self) -> None:
@@ -216,3 +242,45 @@ class TestConnectionStringCredentialsRule:
         assert meta.id == "CL-0021"
         assert meta.severity == Severity.HIGH
         assert len(meta.references) >= 3
+
+
+def test_split_userinfo_ignores_substitutions() -> None:
+    # Unit-level counterpart to the rule tests above, mirroring
+    # `test_bind_source_resolution`'s coverage of `_split_short_volume`: the
+    # split must happen at substitution depth 0, so a ':' inside `${...}` —
+    # `:-`, `:?` or `:+` — is not the userinfo separator (issue #561).
+    from compose_lint.rules.CL0021_connection_string_credentials import (
+        _split_userinfo,
+    )
+
+    def split(value: str) -> tuple[str, str] | None:
+        scheme, _, rest = value.partition("://")
+        return _split_userinfo(value, len(scheme) + 3) if rest else None
+
+    assert split("postgres://${U:?e}:${P:?e}@db/x") == ("${U:?e}", "${P:?e}")
+    assert split("postgres://u:${P:+set}@db/x") == ("u", "${P:+set}")
+    assert split("postgres://u:p@db/x") == ("u", "p")
+    assert split("redis://:p@r:6379/0") == ("", "p")
+    # `$$` is a literal dollar, so it opens no substitution and the '}' that
+    # follows cannot close one.
+    assert split("postgres://u:pa$${x}w0rd@db/x") == ("u", "pa$${x}w0rd")
+    # Not a userinfo: no ':', no '@', or the authority ends first.
+    assert split("postgres://host/db") is None
+    assert split("postgres://u:p/db") is None
+    assert split("http://example.com/a:b@c") is None
+
+
+def test_split_userinfo_bounds_each_half() -> None:
+    # Both halves are capped, which is what keeps the scan bounded on a value
+    # whose userinfo never terminates.
+    from compose_lint.rules.CL0021_connection_string_credentials import (
+        _MAX_USERINFO_HALF,
+        _split_userinfo,
+    )
+
+    at_cap = f"x://{'u' * _MAX_USERINFO_HALF}:{'p' * _MAX_USERINFO_HALF}@db"
+    assert _split_userinfo(at_cap, 4) is not None
+    over_user = f"x://{'u' * (_MAX_USERINFO_HALF + 1)}:p@db"
+    assert _split_userinfo(over_user, 4) is None
+    over_password = f"x://u:{'p' * (_MAX_USERINFO_HALF + 1)}@db"
+    assert _split_userinfo(over_password, 4) is None

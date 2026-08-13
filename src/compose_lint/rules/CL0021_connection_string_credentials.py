@@ -22,23 +22,80 @@ COMPOSE_SECRETS_REF = "https://docs.docker.com/reference/compose-file/secrets/"
 
 RFC3986_REF = "https://datatracker.ietf.org/doc/html/rfc3986#section-3.2.1"
 
-# Match `scheme://user:password@` in any env value. The scheme follows
-# RFC 3986 §3.1 (alpha + alnum/+/-/.); user and password halves stop at
-# the structural separators (':', '/', '@', whitespace). The user half is
-# optional (`*`, not `+`): RFC 3986 §3.2.1 permits an empty username, and
-# `redis://:password@host` — the standard Redis URL form — must still fire
-# (issue #279 R2). The var-ref guard below filters out variable substitutions
-# in the password half.
-# Every quantifier is bounded. Unbounded, the engine retries the scheme from
-# each of n offsets and rescans the tail from each — O(n^2) on a value shaped
-# like `scheme://<many>:<many>` (20 KB took 1.1 s, 40 KB took 4.1 s). The
-# ceilings are far above any real URL: RFC 3986 schemes are a handful of
-# characters, and a userinfo half in the hundreds is already implausible.
-_URI_USERINFO_RE = re.compile(
-    r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.\-]{0,63})://"
-    r"(?P<user>[^:/@\s]{0,512}):"
-    r"(?P<password>[^@/\s]{1,512})@"
-)
+# Match the `scheme://` prefix of a URL in any env value, per RFC 3986 §3.1
+# (alpha + alnum/+/-/.). The quantifier is bounded: unbounded, the engine
+# retries the scheme from each of n offsets and rescans the tail from each —
+# O(n^2) on a value shaped like `scheme://<many>:<many>` (20 KB took 1.1 s,
+# 40 KB took 4.1 s). The ceiling is far above any real scheme, which is a
+# handful of characters.
+_URI_SCHEME_RE = re.compile(r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.\-]{0,63})://")
+
+# Ceiling on either half of the userinfo. A userinfo half in the hundreds is
+# already implausible, and the bound is what keeps the scan below linear in
+# the length of a value that never terminates its userinfo.
+_MAX_USERINFO_HALF = 512
+
+
+def _split_userinfo(value: str, start: int) -> tuple[str, str] | None:
+    """Split `user:password@` out of ``value[start:]``, ignoring ``${...}``.
+
+    Returns the two halves, or ``None`` when what follows ``scheme://`` is not
+    a userinfo at all — no ``:``, no terminating ``@``, or a ``/`` or
+    whitespace reaching one of those first (both are structural separators
+    that end the authority, so a credential cannot span them).
+
+    Splitting on the first ``:`` with a regex splits *inside* the substitution,
+    the same defect :func:`parser._split_short_volume` exists to avoid.
+    ``postgresql://${DB_USER:?error}:${DB_PASSWORD:?error}@postgres/db`` has
+    its first colon in the ``:?``, yielding a password of
+    ``?error}:${HELLO_DB_PASSWORD:?error}`` — not wholly a reference, so
+    :func:`ships_no_literal` called it a literal and the rule fired on a value
+    that ships no credential at all (1 corpus instance, issue #561). Both
+    halves are therefore delimited by scanning at substitution depth 0.
+
+    ``$$`` is Compose's escape for a literal dollar, consumed before
+    interpolation, so it never opens a substitution — ``pa$${x}w0rd`` is a
+    literal password, not a reference (issue #502).
+    """
+    depth = 0
+    colon = -1
+    i = start
+    # A userinfo cannot exceed both ceilings plus its ':' separator, so past
+    # that point no '@' can produce a match. Bailing keeps the scan bounded on
+    # a long value whose userinfo never terminates.
+    limit = min(len(value), start + 2 * _MAX_USERINFO_HALF + 2)
+    while i < limit:
+        ch = value[i]
+        if ch == "$" and i + 1 < len(value):
+            following = value[i + 1]
+            if following == "$":  # escaped literal dollar, not syntax
+                i += 2
+                continue
+            if following == "{":
+                depth += 1
+                i += 2
+                continue
+        if depth:
+            if ch == "}":
+                depth -= 1
+            i += 1
+            continue
+        if ch == "@":
+            if colon < 0:
+                return None  # no password half
+            user = value[start:colon]
+            password = value[colon + 1 : i]
+            if len(user) > _MAX_USERINFO_HALF:
+                return None
+            if not 1 <= len(password) <= _MAX_USERINFO_HALF:
+                return None
+            return user, password
+        if ch == "/" or ch.isspace():
+            return None  # authority ended before any userinfo did
+        if ch == ":" and colon < 0:
+            colon = i
+        i += 1
+    return None
 
 
 def _iter_env(env_block: Any) -> Iterator[tuple[str, Any, int | None]]:
@@ -71,12 +128,16 @@ def _find_inline_credential(value: str) -> tuple[str, str, str] | None:
     CL-0020 so both rules classify a password identically — in particular,
     Compose's escaped literal dollar (`$$`) is data, not a substitution, so
     `pa$$w0rd` still fires (issue #502).
+
+    An empty username is a match: RFC 3986 §3.2.1 permits one, and
+    `redis://:password@host` — the standard Redis URL form — must still fire
+    (issue #279 R2).
     """
-    # The pattern requires a terminating '@', so a value without one can never
-    # match. Bail before `finditer` runs: without this guard a value shaped like
-    # `scheme://<many chars>:<many chars>` with no '@' makes the password half
-    # rescan the whole tail from every offset — O(n^2) on attacker-controlled
-    # env values, a cheap DoS when sweeping untrusted compose files.
+    # A userinfo requires a terminating '@', so a value without one can never
+    # match. Bail before the scan runs: without this guard a value shaped like
+    # `scheme://<many chars>:<many chars>` with no '@' is walked from every
+    # `scheme://` offset — O(n^2) on attacker-controlled env values, a cheap
+    # DoS when sweeping untrusted compose files.
     if "@" not in value:
         return None
     if len(value) > MAX_SCAN_LEN:
@@ -84,9 +145,11 @@ def _find_inline_credential(value: str) -> tuple[str, str, str] | None:
         # bound anything on its own. A scalar this long is not a connection
         # string; scanning it is pure cost.
         return None
-    for m in _URI_USERINFO_RE.finditer(value):
-        user = m.group("user")
-        password = m.group("password")
+    for m in _URI_SCHEME_RE.finditer(value):
+        split = _split_userinfo(value, m.end())
+        if split is None:
+            continue
+        user, password = split
         if ships_no_literal(password):
             continue
         return m.group("scheme"), user, password

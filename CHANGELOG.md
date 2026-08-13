@@ -114,6 +114,15 @@ Compose then ships nothing.
 
 ### Fixed
 
+- **CL-0021 no longer reports a connection string whose credential is entirely
+  a variable reference.** The `user:password@` split ran on the first `:`,
+  which for `postgresql://${DB_USER:?error}:${DB_PASSWORD:?error}@db/x` lands
+  inside the substitution — leaving a "password" of `?error}:${DB_PASSWORD:?error}`,
+  which is not wholly a reference and so read as a shipped literal. The split
+  now happens at substitution depth zero, the same thing `parser` already did
+  for short-syntax volumes, and each half is length-bounded rather than
+  relying on a regex quantifier to bound it.
+
 - **Nested interpolation defaults resolve the way Compose resolves them.**
   `${A:-x${B:-y}z}` was rewritten by a single regex pass whose default group
   stopped at the *first* `}` — the inner one — so
