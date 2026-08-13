@@ -114,6 +114,38 @@ Compose then ships nothing.
 
 ### Fixed
 
+- **Nested interpolation defaults resolve the way Compose resolves them.**
+  `${A:-x${B:-y}z}` was rewritten by a single regex pass whose default group
+  stopped at the *first* `}` — the inner one — so
+  `${DB_URL:-postgres://u:${PW:-s3cret}@db/x}` normalized to
+  `postgres://u:${PW:-s3cret@db/x}`, a string Compose never ships, with the
+  userinfo boundary moved and the brace relocated past the host. Every rule
+  reads the normalized document, so the corruption reached bind sources
+  (`${GOPATH:-${HOME}/go}/pkg/mod/cache`) as well as the credential rules. 98
+  values across 34 corpus files are written this way. Resolution is now
+  innermost-first with balanced brace counting, checked against
+  `docker compose config` on Compose 5.4.0 with no `.env`:
+
+  | written | shipped | before |
+  |---|---|---|
+  | `${A:-front-${B:-back}-tail}` | `front-back-tail` | `front-${B:-back-tail}` |
+  | `${OUTER:-postgres://u:${IN:-pw}@db/x}` | `postgres://u:pw@db/x` | `postgres://u:${IN:-pw@db/x}` |
+  | `${CONF:-{"a":1}}` | `{"a":1}` | `{"a":1}` |
+
+  Nesting is bounded at 32 levels, deeper values being left as written: because
+  resolution recurses per level, `${A:-` repeated 1,200 times — 7 KB, under
+  `MAX_SCAN_LEN` — otherwise exhausted the interpreter stack and the parser
+  reported that as a usage error, so a 7 KB scalar turned a clean lint into
+  exit 2.
+
+  Measured over the 5,417-file corpus: **5 files (0.09%) change findings and
+  none go from pass to fail.** Two stop failing at the default `--fail-on high`,
+  each losing a single CL-0021 false positive; one drops a CL-0020 on
+  `MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-${S3_SECRET_KEY:-}}`, which
+  Compose ships empty; and one file's five `${IMG:-repo/app:${TAG:-latest}}`
+  images move from CL-0019 to CL-0004 at the same MEDIUM severity, because the
+  tag now resolves to the mutable `latest` rather than to an opaque reference.
+
 - **`init` no longer writes a config that does not parse.** A service name
   carrying a newline produced a `.compose-lint.yml` with a bare line break
   inside a mapping key — and `init` reported success writing it, so every later

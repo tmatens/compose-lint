@@ -55,6 +55,74 @@ def test_reference_without_a_default_is_left_as_written() -> None:
     assert data["services"]["web"]["image"] == "nginx:${TAG}"
 
 
+@pytest.mark.parametrize(
+    "written,shipped",
+    [
+        # Captured with `docker compose config` on Docker Compose 5.4.0, in an
+        # empty directory with no `.env` and an empty environment. A single
+        # regex pass resolved the *outer* reference against the *inner* one's
+        # closing brace, producing text Compose never ships:
+        # `${OUTER:-postgresql://user:${INNER:-pw}@db/x}` became
+        # `postgresql://user:${INNER:-pw@db/x}`, moving the userinfo boundary
+        # and relocating the brace past the host (issue #561).
+        (
+            "${OUTER:-postgresql://user:${INNER:-placeholder}@db:5432/x}",
+            "postgresql://user:placeholder@db:5432/x",
+        ),
+        ("${A:-front-${B:-back}-tail}", "front-back-tail"),
+        # Three deep, the shape corpus files use for a compose-project path.
+        ("${A:-${B:-${C:-leaf}}}", "leaf"),
+        # A default may contain literal braces, so the closing one is found by
+        # balanced counting rather than by taking the first `}`. This row is a
+        # control: taking the first `}` also happened to land here, because the
+        # brace it dropped was re-added as a trailing literal. It pins what the
+        # balanced counting must not break.
+        ('${CONF:-{"a":1}}', '{"a":1}'),
+    ],
+)
+def test_nested_defaults_resolve_innermost_first(written: str, shipped: str) -> None:
+    assert substitute_defaults(written) == shipped
+
+
+def test_nested_reference_without_a_default_is_left_as_written() -> None:
+    """One un-defaulted reference anywhere makes the whole value unknowable.
+
+    Compose ships `${GOPATH:-${HOME}/go}/pkg/mod/cache` as `/go/pkg/mod/cache`
+    with an empty environment, but `$HOME` is set in every real one — so this
+    file does not determine the path, and resolving it would invent a finding.
+    Left as written, `ships_no_literal` still classifies it correctly.
+    """
+    assert substitute_defaults("${GOPATH:-${HOME}/go}/pkg/mod/cache") is None
+
+
+def test_nesting_deeper_than_the_bound_is_left_as_written() -> None:
+    """Resolution recurses per level, so the depth is what a scalar can buy.
+
+    Unbounded, `${A:-` repeated ~1,200 times — 7 KB, under `MAX_SCAN_LEN` —
+    exhausted the interpreter stack, and the parser reports a RecursionError as
+    a usage error: a file that lints clean would exit 2 instead. That is the
+    denial of service `_limits.MAX_SCAN_LEN` exists to close, reached by
+    recursion rather than by backtracking.
+    """
+    from compose_lint.rules._interpolation import _MAX_NESTING
+
+    at_bound = "${A:-" * _MAX_NESTING + "leaf" + "}" * _MAX_NESTING
+    assert substitute_defaults(at_bound) == "leaf"
+
+    too_deep = "${A:-" * 1200 + "leaf" + "}" * 1200
+    assert len(too_deep) < _MAX_SCAN_LEN, "must be under the size cap to prove anything"
+    assert substitute_defaults(too_deep) is None
+    # And it reaches the parser as a lintable document, not an exit-2 error.
+    data, _lines = loads(f"services:\n  web:\n    working_dir: '{too_deep}'\n")
+    assert data["services"]["web"]["working_dir"] == too_deep
+
+
+def test_operators_other_than_default_carry_no_default() -> None:
+    """`:?`/`?` take an error message and `:+`/`+` an alternate, not a default."""
+    for written in ("${A:?err}", "${A?err}", "${A:+alt}", "${A+alt}"):
+        assert substitute_defaults(written) is None, written
+
+
 def test_normalization_reaches_nested_lists_and_maps() -> None:
     data, _lines = loads(
         "services:\n"
