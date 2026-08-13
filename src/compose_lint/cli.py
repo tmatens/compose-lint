@@ -587,6 +587,18 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     sys.exit(1 if has_errors else 0)
 
 
+def _refuses_write(path: Path) -> bool:
+    """Whether ``path`` exists and is marked read-only.
+
+    A 0444 file is an explicit "do not modify" signal, and `os.replace` would
+    still swap it out through the writable parent directory — so the mode has
+    to be checked, not relied on. `fix --apply` did; `init --force` did not,
+    and the file it overwrites is the policy governing which security rules are
+    suppressed.
+    """
+    return path.exists() and not os.access(path, os.W_OK)
+
+
 class UnwritableTargetError(OSError):
     """Raised when a write target exists but is not a regular file."""
 
@@ -794,11 +806,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             continue
 
         if args.apply:
-            if not os.access(filepath, os.W_OK):
-                # A read-only file (e.g. chmod 444) is an explicit "do not
-                # modify" signal; os.replace would still swap it in via the
-                # writable parent directory. Warn and skip rather than override
-                # the user's intent silently.
+            if _refuses_write(Path(filepath)):
                 emit(
                     f"Warning: {filepath}: file is not writable; skipping "
                     "(make it writable to allow `fix --apply` to modify it)"
@@ -872,6 +880,17 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
     # Protect deliberate human suppression decisions from a silent clobber.
     if out_path.exists() and not args.force:
         emit(f"Error: {out_path} already exists; pass --force to overwrite")
+        sys.exit(2)
+
+    if _refuses_write(out_path):
+        # --force overrides the "already exists" refusal above; it does not
+        # override the file's own mode. `fix --apply` has always honoured this
+        # and the init path did not, so the one file whose contents decide
+        # which rules are suppressed was the one without the guard.
+        emit(
+            f"Error: {out_path} is not writable; "
+            "make it writable to allow `init --force` to replace it"
+        )
         sys.exit(2)
 
     existed = out_path.exists()

@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import re
 
+import yaml
+
 from compose_lint.models import Finding, Severity
 
 _PLACEHOLDER_REASON = "TODO: justify or fix"
@@ -32,15 +34,33 @@ _SEVERITY_RANK = {
 
 # A YAML plain scalar safe to emit unquoted: an identifier-ish token with no
 # characters that would change the parse. Anything else is double-quoted.
-_PLAIN_SCALAR = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+#
+# `\A`/`\Z`, not `^`/`$`: in Python `$` also matches *before* a trailing
+# newline, so a service named "web\n" passed this check and was emitted
+# unquoted — a bare newline in the middle of a mapping key.
+_PLAIN_SCALAR = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 
 
 def _scalar(value: str) -> str:
-    """Render a string as a YAML scalar, quoting only when necessary."""
+    """Render a string as a YAML scalar, quoting only when necessary.
+
+    Quoting is delegated to PyYAML rather than hand-rolled. The previous
+    version escaped `\\` and `"` and nothing else, so a service name carrying a
+    newline produced a config that does not parse — and `init` reported success
+    while writing it, which broke every later run in that directory with
+    `Invalid YAML in config file`, exit 2. Durable corruption from one lint of
+    one hostile file.
+
+    Escaping is the kind of thing that is nearly right until it meets the next
+    character class; the emitter that owns the format should decide.
+    """
     if _PLAIN_SCALAR.match(value):
         return value
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
+    # `default_style='"'` forces the double-quoted form, which is what this
+    # emitter wants and which yields a single line with no document markers.
+    return yaml.safe_dump(
+        value, default_style='"', width=10**9, allow_unicode=True
+    ).rstrip("\n")
 
 
 def _rule_names() -> dict[str, str]:

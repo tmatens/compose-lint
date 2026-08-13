@@ -114,6 +114,24 @@ Compose then ships nothing.
 
 ### Fixed
 
+- **`init` no longer writes a config that does not parse.** A service name
+  carrying a newline produced a `.compose-lint.yml` with a bare line break
+  inside a mapping key — and `init` reported success writing it, so every later
+  run in that directory failed with `Invalid YAML in config file` at exit 2
+  until someone found the file by hand. Durable corruption from one lint of one
+  hostile file. Quoting is now delegated to PyYAML rather than hand-rolled
+  (the previous version escaped `\` and `"` and nothing else), and the
+  plain-scalar test is anchored with `\Z` rather than `$` — in Python `$` also
+  matches *before* a trailing newline, so `"web\n"` was emitted unquoted.
+  Ordinary names are still emitted unquoted.
+
+- **`init --force` no longer overwrites a read-only config.** A 0444
+  `.compose-lint.yml` is an explicit "do not modify" on the file that decides
+  which security rules are suppressed, and `os.replace` would swap it out
+  through the writable parent directory regardless. `fix --apply` had honoured
+  that mode all along; the init path did not. The guard is now one shared
+  helper called by both, with a test that fails if either loses it.
+
 - **A small file can no longer buy a large amount of work.** Nine defects
   shared that shape: input that parses in milliseconds and then costs seconds
   or gigabytes downstream, while producing no finding and exiting 0 — so
