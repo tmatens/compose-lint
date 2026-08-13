@@ -489,6 +489,25 @@ def _collect_lines(
     seq_lines = seq_lines or {}
     lines: dict[str, int] = {}
     expanded: set[int] = set()
+    # Paths that two different nodes both claim. Joining path segments with "."
+    # is lossy when a segment contains one: a service named `web.logging` and
+    # service `web`'s `logging:` child both spell `services.web.logging`, and
+    # last-write-wins handed one of them the other's line. A fixer then checked
+    # its anchor/merge-key refusal against a different service's line, and an
+    # edit every fixer is required to refuse was applied. Rather than return a
+    # line belonging to somewhere else, drop the key: `lines.get` yields None,
+    # which every consumer already treats as "cannot locate this — refuse".
+    ambiguous: set[str] = set()
+
+    def record(full_key: str, line: int) -> None:
+        previous = lines.get(full_key)
+        # The same node reached by two paths yields two different keys, so a
+        # repeat with a *different* line is always a genuine collision.
+        if previous is not None and previous != line:
+            ambiguous.add(full_key)
+        else:
+            lines[full_key] = line
+
     stack: list[tuple[Any, str]] = [(data, prefix)]
     while stack:
         current, current_prefix = stack.pop()
@@ -502,7 +521,7 @@ def _collect_lines(
                     continue
                 full_key = f"{current_prefix}.{key}" if current_prefix else key
                 if key in line_map:
-                    lines[full_key] = line_map[key]
+                    record(full_key, line_map[key])
                 if first:
                     stack.append((value, full_key))
         elif isinstance(current, list):
@@ -513,9 +532,11 @@ def _collect_lines(
             for i, item in enumerate(current):
                 full_key = f"{current_prefix}[{i}]"
                 if i in item_lines:
-                    lines[full_key] = item_lines[i]
+                    record(full_key, item_lines[i])
                 if first:
                     stack.append((item, full_key))
+    for key in ambiguous:
+        lines.pop(key, None)
     return lines
 
 

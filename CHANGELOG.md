@@ -73,6 +73,41 @@ Compose then ships nothing.
 
 ### Security
 
+- **Four places where the tool reported a state that was not true.**
+
+  - **`fix --apply` no longer claims to have fixed a file it did not touch.**
+    `os.replace` swaps the directory entry, not the inode behind it, so on a
+    **symlink** it dropped a regular file over the link and left the file the
+    stack actually deploys unchanged — while the run reported the fix applied.
+    On a **hard link** it broke the link and let the two names diverge in
+    silence. Both are now refused with an error naming the reason; the rest of
+    the batch continues. `setuid`/`setgid`/sticky bits are no longer carried
+    onto the replacement inode.
+  - **A `severity:` override leaves an audit record.** It was the one
+    suppression channel with none: `enabled: false` and `exclude_services` both
+    mark findings SUPPRESSED with a reason, but a re-graded finding was
+    indistinguishable from one the rule declared at that level — so three lines
+    in a policy file could take a CRITICAL below the default gate invisibly.
+    Now reported as `(severity overridden from critical)` in text,
+    `severity_overridden_from` in JSON, and `properties.severityOverriddenFrom`
+    in SARIF. Re-stating a rule's own severity records nothing, because nothing
+    changed.
+  - **Duplicate keys in `.compose-lint.yml` are a config error.** YAML resolves
+    them last-wins in silence, so a policy that disables a rule with a reason
+    and re-enables it further down read, to a human, as the first entry and
+    behaved as the second. The Compose parser already refuses duplicates for
+    this reason; the config loader was the door left open.
+  - **A line lookup never returns a line belonging to a different node.**
+    Joining path segments with `.` is lossy when a segment contains one: a
+    service named `web.logging` and service `web`'s `logging:` child both spell
+    `services.web.logging`, and last-write-wins handed one of them the other's
+    line — so a fixer evaluated its anchor/merge-key refusal against a
+    different service and applied an edit every fixer is required to refuse.
+    Colliding paths are now dropped from the map, so the lookup returns `None`
+    and the fixer fails closed. 17 corpus files use dotted service names
+    (`llama.cpp`, `smartwardrobe.api`); none of them collides, so nothing real
+    loses its line numbers.
+
 - **Everything compose-lint prints about a file is now sanitized at the sink.**
   Escaping lived in a private helper inside the text formatter, so it covered
   that formatter's own fields and nothing else: 26 other print sites emitted

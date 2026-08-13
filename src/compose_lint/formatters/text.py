@@ -314,8 +314,14 @@ def format_findings(
             already_shown = fix_key in seen_fixes
             show_fix = not quiet and (verbose or not already_shown)
             suffix = ""
+            if f.severity_overridden_from is not None:
+                # The one suppression channel that used to leave no trace. A
+                # reader must be able to tell a re-graded finding from one the
+                # rule declared at this severity.
+                was = f.severity_overridden_from.value
+                suffix += f"   {_colorize(f'(severity overridden from {was})', _DIM)}"
             if not quiet and already_shown and not verbose and (f.fix or f.references):
-                suffix = f"   {_colorize('(see fix above)', _DIM)}"
+                suffix += f"   {_colorize('(see fix above)', _DIM)}"
 
             out.append(
                 f"    {line_label.rjust(4)}  "

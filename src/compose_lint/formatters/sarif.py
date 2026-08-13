@@ -358,6 +358,10 @@ def format_findings(
         if edits:
             result["fixes"] = [_build_fix(edits, filepath)]
 
+        if f.severity_overridden_from is not None:
+            props = result.setdefault("properties", {})
+            props["severityOverriddenFrom"] = f.severity_overridden_from.value
+
         if f.suppressed:
             result["suppressions"] = [
                 {

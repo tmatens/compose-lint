@@ -65,6 +65,47 @@ def _parse_severity(value: str) -> Severity:
 ExcludedServices = dict[str, dict[str, str | None]]
 
 
+class _StrictLoader(yaml.SafeLoader):
+    """A SafeLoader that refuses duplicate mapping keys.
+
+    Plain YAML resolves a duplicate key last-wins and says nothing, so a policy
+    file listing a rule twice silently kept only the second entry. That is the
+    worst failure mode a policy file has: the reviewer reads a config that
+    disables a rule "with a reason", ships it, and the rule is on — or off —
+    depending on which duplicate happened to be last. The parser already
+    refuses duplicates in Compose documents for the same reason; the config
+    loader was the one door left open.
+    """
+
+
+def _reject_duplicate_config_keys(
+    loader: _StrictLoader, node: yaml.MappingNode
+) -> dict[Any, Any]:
+    seen: set[Any] = set()
+    for key_node, _value_node in node.value:
+        key = loader.construct_object(key_node, deep=True)
+        try:
+            duplicate = key in seen
+        except TypeError:
+            continue  # unhashable key — the construction below reports it
+        if duplicate:
+            raise yaml.constructor.ConstructorError(
+                None,
+                None,
+                f"found duplicate key {key!r}; the later entry would silently "
+                "replace the earlier one",
+                key_node.start_mark,
+            )
+        seen.add(key)
+    return loader.construct_mapping(node, deep=True)
+
+
+_StrictLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    _reject_duplicate_config_keys,
+)
+
+
 def load_config(
     path: str | Path | None = None,
     strict: bool = False,
@@ -118,7 +159,7 @@ def _read_raw_config(path: str | Path | None) -> dict[str, Any] | None:
         raise ConfigError(f"Cannot read config file: {e}") from e
 
     try:
-        data = yaml.safe_load(content)
+        data = yaml.load(content, Loader=_StrictLoader)  # noqa: S506  # nosec B506
     except yaml.YAMLError as e:
         raise ConfigError(f"Invalid YAML in config file: {e}") from e
 

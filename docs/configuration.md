@@ -52,6 +52,22 @@ rules:
 - **JSON**: `suppression_reason` field on each finding.
 - **SARIF**: `suppressions[].justification` (recognized by GitHub Code Scanning).
 
+`severity:` re-grades a rule's findings rather than suppressing them, and it
+leaves its own record so a reader can tell a re-graded finding from one the rule
+declared that way. Re-grading is the quietest way to neutralise a rule — three
+lines can take a CRITICAL below the default gate — so it is reported:
+
+- **Text**: `(severity overridden from critical)` after the finding.
+- **JSON**: `severity_overridden_from` on the finding (absent when not overridden).
+- **SARIF**: `properties.severityOverriddenFrom` on the result.
+
+Re-stating a rule's own severity records nothing, because nothing changed.
+
+**Duplicate keys are rejected.** Listing the same rule twice is a config error
+rather than a last-wins merge: a policy file that disables a rule "with a
+reason" and then re-enables it further down reads, to a human, as the first
+entry — and used to behave as the second.
+
 To hide suppressed findings entirely:
 
 ```bash

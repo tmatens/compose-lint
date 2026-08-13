@@ -68,6 +68,13 @@ class Finding:
     references: list[str] = field(default_factory=list)
     suppressed: bool = False
     suppression_reason: str | None = None
+    # The rule's own severity, recorded when `.compose-lint.yml` re-graded this
+    # finding. `enabled: false` and `exclude_services` both leave a visible
+    # record (a SUPPRESSED marker and a reason); `severity:` left none, so a
+    # config could quietly downgrade a CRITICAL below the gate and the output
+    # gave a reader no way to tell it apart from a rule that never fired that
+    # hard. None means the rule's declared severity is what is shown.
+    severity_overridden_from: Severity | None = None
 
 
 @dataclass(frozen=True)

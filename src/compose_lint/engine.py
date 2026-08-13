@@ -72,7 +72,14 @@ def run_rules(
                 # reported: if the rule is globally suppressed the finding is
                 # already suppressed below, so re-grading its severity is moot.
                 if rule_id in overrides and not is_suppressed:
-                    finding = replace(finding, severity=overrides[rule_id])
+                    if overrides[rule_id] != finding.severity:
+                        finding = replace(
+                            finding,
+                            severity=overrides[rule_id],
+                            severity_overridden_from=finding.severity,
+                        )
+                    else:
+                        finding = replace(finding, severity=overrides[rule_id])
                 # Suppression precedence: a global disable (whole rule off) wins
                 # over a per-service exclusion. Both set suppressed=True, but the
                 # reason differs, so this must be if/elif, not two independent

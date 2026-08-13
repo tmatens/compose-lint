@@ -575,6 +575,10 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     sys.exit(1 if has_errors else 0)
 
 
+class LinkedPathError(OSError):
+    """Raised when a fix target is a symlink or a multiply-linked file."""
+
+
 def _atomic_write(path: Path, content: str) -> None:
     """Write ``content`` to ``path`` atomically, preserving its mode.
 
@@ -585,7 +589,31 @@ def _atomic_write(path: Path, content: str) -> None:
     the complete new one, never a truncated mix. The original file's permission
     bits carry over so the fix neither relaxes nor tightens them. ``newline=""``
     writes the computed text verbatim, with no newline translation.
+
+    Raises :class:`LinkedPathError` when the target is a symlink or has more
+    than one name. ``os.replace`` swaps the *entry*, not the inode behind it, so
+    on a symlink it drops a regular file over the link and leaves the file the
+    stack actually deploys untouched — while the run reports the fix applied.
+    On a hard link it breaks the link, so the two names silently diverge. In
+    both cases the honest answer is that this write cannot do what the caller
+    asked, which is a refusal, not a success (ADR-014: refuse, never guess).
     """
+    try:
+        info: os.stat_result | None = path.lstat()
+    except FileNotFoundError:
+        info = None  # a new file (`init`): nothing to link past or preserve
+    if info is not None and stat.S_ISLNK(info.st_mode):
+        raise LinkedPathError(
+            f"{path} is a symbolic link; writing here would replace the link "
+            "and leave its target — the file that is actually deployed — "
+            "unchanged. Point the fix at the target instead."
+        )
+    if info is not None and info.st_nlink > 1:
+        raise LinkedPathError(
+            f"{path} has {info.st_nlink} hard links; replacing it would break "
+            "the link and leave the other names on the old content."
+        )
+
     fd, tmp_name = tempfile.mkstemp(
         dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
     )
@@ -596,8 +624,12 @@ def _atomic_write(path: Path, content: str) -> None:
             tmp.flush()
             os.fsync(tmp.fileno())
         # Best-effort mode carry-over; the swap below still lands the content.
-        with contextlib.suppress(OSError):
-            os.chmod(tmp_path, stat.S_IMODE(path.stat().st_mode))
+        # setuid/setgid/sticky are deliberately dropped: a Compose file has no
+        # business carrying them, and re-applying them to a file this process
+        # just created would hand those bits to a new inode.
+        if info is not None:
+            with contextlib.suppress(OSError):
+                os.chmod(tmp_path, stat.S_IMODE(info.st_mode) & 0o777)
         os.replace(tmp_path, path)
     except BaseException:
         tmp_path.unlink(missing_ok=True)
@@ -741,7 +773,12 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
                     "(make it writable to allow `fix --apply` to modify it)"
                 )
                 continue
-            _atomic_write(Path(filepath), patched)
+            try:
+                _atomic_write(Path(filepath), patched)
+            except LinkedPathError as e:
+                emit(f"Error: {e}; no changes written")
+                had_error = True
+                continue
             # The behavior-changing caveats must surface here too, not only on
             # the dry run — nothing forces a dry run first, so a one-shot
             # `fix --apply` would otherwise mutate files silently (issue #428).
@@ -802,7 +839,11 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
         sys.exit(2)
 
     existed = out_path.exists()
-    _atomic_write(out_path, render_config(findings))
+    try:
+        _atomic_write(out_path, render_config(findings))
+    except LinkedPathError as e:
+        emit(f"Error: {e}")
+        sys.exit(2)
     if not existed:
         # _atomic_write carries over an existing file's mode but a fresh file
         # inherits mkstemp's restrictive 0600. A config meant to be committed and

@@ -240,7 +240,7 @@ rules:
     severity: medium
 ```
 
-Disabled and excluded findings still appear marked **SUPPRESSED** with the `reason` flowing to JSON's `suppression_reason` and SARIF's `justification` (recognized by GitHub Code Scanning) — they do not affect exit code. Pass `--skip-suppressed` to hide them.
+Disabled and excluded findings still appear marked **SUPPRESSED** with the `reason` flowing to JSON's `suppression_reason` and SARIF's `justification` (recognized by GitHub Code Scanning) — they do not affect exit code. Pass `--skip-suppressed` to hide them. A `severity:` override is reported too, as `(severity overridden from …)` in text and `severity_overridden_from` / `properties.severityOverriddenFrom` in JSON and SARIF, so a re-graded finding is distinguishable from one the rule declared at that level.
 
 See [docs/configuration.md](https://github.com/tmatens/compose-lint/blob/main/docs/configuration.md) for per-service exclusion semantics, precedence rules, and the full output-format mapping.
 

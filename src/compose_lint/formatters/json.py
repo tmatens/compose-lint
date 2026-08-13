@@ -36,6 +36,8 @@ def format_findings(findings: list[Finding], filepath: str) -> list[dict[str, ob
         }
         if f.suppressed:
             entry["suppression_reason"] = f.suppression_reason
+        if f.severity_overridden_from is not None:
+            entry["severity_overridden_from"] = f.severity_overridden_from.value
         results.append(entry)
     return results
 
