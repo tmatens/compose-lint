@@ -7,6 +7,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from compose_lint._lines import split_lines
+from compose_lint._scalar import as_scalar_text
 from compose_lint._yaml_edit import is_anchored_or_merged, line_indent
 from compose_lint.models import Finding, RuleMetadata, Severity, TextEdit
 from compose_lint.rules import BaseRule, register_rule
@@ -113,7 +114,10 @@ class UnboundPortsRule(BaseRule):
             if isinstance(port, dict):
                 yield from self._check_long_syntax(port, service_name, lines, i)
             else:
-                yield from self._check_short_syntax(str(port), service_name, lines, i)
+                text = as_scalar_text(port)
+                if text is None:
+                    continue  # a container is not a port spec
+                yield from self._check_short_syntax(text, service_name, lines, i)
 
     def _check_short_syntax(
         self,

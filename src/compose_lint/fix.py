@@ -390,11 +390,29 @@ def collect_edits(
 
     spanned = [(unit, spans_of(unit.edits)) for unit in units]
     refused: set[int] = set()
-    for i in range(len(spanned)):
-        for j in range(i + 1, len(spanned)):
-            if any(_spans_conflict(x, y) for x in spanned[i][1] for y in spanned[j][1]):
-                refused.add(i)
-                refused.add(j)
+
+    # Sweep sorted spans instead of comparing every pair of units. The pairwise
+    # loop did O(units^2) work on a file whose edits mostly cannot touch each
+    # other — a service count in the hundreds is ordinary, and each one can
+    # contribute a unit. Sorting by start offset makes the scan stop as soon as
+    # a later span begins past the current one's end, which is sound because
+    # every conflict shape needs the later span to begin at or before that end:
+    # two regions overlap only while `b.start < a.end`, and an insertion
+    # conflicts with a region only at `a.start < point <= a.end`.
+    flat = sorted(
+        (start, end, index)
+        for index, (_unit, spans) in enumerate(spanned)
+        for start, end in spans
+    )
+    for position, (a_start, a_end, a_unit) in enumerate(flat):
+        for b_start, b_end, b_unit in flat[position + 1 :]:
+            if b_start > a_end:
+                break  # sorted by start, so nothing later can reach back
+            if a_unit == b_unit:
+                continue  # a unit's own edits are applied together
+            if _spans_conflict((a_start, a_end), (b_start, b_end)):
+                refused.add(a_unit)
+                refused.add(b_unit)
 
     result = FixResult()
     seen_caveats: set[tuple[str, str]] = set()

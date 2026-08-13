@@ -31,13 +31,44 @@ BREAK_CHARS = "\n\r\x85\u2028\u2029"
 _BREAKS = frozenset(BREAK_CHARS)
 
 
+# The characters `str.splitlines()` breaks on and PyYAML does not. When a
+# document contains none of them — which is every document PyYAML accepts, since
+# it rejects all five with a ReaderError — the two agree exactly and the C
+# implementation can be used.
+_SPLITLINES_ONLY = ("\v", "\f", "\x1c", "\x1d", "\x1e")
+
+# One entry, keyed by id and holding the text so the id cannot be recycled.
+# Every fixer asks for the same document's lines, so without this a file with
+# n fixable findings re-split the whole text n times — O(n^2), and the profile
+# showed it at 2.24 s of a 2.58 s run on 800 services.
+_SPLIT_CACHE: dict[int, tuple[str, list[str]]] = {}
+
+
 def split_lines(text: str) -> list[str]:
     """Split ``text`` into lines, keeping each line's terminator attached.
 
     Equivalent in shape to ``text.splitlines(keepends=True)`` but using
     PyYAML's break set, so ``source_lines[n - 1]`` is the line PyYAML called
     ``n``. A trailing break does not produce a final empty line.
+
+    The returned list is cached and shared between callers, so it must be
+    treated as read-only. Every consumer indexes it to read a line; none
+    mutates it.
     """
+    cached = _SPLIT_CACHE.get(id(text))
+    if cached is not None and cached[0] is text:
+        return cached[1]
+    result = _split_lines_uncached(text)
+    _SPLIT_CACHE.clear()
+    _SPLIT_CACHE[id(text)] = (text, result)
+    return result
+
+
+def _split_lines_uncached(text: str) -> list[str]:
+    if not any(char in text for char in _SPLITLINES_ONLY):
+        # Same answer, at C speed: the two break sets differ only by the
+        # characters just ruled out.
+        return text.splitlines(keepends=True)
     lines: list[str] = []
     start = 0
     index = 0

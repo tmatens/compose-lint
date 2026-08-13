@@ -8,6 +8,8 @@ from typing import Any
 import yaml
 
 from compose_lint._output import emit
+from compose_lint._safe_read import read_text_bounded
+from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Severity
 
 # Top-level keys the config schema defines today (docs/configuration.md).
@@ -154,8 +156,13 @@ def _read_raw_config(path: str | Path | None) -> dict[str, Any] | None:
             return None
 
     try:
-        content = config_path.read_text(encoding="utf-8")
+        # A committed symlink to a FIFO or /dev/zero passes `.exists()` and
+        # every permission check; reading one hangs the job or allocates until
+        # the runner dies. Same bounded read the Compose loader uses.
+        content = read_text_bounded(config_path)
     except OSError as e:
+        # UnsafeFileError is an OSError, so one clause covers both the refusal
+        # and an ordinary read failure.
         raise ConfigError(f"Cannot read config file: {e}") from e
 
     try:
@@ -178,6 +185,31 @@ def _read_raw_config(path: str | Path | None) -> dict[str, Any] | None:
         raise ConfigError("Config file must be a YAML mapping")
 
     return data
+
+
+def _scalar_field(value: Any, rule_id: str, field: str) -> str | None:
+    """Coerce a config value to text, refusing a container.
+
+    ``str()`` on a YAML node is only safe if the node is a scalar. PyYAML shares
+    aliased nodes by reference, so `reason: *l22` loads in about a millisecond
+    and serializes as a *tree* — a 579-byte config produced 151 MB. The sibling
+    ``enabled`` field already type-checks strictly for a related reason (a
+    quoted ``'false'`` would silently leave the rule on); ``reason``,
+    ``severity`` and the exclusion reasons simply missed that treatment.
+
+    Refusing is right rather than merely safe: a list is not a reason, and a
+    policy file that contains one is malformed in a way the author wants to know
+    about.
+    """
+    if value is None:
+        return None
+    text = as_scalar_text(value)
+    if text is None:
+        raise ConfigError(
+            f"Config for rule '{rule_id}': '{field}' must be a scalar, "
+            f"not a {type(value).__name__}"
+        )
+    return text
 
 
 def _parse_rules(
@@ -223,11 +255,15 @@ def _parse_rules(
                     "silently leave the rule on"
                 )
             if enabled is False:
-                reason = rule_config.get("reason")
-                disabled[rule_id] = str(reason) if reason is not None else None
+                disabled[rule_id] = _scalar_field(
+                    rule_config.get("reason"), rule_id, "reason"
+                )
 
         if "severity" in rule_config:
-            overrides[rule_id] = _parse_severity(str(rule_config["severity"]))
+            severity_text = _scalar_field(rule_config["severity"], rule_id, "severity")
+            if severity_text is None:
+                raise ConfigError(f"Config for rule '{rule_id}': 'severity' is empty")
+            overrides[rule_id] = _parse_severity(severity_text)
 
         if "exclude_services" in rule_config:
             excluded[rule_id] = _parse_exclude_services(
@@ -262,10 +298,9 @@ def _parse_exclude_services(rule_id: str, value: Any) -> dict[str, str | None]:
                     f"exclude_services for '{rule_id}' keys must be "
                     "service name strings"
                 )
-            if reason is None:
-                result[service_name] = None
-            else:
-                result[service_name] = str(reason)
+            result[service_name] = _scalar_field(
+                reason, rule_id, f"exclude_services[{service_name}]"
+            )
         return result
 
     raise ConfigError(f"exclude_services for '{rule_id}' must be a list or mapping")

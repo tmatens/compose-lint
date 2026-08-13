@@ -14,6 +14,7 @@ import posixpath
 import re
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+from compose_lint._scalar import as_scalar_text
 from compose_lint.rules._bool import as_bool
 
 if TYPE_CHECKING:
@@ -61,7 +62,8 @@ def _extract_short(volume: str) -> tuple[str, bool] | None:
 
 def _opt_flags(driver_opts: dict[str, Any]) -> set[str]:
     """The comma-separated flags in a volume's ``o:`` driver option."""
-    return {part.strip().lower() for part in str(driver_opts.get("o", "")).split(",")}
+    text = as_scalar_text(driver_opts.get("o", "")) or ""
+    return {part.strip().lower() for part in text.split(",")}
 
 
 def _is_local_bind(driver_opts: dict[str, Any]) -> bool:

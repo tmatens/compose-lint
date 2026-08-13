@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 
@@ -61,7 +62,10 @@ class ExplicitRootRule(BaseRule):
         if user is None:
             return
 
-        user_str = str(user).strip().lower()
+        text = as_scalar_text(user)
+        if text is None:
+            return
+        user_str = text.strip().lower()
         if _is_root_user(user_str):
             yield Finding(
                 rule_id="CL-0018",

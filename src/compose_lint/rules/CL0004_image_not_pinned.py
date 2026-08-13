@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 from compose_lint.rules._image import MUTABLE_TAGS, OWASP_IMAGE_REF, split_image_ref
@@ -50,7 +51,10 @@ class ImageNotPinnedRule(BaseRule):
         if image is None:
             return
 
-        image = str(image)
+        text = as_scalar_text(image)
+        if text is None:
+            return
+        image = text
 
         # Digest-pinned images are always fine
         if "@sha256:" in image:

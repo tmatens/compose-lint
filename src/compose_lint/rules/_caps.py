@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._scalar import as_scalar_text
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -45,7 +47,10 @@ def normalize_cap(cap: object) -> str:
     ``ALL`` keeps its exception (see :func:`iter_cap_add`) at the call site,
     because it is only ``cap_add`` that must reject the prefixed form.
     """
-    return str(cap).strip().upper().removeprefix("CAP_")
+    text = as_scalar_text(cap)
+    if text is None:
+        return ""  # a container is not a capability name; matches nothing
+    return text.strip().upper().removeprefix("CAP_")
 
 
 def iter_cap_add(
@@ -74,7 +79,12 @@ def iter_cap_add(
         return
 
     for i, cap in enumerate(cap_add):
-        as_written = str(cap).strip().upper()
+        raw = as_scalar_text(cap)
+        if raw is None:
+            # An alias-expanded nested list here is what made `str()` allocate
+            # 2^depth characters; it is also not a capability, so skip it.
+            continue
+        as_written = raw.strip().upper()
         bare = normalize_cap(cap)
         if bare == "ALL" and as_written != "ALL":
             continue  # CAP_ALL is not a capability Docker accepts — see above

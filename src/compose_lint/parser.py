@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 
 from compose_lint._lines import find_ambiguous_break
+from compose_lint._safe_read import UnsafeFileError, read_text_bounded
 from compose_lint.config import KNOWN_TOP_LEVEL_KEYS
 from compose_lint.rules._interpolation import substitute_defaults
 
@@ -565,20 +566,47 @@ def _validate_compose(data: Any) -> dict[str, Any]:
     return data
 
 
-def _merge_extends(base: Any, over: Any) -> Any:
+def _merge_extends(
+    base: Any, over: Any, memo: dict[tuple[int, int], Any] | None = None
+) -> Any:
     """Merge a resolved ``extends`` base under an overriding child value.
 
     Follows Compose's ``extends`` semantics: child scalars win, mappings merge
     (child wins per key), sequences concatenate with the base first (Docker
     append-merges the base's list into every service that extends it).
+
+    Memoized on the ``(id(base), id(over))`` pair, as ``_strip_lines`` and
+    ``_collect_lines`` already are. YAML aliases make the document a DAG rather
+    than a tree, so without a memo a subtree shared by *n* paths is re-merged
+    once per path: an 805-byte file took 5.4 s, and 869 bytes took 21.5 s —
+    4x per two alias levels, from a document PyYAML parses in 2 ms. The ids are
+    stable for the call because ``data`` holds every node alive throughout.
+
+    This does not subsume the recursion guard in :func:`loads`: memoizing
+    removes repeated work, not depth, so a long chain still needs the
+    ``RecursionError`` translation.
     """
+    if memo is None:
+        memo = {}
+    key = (id(base), id(over))
+    cached = memo.get(key)
+    if cached is not None:
+        return cached
+
     if isinstance(base, dict) and isinstance(over, dict):
         merged = dict(base)
-        for key, value in over.items():
-            merged[key] = _merge_extends(base[key], value) if key in base else value
+        for child_key, value in over.items():
+            merged[child_key] = (
+                _merge_extends(base[child_key], value, memo)
+                if child_key in base
+                else value
+            )
+        memo[key] = merged
         return merged
     if isinstance(base, list) and isinstance(over, list):
-        return [*base, *over]
+        joined = [*base, *over]
+        memo[key] = joined
+        return joined
     return over
 
 
@@ -856,8 +884,9 @@ def load_compose(
         # worse, meant `check` and `fix` parsed *different* text for the same
         # file — `fix` has always read with newline="" to preserve line endings.
         # One read shape for both is the same principle as one line space.
-        with filepath.open(encoding="utf-8", newline="") as fh:
-            content = fh.read()
+        content = read_text_bounded(filepath, newline="")
+    except UnsafeFileError as e:
+        raise ComposeError(str(e)) from e
     except FileNotFoundError:
         raise
     except UnicodeDecodeError as e:

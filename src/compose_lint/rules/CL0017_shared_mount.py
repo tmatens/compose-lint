@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 
@@ -53,7 +54,15 @@ class SharedMountRule(BaseRule):
             if self._is_shared_short_syntax(volume) or self._is_shared_long_syntax(
                 volume
             ):
-                yield self._make_finding(service_name, lines, str(volume), i)
+                # Only for the message. Long syntax is a mapping, and `str()`
+                # on it serialized whatever it contained — exponential once
+                # YAML aliases share a subtree. Name the source instead, which
+                # is the part of the entry the finding is about.
+                text = as_scalar_text(volume)
+                if text is None:
+                    source = volume.get("source") if isinstance(volume, dict) else None
+                    text = as_scalar_text(source) or "<long-syntax mount>"
+                yield self._make_finding(service_name, lines, text, i)
 
     def _is_shared_short_syntax(self, volume: Any) -> bool:
         """Check for :shared suffix in short-syntax volume strings."""

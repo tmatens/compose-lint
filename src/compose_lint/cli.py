@@ -29,7 +29,7 @@ from compose_lint.fix import (
 )
 from compose_lint.formatters.json import build_json_log
 from compose_lint.formatters.json import format_findings as format_json
-from compose_lint.formatters.sarif import build_sarif_log
+from compose_lint.formatters.sarif import MAX_SARIF_RESULTS, build_sarif_log
 from compose_lint.formatters.sarif import format_findings as format_sarif
 from compose_lint.formatters.text import (
     format_aggregate_summary,
@@ -565,6 +565,18 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         json_log = build_json_log(all_json, run_errors)
         print(json.dumps(json_log, indent=2, allow_nan=False))
     elif args.output_format == "sarif":
+        if len(all_sarif) > MAX_SARIF_RESULTS:
+            # The document below reports the truncation itself; record it here
+            # too so the run exits 2. A gate must not read "success" from an
+            # artifact that is knowingly incomplete.
+            omitted = len(all_sarif) - MAX_SARIF_RESULTS
+            message = (
+                f"SARIF output truncated to {MAX_SARIF_RESULTS} findings "
+                f"({omitted} omitted) to stay within the size a consumer will "
+                "accept; use --format json for the complete set"
+            )
+            run_errors = [*run_errors, ("", message)]
+            emit(f"Error: {message}")
         sarif_log = build_sarif_log(
             all_sarif, run_errors, severity_overrides=severity_overrides
         )

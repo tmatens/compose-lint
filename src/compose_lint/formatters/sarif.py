@@ -33,6 +33,12 @@ SARIF_SCHEMA = (
     "sarif-schema-2.1.0.json"
 )
 
+# Chosen from measurement: results serialize at roughly 1.2 KB each, and GitHub
+# Code Scanning rejects a SARIF document over 10 MB outright — so what an
+# uncapped document buys is a run with no artifact at all. 5,000 leaves
+# comfortable headroom under that ceiling.
+MAX_SARIF_RESULTS = 5000
+
 # Symbolic base for relativized artifact URIs. Declared once per run in
 # ``originalUriBaseIds`` (pointed at the working directory) and referenced from
 # each in-tree ``artifactLocation`` via ``uriBaseId``; GitHub Code Scanning
@@ -394,13 +400,39 @@ def build_sarif_log(
     taxonomy, taxa_index = _build_attack_taxonomy()
     rules, _ = _build_rules(severity_overrides, taxa_index)
 
+    # A file can declare many services cheaply through YAML aliases — 1,500 of
+    # them in 29 KB — and each one's findings are real. The document that
+    # results is not: at ~1.2 KB per result it passes GitHub Code Scanning's
+    # 10 MB ceiling, and an artifact that large is *rejected*, so the run shows
+    # no alerts at all. Truncating and saying so keeps the artifact usable and
+    # keeps the gate honest; silently shipping something the consumer will drop
+    # is the same false-clean as producing nothing.
+    truncated = max(0, len(all_results) - MAX_SARIF_RESULTS)
+    results = all_results[:MAX_SARIF_RESULTS] if truncated else all_results
+
     working_dir_uri = _working_dir_uri()
     invocation: dict[str, Any] = {
-        "executionSuccessful": not parse_errors,
+        "executionSuccessful": not parse_errors and not truncated,
         "workingDirectory": {"uri": working_dir_uri},
     }
+    notifications: list[dict[str, Any]] = []
+    if truncated:
+        notifications.append(
+            {
+                "level": "error",
+                "message": {
+                    "text": (
+                        f"Reported {MAX_SARIF_RESULTS} of "
+                        f"{len(all_results)} findings: the rest were omitted to "
+                        "keep this document under the size a SARIF consumer "
+                        "will accept. Re-run with --format json for the "
+                        "complete set."
+                    )
+                },
+            }
+        )
     if parse_errors:
-        invocation["toolExecutionNotifications"] = [
+        notifications.extend(
             {
                 "level": "error",
                 "message": {"text": message},
@@ -413,7 +445,9 @@ def build_sarif_log(
                 ],
             }
             for filepath, message in parse_errors
-        ]
+        )
+    if notifications:
+        invocation["toolExecutionNotifications"] = notifications
 
     return {
         "$schema": SARIF_SCHEMA,
@@ -431,7 +465,7 @@ def build_sarif_log(
                 "taxonomies": [taxonomy],
                 "originalUriBaseIds": {_URI_BASE_ID: {"uri": working_dir_uri}},
                 "invocations": [invocation],
-                "results": all_results,
+                "results": results,
             },
         ],
     }

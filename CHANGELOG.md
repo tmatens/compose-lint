@@ -73,6 +73,48 @@ Compose then ships nothing.
 
 ### Fixed
 
+- **A small file can no longer buy a large amount of work.** Nine defects
+  shared that shape: input that parses in milliseconds and then costs seconds
+  or gigabytes downstream, while producing no finding and exiting 0 — so
+  nothing in the output signalled it. Measured at 800 services, `fix` went from
+  2.67 s to 0.65 s and SARIF from 2.37 s to 0.36 s, and both are now linear in
+  service count rather than approaching quadratic.
+
+  - **Reading a path that is not a bounded regular file.** `.exists()` is true
+    of a FIFO and of `/dev/zero`, and a repository can commit a *symlink* to
+    either — it survives clone and checkout, and the runner resolves it.
+    Reading one hung the job forever; the other allocated until the runner
+    died. Both the Compose loader and the config loader now check the resolved
+    file's shape before reading a byte, with the descriptor opened
+    `O_NONBLOCK` — a plain `open()` on a FIFO blocks *before* any check can
+    run — and the read bounded at 8 MB.
+  - **`str()` on a YAML container.** Aliases share nodes by reference, so a
+    22-level doubling chain is under 1 KB on disk and 22 nodes in memory, but
+    `str()` serializes it as a *tree*: 4M elements from one call. Eleven rule
+    sinks and three config fields did that to whatever the document handed
+    them. They now refuse a container rather than render it — a list is not a
+    capability, a port, a mount spec, or a suppression reason.
+  - **Repeated work over one document.** `split_lines` was called once per
+    fixer and re-split the whole file each time (2.24 s of a 2.58 s run at 800
+    services); `extends_targets` walked every service once per *finding*; and
+    `_merge_extends` re-walked a shared alias subtree once per path through the
+    DAG (805 B → 5.4 s). All three are now memoized per document, and
+    `split_lines` takes a C-speed path when the text contains none of the five
+    characters `str.splitlines()` breaks on and PyYAML does not.
+  - **Quadratic scanning of a long scalar.** CL-0021's userinfo pattern
+    retried from every offset (20 KB → 1.1 s, 40 KB → 4.1 s). Its quantifiers
+    are now bounded and the scalar is capped before scanning.
+  - **The edit-conflict check** compared every pair of fix units. It now sweeps
+    spans sorted by offset and stops as soon as a later span begins past the
+    current one's end.
+  - **SARIF output that a consumer would reject.** 1,500 aliased services in
+    29 KB produced a document over GitHub Code Scanning's 10 MB ceiling — and
+    an artifact that large is *rejected*, so the run showed no alerts at all.
+    Output is capped at 5,000 results, the omission is stated in
+    `toolExecutionNotifications`, `executionSuccessful` is false, and the run
+    exits 2 so a gate cannot read success from a knowingly incomplete artifact.
+    Use `--format json` for the complete set.
+
 - **Malformed input is a per-file failure, never a traceback.** Four paths let
   an exception escape the fail-loud boundary: the CLI printed a Python
   traceback, exited **1** — which reads as "I linted it and it failed" rather

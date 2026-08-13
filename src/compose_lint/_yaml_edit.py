@@ -42,6 +42,13 @@ def normalize_security_opt(opt: Any) -> str:
     return str(opt).strip().lower().replace("=", ":", 1)
 
 
+# One entry is enough: a run processes one document at a time, and the fix
+# engine's verification re-parse produces a new dict (a new id) rather than
+# mutating this one. The document is kept alive by the cache, so the id cannot
+# be recycled underneath the entry while it is live.
+_EXTENDS_TARGETS_CACHE: dict[int, tuple[dict[str, Any], set[str]]] = {}
+
+
 def extends_targets(data: dict[str, Any]) -> set[str]:
     """Return the names of services another in-file service ``extends``.
 
@@ -59,21 +66,33 @@ def extends_targets(data: dict[str, Any]) -> set[str]:
     at a base in another file, so a like-named local service is not its target.
     Both the mapping form (``extends: {service: base}``) and the string short
     form (``extends: base``) are recognised.
+
+    Memoized per document. Every caller asks the same question of the same
+    ``data`` once per *finding*, and answering it walks every service — so a
+    file with n services and a finding per service did O(n^2) work building the
+    same set n times. That is what made SARIF output superlinear against a
+    JSON run of the identical findings.
     """
+    cached = _EXTENDS_TARGETS_CACHE.get(id(data))
+    if cached is not None and cached[0] is data:
+        return cached[1]
+
     services = data.get("services")
-    if not isinstance(services, dict):
-        return set()
     targets: set[str] = set()
-    for _name, config in services.items():
-        if not isinstance(config, dict):
-            continue
-        ext = config.get("extends")
-        if isinstance(ext, str):
-            targets.add(ext)
-        elif isinstance(ext, dict) and not ext.get("file"):
-            service = ext.get("service")
-            if isinstance(service, str):
-                targets.add(service)
+    if isinstance(services, dict):
+        for _name, config in services.items():
+            if not isinstance(config, dict):
+                continue
+            ext = config.get("extends")
+            if isinstance(ext, str):
+                targets.add(ext)
+            elif isinstance(ext, dict) and not ext.get("file"):
+                service = ext.get("service")
+                if isinstance(service, str):
+                    targets.add(service)
+
+    _EXTENDS_TARGETS_CACHE.clear()
+    _EXTENDS_TARGETS_CACHE[id(data)] = (data, targets)
     return targets
 
 

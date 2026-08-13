@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 from compose_lint.rules._mounts import iter_bind_mounts, normalize_host_path
@@ -152,7 +153,11 @@ class DockerSocketRule(BaseRule):
         }
 
         for i, volume in enumerate(volumes):
-            volume_str = str(volume)
+            # Only for the message; the match below uses the resolved host path.
+            # Long syntax is a mapping, and `str()` on it serialized whatever it
+            # contained — which YAML aliases make exponential. The host path is
+            # what the message is about, so it is the better fallback anyway.
+            volume_str = as_scalar_text(volume) or host_paths.get(i, "")
             # Match the *host* side only. Matching the whole entry reported
             # `- /tmp/fake:/var/run/docker.sock` as a socket mount, which is
             # false: the container path is where the socket lands, not where it

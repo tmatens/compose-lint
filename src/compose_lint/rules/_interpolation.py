@@ -12,13 +12,15 @@ from __future__ import annotations
 
 import re
 
+from compose_lint._limits import MAX_SCAN_LEN
+
 # Upper bound on a scalar these regexes will scan. Both the pattern below and
 # the two in `substitute_defaults` are quadratic on pathological input (measured
 # 4x per doubling: 80 KB -> 0.49 s, 160 KB -> 1.94 s), and the parser now runs
 # substitution over *every* string in the document rather than bind sources
 # alone. A Compose scalar this long carries no classification signal worth that
 # cost, so beyond the cap the conservative answer is returned without scanning.
-_MAX_SCAN_LEN = 8192
+_MAX_SCAN_LEN = MAX_SCAN_LEN
 
 # An active variable substitution ("${VAR}", "${VAR:-default}", "$VAR").
 _VAR_REF_RE = re.compile(r"\$\{[^}]+\}|\$[A-Za-z_][A-Za-z0-9_]*")

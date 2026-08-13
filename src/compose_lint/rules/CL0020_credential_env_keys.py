@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 from compose_lint.rules._interpolation import ships_no_literal
@@ -102,7 +103,10 @@ def _is_literal_credential_value(raw: Any) -> bool:
     if isinstance(raw, bool):
         return False
     if isinstance(raw, (int, float)):
-        raw = str(raw)
+        text = as_scalar_text(raw)
+        if text is None:
+            return False
+        raw = text
     if not isinstance(raw, str):
         return False
     if raw == "":

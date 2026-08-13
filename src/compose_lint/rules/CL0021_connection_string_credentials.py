@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._limits import MAX_SCAN_LEN
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 from compose_lint.rules._interpolation import ships_no_literal
@@ -28,10 +29,15 @@ RFC3986_REF = "https://datatracker.ietf.org/doc/html/rfc3986#section-3.2.1"
 # `redis://:password@host` — the standard Redis URL form — must still fire
 # (issue #279 R2). The var-ref guard below filters out variable substitutions
 # in the password half.
+# Every quantifier is bounded. Unbounded, the engine retries the scheme from
+# each of n offsets and rescans the tail from each — O(n^2) on a value shaped
+# like `scheme://<many>:<many>` (20 KB took 1.1 s, 40 KB took 4.1 s). The
+# ceilings are far above any real URL: RFC 3986 schemes are a handful of
+# characters, and a userinfo half in the hundreds is already implausible.
 _URI_USERINFO_RE = re.compile(
-    r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.\-]*)://"
-    r"(?P<user>[^:/@\s]*):"
-    r"(?P<password>[^@/\s]+)@"
+    r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.\-]{0,63})://"
+    r"(?P<user>[^:/@\s]{0,512}):"
+    r"(?P<password>[^@/\s]{1,512})@"
 )
 
 
@@ -72,6 +78,11 @@ def _find_inline_credential(value: str) -> tuple[str, str, str] | None:
     # rescan the whole tail from every offset — O(n^2) on attacker-controlled
     # env values, a cheap DoS when sweeping untrusted compose files.
     if "@" not in value:
+        return None
+    if len(value) > MAX_SCAN_LEN:
+        # The guard above is re-armed by a single trailing '@', so it does not
+        # bound anything on its own. A scalar this long is not a connection
+        # string; scanning it is pure cost.
         return None
     for m in _URI_USERINFO_RE.finditer(value):
         user = m.group("user")

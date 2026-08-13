@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 
@@ -46,7 +47,7 @@ class HostNetworkRule(BaseRule):
         lines: dict[str, int],
     ) -> Iterator[Finding]:
         network_mode = service_config.get("network_mode", "")
-        if str(network_mode) == "host":
+        if as_scalar_text(network_mode) == "host":
             yield Finding(
                 rule_id="CL-0008",
                 severity=Severity.HIGH,
