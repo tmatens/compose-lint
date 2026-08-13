@@ -19,7 +19,17 @@ on:
 permissions: {}
 
 jobs:
+  # The same gate publish.yml uses. This workflow used to carry its own copy
+  # that checked the tag was annotated and reachable but never verified its
+  # signature — so the emergency path was the weaker one, which is exactly
+  # backwards for an escape hatch that ships with the same credentials.
+  verify-tag:
+    uses: ./.github/workflows/verify-tag.yml
+    with:
+      tag: ${{ inputs.tag }}
+
   publish-pypi:
+    needs: verify-tag
     if: inputs.channel == 'pypi'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -38,20 +48,6 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.tag }}
           persist-credentials: false
-      - name: Verify tag is annotated and reachable from main
-        env:
-          TAG: ${{ inputs.tag }}
-        run: |
-          obj_type=$(git cat-file -t "${TAG}")
-          if [ "${obj_type}" != "tag" ]; then
-            echo "::error::${TAG} is a ${obj_type}, expected an annotated tag"
-            exit 1
-          fi
-          tag_commit=$(git rev-parse "${TAG}^{commit}")
-          if ! git merge-base --is-ancestor "${tag_commit}" origin/main; then
-            echo "::error::${TAG} commit ${tag_commit} is not reachable from origin/main"
-            exit 1
-          fi
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
@@ -136,6 +132,7 @@ jobs:
   # Hub on a single approval. Single-arch (amd64) keeps the smoke cheap —
   # multi-arch is still covered by the real build-docker matrix below.
   docker-smoke:
+    needs: verify-tag
     if: inputs.channel == 'docker'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -147,20 +144,6 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.tag }}
           persist-credentials: false
-      - name: Verify tag is annotated and reachable from main
-        env:
-          TAG: ${{ inputs.tag }}
-        run: |
-          obj_type=$(git cat-file -t "${TAG}")
-          if [ "${obj_type}" != "tag" ]; then
-            echo "::error::${TAG} is a ${obj_type}, expected an annotated tag"
-            exit 1
-          fi
-          tag_commit=$(git rev-parse "${TAG}^{commit}")
-          if ! git merge-base --is-ancestor "${tag_commit}" origin/main; then
-            echo "::error::${TAG} commit ${tag_commit} is not reachable from origin/main"
-            exit 1
-          fi
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - name: Build image for testing
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0

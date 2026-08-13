@@ -1,0 +1,79 @@
+name: Verify release tag
+
+# The one place a release tag is checked, called by every publish path.
+#
+# It used to be inlined in publish.yml, which meant publish-channel.yml — the
+# manual escape hatch — carried its own copy. That copy performed two of the
+# three checks and omitted the third, the signature verification, so a tag
+# signed by nobody in .github/allowed_signers could reach the credential-bearing
+# publish jobs. Duplicated security checks drift toward the weaker copy; one
+# definition cannot.
+#
+# The three checks, and why each exists:
+#   1. The tag is annotated. Releases are cut with `git tag -s`; a lightweight
+#      tag means something or someone pushed a malformed release tag.
+#   2. The tag commit is reachable from origin/main. Without this, a rogue tag
+#      pointed at an arbitrary commit outside main's merge history would still
+#      trigger a publish and ship whatever tree that commit has.
+#   3. The tag's SSH signature verifies against `.github/allowed_signers`. This
+#      is the cryptographic root of the Sigstore provenance chain — without it,
+#      an attacker with a stolen GitHub credential could trigger a release from
+#      a commit they control. Adding or rotating signing keys is a maintainer
+#      action documented in GOVERNANCE.md.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "Tag to verify (e.g. v1.2.3)"
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  verify-tag:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history so the reachability check below can see main.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Assert annotated tag and reachable from main
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          obj_type=$(git cat-file -t "${TAG}")
+          if [ "${obj_type}" != "tag" ]; then
+            echo "::error::${TAG} is a ${obj_type}, expected an annotated tag (git tag -s/-a)"
+            exit 1
+          fi
+          tag_commit=$(git rev-parse "${TAG}^{commit}")
+          if ! git merge-base --is-ancestor "${tag_commit}" origin/main; then
+            echo "::error::${TAG} commit ${tag_commit} is not reachable from origin/main"
+            exit 1
+          fi
+          echo "Tag ${TAG} is annotated and reachable from origin/main (commit ${tag_commit})."
+
+      - name: Verify SSH signature against allowed_signers
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          # `git verify-tag` exits non-zero on any signature problem (missing,
+          # malformed, signed by an unknown key, signed by a key not authorized
+          # for the "git" namespace). The allowedSignersFile must be absolute.
+          allowed="${GITHUB_WORKSPACE}/.github/allowed_signers"
+          if [ ! -s "${allowed}" ]; then
+            echo "::error::${allowed} is missing or empty — cannot verify tag signature"
+            exit 1
+          fi
+          if ! git -c "gpg.ssh.allowedSignersFile=${allowed}" tag -v "${TAG}"; then
+            echo "::error::${TAG} signature did not verify against .github/allowed_signers"
+            echo "::error::If a maintainer's key was rotated, update .github/allowed_signers in a PR before tagging."
+            exit 1
+          fi

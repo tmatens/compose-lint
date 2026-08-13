@@ -132,6 +132,31 @@ def load_index() -> dict[str, dict]:
     return out
 
 
+def md_cell(value: object) -> str:
+    """Escape a third-party string for one Markdown table cell or code span.
+
+    `repo` and `path` come from the corpus index, whose values are GitHub
+    code-search results over arbitrary public repositories. Only the *basename*
+    of a path is filtered when fetching, so a directory component can legally
+    contain `|`, backticks and HTML — enough to close the cell, forge extra
+    columns, and write rows that look like compose-lint's own findings. The
+    report is read as evidence about the corpus, so a falsified row is the whole
+    impact.
+
+    A backtick is *replaced*, not escaped. Several of these values are rendered
+    inside a code span, and Markdown does not honour backslash escapes there —
+    ``\\``` still closes the span, so escaping would leave the injection intact
+    while looking handled. Substituting a similar-looking character cannot.
+
+    The rest are backslash-escaped, backslash itself first so the others are not
+    double-escaped. Newlines become spaces because a table cell cannot hold one.
+    """
+    text = str(value).replace("`", "ˋ")  # U+02CB MODIFIER LETTER GRAVE
+    for char in ("\\", "|", "<", ">"):
+        text = text.replace(char, "\\" + char)
+    return text.replace("\r", " ").replace("\n", " ")
+
+
 def summarize(run_dir: Path, results: list[dict], index: dict[str, dict], started_at: str, elapsed: float) -> None:
     total = len(results)
     parse_errors = [r for r in results if r.get("error") == "usage_or_parse"]
@@ -225,7 +250,10 @@ def summarize(run_dir: Path, results: list[dict], index: dict[str, dict], starte
             sev = rule_severity.get(rid, "?")
             impact = SEVERITY_WEIGHT.get(sev, 0) * files_per_rule[rid]
             ex = rule_examples.get(rid, [])
-            ex_str = ", ".join(f"{repo}#{path}:{line}" for repo, path, line in ex[:1])
+            ex_str = ", ".join(
+                f"{md_cell(repo)}#{md_cell(path)}:{md_cell(line)}"
+                for repo, path, line in ex[:1]
+            )
             lines.append(f"| `{rid}` | {sev} | {n} | {files_per_rule[rid]} | {impact} | {ex_str} |")
     else:
         lines.append("_No findings._")
@@ -256,13 +284,19 @@ def summarize(run_dir: Path, results: list[dict], index: dict[str, dict], starte
     for r in parse_errors[:10]:
         meta = index.get(r["content_hash"], {})
         msg = (r.get("stderr") or "").splitlines()[0] if r.get("stderr") else ""
-        lines.append(f"- `{meta.get('repo','?')}` / `{meta.get('path','?')}` — {msg[:200]}")
+        lines.append(
+            f"- `{md_cell(meta.get('repo', '?'))}` / "
+            f"`{md_cell(meta.get('path', '?'))}` — {md_cell(msg[:200])}"
+        )
 
     if crashes:
         lines += ["", "## Crashes / unexpected errors", ""]
         for r in crashes[:20]:
             meta = index.get(r["content_hash"], {})
-            lines.append(f"- `{meta.get('repo','?')}` / `{meta.get('path','?')}` — {r.get('error')}")
+            lines.append(
+                f"- `{md_cell(meta.get('repo', '?'))}` / "
+                f"`{md_cell(meta.get('path', '?'))}` — {md_cell(r.get('error'))}"
+            )
 
     lines += [
         "",

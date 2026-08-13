@@ -374,6 +374,53 @@ After approval, `publish` and `docker-publish` run in parallel.
   Delete the tag and re-push it as a signed tag from your workstation
   (see "Tag and release" above).
 
+## Credential scoping (open items)
+
+Two hardening steps live in GitHub and Docker Hub settings, not in this
+repository, so they cannot be landed by a PR. Both are recorded here rather
+than left implicit — the workflow side of each is already in place.
+
+### A `dockerhub-description` environment
+
+`dockerhub-description.yml` is dispatched manually and reads the Docker Hub
+credential. Its checkout is pinned to the default branch, so a dispatcher
+cannot choose the code that runs — but the secrets are still **repo-level**,
+which means nothing scopes them to a ref.
+
+To close the rest:
+
+1. Create an environment named `dockerhub-description`.
+2. Set its deployment-branch policy to the default branch only. (The existing
+   `dockerhub` environment is tags-only, which is why this job could not simply
+   reuse it.)
+3. Move `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` into it, removing them from
+   repo scope.
+4. Add `environment: dockerhub-description` to the job, and required reviewers
+   if you want a human gate.
+
+Until step 3, a repo-level secret is readable by any workflow in the
+repository, so steps 1–2 alone change nothing.
+
+### Split the Docker Hub PAT by capability
+
+One `Read, Write, Delete` PAT is referenced by every Docker Hub job, including
+read-only ones (`docker-smoke`, `scout`, `report`). A leak from any of them
+carries delete capability for the whole namespace — the scope of the credential
+is set by the single most privileged consumer.
+
+Mint three tokens and route them by need:
+
+| Token | Scope | Used by |
+|---|---|---|
+| `DOCKERHUB_TOKEN_READ` | Read | `docker-smoke`, `scout`, `report` |
+| `DOCKERHUB_TOKEN_WRITE` | Read, Write | the four build/publish jobs |
+| `DOCKERHUB_TOKEN_ADMIN` | Read, Write, Delete | the two `dockerhub-description` jobs only |
+
+The ADMIN token should live in the `dockerhub-description` environment above,
+so the other jobs cannot reference it even by name. Renaming the secrets is a
+breaking change to the release pipeline, so do it in one pass: add the new
+secrets first, land the workflow change, then revoke the old PAT.
+
 ## Why this checklist exists
 
 - Three version strings (`pyproject.toml`, `__init__.py`, and `action.yml`'s

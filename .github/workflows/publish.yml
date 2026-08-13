@@ -35,48 +35,12 @@ jobs:
   #      from a commit they control. Adding/rotating signing keys is a
   #      maintainer action documented in GOVERNANCE.md.
   verify-tag:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 3
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Assert annotated tag and reachable from main
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          obj_type=$(git cat-file -t "${TAG}")
-          if [ "${obj_type}" != "tag" ]; then
-            echo "::error::${TAG} is a ${obj_type}, expected an annotated tag (git tag -s/-a)"
-            exit 1
-          fi
-          tag_commit=$(git rev-parse "${TAG}^{commit}")
-          if ! git merge-base --is-ancestor "${tag_commit}" origin/main; then
-            echo "::error::${TAG} commit ${tag_commit} is not reachable from origin/main"
-            exit 1
-          fi
-          echo "Tag ${TAG} is annotated and reachable from origin/main (commit ${tag_commit})."
-      - name: Verify SSH signature against allowed_signers
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          # `git verify-tag` exits non-zero on any signature problem
-          # (missing, malformed, signed by an unknown key, signed by a
-          # key not authorized for the "git" namespace). The
-          # allowedSignersFile must be an absolute path.
-          allowed="${GITHUB_WORKSPACE}/.github/allowed_signers"
-          if [ ! -s "${allowed}" ]; then
-            echo "::error::${allowed} is missing or empty — cannot verify tag signature"
-            exit 1
-          fi
-          if ! git -c "gpg.ssh.allowedSignersFile=${allowed}" tag -v "${TAG}"; then
-            echo "::error::${TAG} signature did not verify against .github/allowed_signers"
-            echo "::error::If a maintainer's key was rotated, update .github/allowed_signers in a PR before tagging."
-            exit 1
-          fi
+    # Extracted to a reusable workflow so publish-channel.yml calls the *same*
+    # gate rather than keeping a copy that drifted (it omitted the signature
+    # check entirely). See .github/workflows/verify-tag.yml for what it asserts.
+    uses: ./.github/workflows/verify-tag.yml
+    with:
+      tag: ${{ github.ref_name }}
 
   build:
     needs: verify-tag
@@ -280,18 +244,34 @@ jobs:
             requirements.lock
             requirements-dev.lock
             requirements-build.lock
+      - name: Install the dependency closure from the hash-pinned lock
+        # The dependencies must not come from TestPyPI. `-i` makes an index
+        # *primary*, and pip then prefers the highest version across every
+        # configured index — so with TestPyPI primary, anyone who claims
+        # `pyyaml` there at a higher version supplies code into this job. The
+        # TestPyPI namespace is open to any account, which makes that a
+        # register-and-wait attack rather than a compromise.
+        #
+        # Installing the closure first, from hashes, means the step below has
+        # nothing left to resolve.
+        run: pip install --require-hashes -r requirements.lock
+
       - name: Install from TestPyPI and verify version
         # TestPyPI's JSON API sees a new release within seconds of the
         # publish step, but the /simple/ index pip uses can lag by
         # minutes. A fixed sleep has flaked mid-release before (0.3.6),
         # so retry the install with backoff until the index catches up
         # or we hit ~2 minutes of attempts.
+        #
+        # `--no-deps` is what keeps TestPyPI scoped to the one artifact under
+        # test: it is the only thing that legitimately lives there, and its
+        # dependencies are already installed above.
         run: |
           version="${GITHUB_REF_NAME#v}"
           for attempt in 1 2 3 4 5 6; do
             if pip install \
+                --no-deps \
                 -i https://test.pypi.org/simple/ \
-                --extra-index-url https://pypi.org/simple/ \
                 "compose-lint==${version}"; then
               break
             fi

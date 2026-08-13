@@ -12,6 +12,18 @@ name: Docker Hub description (manual)
 # secrets are repo-level, so the job reads them directly. Reuses the same
 # first-party composite action as publish.yml, so no third-party code holds the
 # delete-capable PAT.
+#
+# Because the secrets are repo-level, nothing scopes them to a ref — so the
+# checkout below is pinned to the default branch rather than to the dispatched
+# ref. `workflow_dispatch` can name any ref, and `uses: ./…` resolves the
+# composite action out of the *workspace*: without the pin, whoever dispatches
+# chooses the code that reads a Read+Write+Delete token. The pin means a
+# dispatch can choose only *when* this runs, not *what* runs.
+#
+# The remaining half of that gap is not fixable in this file: it needs a
+# `dockerhub-description` environment whose deployment-branch policy allows only
+# the default branch, holding the Docker Hub secrets so they leave repo scope.
+# See docs/RELEASING.md.
 
 on:
   workflow_dispatch:
@@ -27,6 +39,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Not the dispatched ref — see the note at the top of this file.
+          ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - uses: ./.github/actions/update-dockerhub-description
         with:

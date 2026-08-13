@@ -71,6 +71,47 @@ If a finding is genuinely parameterized in your deployment, that is what
 default (`${PW}` rather than `${PW:-hunter2}`) also stays exempt, because
 Compose then ships nothing.
 
+### Security
+
+- **The release layer no longer has a weaker path than its main one.**
+
+  - **One tag gate, called by both publish paths.** `publish.yml` verified
+    three things about a release tag: annotated, reachable from `main`, and
+    signed by a key in `.github/allowed_signers`. `publish-channel.yml` — the
+    manual escape hatch, which ships with the same credentials — carried its
+    own copy that did the first two and omitted the third, so a tag signed by
+    nobody could reach the publishing jobs. The signature check is the
+    cryptographic root of the Sigstore provenance chain. It now lives once, in
+    a reusable `verify-tag.yml` that both paths call, and every
+    credential-bearing job depends on it. A test walks the `needs:` graph and
+    fails if any job touching a publishing credential does not reach the gate.
+  - **The release smoke no longer resolves dependencies from TestPyPI.** `-i`
+    makes an index *primary*, and pip then prefers the highest version across
+    all configured indexes — so with TestPyPI primary, anyone who claims a
+    dependency name in that open namespace at a higher version supplies code
+    into the release. The closure is now installed from the hash-pinned lock
+    first, and TestPyPI is used only with `--no-deps` for the one artifact
+    under test. Verified against a local squat: PyYAML resolves from the lock,
+    not the planted 99.0.0. A test fails any workflow `pip install` that reads
+    from a non-default index without `--no-deps`.
+  - **The manual Docker Hub description sync runs default-branch code.**
+    `workflow_dispatch` can name any ref and `uses: ./…` runs whatever is in
+    the workspace, so the dispatcher chose the code that reads a
+    Read+Write+Delete token. The checkout is pinned to the default branch: a
+    dispatch now chooses when it runs, not what runs.
+  - **The corpus report escapes third-party repository and path strings.**
+    They come from code-search results over arbitrary public repositories, and
+    only a path's *basename* is filtered when fetching — so a directory
+    component could contain `|`, backticks and HTML, forge extra columns, and
+    write rows that looked like compose-lint's own findings. Backticks are
+    replaced rather than escaped, because Markdown does not honour backslash
+    escapes inside a code span.
+
+  Two related items need repository and Docker Hub settings rather than code,
+  and are written up in `docs/RELEASING.md`: moving the Docker Hub secrets into
+  a default-branch-scoped environment, and splitting the single
+  Read+Write+Delete PAT into read, write and admin tokens.
+
 ### Fixed
 
 - **A small file can no longer buy a large amount of work.** Nine defects
