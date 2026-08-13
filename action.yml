@@ -38,9 +38,19 @@ inputs:
     required: false
     default: ""
   version:
-    description: "compose-lint version to install (default: latest)"
+    description: >-
+      compose-lint version to install. Defaults to the version this action was
+      released with, so a SHA-pinned `uses:` gets a reproducible check. Set to
+      "latest" to track PyPI instead.
     required: false
     default: ""
+  allow-no-files:
+    description: >-
+      Succeed when no Compose files are found instead of failing. Off by
+      default: a pattern that matches nothing is a misconfiguration, and the
+      CLI itself exits 2 in that case.
+    required: false
+    default: "false"
 
 runs:
   using: "composite"
@@ -54,10 +64,22 @@ runs:
       env:
         CL_VERSION: ${{ inputs.version }}
       run: |
-        if [ -n "$CL_VERSION" ]; then
-          pip install "compose-lint==${CL_VERSION}"
-        else
+        # Pinned by default. A consumer who SHA-pins `uses:` is asking for a
+        # reproducible check, and installing whatever PyPI serves at that
+        # moment silently defeats that: the pinned ref selects this file, not
+        # the package it installs. Release automation keeps DEFAULT_VERSION in
+        # step with the release, and CI's "Version strings in sync" job fails
+        # if it drifts.
+        DEFAULT_VERSION="0.17.0"
+        if [ -z "$CL_VERSION" ]; then
+          pip install "compose-lint==${DEFAULT_VERSION}"
+        elif [ "$CL_VERSION" = "latest" ]; then
+          # Opt-in to tracking PyPI. Used by this repo's own smoke jobs, which
+          # exist to catch drift between the source action and the published
+          # package.
           pip install compose-lint
+        else
+          pip install "compose-lint==${CL_VERSION}"
         fi
 
     - name: Find Compose files
@@ -67,26 +89,53 @@ runs:
         CL_FILES: ${{ inputs.files }}
         CL_PATTERN: ${{ inputs.pattern }}
       run: |
-        FILES="$CL_FILES"
-        if [ -z "$FILES" ] && [ -n "$CL_PATTERN" ]; then
+        # The discovered paths are written NUL-separated to a file under
+        # RUNNER_TEMP and only the *path to that file* crosses the step
+        # boundary. $GITHUB_OUTPUT is a line-oriented text file, so putting
+        # filenames in it let a path containing a newline forge output records
+        # — `files=` could be terminated early and arbitrary step outputs
+        # appended. Nothing attacker-controlled goes into $GITHUB_OUTPUT now.
+        LIST_FILE="${RUNNER_TEMP:-/tmp}/compose-lint-files"
+        : > "$LIST_FILE"
+        COUNT=0
+
+        if [ -n "$CL_FILES" ]; then
+          # The documented contract for `files:` is a space-separated list, so
+          # a newline in it is malformed rather than a filename we should try
+          # to honour. Refuse it loudly instead of splitting on it.
+          case "$CL_FILES" in
+            *$'\n'*)
+              echo "::error::files: must be a space-separated list; it contains a newline"
+              exit 2
+              ;;
+          esac
+          for f in $CL_FILES; do
+            printf '%s\0' "$f" >> "$LIST_FILE"
+            COUNT=$((COUNT + 1))
+          done
+        elif [ -n "$CL_PATTERN" ]; then
           # -name takes a literal glob; we never eval the pattern as shell.
-          FILES=$(find . -path "./.git" -prune -o -name "$CL_PATTERN" -print | tr '\n' ' ')
-        fi
-        if [ -z "$FILES" ]; then
+          # -print0 keeps paths intact through newlines and spaces, which the
+          # previous `tr '\n' ' '` join destroyed.
+          while IFS= read -r -d '' f; do
+            printf '%s\0' "$f" >> "$LIST_FILE"
+            COUNT=$((COUNT + 1))
+          done < <(find . -path "./.git" -prune -o -name "$CL_PATTERN" -print0)
+        else
           # Default: common Compose file names in repo root
           for f in docker-compose.yml docker-compose.yaml compose.yml compose.yaml; do
-            [ -f "$f" ] && FILES="$FILES $f"
+            if [ -f "$f" ]; then
+              printf '%s\0' "$f" >> "$LIST_FILE"
+              COUNT=$((COUNT + 1))
+            fi
           done
         fi
-        if [ -z "$FILES" ]; then
-          echo "::warning::No Compose files found"
-          echo "files=" >> "$GITHUB_OUTPUT"
-        else
-          echo "files=$FILES" >> "$GITHUB_OUTPUT"
-        fi
+
+        echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+        echo "list-file=$LIST_FILE" >> "$GITHUB_OUTPUT"
 
     - name: Run compose-lint
-      if: steps.find-files.outputs.files != ''
+      id: lint
       shell: bash
       env:
         CL_CONFIG: ${{ inputs.config }}
@@ -95,8 +144,27 @@ runs:
         CL_QUIET: ${{ inputs.quiet }}
         CL_VERBOSE: ${{ inputs.verbose }}
         CL_SARIF_FILE: ${{ inputs.sarif-file }}
-        CL_TARGET_FILES: ${{ steps.find-files.outputs.files }}
+        CL_ALLOW_NO_FILES: ${{ inputs.allow-no-files }}
+        CL_COUNT: ${{ steps.find-files.outputs.count }}
+        CL_LIST_FILE: ${{ steps.find-files.outputs.list-file }}
       run: |
+        # "Nothing to lint" is not a pass. The CLI exits 2 when it finds no
+        # Compose files, and this step used to be skipped entirely by an
+        # `if:` condition — turning that fail-closed answer into a green
+        # check. A pattern that matches nothing is a misconfiguration, and a
+        # gate that reports success over an unlinted repository is the one
+        # outcome this tool must never produce.
+        if [ "${CL_COUNT:-0}" -eq 0 ]; then
+          if [ "$CL_ALLOW_NO_FILES" = "true" ]; then
+            echo "::warning::No Compose files found; allow-no-files is set"
+            exit 0
+          fi
+          echo "::error::No Compose files found. Checked the 'files' and 'pattern' inputs and the repository root. Set allow-no-files: true if an empty result is expected."
+          exit 2
+        fi
+
+        mapfile -d '' -t TARGET_FILES < "$CL_LIST_FILE"
+
         ARGS=()
         if [ -n "$CL_CONFIG" ]; then
           ARGS+=(--config "$CL_CONFIG")
@@ -112,27 +180,61 @@ runs:
           ARGS+=(--verbose)
         fi
 
-        # Word-split the file list intentionally — it is space-separated
-        # by `Find Compose files` above. `--` terminates the option namespace
-        # first, so a repository file named `--config=evil/compose.yml` arrives
-        # as a path instead of installing an attacker-authored policy.
-        # shellcheck disable=SC2086
-        compose-lint "${ARGS[@]}" -- $CL_TARGET_FILES || TEXT_EXIT=$?
+        # `--` terminates the option namespace, so a repository file named
+        # `--config=evil/compose.yml` arrives as a path instead of installing
+        # an attacker-authored policy.
+        TEXT_EXIT=0
+        compose-lint "${ARGS[@]}" -- "${TARGET_FILES[@]}" || TEXT_EXIT=$?
 
         # When a SARIF artifact is requested, re-run in SARIF mode. The first
         # run prints human-readable output to the job log and sets the exit
         # code; this run only writes the file. Rules are deterministic, so the
         # two runs report the same findings.
         if [ -n "$CL_SARIF_FILE" ]; then
-          # shellcheck disable=SC2086
-          compose-lint --format sarif "${ARGS[@]}" -- $CL_TARGET_FILES \
-            > "$CL_SARIF_FILE" || true
+          # Keep the write target inside the workspace. `>` truncates before
+          # the command runs, so an unvalidated path let a caller-supplied
+          # value destroy a file anywhere the runner could write — including
+          # outside the checkout — whether or not the lint itself succeeded.
+          WORKSPACE="$(cd "${GITHUB_WORKSPACE:-$PWD}" && pwd -P)"
+          SARIF_DIR="$(cd "$(dirname "$CL_SARIF_FILE")" 2>/dev/null && pwd -P)" || {
+            echo "::error::sarif-file directory does not exist: $CL_SARIF_FILE"
+            exit 2
+          }
+          SARIF_PATH="$SARIF_DIR/$(basename "$CL_SARIF_FILE")"
+          case "$SARIF_PATH" in
+            "$WORKSPACE"/*) ;;
+            *)
+              echo "::error::sarif-file must be inside the workspace"
+              exit 2
+              ;;
+          esac
+
+          # Write to a temporary file and move it into place only once it
+          # holds a complete document. Redirecting straight at the target
+          # truncated it first, so a failed run left a 0-byte artifact — and
+          # `|| true` reported that as success, so the upload below shipped an
+          # empty result set as if the scan had been clean.
+          SARIF_TMP="$(mktemp "${RUNNER_TEMP:-/tmp}/compose-lint-sarif.XXXXXX")"
+          SARIF_EXIT=0
+          compose-lint --format sarif "${ARGS[@]}" -- "${TARGET_FILES[@]}" \
+            > "$SARIF_TMP" || SARIF_EXIT=$?
+
+          if [ ! -s "$SARIF_TMP" ]; then
+            rm -f "$SARIF_TMP"
+            echo "::error::compose-lint produced no SARIF output (exit ${SARIF_EXIT}); refusing to upload an empty artifact"
+            exit "${SARIF_EXIT:-1}"
+          fi
+          mv "$SARIF_TMP" "$SARIF_PATH"
+          echo "sarif-written=true" >> "$GITHUB_OUTPUT"
         fi
 
-        exit ${TEXT_EXIT:-0}
+        exit "$TEXT_EXIT"
 
     - name: Upload SARIF
-      if: inputs.sarif-file != '' && always() && steps.find-files.outputs.files != ''
+      # Gated on the file actually having been written, not on `always()`.
+      # `always()` uploaded whatever was at the path even when the lint step
+      # had failed before producing a document.
+      if: inputs.sarif-file != '' && !cancelled() && steps.lint.outputs.sarif-written == 'true'
       uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
       with:
         sarif_file: ${{ inputs.sarif-file }}

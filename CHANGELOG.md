@@ -73,6 +73,39 @@ Compose then ships nothing.
 
 ### Security
 
+- **The GitHub Action no longer passes where the CLI would fail.** Six defects
+  shared that shape, and `action.yml` is fixed as one block.
+
+  - **"No Compose files found" is an error, not a green check.** The lint step
+    was gated on `if: steps.find-files.outputs.files != ''`, so a `pattern:`
+    that matched nothing skipped the step entirely and the job reported
+    success — while the CLI exits 2 for exactly that input. The decision now
+    lives inside the script, where it can fail. New `allow-no-files: true`
+    input for the case where an empty result is expected.
+  - **A SARIF artifact is never uploaded unless it was written.** The re-run
+    redirected straight at the target — truncating it before the command ran —
+    and `|| true` reported failure as success, so `always()` uploaded a 0-byte
+    document and Code Scanning showed no alerts. Output now goes to a
+    temporary file that is moved into place only once it holds a complete
+    document; a run that produces nothing fails the step, and the upload is
+    gated on the file having been written rather than on `always()`.
+  - **`sarif-file` is validated to stay inside the workspace.** `>` truncates
+    before the command runs, so an unvalidated path let a caller-supplied
+    value destroy a file anywhere the runner could write.
+  - **The install is pinned by default.** A consumer who SHA-pins `uses:` is
+    asking for a reproducible check, but the action installed whatever PyPI
+    served at that moment. It now installs the version it was released with;
+    `version: latest` opts back in to tracking PyPI.
+    `scripts/bump-version.sh` keeps the pin in step and
+    `tests/test_action_contract.py` fails if it drifts.
+  - **No attacker-controlled text reaches `$GITHUB_OUTPUT`.** Discovered paths
+    are written NUL-separated to a file under `RUNNER_TEMP` and only that
+    file's path crosses the step boundary, so a filename containing a newline
+    can no longer forge output records. Discovery uses `find -print0`, so
+    paths containing spaces survive too.
+  - **The documented consumer workflow ships a `permissions:` block** —
+    workflow-level deny-all plus the two scopes the job actually uses.
+
 - **Five rules now classify the normalized value instead of the spelling.**
   Each decided what a value *was* by matching the raw token, so an equivalent
   spelling walked past it. All five were verified against

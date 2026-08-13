@@ -76,11 +76,11 @@ def test_action_passes_double_dash_before_the_file_list() -> None:
     invocations = [
         line.strip()
         for line in action.splitlines()
-        if "compose-lint" in line and "$CL_TARGET_FILES" in line
+        if "compose-lint" in line and "TARGET_FILES" in line
     ]
     assert len(invocations) == 2, f"expected 2 invocations, found {invocations!r}"
     for line in invocations:
-        assert "-- $CL_TARGET_FILES" in line, f"missing `--` separator: {line!r}"
+        assert '-- "${TARGET_FILES[@]}"' in line, f"missing `--` separator: {line!r}"
 
 
 def test_double_dash_is_what_changes_the_verdict(tmp_path: Path) -> None:

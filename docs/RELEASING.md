@@ -243,7 +243,7 @@ Open a PR — even for the release bump. No direct pushes to `main`.
 
 ```bash
 git checkout -b release/X.Y.Z
-git add pyproject.toml src/compose_lint/__init__.py CHANGELOG.md
+git add pyproject.toml src/compose_lint/__init__.py action.yml CHANGELOG.md
 git commit -m "Prepare X.Y.Z release"
 git push -u origin release/X.Y.Z
 gh pr create --fill
@@ -376,8 +376,13 @@ After approval, `publish` and `docker-publish` run in parallel.
 
 ## Why this checklist exists
 
-- Two version strings (`pyproject.toml` and `__init__.py`) drift if you
-  only bump one. We almost shipped 0.2.0 with a mismatch.
+- Three version strings (`pyproject.toml`, `__init__.py`, and `action.yml`'s
+  `DEFAULT_VERSION`) drift if you only bump some. We almost shipped 0.2.0 with a
+  mismatch between the first two. `DEFAULT_VERSION` is the package the Action
+  installs when a consumer does not pass `version:`, so a stale one means a
+  SHA-pinned `uses:` silently gets a different linter than the action it pinned;
+  `scripts/bump-version.sh` rewrites all three and
+  `tests/test_action_contract.py` fails if they disagree.
 - PyPI version numbers are permanent; a rushed release with a broken
   wheel burns the number forever.
 - Signed, annotated tags are the root of the provenance chain that

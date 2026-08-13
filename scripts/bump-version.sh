@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Bump the two source-of-truth version files: pyproject.toml and
-# src/compose_lint/__init__.py. README snippets and the CHANGELOG are handled
-# by hand per the docs/RELEASING.md "Bump the version" checklist.
+# Bump the three source-of-truth version files: pyproject.toml,
+# src/compose_lint/__init__.py, and action.yml's DEFAULT_VERSION (the package
+# the Action installs when a consumer does not pass `version:`). README
+# snippets and the CHANGELOG are handled by hand per the docs/RELEASING.md
+# "Bump the version" checklist.
 # Usage: scripts/bump-version.sh X.Y.Z
 set -euo pipefail
 
@@ -20,14 +22,19 @@ root="$(git rev-parse --show-toplevel)"
 
 sed -i "s/^version = \".*\"/version = \"${version}\"/" "${root}/pyproject.toml"
 sed -i "s/^__version__ = \".*\"/__version__ = \"${version}\"/" "${root}/src/compose_lint/__init__.py"
+# tests/test_action_contract.py fails if this drifts from __version__, so a
+# missed bump here is caught before release rather than shipping an Action that
+# installs a different linter than it claims.
+sed -i "s/^\( *\)DEFAULT_VERSION=\".*\"/\1DEFAULT_VERSION=\"${version}\"/" "${root}/action.yml"
 
 echo "Bumped to ${version}:"
 grep '^version' "${root}/pyproject.toml"
 grep '__version__' "${root}/src/compose_lint/__init__.py"
+grep 'DEFAULT_VERSION=' "${root}/action.yml"
 echo ""
 echo "Still to do by hand (see docs/RELEASING.md 'Bump the version'):"
 echo "  - README.md snippets: pre-commit rev:, pip ==, docker tag, Action # vX.Y.Z"
 echo "  - CHANGELOG.md: author the ${version} entry"
 echo "Then:"
-echo "  git add pyproject.toml src/compose_lint/__init__.py README.md CHANGELOG.md"
+echo "  git add pyproject.toml src/compose_lint/__init__.py action.yml README.md CHANGELOG.md"
 echo "  git commit -S -m 'Prepare ${version} release'"

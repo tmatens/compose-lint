@@ -741,16 +741,18 @@ jobs:
       # testpypi-smoke, publish.yml docker-smoke, marketplace-smoke.yml).
       # One source of truth prevents per-workflow drift.
 
-      # No `version:` pin — the action defaults to installing the latest
-      # release from PyPI. What this job tests is the action.yml contract
-      # (inputs, file discovery, SARIF wiring) against whatever compose-lint
-      # is currently published. Pinning to a stale version hid breakages
-      # between the source action and the published package through 0.3.x.
+      # `version: latest` is deliberate. The action now *pins* by default so a
+      # consumer's SHA-pinned `uses:` gets a reproducible check, but what this
+      # job tests is the action.yml contract (inputs, file discovery, SARIF
+      # wiring) against whatever compose-lint is currently published. Letting
+      # it install the pin would test the source action against itself and hide
+      # breakages between the two, which is what happened through 0.3.x.
       - name: Clean fixture should pass
         uses: ./
         with:
           files: tests/smoke/clean.yml
           fail-on: high
+          version: latest
 
       - name: Insecure fixture should fail
         id: insecure
@@ -759,6 +761,7 @@ jobs:
         with:
           files: tests/smoke/insecure.yml
           fail-on: high
+          version: latest
 
       - name: Assert insecure run failed
         if: steps.insecure.outcome != 'failure'

@@ -394,15 +394,30 @@ The easiest path — runs compose-lint and uploads findings to GitHub Code Scann
 name: Compose Lint
 on: [push, pull_request]
 
+permissions: {}
+
 jobs:
   compose-lint:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read          # checkout
+      security-events: write  # upload the SARIF to Code Scanning
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: tmatens/compose-lint@e1ceb3aaac0775c7ae8b8095c95a5b7a923bdb63 # v0.17.0
         with:
           sarif-file: results.sarif
 ```
+
+The `permissions:` blocks are part of the recipe, not decoration. Without them the
+job inherits the repository default, which on many repositories is still
+read-write for every scope — so a linting job that needs only `contents: read`
+and `security-events: write` runs holding a token that can push code and edit
+releases. Denying everything at the workflow level and granting the two scopes
+the job actually uses keeps a compromised dependency in this job from reaching
+anything else.
+
+Drop `security-events: write` if you are not uploading SARIF.
 
 Or install from PyPI directly:
 
