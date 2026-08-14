@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from compose_lint.models import Finding, Severity
 from compose_lint.parser import load_compose, loads
 from compose_lint.rules.CL0020_credential_env_keys import CredentialEnvKeysRule
@@ -188,6 +190,79 @@ class TestCredentialEnvKeysRule:
         # would be skipped because the literal-value check requires str.
         findings = self._check("skip_yaml_bool_value")
         assert findings == []
+
+    # ---- Exemptions: quantity knobs (issue #561) ----
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "JWT_ACCESS_TOKEN_EXPIRE_MINUTES",
+            "JWT_REFRESH_TOKEN_EXPIRE_DAYS",
+            "ACCESS_TOKEN_EXPIRE_MINUTES",
+            "DEEPFENCE_ACCESS_TOKEN_EXPIRY_MINUTES",
+            "WF_AUTH_TOKEN_TTL_MINUTES",
+            "PASSWORD_RESET_TOKEN_TTL",
+            "PASSWORD_CHANGE_TICKET_TTL_SECONDS",
+            "GF_AUTH_TOKEN_ROTATION_INTERVAL_MINUTES",
+            "JWT__REFRESHTOKENEXPIRATIONDAYS",
+            "TOKENVALIDITYMAX",
+            "TOKEN_USAGE_RETENTION",
+            "OPENAI_MAX_TOKENS",
+            "SUMMARY_MAX_TOKENS",
+            "CHATGPT2API_THREAD_TOKENS",
+            "DEFAULT_TOKEN_LIMIT",
+            "OLLAMA_MODEL_TOKEN_LIMIT",
+            "INDEXING_MAX_SEGMENTATION_TOKENS_LENGTH",
+            "PASSWORDMINCHAR",
+            "USER_PASSWORD_MIN_LENGTH",
+            "USER_PASSWORD_REQUIREMENTS",
+            "OCIS_PASSWORD_POLICY_MIN_CHARACTERS",
+            "TOKEN_SIGNUP_BONUS",
+            "SECRET_PORT",
+            "SECRET_FILE_SIZE",
+            "SECRET_MAX_TEXT_SIZE",
+        ],
+    )
+    def test_exempt_quantity_knob_keys(self, key: str) -> None:
+        # A lifetime/size/policy knob is not the credential it is named after.
+        # Every key here is a real corpus false positive from issue #561.
+        assert self._check_key(key, "30") == []
+
+    @pytest.mark.parametrize(
+        "value", ["30", "1.5", "900s", "500ms", "30m", "24h", "7d"]
+    )
+    def test_exempt_quantity_knob_value_forms(self, value: str) -> None:
+        assert self._check_key("TOKEN_TTL", value) == []
+
+    def test_knob_key_with_interpolated_default_is_exempt(self) -> None:
+        # The parser resolves `${WF_TTL:-60}` to 60 before the rule runs, so
+        # the defaulted form must be exempt exactly like the bare literal —
+        # this is the form that grading defaults newly surfaced.
+        assert self._check_key("WF_AUTH_TOKEN_TTL_MINUTES", '"${WF_TTL:-60}"') == []
+
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            # Value is a quantity but the key names the credential itself.
+            ("DB_PASSWORD", "12345678"),
+            ("POSTGRES_PASSWORD", "1234"),
+            ("SECRET_KEY", "12345"),
+            ("DB_PASS", "1234"),
+            # Key is knob-shaped but the value is not a quantity.
+            ("AUTH_TOKENS", "your_token_here"),
+            ("TOKEN_TTL", "hunter2"),
+            ("PASSWORD_RESET_REQUEST_THROTTLE_RATE", '"5/hour"'),
+        ],
+    )
+    def test_quantity_exemption_needs_both_halves(self, key: str, value: str) -> None:
+        # Exempting on either half alone would lose a real finding: a weak
+        # numeric password (issue #277 F7) or a literal token.
+        assert len(self._check_key(key, value)) == 1
+
+    def test_passport_secret_is_not_read_as_a_port(self) -> None:
+        # _PORT is suffix-anchored: PASSPORT_SECRET contains "PORT" but the
+        # key does not end in it, so the credential still fires.
+        assert len(self._check_key("PASSPORT_SECRET", "12345")) == 1
 
     # ---- Variable-substitution skips ----
 

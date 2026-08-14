@@ -123,6 +123,31 @@ Compose then ships nothing.
   for short-syntax volumes, and each half is length-bounded rather than
   relying on a regex quantifier to bound it.
 
+- **CL-0020 no longer reads a token's *lifetime* as the token.**
+  `JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 30` matched on the `TOKEN` substring and
+  fired at `high` — a finding with no fix, since the value is a duration.
+  A key naming a quantity about the credential (`TTL`, `EXPIRE`, `EXPIRY`,
+  `VALIDITY`, `ROTATION`, `INTERVAL`, `RETENTION`, `_MINUTES`/`_DAYS`,
+  `MIN_LENGTH`, `MIN_CHAR`, `_LIMIT`, `_SIZE`, `POLICY`, plural `TOKENS`,
+  `_PORT`) is now exempt **when its value is also a bare quantity** (`30`,
+  `900s`, `30m`).
+
+  Both halves are required, and deliberately so. Exempting on the value alone
+  — the shape a bare integer suggests — would have reverted the numeric-secret
+  fix: `POSTGRES_PASSWORD: 1234` is a weak credential and must keep firing.
+  Exempting on the key alone would skip `AUTH_TOKENS: your_token_here`.
+
+  Measured over the 5,417-file corpus: **30 findings removed across 18 files,
+  every one a knob; all 40 numeric-valued credentials kept; no other rule's
+  output changes.** Three files stop failing at the default `--fail-on high`,
+  having failed only on this. This class grew with the interpolation change
+  above — `TOKEN_TTL: ${TTL:-60}` resolves to `60` and began firing where the
+  unresolved reference had not.
+
+  Four knob keys holding non-quantity values still fire (a banned-password
+  *list filename*, a `5/hour` rate, an arithmetic expression, a placeholder
+  token); judging those needs the content scanner this rule declines to be.
+
 - **Nested interpolation defaults resolve the way Compose resolves them.**
   `${A:-x${B:-y}z}` was rewritten by a single regex pass whose default group
   stopped at the *first* `}` — the inner one — so

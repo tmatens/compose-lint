@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 from compose_lint._scalar import as_scalar_text
@@ -64,6 +65,66 @@ _FLAG_KEY_FRAGMENTS = (
 # Compared case-insensitively against the trimmed value.
 _FLAG_VALUES = frozenset({"yes", "no", "true", "false", "0", "1", "on", "off"})
 
+# Exemption: keys that carry a credential-shaped substring but name a
+# *quantity* about the credential — a lifetime, size, limit or policy knob —
+# rather than the credential itself (issue #561):
+# `JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 30` is a duration, not a token.
+#
+# Deliberately conjunctive with _QUANTITY_VALUE_RE below: a knob-shaped key is
+# exempt only when its value is *also* a bare quantity. Exempting on the value
+# alone would revert issue #277 F7 (`DB_PASSWORD: 12345678` must keep firing —
+# a weak numeric password is the finding), and exempting on the key alone would
+# skip `AUTH_TOKENS: your_token_here`. Fragments are corpus-derived: over the
+# 5,417-file corpus this pair removes 30 findings, every one a knob, and keeps
+# all 40 numeric-valued credentials.
+_QUANTITY_KEY_FRAGMENTS = (
+    # Lifetime / rotation.
+    "TTL",
+    "TIMEOUT",
+    "EXPIRE",
+    "EXPIRY",
+    "EXPIRATION",
+    "VALIDITY",
+    "LIFETIME",
+    "MAX_AGE",
+    "MAXAGE",
+    "ROTATION",
+    "INTERVAL",
+    "RETENTION",
+    "DURATION",
+    # Explicit time units.
+    "_SECONDS",
+    "_SECS",
+    "_MINUTES",
+    "_MINS",
+    "_HOURS",
+    "_DAYS",
+    "_MS",
+    # Size / length / limit / policy knobs.
+    "MIN_LENGTH",
+    "MINLENGTH",
+    "MAX_LENGTH",
+    "MAXLENGTH",
+    "MIN_CHAR",
+    "MINCHAR",
+    "_LIMIT",
+    "_SIZE",
+    "REQUIREMENTS",
+    "POLICY",
+    "_BONUS",
+    # Plural TOKENS counts an LLM's units of text, not credentials
+    # (OPENAI_MAX_TOKENS, SUMMARY_MAX_TOKENS).
+    "TOKENS",
+)
+
+# Suffix-anchored so PASSPORT_SECRET is not read as a port number.
+_QUANTITY_KEY_SUFFIXES = ("_PORT",)
+
+# A bare number, optionally carrying a time unit (`30`, `1.5`, `900s`, `30m`,
+# `500ms`). Anything else — a placeholder, a filename, a rate like `5/hour` —
+# is not a quantity and the rule still fires.
+_QUANTITY_VALUE_RE = re.compile(r"^\d+(\.\d+)?(ms|s|m|h|d)?$", re.IGNORECASE)
+
 
 def _matches_credential_pattern(key_upper: str) -> bool:
     """Return True if the key name matches a credential-shaped pattern."""
@@ -77,6 +138,25 @@ def _is_exempt_key(key_upper: str) -> bool:
     if key_upper.endswith(_FILE_SUFFIX):
         return True
     return any(fragment in key_upper for fragment in _FLAG_KEY_FRAGMENTS)
+
+
+def _is_quantity_knob(key_upper: str, raw: Any) -> bool:
+    """Return True for a quantity-shaped key holding a quantity-shaped value.
+
+    Both halves are required: `PASSWORD_TTL: 900` is a lifetime, while
+    `DB_PASSWORD: 12345678` (no knob word) and `AUTH_TOKENS: your_token_here`
+    (not a quantity) are credentials and keep firing. See issue #561.
+    """
+    if isinstance(raw, bool):
+        return False
+    text = as_scalar_text(raw) if isinstance(raw, (int, float)) else raw
+    if not isinstance(text, str):
+        return False
+    if not _QUANTITY_VALUE_RE.match(text.strip()):
+        return False
+    if any(fragment in key_upper for fragment in _QUANTITY_KEY_FRAGMENTS):
+        return True
+    return any(key_upper.endswith(suffix) for suffix in _QUANTITY_KEY_SUFFIXES)
 
 
 def _is_literal_credential_value(raw: Any) -> bool:
@@ -155,9 +235,13 @@ class CredentialEnvKeysRule(BaseRule):
                 "`/proc/<pid>/environ`, `docker compose config`, process "
                 "listings, and CI logs. Compose's `secrets:` primitive "
                 "materializes credentials as files under /run/secrets/ and "
-                "does not appear in any of those surfaces. This rule is a "
-                "naming-convention check, not a content scanner — it does "
-                "not inspect the value for secret-like entropy or formats."
+                "does not appear in any of those surfaces. A key naming a "
+                "quantity about the credential (a lifetime, size, limit or "
+                "policy knob) whose value is also a bare quantity is exempt: "
+                "TOKEN_TTL_MINUTES: 30 is a duration, not a token. This rule "
+                "is a naming-convention check, not a content scanner — it "
+                "does not inspect the value for secret-like entropy or "
+                "formats."
             ),
             severity=Severity.HIGH,
             references=[OWASP_REF, COMPOSE_SECRETS_REF],
@@ -179,6 +263,8 @@ class CredentialEnvKeysRule(BaseRule):
             if not _matches_credential_pattern(key_upper):
                 continue
             if _is_exempt_key(key_upper):
+                continue
+            if _is_quantity_knob(key_upper, raw):
                 continue
             if not _is_literal_credential_value(raw):
                 continue
