@@ -366,15 +366,26 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
-      # Parse both versions structurally rather than by grep (#382): a commented
+      # Parse the versions structurally rather than by grep (#382): a commented
       # "# version = ..." above the real line, or reformatting, would fool
       # `grep '^version =' | head -1`. tomllib reads pyproject's [project].version
       # and ast reads __init__.py's __version__ assignment — deterministic, no
       # regex to drift.
-      - name: Compare pyproject.toml and __init__.py
+      #
+      # action.yml's DEFAULT_VERSION is the third source-of-truth string, and it
+      # was NOT checked here until 0.18.0 — so this job could report "Version
+      # strings in sync" while that one was a release behind, which is exactly
+      # what happened on the 0.18.0 prep PR. A check whose name overclaims is
+      # worse than no check: it was read as covering all of them.
+      # tests/test_action_contract.py asserts the same equality, but it lives in
+      # the `test` matrix, so it does not run when only a version file changes.
+      # DEFAULT_VERSION is a shell assignment inside a `run:` block, so it is
+      # matched by an anchored regex (PyYAML is not installed in this job, and a
+      # YAML parse would only get us to the same string).
+      - name: Compare pyproject.toml, __init__.py and action.yml
         run: |
           python - <<'PY'
-          import ast, pathlib, sys, tomllib
+          import ast, pathlib, re, sys, tomllib
 
           pyproject = tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"]
 
@@ -385,12 +396,19 @@ jobs:
               ) and isinstance(node.value, ast.Constant):
                   init = node.value.value
 
+          found = re.findall(r'^\s*DEFAULT_VERSION="([^"]*)"', pathlib.Path("action.yml").read_text(), re.M)
+          if len(found) != 1:
+              sys.exit(f"::error::Expected exactly one DEFAULT_VERSION in action.yml, found {len(found)}")
+          action = found[0]
+
           print(f"pyproject.toml: {pyproject}")
           print(f"__init__.py:    {init}")
-          if not pyproject or not init:
-              sys.exit("::error::Could not extract version from one or both files")
-          if pyproject != init:
-              sys.exit(f"::error::Version drift: pyproject.toml ({pyproject}) vs src/compose_lint/__init__.py ({init})")
+          print(f"action.yml:     {action}")
+          if not pyproject or not init or not action:
+              sys.exit("::error::Could not extract version from one or more files")
+          drift = {"pyproject.toml": pyproject, "src/compose_lint/__init__.py": init, "action.yml": action}
+          if len(set(drift.values())) != 1:
+              sys.exit("::error::Version drift: " + ", ".join(f"{k} ({v})" for k, v in drift.items()))
           PY
       # Self-referencing version pins in living docs (README integration
       # snippets, docs/hardening.md) must equal the current version. A

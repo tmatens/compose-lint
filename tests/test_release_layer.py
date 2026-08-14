@@ -192,3 +192,94 @@ def test_the_dockerhub_credential_is_only_read_by_first_party_code() -> None:
         # The token is passed as an input to the local composite action only.
         assert "secrets.DOCKERHUB_TOKEN" in line
     assert "uses: ./.github/actions/update-dockerhub-description" in raw
+
+
+# --- A called workflow gets what its jobs ask for ------------------------
+
+# GITHUB_TOKEN permission levels, ordered. Under an explicit `permissions:`
+# map, any scope not listed is `none` — that is what makes a deny-all default
+# and a partial map behave the same way for an unlisted scope.
+_LEVELS = {"none": 0, "read": 1, "write": 2}
+_LEVEL_NAME = {v: k for k, v in _LEVELS.items()}
+
+
+def _permission_levels(spec: Any) -> tuple[dict[str, int], int]:
+    """Explicit per-scope levels, and the level every unlisted scope gets."""
+    if spec == "read-all":
+        return {}, _LEVELS["read"]
+    if spec == "write-all":
+        return {}, _LEVELS["write"]
+    if isinstance(spec, dict):
+        return {k: _LEVELS[v] for k, v in spec.items()}, _LEVELS["none"]
+    raise AssertionError(f"unrecognised permissions form: {spec!r}")
+
+
+def _reusable_calls() -> list[tuple[str, str, str]]:
+    """(caller workflow, caller job, callee workflow) for every local call."""
+    calls = []
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        for job_name, job in (_load(path.name).get("jobs") or {}).items():
+            uses = str(job.get("uses", ""))
+            if uses.startswith("./.github/workflows/"):
+                calls.append((path.name, job_name, uses.rsplit("/", 1)[-1]))
+    return calls
+
+
+@pytest.mark.parametrize(("caller", "job_name", "callee"), _reusable_calls())
+def test_a_called_workflow_is_granted_what_its_jobs_request(
+    caller: str, job_name: str, callee: str
+) -> None:
+    """A called workflow's jobs cannot hold more than the calling job was given.
+
+    Ask for more and GitHub rejects the *whole run*: no job is created, so
+    there is no log, no annotation and no check-run to read — the reason exists
+    only as UI text on the run page. The v0.18.0 tag push died exactly this way.
+    ``publish.yml`` declared ``permissions: {}`` workflow-wide and nothing on
+    the job calling ``verify-tag.yml``, whose job asks for ``contents: read`` to
+    check out, so the release failed to start.
+
+    This is invisible to the other gates. ``actionlint`` does not model
+    permission inheritance across a workflow call, and the pipeline itself only
+    runs on a tag push — which is after the point of no return.
+    """
+    caller_doc = _load(caller)
+    caller_job = caller_doc["jobs"][job_name]
+    granted = caller_job.get("permissions", caller_doc.get("permissions"))
+    assert granted is not None, (
+        f"{caller}: job '{job_name}' calls {callee} but neither it nor the "
+        f"workflow declares `permissions:`, so the grant is whatever the "
+        f"repository default happens to be. Declare it explicitly."
+    )
+    granted_map, granted_default = _permission_levels(granted)
+
+    callee_doc = _load(callee)
+    for callee_job, spec in (callee_doc.get("jobs") or {}).items():
+        requested = spec.get("permissions", callee_doc.get("permissions"))
+        if requested is None:
+            continue
+        req_map, req_default = _permission_levels(requested)
+
+        short = []
+        if req_default > granted_default:
+            short.append(
+                f"unlisted scopes (needs {_LEVEL_NAME[req_default]}, "
+                f"granted {_LEVEL_NAME[granted_default]})"
+            )
+        for scope in sorted(set(req_map) | set(granted_map)):
+            needs = req_map.get(scope, req_default)
+            has = granted_map.get(scope, granted_default)
+            if needs > has:
+                short.append(
+                    f"{scope} (needs {_LEVEL_NAME[needs]}, granted {_LEVEL_NAME[has]})"
+                )
+
+        assert not short, (
+            f"{caller} job '{job_name}' does not grant {callee} job "
+            f"'{callee_job}' what it requests: {'; '.join(short)}. "
+            f"The run would fail to start with no job, log or annotation."
+        )
+
+
+def test_the_reusable_call_scan_finds_something() -> None:
+    """Guard the guard: an empty scan would make the check above vacuous."""
+    assert _reusable_calls(), "no reusable-workflow calls detected"
