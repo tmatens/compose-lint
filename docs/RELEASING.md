@@ -158,6 +158,12 @@ version number.
       against the bullets in `[Unreleased]` and backfill the gaps in a
       separate chore PR before dispatching `release-prep.yml`. (0.5.2
       tripped on this — four merged PRs had no changelog entries.)
+
+      `release-prep.yml` now refuses to run on a `[Unreleased]` that is
+      empty, has duplicate `###` sections, or orders them outside Keep a
+      Changelog — the three shapes that have reached a release candidate.
+      **That checks shape, not completeness:** it cannot know a PR went
+      undocumented, so the cross-check above is still yours to do.
 - [ ] `.vex/compose-lint.openvex.json` is current: any new pip (or other
       stripped-component) CVE that a scanner now reports against the image
       is either covered by an existing `not_affected` statement with
@@ -173,12 +179,22 @@ version number.
 
 ## Bump the version
 
-compose-lint declares the version in **four** places that must stay
+compose-lint declares the version in **five** places that must stay
 in sync. Missing any one of them is a release-blocker — check all
-four before opening the bump PR.
+five before opening the bump PR.
 
 - [ ] `pyproject.toml` — `version = "X.Y.Z"` under `[project]`
 - [ ] `src/compose_lint/__init__.py` — `__version__ = "X.Y.Z"`
+- [ ] `action.yml` — `DEFAULT_VERSION="X.Y.Z"` in the install step. This
+      is the package the Action installs when a consumer does not pass
+      `version:`, so a stale one means a SHA-pinned `uses:` silently
+      installs a different linter than the action it pinned.
+      Automated: `release-prep.yml` calls `scripts/bump-version.sh`,
+      which rewrites this alongside the two above, and
+      `tests/test_action_contract.py` fails the PR if they disagree.
+      It was omitted from this list when #554 introduced it, and
+      `release-prep.yml` did not bump it either — so the 0.18.0 prep PR
+      failed its own required check and needed a hand-pushed commit.
 - [ ] `README.md` + `docs/hardening.md` — version references in
       copy-paste integration snippets. All need bumping each release;
       otherwise users land on a stale version (v0.14.0 shipped with all
@@ -216,11 +232,12 @@ four before opening the bump PR.
       tag is pushed and opens the follow-up PR for you. Review and merge
       that PR; only bump by hand if the job failed.
 
-Verify the first two match:
+Verify the first three match:
 
 ```bash
 grep -E '^version' pyproject.toml
 grep __version__ src/compose_lint/__init__.py
+grep DEFAULT_VERSION= action.yml
 ```
 
 The `marketplace-smoke.yml` bump has to land *after* the release
