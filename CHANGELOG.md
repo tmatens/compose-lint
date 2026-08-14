@@ -71,46 +71,63 @@ If a finding is genuinely parameterized in your deployment, that is what
 default (`${PW}` rather than `${PW:-hunter2}`) also stays exempt, because
 Compose then ships nothing.
 
-### Security
+### Changed
 
-- **The release layer no longer has a weaker path than its main one.**
-
-  - **One tag gate, called by both publish paths.** `publish.yml` verified
-    three things about a release tag: annotated, reachable from `main`, and
-    signed by a key in `.github/allowed_signers`. `publish-channel.yml` — the
-    manual escape hatch, which ships with the same credentials — carried its
-    own copy that did the first two and omitted the third, so a tag signed by
-    nobody could reach the publishing jobs. The signature check is the
-    cryptographic root of the Sigstore provenance chain. It now lives once, in
-    a reusable `verify-tag.yml` that both paths call, and every
-    credential-bearing job depends on it. A test walks the `needs:` graph and
-    fails if any job touching a publishing credential does not reach the gate.
-  - **The release smoke no longer resolves dependencies from TestPyPI.** `-i`
-    makes an index *primary*, and pip then prefers the highest version across
-    all configured indexes — so with TestPyPI primary, anyone who claims a
-    dependency name in that open namespace at a higher version supplies code
-    into the release. The closure is now installed from the hash-pinned lock
-    first, and TestPyPI is used only with `--no-deps` for the one artifact
-    under test. Verified against a local squat: PyYAML resolves from the lock,
-    not the planted 99.0.0. A test fails any workflow `pip install` that reads
-    from a non-default index without `--no-deps`.
-  - **The manual Docker Hub description sync runs default-branch code.**
-    `workflow_dispatch` can name any ref and `uses: ./…` runs whatever is in
-    the workspace, so the dispatcher chose the code that reads a
-    Read+Write+Delete token. The checkout is pinned to the default branch: a
-    dispatch now chooses when it runs, not what runs.
-  - **The corpus report escapes third-party repository and path strings.**
-    They come from code-search results over arbitrary public repositories, and
-    only a path's *basename* is filtered when fetching — so a directory
-    component could contain `|`, backticks and HTML, forge extra columns, and
-    write rows that looked like compose-lint's own findings. Backticks are
-    replaced rather than escaped, because Markdown does not honour backslash
-    escapes inside a code span.
-
-  Two related items need repository and Docker Hub settings rather than code,
-  and are written up in `docs/RELEASING.md`: moving the Docker Hub secrets into
-  a default-branch-scoped environment, and splitting the single
-  Read+Write+Delete PAT into read, write and admin tokens.
+- **Coverage gaps are reported on every channel a consumer reads.** An
+  unresolved `include:` or cross-file `extends: {file: ...}` now produces a JSON
+  `errors[]` entry, a SARIF `toolExecutionNotifications` record with
+  `executionSuccessful: false`, and exit 2 — previously a stderr warning for
+  `include:` and complete silence for `extends:`. `parser.coverage_gaps(data)`
+  exposes the same list to library callers. The text verdict counts them
+  separately from parse failures, because those files parsed fine and saying
+  otherwise would misdescribe the run. See **Upgrading** above.
+- **New `--allow-partial-coverage` flag on `check`** to accept a coverage gap
+  and grade what is visible. It waives the gap, not the findings: a local
+  CRITICAL still fails the gate.
+- **`${VAR:-default}` is resolved document-wide before rules run.** The parser
+  normalizes every string leaf to the value Compose ships when the variable is
+  unset, so a rule classifies the deployed configuration instead of the source
+  text. Substitution had been wired into one call site (bind sources), leaving
+  CL-0002, CL-0004, CL-0005, CL-0008, CL-0009, CL-0010, CL-0011, CL-0014,
+  CL-0016, CL-0018, CL-0020, CL-0021, CL-0022, CL-0024, CL-0026 and the
+  capability rules grading a string that is never deployed. Doing it once in the
+  parser is what keeps it from being re-litigated per rule: a rule that adds a
+  dangerous literal to its set gets the interpolated spellings for free. See
+  **Upgrading** above for the measured impact. A reference with no default is
+  still left as written — Compose ships nothing for it, so there is nothing to
+  grade.
+- **The credential rules' interpolation exemption is stated as what Compose
+  does.** CL-0020 and CL-0021 previously skipped any value *containing* a
+  reference, so appending one character to a literal (`hunter2$X`) silenced
+  them, while Compose ships `hunter2`. The exemption is now "Compose resolves
+  this value to nothing", which also correctly exempts a quoted reference in a
+  list-form entry (`- SECRET_KEY="${KEY}"`, where the quotes are literal
+  characters) that a stricter shape test would have flagged.
+- **CL-0021's rule description** now says the password half is skipped when
+  Compose resolves it to nothing, and that a defaulted password still fires.
+  Visible in `--explain CL-0021`, the docs site and SARIF rule metadata.
+- **CL-0026 no longer treats an unparseable dollar-bearing value as a limit.**
+  `mem_limit: "${MEM:-0}m"` resolves to `0m`, which Docker reads as unlimited,
+  and now fires; a bare `${MEM_LIMIT}` stays exempt as genuinely unknowable.
+- Scalars longer than 8 KB are no longer scanned for interpolation. The two
+  substitution regexes are quadratic (measured 80 KB → 0.49 s, 160 KB →
+  1.94 s), and the pass above runs them over every string rather than bind
+  sources alone; past the cap the conservative answer is returned unscanned.
+- **A Compose file containing an ambiguous line break is now refused** (exit 2,
+  reported per file, with a SARIF `toolExecutionNotifications` entry) instead of
+  being linted with line numbers nothing else agrees with. A lone `\r`, U+0085,
+  U+2028 or U+2029 is a line break to the YAML parser but not to editors, SARIF
+  viewers or CI annotations, so on such a document *any* reported line number is
+  wrong for one side or the other — and the fix engine would splice at a line
+  the user is not looking at. There is no line numbering to fall back on, so the
+  file is refused rather than mislabeled. None of the 5,417 files in the corpus
+  contains one, and CRLF and LF are unaffected.
+- **The parser now reads files without universal-newline translation**, so
+  `check` and `fix` parse the same bytes for the same file. `fix` has always
+  read with `newline=""` to preserve line endings, while the parser rewrote a
+  lone `\r` to `\n` — a second, quieter version of the same disagreement.
+  Verified no behavior change: LF and CRLF documents produce byte-identical
+  findings and line numbers, and a full corpus run is unchanged.
 
 ### Fixed
 
@@ -269,7 +286,68 @@ Compose then ships nothing.
     such. A directory has `st_nlink >= 2`, so it was previously reported as a
     hard link, which is not what is wrong with it.
 
+- **`fix --apply` could edit the wrong line and silently delete config.** The
+  fix engine's offset table counted only `\n`, while the line numbers it
+  converted come from PyYAML, which also breaks on a lone `\r`, U+0085,
+  U+2028 and U+2029. One such codepoint inside a quoted scalar shifted every
+  later splice a line, so a fix could remove a line the user never selected —
+  and because the result was still valid Compose, every safety net passed and
+  the run exited 0. `compose_lint._lines` now owns a single definition of a
+  line break, with `split_lines` and `line_starts` derived from one scan so
+  they cannot disagree; the fixers, the fix engine and the text formatter's
+  source excerpt all use it. A CI guard fails the build on a bare
+  `str.splitlines()` in `src/`. Documents free of those four codepoints —
+  effectively all real Compose files — are unaffected: a 5,417-file corpus run
+  shows zero change in findings, exit codes or errors.
+- **A file whose fixes could not be computed no longer destroys the batch.**
+  The same desync could push a line number past the offset table and raise a
+  bare `IndexError`, which aborted the whole run: `check --format sarif` then
+  emitted a 0-byte document, discarding the findings of every other file
+  scanned alongside it. Out-of-range positions now raise a
+  `LineOutOfRangeError` that the CLI reports as a per-file failure (exit 2,
+  the usage-error code) while the rest of the batch still lints and still
+  ships its findings.
+
 ### Security
+
+- **The release layer no longer has a weaker path than its main one.**
+
+  - **One tag gate, called by both publish paths.** `publish.yml` verified
+    three things about a release tag: annotated, reachable from `main`, and
+    signed by a key in `.github/allowed_signers`. `publish-channel.yml` — the
+    manual escape hatch, which ships with the same credentials — carried its
+    own copy that did the first two and omitted the third, so a tag signed by
+    nobody could reach the publishing jobs. The signature check is the
+    cryptographic root of the Sigstore provenance chain. It now lives once, in
+    a reusable `verify-tag.yml` that both paths call, and every
+    credential-bearing job depends on it. A test walks the `needs:` graph and
+    fails if any job touching a publishing credential does not reach the gate.
+  - **The release smoke no longer resolves dependencies from TestPyPI.** `-i`
+    makes an index *primary*, and pip then prefers the highest version across
+    all configured indexes — so with TestPyPI primary, anyone who claims a
+    dependency name in that open namespace at a higher version supplies code
+    into the release. The closure is now installed from the hash-pinned lock
+    first, and TestPyPI is used only with `--no-deps` for the one artifact
+    under test. Verified against a local squat: PyYAML resolves from the lock,
+    not the planted 99.0.0. A test fails any workflow `pip install` that reads
+    from a non-default index without `--no-deps`.
+  - **The manual Docker Hub description sync runs default-branch code.**
+    `workflow_dispatch` can name any ref and `uses: ./…` runs whatever is in
+    the workspace, so the dispatcher chose the code that reads a
+    Read+Write+Delete token. The checkout is pinned to the default branch: a
+    dispatch now chooses when it runs, not what runs.
+  - **The corpus report escapes third-party repository and path strings.**
+    They come from code-search results over arbitrary public repositories, and
+    only a path's *basename* is filtered when fetching — so a directory
+    component could contain `|`, backticks and HTML, forge extra columns, and
+    write rows that looked like compose-lint's own findings. Backticks are
+    replaced rather than escaped, because Markdown does not honour backslash
+    escapes inside a code span.
+
+  Two related items need repository and Docker Hub settings rather than code,
+  and are written up in `docs/RELEASING.md`: moving the Docker Hub secrets into
+  a default-branch-scoped environment, and splitting the single
+  Read+Write+Delete PAT into read, write and admin tokens.
 
 - **Four places where the tool reported a state that was not true.**
 
@@ -432,88 +510,6 @@ Compose then ships nothing.
   cannot tell a genuine `--config=x` from a file named that, and terminating
   before the first positional would break the documented
   `compose-lint init docker-compose.yml -o ci.yml` form.
-
-### Changed
-
-- **Coverage gaps are reported on every channel a consumer reads.** An
-  unresolved `include:` or cross-file `extends: {file: ...}` now produces a JSON
-  `errors[]` entry, a SARIF `toolExecutionNotifications` record with
-  `executionSuccessful: false`, and exit 2 — previously a stderr warning for
-  `include:` and complete silence for `extends:`. `parser.coverage_gaps(data)`
-  exposes the same list to library callers. The text verdict counts them
-  separately from parse failures, because those files parsed fine and saying
-  otherwise would misdescribe the run. See **Upgrading** above.
-- **New `--allow-partial-coverage` flag on `check`** to accept a coverage gap
-  and grade what is visible. It waives the gap, not the findings: a local
-  CRITICAL still fails the gate.
-- **`${VAR:-default}` is resolved document-wide before rules run.** The parser
-  normalizes every string leaf to the value Compose ships when the variable is
-  unset, so a rule classifies the deployed configuration instead of the source
-  text. Substitution had been wired into one call site (bind sources), leaving
-  CL-0002, CL-0004, CL-0005, CL-0008, CL-0009, CL-0010, CL-0011, CL-0014,
-  CL-0016, CL-0018, CL-0020, CL-0021, CL-0022, CL-0024, CL-0026 and the
-  capability rules grading a string that is never deployed. Doing it once in the
-  parser is what keeps it from being re-litigated per rule: a rule that adds a
-  dangerous literal to its set gets the interpolated spellings for free. See
-  **Upgrading** above for the measured impact. A reference with no default is
-  still left as written — Compose ships nothing for it, so there is nothing to
-  grade.
-- **The credential rules' interpolation exemption is stated as what Compose
-  does.** CL-0020 and CL-0021 previously skipped any value *containing* a
-  reference, so appending one character to a literal (`hunter2$X`) silenced
-  them, while Compose ships `hunter2`. The exemption is now "Compose resolves
-  this value to nothing", which also correctly exempts a quoted reference in a
-  list-form entry (`- SECRET_KEY="${KEY}"`, where the quotes are literal
-  characters) that a stricter shape test would have flagged.
-- **CL-0021's rule description** now says the password half is skipped when
-  Compose resolves it to nothing, and that a defaulted password still fires.
-  Visible in `--explain CL-0021`, the docs site and SARIF rule metadata.
-- **CL-0026 no longer treats an unparseable dollar-bearing value as a limit.**
-  `mem_limit: "${MEM:-0}m"` resolves to `0m`, which Docker reads as unlimited,
-  and now fires; a bare `${MEM_LIMIT}` stays exempt as genuinely unknowable.
-- Scalars longer than 8 KB are no longer scanned for interpolation. The two
-  substitution regexes are quadratic (measured 80 KB → 0.49 s, 160 KB →
-  1.94 s), and the pass above runs them over every string rather than bind
-  sources alone; past the cap the conservative answer is returned unscanned.
-- **A Compose file containing an ambiguous line break is now refused** (exit 2,
-  reported per file, with a SARIF `toolExecutionNotifications` entry) instead of
-  being linted with line numbers nothing else agrees with. A lone `\r`, U+0085,
-  U+2028 or U+2029 is a line break to the YAML parser but not to editors, SARIF
-  viewers or CI annotations, so on such a document *any* reported line number is
-  wrong for one side or the other — and the fix engine would splice at a line
-  the user is not looking at. There is no line numbering to fall back on, so the
-  file is refused rather than mislabeled. None of the 5,417 files in the corpus
-  contains one, and CRLF and LF are unaffected.
-- **The parser now reads files without universal-newline translation**, so
-  `check` and `fix` parse the same bytes for the same file. `fix` has always
-  read with `newline=""` to preserve line endings, while the parser rewrote a
-  lone `\r` to `\n` — a second, quieter version of the same disagreement.
-  Verified no behavior change: LF and CRLF documents produce byte-identical
-  findings and line numbers, and a full corpus run is unchanged.
-
-### Fixed
-
-- **`fix --apply` could edit the wrong line and silently delete config.** The
-  fix engine's offset table counted only `\n`, while the line numbers it
-  converted come from PyYAML, which also breaks on a lone `\r`, U+0085,
-  U+2028 and U+2029. One such codepoint inside a quoted scalar shifted every
-  later splice a line, so a fix could remove a line the user never selected —
-  and because the result was still valid Compose, every safety net passed and
-  the run exited 0. `compose_lint._lines` now owns a single definition of a
-  line break, with `split_lines` and `line_starts` derived from one scan so
-  they cannot disagree; the fixers, the fix engine and the text formatter's
-  source excerpt all use it. A CI guard fails the build on a bare
-  `str.splitlines()` in `src/`. Documents free of those four codepoints —
-  effectively all real Compose files — are unaffected: a 5,417-file corpus run
-  shows zero change in findings, exit codes or errors.
-- **A file whose fixes could not be computed no longer destroys the batch.**
-  The same desync could push a line number past the offset table and raise a
-  bare `IndexError`, which aborted the whole run: `check --format sarif` then
-  emitted a 0-byte document, discarding the findings of every other file
-  scanned alongside it. Out-of-range positions now raise a
-  `LineOutOfRangeError` that the CLI reports as a per-file failure (exit 2,
-  the usage-error code) while the rest of the batch still lints and still
-  ships its findings.
 
 ## [0.17.0] - 2026-08-12
 
