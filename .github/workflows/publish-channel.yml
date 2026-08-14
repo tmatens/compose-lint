@@ -24,6 +24,11 @@ jobs:
   # signature — so the emergency path was the weaker one, which is exactly
   # backwards for an escape hatch that ships with the same credentials.
   verify-tag:
+    # Granted here for the same reason as in publish.yml: the called workflow
+    # cannot hold more than this job was given, and the workflow default is
+    # deny-all, so omitting this stops the run before any job starts.
+    permissions:
+      contents: read
     uses: ./.github/workflows/verify-tag.yml
     with:
       tag: ${{ inputs.tag }}

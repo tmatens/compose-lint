@@ -38,6 +38,15 @@ jobs:
     # Extracted to a reusable workflow so publish-channel.yml calls the *same*
     # gate rather than keeping a copy that drifted (it omitted the signature
     # check entirely). See .github/workflows/verify-tag.yml for what it asserts.
+    #
+    # The grant has to be made here, not just in the called workflow. A called
+    # workflow's jobs cannot hold more than the calling job was given, and this
+    # workflow's deny-all default (`permissions: {}`) applies to the call. Its
+    # job asks for `contents: read` to check out the repo, so without this the
+    # run fails to start with "requesting 'contents: read', but is only allowed
+    # 'contents: none'" — before any job exists to report it.
+    permissions:
+      contents: read
     uses: ./.github/workflows/verify-tag.yml
     with:
       tag: ${{ github.ref_name }}
