@@ -26,6 +26,8 @@ from typing import Any
 import pytest
 import yaml
 
+from tests._cli_env import cli_env
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 _COMPOSE = (
@@ -103,7 +105,7 @@ def test_double_dash_is_what_changes_the_verdict(tmp_path: Path) -> None:
             capture_output=True,
             text=True,
             encoding="utf-8",
-            env={"PYTHONPATH": str(REPO_ROOT / "src"), "PATH": "/usr/bin:/bin"},
+            env=cli_env(PYTHONPATH=str(REPO_ROOT / "src")),
             timeout=120,
         )
 
@@ -141,7 +143,7 @@ def test_flags_after_a_positional_still_work(tmp_path: Path, argv: list[str]) ->
         capture_output=True,
         text=True,
         encoding="utf-8",
-        env={"PYTHONPATH": str(REPO_ROOT / "src"), "PATH": "/usr/bin:/bin"},
+        env=cli_env(PYTHONPATH=str(REPO_ROOT / "src")),
         timeout=120,
     )
     assert proc.returncode == 0, proc.stderr

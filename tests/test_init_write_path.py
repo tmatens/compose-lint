@@ -20,6 +20,7 @@ import pytest
 from compose_lint.config import load_config
 from compose_lint.config_emit import render_config
 from compose_lint.models import Finding, Severity
+from tests._cli_env import cli_env
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -32,11 +33,7 @@ def _run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
         cwd=cwd,
         capture_output=True,
         text=True,
-        env={
-            "PYTHONPATH": str(REPO_ROOT / "src"),
-            "PATH": "/usr/bin:/bin",
-            "NO_COLOR": "1",
-        },
+        env=cli_env(PYTHONPATH=str(REPO_ROOT / "src"), NO_COLOR="1"),
         timeout=120,
     )
 

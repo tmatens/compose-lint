@@ -31,6 +31,7 @@ from compose_lint.config import ConfigError, load_config
 from compose_lint.engine import run_rules
 from compose_lint.formatters.sarif import MAX_SARIF_RESULTS
 from compose_lint.parser import ComposeError, loads
+from tests._cli_env import cli_env
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -42,11 +43,7 @@ def _run(args: list[str], cwd: Path, timeout: int = 120):
         capture_output=True,
         text=True,
         encoding="utf-8",
-        env={
-            "PYTHONPATH": str(REPO_ROOT / "src"),
-            "PATH": "/usr/bin:/bin",
-            "NO_COLOR": "1",
-        },
+        env=cli_env(PYTHONPATH=str(REPO_ROOT / "src"), NO_COLOR="1"),
         timeout=timeout,
     )
 

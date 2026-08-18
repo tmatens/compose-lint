@@ -20,6 +20,7 @@ from compose_lint import cli
 from compose_lint.config import ConfigError, load_config
 from compose_lint.engine import run_rules
 from compose_lint.parser import loads
+from tests._cli_env import cli_env
 
 _PRIVILEGED = "services:\n  web:\n    image: nginx:1.27\n    privileged: true\n"
 _FIXABLE = (
@@ -174,11 +175,10 @@ def test_the_override_is_visible_in_every_output_format(tmp_path: Path) -> None:
             text=True,
             encoding="utf-8",
             cwd=tmp_path,
-            env={
-                "PYTHONPATH": str(Path(__file__).resolve().parent.parent / "src"),
-                "PATH": "/usr/bin:/bin",
-                "NO_COLOR": "1",
-            },
+            env=cli_env(
+                PYTHONPATH=str(Path(__file__).resolve().parent.parent / "src"),
+                NO_COLOR="1",
+            ),
             timeout=120,
         ).stdout
 

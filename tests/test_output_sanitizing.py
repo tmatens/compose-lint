@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 
 from compose_lint._output import sanitize, sanitize_line
+from tests._cli_env import cli_env
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC = REPO_ROOT / "src" / "compose_lint"
@@ -39,11 +40,7 @@ def _run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
         cwd=cwd,
         capture_output=True,
         text=True,
-        env={
-            "PYTHONPATH": str(REPO_ROOT / "src"),
-            "PATH": "/usr/bin:/bin",
-            "NO_COLOR": "1",
-        },
+        env=cli_env(PYTHONPATH=str(REPO_ROOT / "src"), NO_COLOR="1"),
         timeout=120,
     )
 
