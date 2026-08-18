@@ -1089,6 +1089,24 @@ jobs:
       - name: Validate each runtime rule's premise against a live container
         run: python scripts/validate_rule_premises.py
 
+  # Developer-machine legs (macOS/Windows) for the two modes that run off
+  # this repo's CI platform: the CLI and the pre-commit hook. Defined in
+  # os-smoke.yml so the weekly scheduled run and this PR gate share one
+  # definition. `workflows` is in the condition alongside `code` because a
+  # PR editing os-smoke.yml should exercise the workflow it edits.
+  #
+  # The `permissions` block below is not decoration: a called workflow's
+  # jobs cannot hold more than the calling job was granted, and both jobs
+  # in os-smoke.yml request `contents: read` to check out. Dropping this
+  # makes the whole run fail as `startup_failure` before any job starts
+  # (the 0.18.0 release blocker); tests/test_release_layer.py guards it.
+  os-smoke:
+    needs: changes
+    if: needs.changes.outputs.code == 'true' || needs.changes.outputs.workflows == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/os-smoke.yml
+
   # Single rollup job for branch protection. Required-status-checks should
   # point at this job name instead of the individual ci.yml job names, so
   # adding/renaming/removing jobs doesn't require a protection-rule edit.
@@ -1120,6 +1138,7 @@ jobs:
       - action-smoke
       - precommit-smoke
       - rule-premises
+      - os-smoke
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 1

@@ -6,12 +6,20 @@ name: OS smoke (macOS/Windows)
 # path handling (backslashes, drive letters), pre-commit's hook-environment
 # build, and Windows console encodings.
 #
-# Deliberately NOT part of ci.yml / the `ci-ok` merge gate — this is the
-# staged rollout: run on every merge to code paths plus weekly, absorb the
-# OS-specific triage out-of-band (failures email like the other scheduled
-# workflows), and promote the legs into `ci-ok` once they have stayed
-# green long enough to trust in the merge path. Until then a red run here
-# is signal to triage, not a blocked PR.
+# Promoted into the merge gate (issue #572's third acceptance criterion):
+# `ci.yml` calls this workflow on PRs that touch code, and `ci-ok` gates on
+# the result. The `workflow_call` trigger below is that entry point. The
+# soak behind the promotion is narrow and worth stating plainly — the four
+# failures were the rollout commits themselves (#584-#587, which is what
+# the legs were for), and every run from `d757ee3` on has been green, but
+# that is 9 runs inside a single day, not weeks of history. If Windows
+# turns out to flake in the merge path, the honest fix is to quarantine
+# the flaky leg here, not to widen `ci-ok`'s pass condition.
+#
+# The other triggers stay: the weekly cron catches drift that arrives with
+# no PR at all — a yanked dependency, a resolver change, a runner-image
+# update — which a merge gate structurally cannot see, and `push: main`
+# keeps covering merges that bypassed the PR path.
 #
 # The pre-commit steps mirror ci.yml's `precommit-smoke` with one
 # portability change: throwaway repos are created with `mktemp -d` under
@@ -21,6 +29,7 @@ name: OS smoke (macOS/Windows)
 # relative path between the two — os.path.relpath cannot cross drives
 # and crashes. Keeping the throwaway on the workspace drive avoids it.
 on:
+  workflow_call:
   workflow_dispatch:
   schedule:
     - cron: "27 10 * * 1"
