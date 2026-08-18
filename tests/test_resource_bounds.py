@@ -41,6 +41,7 @@ def _run(args: list[str], cwd: Path, timeout: int = 120):
         cwd=cwd,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env={
             "PYTHONPATH": str(REPO_ROOT / "src"),
             "PATH": "/usr/bin:/bin",
@@ -61,6 +62,7 @@ def _alias_dag(depth: int, tail: str) -> str:
 # --- Reading a path that is not a bounded regular file --------------------
 
 
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFOs require POSIX (os.mkfifo)")
 def test_a_fifo_is_refused_instead_of_hanging(tmp_path: Path) -> None:
     fifo = tmp_path / "pipe"
     os.mkfifo(fifo)
@@ -74,6 +76,7 @@ def test_a_fifo_is_refused_instead_of_hanging(tmp_path: Path) -> None:
     assert time.perf_counter() - start < 10
 
 
+@pytest.mark.skipif(os.name != "posix", reason="/dev/zero exists only on POSIX")
 def test_a_character_device_is_refused_instead_of_allocating(tmp_path: Path) -> None:
     link = tmp_path / "docker-compose.yml"
     link.symlink_to(Path("/dev/zero"))
@@ -82,7 +85,10 @@ def test_a_character_device_is_refused_instead_of_allocating(tmp_path: Path) -> 
 
 
 def test_a_directory_is_refused(tmp_path: Path) -> None:
-    with pytest.raises(UnsafeFileError):
+    # Refusal is the contract; the exception type differs by platform. POSIX
+    # opens the directory and the S_ISREG check raises UnsafeFileError;
+    # Windows already refuses at os.open with EACCES (PermissionError).
+    with pytest.raises((UnsafeFileError, PermissionError)):
         read_text_bounded(tmp_path)
 
 
@@ -102,6 +108,7 @@ def test_an_oversized_file_is_refused(tmp_path: Path) -> None:
         read_text_bounded(big)
 
 
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFOs require POSIX (os.mkfifo)")
 def test_the_cli_reports_a_fifo_and_keeps_going(tmp_path: Path) -> None:
     fifo = tmp_path / "pipe"
     os.mkfifo(fifo)
@@ -120,6 +127,7 @@ def test_the_cli_reports_a_fifo_and_keeps_going(tmp_path: Path) -> None:
     assert "CL-0002" in proc.stdout
 
 
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFOs require POSIX (os.mkfifo)")
 def test_a_config_pointing_at_a_fifo_is_refused(tmp_path: Path) -> None:
     fifo = tmp_path / "pipe"
     os.mkfifo(fifo)

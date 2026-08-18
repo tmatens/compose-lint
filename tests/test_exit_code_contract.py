@@ -52,6 +52,7 @@ def _run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
         cwd=cwd,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env={
             "PYTHONPATH": str(REPO_ROOT / "src"),
             "PATH": "/usr/bin:/bin",
@@ -146,6 +147,10 @@ def test_a_deeply_nested_config_exits_two_with_no_traceback(tmp_path: Path) -> N
 # --- VULN-020: a write failure belongs to its file, not to the run -------
 
 
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="chmod cannot make a directory unwritable on Windows",
+)
 def test_an_unwritable_directory_does_not_abort_the_batch(
     tmp_path: Path, restore_mode: list[Path]
 ) -> None:
@@ -171,6 +176,10 @@ def test_an_unwritable_directory_does_not_abort_the_batch(
     assert "driver: none" not in later.read_text(encoding="utf-8")
 
 
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="chmod cannot make a directory unwritable on Windows",
+)
 def test_the_error_does_not_leak_the_internal_temp_filename(
     tmp_path: Path, restore_mode: list[Path]
 ) -> None:

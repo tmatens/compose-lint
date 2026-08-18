@@ -26,6 +26,9 @@ def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
         [sys.executable, "-m", "compose_lint", *args],
         capture_output=True,
         text=True,
+        # The CLI guarantees UTF-8 output; decoding with the locale (cp1252 on
+        # Windows) would mojibake the report's non-ASCII characters.
+        encoding="utf-8",
     )
 
 
@@ -547,6 +550,9 @@ class TestFixSubcommand:
         assert "read_only: true" in patched
         assert "no-new-privileges:true" in patched
 
+    @pytest.mark.skipif(
+        os.name != "posix", reason="POSIX permission bits do not exist on Windows"
+    )
     def test_apply_preserves_file_mode(self, tmp_path: Path) -> None:
         # --apply swaps the file in atomically; the new file must keep the
         # original's permission bits, not inherit the temp file's 0600.

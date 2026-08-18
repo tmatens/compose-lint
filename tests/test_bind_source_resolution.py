@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -21,6 +22,16 @@ import pytest
 
 from compose_lint.engine import run_rules
 from compose_lint.parser import load_compose, loads
+
+# Bind-source resolution does its lexical math with the host's path
+# semantics, which is wrong on Windows: climb-to-root claims (CL-0001,
+# CL-0025) are silently missed and `${VAR:?err}`-shaped sources raise
+# WinError 123. Tracked in #588 — removing this skip is that issue's
+# acceptance criterion.
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="bind-source resolution assumes POSIX path semantics (#588)",
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

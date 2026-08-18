@@ -119,6 +119,7 @@ def test_a_plain_file_is_still_fixed(tmp_path: Path) -> None:
     assert "driver: none" not in target.read_text(encoding="utf-8")
 
 
+@pytest.mark.skipif(os.name != "posix", reason="setuid mode bits are POSIX-only")
 def test_setuid_is_not_carried_onto_the_replacement(tmp_path: Path) -> None:
     """A newly created inode must not inherit setuid from what it replaces."""
     target = tmp_path / "docker-compose.yml"
@@ -171,6 +172,7 @@ def test_the_override_is_visible_in_every_output_format(tmp_path: Path) -> None:
             [sys.executable, "-m", "compose_lint", "check", *args, str(target)],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             cwd=tmp_path,
             env={
                 "PYTHONPATH": str(Path(__file__).resolve().parent.parent / "src"),

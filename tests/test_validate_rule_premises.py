@@ -13,6 +13,8 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import pytest
+
 if TYPE_CHECKING:
     from pathlib import Path as _Path
 
@@ -38,6 +40,10 @@ def _run_without_docker(
     )
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="the premise suite pulls Linux images; Windows Docker cannot",
+)
 def test_skip_is_loud_when_docker_unavailable(tmp_path: _Path) -> None:
     result = _run_without_docker(tmp_path)
     # Default: a Docker-less contributor is not blocked, but the skip is loud.
@@ -48,6 +54,10 @@ def test_skip_is_loud_when_docker_unavailable(tmp_path: _Path) -> None:
     assert result.stderr.count("!") > 20
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="the premise suite pulls Linux images; Windows Docker cannot",
+)
 def test_require_docker_makes_skip_a_hard_failure(tmp_path: _Path) -> None:
     result = _run_without_docker(tmp_path, CL_REQUIRE_DOCKER="1")
     assert result.returncode == 1, result.stderr
