@@ -58,6 +58,14 @@ of code:
 pytest --cov=compose_lint --cov-report=term-missing --cov-fail-under=80
 ```
 
+On hosts where `/tmp` is mounted `noexec` (hardened containers), point
+pytest's temp directory somewhere executable first — the action-contract
+tests run shim executables from it and will skip otherwise:
+
+```bash
+TMPDIR=$HOME/.pytest-tmp pytest --basetemp=$HOME/.pytest-tmp/bt
+```
+
 ## Code standards
 
 - **Python 3.10+** required. Don't use syntax or stdlib features added after
