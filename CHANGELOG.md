@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Bind-source resolution is now lexical segment math in POSIX notation on
+  every platform (ADR-023): findings assert facts about the document that
+  hold on any plausible deploy host, instead of borrowing the linting
+  machine's path semantics. On Linux/macOS behavior is unchanged (verified:
+  zero findings changed across the 5,417-file corpus). On Windows lint
+  hosts, resolved relative sources are now spelled `/`-rooted, and `~`
+  sources are left as written rather than expanded against a Windows home
+  that is no proxy for a POSIX deploy home.
+
+### Fixed
+
+- **Windows lint hosts no longer miss climb-to-root bind mounts.** A
+  `..`-climb source resolved with Windows path semantics never matched the
+  whole-root (CL-0001) and root-equivalent (CL-0025) claims — the known
+  limitation shipped in 0.19.0's notes (#588). Climbs now saturate at the
+  root of whatever filesystem contains the compose file and are claimed on
+  every platform.
+
 ## [0.19.0] - 2026-08-18
 
 ### Added

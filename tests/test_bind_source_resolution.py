@@ -12,8 +12,8 @@ bind spelled that way produced a clean pass.
 from __future__ import annotations
 
 import os
+import re
 import shutil
-import sys
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -23,15 +23,10 @@ import pytest
 from compose_lint.engine import run_rules
 from compose_lint.parser import load_compose, loads
 
-# Bind-source resolution does its lexical math with the host's path
-# semantics, which is wrong on Windows: climb-to-root claims (CL-0001,
-# CL-0025) are silently missed and `${VAR:?err}`-shaped sources raise
-# WinError 123. Tracked in #588 — removing this skip is that issue's
-# acceptance criterion.
-pytestmark = pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="bind-source resolution assumes POSIX path semantics (#588)",
-)
+# Resolution is lexical segment math in POSIX notation on every platform
+# (ADR-023), so this module runs on every OS. Only the ``~`` expansion is
+# lint-host-dependent — a declared POSIX-only proxy — so only the tilde
+# cases carry a platform gate.
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -68,6 +63,13 @@ def base_dir(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[Path]:
         yield root
     finally:
         shutil.rmtree(root, ignore_errors=True)
+
+
+def _fixture_dir_name(source: str) -> str:
+    # Windows forbids ':' and '?' in filenames; the WinError 123 the
+    # unsanitized names raised was mistaken for a product bug when this
+    # module first ran there (#588).
+    return re.sub(r"[^A-Za-z0-9._-]", "_", source)
 
 
 def _write(base_dir: Path, body: str) -> Path:
@@ -121,6 +123,7 @@ def test_a_benign_relative_source_is_not_flagged(base_dir: Path) -> None:
     assert _mount_findings(path) == {}
 
 
+@pytest.mark.skipif(os.name != "posix", reason="tilde proxy is POSIX-only (ADR-023)")
 def test_tilde_expands_to_the_home_directory(base_dir: Path) -> None:
     # Verified: Compose mounts $HOME for a "~" source. Under /home, that is
     # CL-0013's.
@@ -189,6 +192,7 @@ def test_a_project_data_dir_under_home_is_not_user_data(base_dir: Path) -> None:
         assert _mount_findings(path) == {}, source
 
 
+@pytest.mark.skipif(os.name != "posix", reason="tilde proxy is POSIX-only (ADR-023)")
 def test_a_tilde_credential_dir_is_still_claimed(base_dir: Path) -> None:
     # Narrowing /home must not lose the real disclosures. "~/.ssh" expands to
     # $HOME/.ssh, which is a credential directory whatever sits below it.
@@ -215,7 +219,8 @@ def test_a_symlinked_directory_resolves_lexically(tmp_path: Path) -> None:
 
     data, _ = load_compose(link / "docker-compose.yml")
     # Lexical: parent of the *link* path, not of its target.
-    assert data["services"]["svc"]["volumes"] == [f"{tmp_path}/marker:/m"]
+    expected = "/" + "/".join(tmp_path.parts[1:]) + "/marker:/m"
+    assert data["services"]["svc"]["volumes"] == [expected]
 
 
 def test_loads_without_a_base_dir_leaves_sources_as_written() -> None:
@@ -236,7 +241,7 @@ def test_an_interpolated_default_resolves_to_its_default(base_dir: Path) -> None
         "${DOCKER_SOCKET_PATH-/var/run/docker.sock}",
     ):
         path = _write(
-            base_dir / source.replace("$", "").replace("{", "").replace("}", "")[:20],
+            base_dir / _fixture_dir_name(source),
             f'services:\n  svc:\n    image: nginx\n    volumes: ["{source}:/s"]\n',
         )
         assert _mount_findings(path).get("svc") == {"CL-0001"}, source
@@ -264,7 +269,7 @@ def test_a_reference_without_a_default_is_still_left_alone(base_dir: Path) -> No
     # file, and guessing one would invent a finding.
     for source in ("${UNSET}", "${REQUIRED:?boom}", "$BARE"):
         path = _write(
-            base_dir / source.replace("$", "").replace("{", "").replace("}", "")[:16],
+            base_dir / _fixture_dir_name(source),
             f'services:\n  svc:\n    image: nginx\n    volumes: ["{source}:/s"]\n',
         )
         data, _ = load_compose(path)
@@ -295,3 +300,67 @@ def test_an_escaped_dollar_is_not_a_substitution(base_dir: Path) -> None:
     )
     data, _ = load_compose(path)
     assert data["services"]["svc"]["volumes"] == ["pa$$w0rd_vol:/d"]
+
+
+# --- ADR-023: resolution must not depend on the lint host -----------------
+
+
+@pytest.mark.skipif(os.name != "posix", reason="normpath is the POSIX oracle")
+def test_lexical_join_matches_normpath_on_posix() -> None:
+    # The segment math must be byte-identical to the os.path behavior the
+    # Compose 29.4.3 observations were made against.
+    from compose_lint.parser import _lexical_join
+
+    cases = [
+        ("/a/b", "./data"),
+        ("/a/b", "../.."),
+        ("/a/b", CLIMB),
+        ("/a/b", f"{CLIMB}/etc"),
+        ("/a/b", "."),
+        ("/a", ".."),
+        ("/a/b/../c", "./x"),  # an unnormalized base collapses too
+        ("/a/b", "..//x/./y"),
+        ("/", "./x"),
+    ]
+    for base, source in cases:
+        expected = os.path.normpath(os.path.join(base, source))
+        assert _lexical_join(Path(base), source) == expected, (base, source)
+
+
+def test_lexical_join_is_anchor_relative_for_windows_bases() -> None:
+    # A climb saturates at the anchor of whatever filesystem holds the
+    # compose file — drive or UNC share — and is spelled "/", the
+    # deploy-generic root the rules grade. Runs on every platform via
+    # PureWindowsPath.
+    from pathlib import PureWindowsPath
+
+    from compose_lint.parser import _lexical_join
+
+    base = PureWindowsPath("D:/proj/stack")
+    assert _lexical_join(base, CLIMB) == "/"
+    assert _lexical_join(base, f"{CLIMB}/etc") == "/etc"
+    assert _lexical_join(base, "./data") == "/proj/stack/data"
+    unc = PureWindowsPath("//server/share/proj")
+    assert _lexical_join(unc, CLIMB) == "/"
+
+
+def test_a_relative_base_dir_claims_nothing() -> None:
+    # Without an absolute base there is no fact to claim; leaving the
+    # source as written beats inventing a rooted path.
+    from compose_lint.parser import _resolved_bind_source
+
+    assert _resolved_bind_source("./x", Path("rel/dir")) is None
+
+
+def test_tilde_is_left_alone_off_posix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The home proxy is declared POSIX-only (ADR-023): a Windows home is no
+    # stand-in for a POSIX deploy home, so nothing is claimed there.
+    monkeypatch.setattr("compose_lint.parser._POSIX_LINT_HOST", False)
+    path = _write(
+        tmp_path,
+        'services:\n  svc:\n    image: nginx\n    volumes: ["~/.ssh:/keys"]\n',
+    )
+    data, _ = load_compose(path)
+    assert data["services"]["svc"]["volumes"] == ["~/.ssh:/keys"]

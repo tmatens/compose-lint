@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os.path
 import re
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any
 
 import yaml
@@ -662,7 +662,45 @@ def _resolve_in_file_extends(data: dict[str, Any]) -> None:
         services[name] = _resolve(name, ())
 
 
-def _resolved_bind_source(source: str, base_dir: Path) -> str | None:
+# Whether this lint host can stand in for a POSIX deploy host's home
+# directory (ADR-023). Module-level so tests can exercise the non-POSIX
+# branch from any platform.
+_POSIX_LINT_HOST = os.name == "posix"
+
+
+def _lexical_join(base_dir: PurePath, source: str) -> str:
+    """Join ``source`` onto ``base_dir`` lexically, in POSIX notation.
+
+    Claims are deploy-host-independent (ADR-023), so the math is done on
+    path *segments*, never through the lint host's path semantics. On a
+    POSIX lint host the result is byte-identical to
+    ``os.path.normpath(os.path.join(base_dir, source))`` — the behavior
+    verified against Docker Compose 29.4.3. On Windows the drive or UNC
+    anchor is dropped and the result is still ``/``-rooted: a climb that
+    saturates the anchor names ``/`` — the root of whatever filesystem
+    contains the compose file at deploy time, which is the fact the rules
+    grade (the deploy host may be the Windows machine itself, where that
+    root is the containing drive or share, or a Linux host the file is
+    headed for, where it is ``/``).
+
+    Compose sources use ``/`` separators on every platform, so tokens are
+    split on ``/`` only; ``..`` saturates at the root, as ``normpath``
+    does.
+    """
+    segments: list[str] = []
+    base_tokens = base_dir.parts[1:] if base_dir.is_absolute() else base_dir.parts
+    for token in (*base_tokens, *source.split("/")):
+        if token in ("", "."):
+            continue
+        if token == "..":
+            if segments:
+                segments.pop()
+            continue
+        segments.append(token)
+    return "/" + "/".join(segments)
+
+
+def _resolved_bind_source(source: str, base_dir: PurePath) -> str | None:
     """The host path a relative or ``~`` bind source names, else ``None``.
 
     Compose resolves a relative source (``./x``, ``../x``, ``.``, ``..``)
@@ -670,6 +708,15 @@ def _resolved_bind_source(source: str, base_dir: Path) -> str | None:
     ``~`` to the invoking user's home. Both verified against Docker Compose
     (29.4.3): a long-syntax bind with twelve ``..`` segments mounted the host
     root filesystem, and ``~:/probe`` mounted the home directory.
+
+    Resolution is lexical segment math in POSIX notation on every platform
+    (ADR-023): what a source names is a fact about the *document*, not about
+    the machine that happens to be linting it — the same file is routinely
+    linted on a laptop and deployed on a server. Only the ``~`` expansion
+    consults the lint host, as a declared proxy (the linting user's home
+    stands in for the deploying user's), and only on a POSIX lint host —
+    a Windows home is no proxy for a POSIX deploy home, so there the
+    source is left as written and nothing is claimed.
 
     ``~user`` is deliberately left as written, but *not* because Compose
     ignores it. Measured against Docker Compose 29.4.3: Compose strips the
@@ -682,7 +729,8 @@ def _resolved_bind_source(source: str, base_dir: Path) -> str | None:
     claimed for it.
 
     Anything else — an absolute path, a named volume, an unresolved
-    ``${VAR}`` — is returned as ``None`` and left exactly as written.
+    ``${VAR}``, a relative source with no absolute ``base_dir`` to resolve
+    against — is returned as ``None`` and left exactly as written.
     """
     # Resolve "${VAR:-default}" first, so the shapes below see the path the
     # file actually ships. The two compose: "${DATA:-./data}" is a relative
@@ -696,11 +744,13 @@ def _resolved_bind_source(source: str, base_dir: Path) -> str | None:
         # None (nothing to rewrite); the substitution still has to be applied.
         return resolved if resolved is not None else substituted
     if source.startswith("~"):
-        if source == "~" or source.startswith("~/"):
+        if (source == "~" or source.startswith("~/")) and _POSIX_LINT_HOST:
             return os.path.normpath(os.path.expanduser(source))
         return None
     if source in {".", ".."} or source.startswith(("./", "../")):
-        return os.path.normpath(os.path.join(base_dir, source))
+        if not base_dir.is_absolute():
+            return None
+        return _lexical_join(base_dir, source)
     return None
 
 

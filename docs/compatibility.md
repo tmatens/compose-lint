@@ -78,11 +78,13 @@ Linux is the fully gated platform: every PR runs the complete suite there
 across all supported Python versions. macOS and Windows are exercised by a
 separate smoke workflow (pytest plus the pre-commit hook, currently at one
 Python version) that runs on every merge and weekly, but does not yet gate
-merges. Known platform limitation: on Windows hosts, bind-source path
-resolution uses host path semantics, so the climb-to-root detections
-(CL-0001, CL-0025) can miss findings there — see
-[#588](https://github.com/tmatens/compose-lint/issues/588). The GitHub
-Action and the Docker image are Linux by construction and unaffected.
+merges. Bind-source resolution is deploy-host-independent
+([ADR-023](adr/023-deploy-host-independent-claims.md)): findings are facts
+about the document, not the linting machine, so the climb-to-root
+detections fire on every platform. One platform difference remains by
+design: `~` bind sources are claimed only on POSIX lint hosts, where the
+linting user's home is a sensible proxy for the deploying user's. The
+GitHub Action and the Docker image are Linux by construction.
 
 ## Python versions
 
