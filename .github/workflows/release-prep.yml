@@ -81,8 +81,20 @@ jobs:
           python - <<'PY'
           import pathlib, re, sys
 
-          # Keep a Changelog's order, with this repo's "Upgrading" preamble first.
-          ORDER = ["Upgrading", "Added", "Changed", "Deprecated", "Removed", "Fixed", "Security"]
+          # Keep a Changelog's order, with this repo's "Upgrading" preamble
+          # first and its "Known limitations" postscript last. Both are local
+          # conventions that predate this check: "Upgrading from 0.15.x" and
+          # "Upgrading from 0.16.x" already shipped inside released sections,
+          # and "Known limitations" landed in #590. Normalise the versioned
+          # "Upgrading from X.Y.x" spelling to the bare key so the ordering
+          # comparison below sees one heading, not an unknown one.
+          ORDER = [
+              "Upgrading", "Added", "Changed", "Deprecated", "Removed",
+              "Fixed", "Security", "Known limitations",
+          ]
+
+          def key(heading: str) -> str:
+              return "Upgrading" if re.fullmatch(r"Upgrading(\s+from\s+.+)?", heading) else heading
 
           lines = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8").splitlines()
           start = next((i for i, ln in enumerate(lines) if ln.startswith("## [Unreleased]")), None)
@@ -120,10 +132,10 @@ jobs:
                   "release section."
               )
 
-          if unknown := [h for h in headings if h not in ORDER]:
+          if unknown := [h for h in headings if key(h) not in ORDER]:
               sys.exit(f"::error::[Unreleased] has unrecognised sections: {unknown}. Expected some of {ORDER}.")
 
-          if [ORDER.index(h) for h in headings] != sorted(ORDER.index(h) for h in headings):
+          if [ORDER.index(key(h)) for h in headings] != sorted(ORDER.index(key(h)) for h in headings):
               sys.exit(
                   f"::error::[Unreleased] sections are out of order: {headings}. "
                   f"Expected: {[h for h in ORDER if h in headings]}"
