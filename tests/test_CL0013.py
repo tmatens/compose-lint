@@ -295,3 +295,42 @@ class TestScopedAlternatives:
             assert self._check(path)[0].fix.endswith(
                 "Full guide: compose-lint --explain CL-0013"
             ), path
+
+
+class TestTildeShapeClaims:
+    """``~`` sources are claimed by spelling, on every platform (#602).
+
+    Whose home ``~`` names is a deploy-host fact, so the parser leaves the
+    source as written and this rule matches the shape itself — the same depth
+    rule as the ``/home`` tree: the whole home or a known credential directory
+    is a disclosure, a project directory under it is not.
+    """
+
+    def _check(self, volume: str) -> list:
+        from compose_lint.rules.CL0013_sensitive_mount import SensitiveMountRule
+
+        data, lines = loads(
+            f'services:\n  a:\n    image: x\n    volumes:\n      - "{volume}"\n'
+        )
+        return list(SensitiveMountRule().check("a", data["services"]["a"], data, lines))
+
+    def test_whole_home_is_claimed(self) -> None:
+        findings = self._check("~:/probe")
+        assert len(findings) == 1
+        assert "'~'" in findings[0].message
+
+    def test_credential_dir_is_claimed_with_descent(self) -> None:
+        for volume in ("~/.ssh:/keys", "~/.aws/config:/cfg", "~/.ssh/:/keys"):
+            findings = self._check(volume)
+            assert len(findings) == 1, volume
+            assert findings[0].severity == Severity.HIGH
+
+    def test_a_project_dir_under_home_is_not_claimed(self) -> None:
+        # The commonest benign idiom must stay clean, exactly as it does for
+        # a resolved /home/<user>/project path.
+        assert self._check("~/data:/data") == []
+
+    def test_tilde_user_is_never_claimed(self) -> None:
+        # See the parser's ~user note: Compose never resolves another
+        # account's home, so no claim can be honest.
+        assert self._check("~someone/.ssh:/keys") == []

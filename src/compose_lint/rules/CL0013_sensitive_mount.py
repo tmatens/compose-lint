@@ -125,6 +125,28 @@ _HOME_CREDENTIAL_DIRS: frozenset[str] = frozenset(
 )
 
 
+def _match_tilde_home(normalized: str) -> str | None:
+    """The deploy-user home path a ``~`` source exposes, or ``None``.
+
+    ``~`` names the *deploying* user's home, whoever that turns out to be, so
+    the claim is made on the spelling itself (ADR-023, #602) instead of the
+    old expansion against the linting user — which asserted a lint-host
+    username in reports and existed only on POSIX lint hosts. The same depth
+    rule as :func:`_match_home_tree` applies: the whole home or a known
+    credential directory is a disclosure; ``~/data`` is the project idiom and
+    is not. ``~user`` spellings are never claimed (see the parser's note on
+    what Compose actually does with them).
+    """
+    if normalized == "~":
+        return "~"
+    if not normalized.startswith("~/"):
+        return None
+    first = normalized[2:].split("/", 1)[0]
+    if first in _HOME_CREDENTIAL_DIRS:
+        return "~/" + first
+    return None
+
+
 def _match_home_tree(normalized: str) -> str | None:
     """The home path this mount exposes, or ``None``.
 
@@ -187,8 +209,10 @@ class SensitiveMountRule(BaseRule):
             if normalized in _INERT_DEVICES:
                 continue  # a bit bucket discloses nothing
 
-            matched = match_prefix(mount.host_path, _EXPOSED_PATHS) or _match_home_tree(
-                normalized
+            matched = (
+                match_prefix(mount.host_path, _EXPOSED_PATHS)
+                or _match_home_tree(normalized)
+                or _match_tilde_home(normalized)
             )
             reason = "exposes host kernel interfaces, devices or user data"
             if matched is None and not claims_host_path(mount.host_path):

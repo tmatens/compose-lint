@@ -39,12 +39,18 @@ deploy host. Concretely:
    output is byte-identical to the previous `normpath(join(...))` behavior
    (verified: zero findings changed over the 5,417-file corpus).
 2. **Lint-host context may serve only as a *declared proxy*, never as an
-   undeclared input.** Two proxies exist and are documented at their sites:
-   the compose file's position on the linting machine stands in for its
-   deploy position (CL-0013's `/home` membership), and on POSIX lint hosts
-   the linting user's home stands in for the deploying user's (`~`
-   expansion). Where a proxy has no sensible value — a Windows home for a
-   POSIX deploy home — nothing is claimed rather than something wrong.
+   undeclared input.** One proxy remains, documented at its site: the
+   compose file's position on the linting machine stands in for its deploy
+   position (CL-0013's `/home` membership). Where a proxy has no sensible
+   value, nothing is claimed rather than something wrong.
+
+   *Amended (#602):* the second original proxy — expanding `~` against the
+   linting user's home, POSIX lint hosts only — is retired. `~` sources are
+   left as written on every platform and CL-0013 claims the *spelling*
+   (`~/.ssh` is the deploying user's credential directory, whoever that
+   is), which is strictly stronger: reports stop asserting a lint-host
+   username, and the claims fire identically on every lint platform.
+   Verified: zero findings changed across the 5,417-file corpus.
 3. **Future rules inherit the test:** a rule that would read the lint
    host's environment, check whether a bind source exists on disk, or
    follow document references through the lint host's filesystem is

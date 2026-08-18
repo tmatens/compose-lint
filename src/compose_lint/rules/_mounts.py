@@ -21,9 +21,12 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 # Matches host:container or host:container:mode in short syntax. The host group
-# allows a bare "/" (root mount) by using `*` instead of `+`.
+# allows a bare "/" (root mount) by using `*` instead of `+`. A leading ``~``
+# is a host path too — Compose expands it at deploy time — and became visible
+# here when the parser stopped expanding it against the linting user (#602);
+# a named volume cannot begin with ``~``, so the shapes stay disjoint.
 _SHORT_VOLUME_RE = re.compile(
-    r"^(?P<host>/[^:]*):(?P<container>[^:]+)(?::(?P<mode>[^:]+))?"
+    r"^(?P<host>(?:/|~)[^:]*):(?P<container>[^:]+)(?::(?P<mode>[^:]+))?"
 )
 
 
@@ -169,7 +172,7 @@ def iter_bind_mounts(
             vtype = volume.get("type")
             if not isinstance(source, str):
                 continue
-            if vtype == "bind" or source.startswith("/"):
+            if vtype == "bind" or source.startswith(("/", "~")):
                 host_path = source
                 read_only = as_bool(volume.get("read_only")) is True
             elif source in named_binds:

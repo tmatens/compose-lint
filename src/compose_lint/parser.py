@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os.path
 import re
 from pathlib import Path, PurePath
 from typing import Any
@@ -662,12 +661,6 @@ def _resolve_in_file_extends(data: dict[str, Any]) -> None:
         services[name] = _resolve(name, ())
 
 
-# Whether this lint host can stand in for a POSIX deploy host's home
-# directory (ADR-023). Module-level so tests can exercise the non-POSIX
-# branch from any platform.
-_POSIX_LINT_HOST = os.name == "posix"
-
-
 def _lexical_join(base_dir: PurePath, source: str) -> str:
     """Join ``source`` onto ``base_dir`` lexically, in POSIX notation.
 
@@ -712,11 +705,11 @@ def _resolved_bind_source(source: str, base_dir: PurePath) -> str | None:
     Resolution is lexical segment math in POSIX notation on every platform
     (ADR-023): what a source names is a fact about the *document*, not about
     the machine that happens to be linting it — the same file is routinely
-    linted on a laptop and deployed on a server. Only the ``~`` expansion
-    consults the lint host, as a declared proxy (the linting user's home
-    stands in for the deploying user's), and only on a POSIX lint host —
-    a Windows home is no proxy for a POSIX deploy home, so there the
-    source is left as written and nothing is claimed.
+    linted on a laptop and deployed on a server. ``~`` sources are left as
+    written on every platform: whose home ``~`` names is a deploy-host fact,
+    and the rules claim the *spelling* instead (``~/.ssh`` is the deploying
+    user's credential directory, whoever that is — see CL-0013), which made
+    the old expand-against-the-linting-user proxy unnecessary (#602).
 
     ``~user`` is deliberately left as written, but *not* because Compose
     ignores it. Measured against Docker Compose 29.4.3: Compose strips the
@@ -744,9 +737,7 @@ def _resolved_bind_source(source: str, base_dir: PurePath) -> str | None:
         # None (nothing to rewrite); the substitution still has to be applied.
         return resolved if resolved is not None else substituted
     if source.startswith("~"):
-        if (source == "~" or source.startswith("~/")) and _POSIX_LINT_HOST:
-            return os.path.normpath(os.path.expanduser(source))
-        return None
+        return None  # claimed by spelling in the rules, never expanded (#602)
     if source in {".", ".."} or source.startswith(("./", "../")):
         if not base_dir.is_absolute():
             return None

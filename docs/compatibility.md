@@ -81,10 +81,10 @@ Python version) that runs on every merge and weekly, but does not yet gate
 merges. Bind-source resolution is deploy-host-independent
 ([ADR-023](adr/023-deploy-host-independent-claims.md)): findings are facts
 about the document, not the linting machine, so the climb-to-root
-detections fire on every platform. One platform difference remains by
-design: `~` bind sources are claimed only on POSIX lint hosts, where the
-linting user's home is a sensible proxy for the deploying user's. The
-GitHub Action and the Docker image are Linux by construction.
+detections fire on every platform, and `~` bind sources are claimed by
+their spelling — the deploying user's home, whoever that is — identically
+everywhere. The GitHub Action and the Docker image are Linux by
+construction.
 
 ## Python versions
 

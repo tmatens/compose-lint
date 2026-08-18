@@ -123,17 +123,17 @@ def test_a_benign_relative_source_is_not_flagged(base_dir: Path) -> None:
     assert _mount_findings(path) == {}
 
 
-@pytest.mark.skipif(os.name != "posix", reason="tilde proxy is POSIX-only (ADR-023)")
-def test_tilde_expands_to_the_home_directory(base_dir: Path) -> None:
-    # Verified: Compose mounts $HOME for a "~" source. Under /home, that is
-    # CL-0013's.
-    home = os.path.expanduser("~")
+def test_tilde_is_left_as_written(base_dir: Path) -> None:
+    # Whose home "~" names is a deploy-host fact; the spelling is claimed by
+    # the rules instead of being expanded against the linting user (#602),
+    # so reports no longer assert a lint-host username and behave the same
+    # on every platform.
     path = _write(
         base_dir,
         'services:\n  svc:\n    image: nginx\n    volumes: ["~/.ssh:/keys"]\n',
     )
     data, _ = load_compose(path)
-    assert data["services"]["svc"]["volumes"] == [f"{home}/.ssh:/keys"]
+    assert data["services"]["svc"]["volumes"] == ["~/.ssh:/keys"]
 
 
 def test_tilde_user_is_left_alone(base_dir: Path) -> None:
@@ -192,16 +192,15 @@ def test_a_project_data_dir_under_home_is_not_user_data(base_dir: Path) -> None:
         assert _mount_findings(path) == {}, source
 
 
-@pytest.mark.skipif(os.name != "posix", reason="tilde proxy is POSIX-only (ADR-023)")
 def test_a_tilde_credential_dir_is_still_claimed(base_dir: Path) -> None:
-    # Narrowing /home must not lose the real disclosures. "~/.ssh" expands to
-    # $HOME/.ssh, which is a credential directory whatever sits below it.
+    # Narrowing /home must not lose the real disclosures: "~/.ssh" is the
+    # deploying user's credential directory whoever that is, claimed by
+    # spelling on every platform (#602).
     path = _write(
         base_dir,
         'services:\n  svc:\n    image: nginx\n    volumes: ["~/.ssh:/keys"]\n',
     )
-    if _HOME_IS_UNDER_HOME:
-        assert _mount_findings(path).get("svc") == {"CL-0013"}
+    assert _mount_findings(path).get("svc") == {"CL-0013"}
 
 
 def test_a_symlinked_directory_resolves_lexically(tmp_path: Path) -> None:
@@ -352,15 +351,11 @@ def test_a_relative_base_dir_claims_nothing() -> None:
     assert _resolved_bind_source("./x", Path("rel/dir")) is None
 
 
-def test_tilde_is_left_alone_off_posix(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The home proxy is declared POSIX-only (ADR-023): a Windows home is no
-    # stand-in for a POSIX deploy home, so nothing is claimed there.
-    monkeypatch.setattr("compose_lint.parser._POSIX_LINT_HOST", False)
+def test_a_whole_home_mount_is_claimed(tmp_path: Path) -> None:
+    # "~:/probe" mounts the deploying user's entire home (verified against
+    # Compose 29.4.3, which mounts $HOME for it).
     path = _write(
         tmp_path,
-        'services:\n  svc:\n    image: nginx\n    volumes: ["~/.ssh:/keys"]\n',
+        'services:\n  svc:\n    image: nginx\n    volumes: ["~:/probe"]\n',
     )
-    data, _ = load_compose(path)
-    assert data["services"]["svc"]["volumes"] == ["~/.ssh:/keys"]
+    assert _mount_findings(path).get("svc") == {"CL-0013"}
