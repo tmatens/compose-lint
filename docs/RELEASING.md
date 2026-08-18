@@ -226,11 +226,13 @@ five before opening the bump PR.
       rewritten. Verify rather than re-do — if the prep PR is green and
       the follow-up PR touches `README.md`, this item is satisfied.
 - [ ] `.github/workflows/marketplace-smoke.yml` — two
-      `uses: tmatens/compose-lint@<sha> # vX.Y.Z` lines. Automated by
-      the same `bump-marketplace-smoke-pin` job as the README pin above:
-      it resolves `git rev-parse vX.Y.Z^{commit}` **after** the signed
-      tag is pushed and opens the follow-up PR for you. Review and merge
-      that PR; only bump by hand if the job failed.
+      `uses: tmatens/compose-lint@<sha> # vX.Y.Z` lines plus the
+      `CL_RELEASE_TAG: vX.Y.Z` env the published pre-commit smoke
+      consumes. Automated by the same `bump-marketplace-smoke-pin` job
+      as the README pin above: it resolves
+      `git rev-parse vX.Y.Z^{commit}` **after** the signed tag is
+      pushed and opens the follow-up PR for you. Review and merge that
+      PR; only bump by hand if the job failed.
 
 Verify the first three match:
 
@@ -322,9 +324,11 @@ After approval, `publish` and `docker-publish` run in parallel.
 - [ ] **Marketplace smoke test pin bump** — `publish.yml`'s
       `bump-marketplace-smoke-pin` job (runs after `create-release`)
       opens a follow-up PR with the new SHA in both
-      `uses: tmatens/compose-lint@<sha> # vX.Y.Z` lines. Review and
-      squash-merge, then trigger **Actions → Marketplace smoke test →
-      Run workflow** to verify the published Action end-to-end.
+      `uses: tmatens/compose-lint@<sha> # vX.Y.Z` lines and the new
+      tag in the `CL_RELEASE_TAG` env of the published pre-commit
+      smoke. Merging it auto-triggers the workflow, which verifies the
+      published Action and pre-commit hook end-to-end (it can also be
+      re-run from **Actions → Marketplace smoke test**).
 - [ ] **Docker Hub overview sync** — runs automatically in
       `publish.yml`'s `dockerhub-description` job after `docker-publish`,
       via the first-party composite action at

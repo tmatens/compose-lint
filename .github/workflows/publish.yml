@@ -897,6 +897,13 @@ jobs:
           sed -i -E \
             "s|uses: tmatens/compose-lint@[0-9a-f]+ # v[0-9.]+|uses: tmatens/compose-lint@${SHA} # v${version}|g" \
             "${targets[@]}"
+          # The published pre-commit hook is consumed at a release tag, not
+          # a SHA (that is how consumers pin it); bump its rev in the same
+          # follow-up PR so precommit-published-smoke runs against each new
+          # release automatically.
+          sed -i -E \
+            "s|CL_RELEASE_TAG: v[0-9.]+|CL_RELEASE_TAG: ${TAG}|" \
+            .github/workflows/marketplace-smoke.yml
           if git diff --quiet "${targets[@]}"; then
             echo "no_changes=1" >> "$GITHUB_ENV"
             echo "::notice::action pins already point at ${SHA}; nothing to do."

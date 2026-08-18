@@ -18,7 +18,7 @@ per-channel publish contract see [`DISTRIBUTION.md`](DISTRIBUTION.md).
 | `publish.yml`             | `v*` tag push                              | Release pipeline — see `RELEASING.md`                  |
 | `release-prep.yml`        | Manual (`workflow_dispatch`, maintainer)   | Opens the "Prepare X.Y.Z release" PR                   |
 | `publish-channel.yml`     | Manual (`workflow_dispatch`, maintainer)   | Emergency single-channel publish                       |
-| `marketplace-smoke.yml`   | Push to `main` touching the file + manual  | Verifies the published Marketplace action end-to-end   |
+| `marketplace-smoke.yml`   | Push to `main` touching the file + manual + weekly cron | Verifies the published action and pre-commit hook end-to-end |
 
 ---
 
@@ -292,18 +292,24 @@ should leave a paper trail.
 
 ### `marketplace-smoke.yml`
 
-Verifies the published GitHub Action as it appears on the Marketplace —
-consumes `tmatens/compose-lint@<tag>` the same way an external user
-would. Unlike `ci.yml`'s `action-smoke` job (which uses the local
-`action.yml` at `./`), this catches regressions at the Marketplace
-boundary: a missing tag, a broken published `action.yml`, a PyPI outage
-during install.
+Verifies the published integration surfaces the way an external user
+consumes them: the GitHub Action as `tmatens/compose-lint@<sha>` from
+the Marketplace, and the pre-commit hook as
+`repo: https://github.com/tmatens/compose-lint` pinned at a release tag
+(the `precommit-published-smoke` job, added for issue #570). Unlike
+`ci.yml`'s `action-smoke` and `precommit-smoke` jobs (which use the
+working tree via `./` and `try-repo`), these catch regressions at the
+publish boundary: a missing or broken tag, a packaging regression, a
+broken published `action.yml`, a PyPI outage during install.
 
 Auto-runs on push to `main` that touches `marketplace-smoke.yml` — i.e.,
-when `bump-marketplace-smoke-pin`'s PR lands — so the freshly-pinned
-SHA is verified without a manual step. Also triggerable from the
-Actions tab for ad-hoc re-verification (e.g., to confirm the listing
-still works weeks after release).
+when `bump-marketplace-smoke-pin`'s PR lands (it bumps both the action
+SHA pins and the pre-commit `CL_RELEASE_TAG` rev) — so the
+freshly-pinned release is verified without a manual step. Also
+triggerable from the Actions tab for ad-hoc re-verification, and runs
+weekly on a schedule so a regression that develops *between* releases
+(a yanked dependency, a resolver change, a registry-side issue) is
+noticed before a user's workflow breaks.
 
 ---
 

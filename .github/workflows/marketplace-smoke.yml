@@ -1,19 +1,24 @@
 name: Marketplace smoke test
 
-# Manually-triggered end-to-end test of the published action as it
-# appears on the GitHub Marketplace. Unlike the `action-smoke` job in
-# ci.yml (which uses `./` — the local action.yml in this repo), this
-# workflow consumes `tmatens/compose-lint@<tag>` the same way an
-# external user would. It catches regressions that only show up at
-# the Marketplace boundary: a missing tag, a broken published
-# action.yml, a PyPI outage, etc.
+# End-to-end tests of the *published* integration surfaces. Unlike the
+# smoke jobs in ci.yml (which use `./` and `try-repo` — the working
+# tree), the jobs here consume what a user consumes: the action as
+# `tmatens/compose-lint@<sha>` from the Marketplace, and the pre-commit
+# hook as `repo: https://github.com/tmatens/compose-lint` at a release
+# tag. They catch regressions that only show up at the publish
+# boundary: a missing or broken tag, a packaging regression, a broken
+# published action.yml, a PyPI outage, etc.
 #
 # Auto-triggers on push-to-main that touches this file — i.e., when
 # the `bump-marketplace-smoke-pin` PR from publish.yml merges, the
-# smoke runs against the newly-pinned SHA without a manual click.
+# smoke runs against the newly-pinned release without a manual click.
 # `release: published` would fire before the pin bump lands, smoking
 # the *previous* release; gating on the pin-bump merge avoids that.
-# Also triggerable manually from Actions tab for ad-hoc re-verification.
+# Also triggerable manually from Actions tab for ad-hoc re-verification,
+# and weekly on a schedule: a regression that develops *between*
+# releases (a yanked dependency, a resolver change, a PyPI- or
+# GitHub-side issue) is otherwise invisible until a user's workflow
+# breaks (issue #570).
 #
 # When cutting a new release, bump the commit SHA on the two
 # `uses:` lines below (and the trailing `# vX.Y.Z` comment so a
@@ -36,6 +41,10 @@ on:
     branches: [main]
     paths:
       - .github/workflows/marketplace-smoke.yml
+  schedule:
+    # Weekly re-verification of both published surfaces. Failures email
+    # the workflow author (see docs/CI.md "Where findings land").
+    - cron: "13 9 * * 1"
 
 permissions: {}
 
@@ -70,3 +79,74 @@ jobs:
         run: |
           echo "::error::Expected action to fail on insecure fixture, got '${{ steps.insecure.outcome }}'"
           exit 1
+
+  # The pre-commit arm of the published-surface smoke (issue #570).
+  # Consumers pin `repo: https://github.com/tmatens/compose-lint` at a
+  # release tag and pre-commit builds the hook environment from that
+  # tag — a boundary ci.yml's `precommit-smoke` (`try-repo` against the
+  # working tree) never crosses. This is the same blind spot the action
+  # surface had through 0.3.x, and issue #465 established that
+  # pre-commit is the mode where untested gaps reach users first.
+  precommit-published-smoke:
+    name: Smoke test published pre-commit hook
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      # The release the hook is consumed at. Bumped alongside the action
+      # SHA by publish.yml's bump-marketplace-smoke-pin job, so the job
+      # runs against each new release automatically.
+      CL_RELEASE_TAG: v0.18.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-dev.lock
+      - name: Install pinned dev env
+        run: pip install --require-hashes -r requirements-dev.lock
+
+      # Same one-source-of-truth contract as every other smoke job: the
+      # shared tests/smoke/ fixtures define what "clean" and "insecure"
+      # mean, and each case builds a throwaway repo around them.
+      - name: Clean fixture should pass via the published hook
+        env:
+          SMOKE: ${{ runner.temp }}/published-pass
+        run: |
+          set -euo pipefail
+          mkdir -p "$SMOKE"
+          cp tests/smoke/clean.yml "$SMOKE/docker-compose.yml"
+          printf 'repos:\n  - repo: https://github.com/tmatens/compose-lint\n    rev: %s\n    hooks:\n      - id: compose-lint\n' \
+            "$CL_RELEASE_TAG" > "$SMOKE/.pre-commit-config.yaml"
+          cd "$SMOKE"
+          git init -q
+          git add -A
+          pre-commit run --all-files --verbose 2>&1 | tee out.txt
+          # A hook that matched no files "passes" trivially. Assert it ran.
+          if grep -q "no files to check" out.txt; then
+            echo "::error::Hook selected no files — the smoke test proved nothing."
+            exit 1
+          fi
+          grep -q "docker-compose.yml" out.txt \
+            || { echo "::error::Hook did not receive docker-compose.yml"; exit 1; }
+
+      - name: Insecure fixture should fail via the published hook
+        env:
+          SMOKE: ${{ runner.temp }}/published-fail
+        run: |
+          set -euo pipefail
+          mkdir -p "$SMOKE"
+          cp tests/smoke/insecure.yml "$SMOKE/docker-compose.yml"
+          printf 'repos:\n  - repo: https://github.com/tmatens/compose-lint\n    rev: %s\n    hooks:\n      - id: compose-lint\n' \
+            "$CL_RELEASE_TAG" > "$SMOKE/.pre-commit-config.yaml"
+          cd "$SMOKE"
+          git init -q
+          git add -A
+          if pre-commit run --all-files; then
+            echo "::error::Expected the published hook to fail on the insecure fixture."
+            exit 1
+          fi
