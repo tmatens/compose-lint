@@ -237,6 +237,19 @@ recursion guard), so it would land with zero checks and sit blocked
 until someone closed and reopened it. Authoring it as the PAT user makes
 the required checks run automatically.
 
+Merging that PR is what triggers `marketplace-smoke.yml` — deliberately,
+so the smoke runs against the release just cut. It also means the smoke
+runs minutes after the publish, inside the window where PyPI's JSON API
+already shows the release but the `/simple/` index pip resolves against
+does not. That race failed the 0.20.0 run ([#612]), so two things now
+absorb it: `marketplace-smoke.yml` gates its action steps on the version
+being visible on `/simple/`, and `action.yml`'s install retries with
+backoff for ~100s. A propagation delay therefore costs wall-clock, not a
+red run, and if it does exhaust the retries the message says so instead
+of `Process completed with exit code 1`.
+
+[#612]: https://github.com/tmatens/compose-lint/issues/612
+
 ### Provisioning `MARKETPLACE_SMOKE_PAT`
 
 Create a **fine-grained personal access token**:

@@ -87,15 +87,40 @@ runs:
         # if it drifts.
         DEFAULT_VERSION="0.20.0"
         if [ -z "$CL_VERSION" ]; then
-          pip install "compose-lint==${DEFAULT_VERSION}"
+          SPEC="compose-lint==${DEFAULT_VERSION}"
         elif [ "$CL_VERSION" = "latest" ]; then
           # Opt-in to tracking PyPI. Used by this repo's own smoke jobs, which
           # exist to catch drift between the source action and the published
           # package.
-          pip install compose-lint
+          SPEC="compose-lint"
         else
-          pip install "compose-lint==${CL_VERSION}"
+          SPEC="compose-lint==${CL_VERSION}"
         fi
+
+        # PyPI's JSON API sees a release within seconds of the publish, but the
+        # /simple/ index pip resolves against can lag it by minutes. That race
+        # is not hypothetical here: it failed this repo's own marketplace-smoke
+        # minutes after the 0.20.0 publish (#612), and publish.yml's
+        # testpypi-smoke has carried the same backoff since 0.3.6 for the same
+        # reason on TestPyPI.
+        #
+        # A consumer hits it the moment they pin a just-released version — the
+        # pinned-by-default behaviour above makes that the normal case, not an
+        # edge one — so the retry belongs in the action rather than only in our
+        # workflow. The cost is that a genuinely wrong version now takes ~100s
+        # to fail instead of failing at once; the final message names both
+        # possibilities so that wait is not a mystery.
+        for attempt in 1 2 3 4 5 6; do
+          if pip install "$SPEC"; then
+            exit 0
+          fi
+          if [ "$attempt" = 6 ]; then
+            echo "::error::Could not install '${SPEC}' after 6 attempts over ~100s. Either the version does not exist, or it was released moments ago and PyPI's /simple/ index has not propagated yet."
+            exit 1
+          fi
+          echo "Attempt ${attempt} failed; sleeping 20s for PyPI /simple/ index propagation..."
+          sleep 20
+        done
 
     - name: Find Compose files
       id: find-files

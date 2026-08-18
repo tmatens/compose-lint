@@ -460,6 +460,77 @@ def test_install_honours_an_explicit_version(ws: Path, outputs: Path) -> None:
     assert "compose-lint==0.16.0" in log.read_text(encoding="utf-8")
 
 
+def _failing_pip_shim(ws: Path, fail_times: int) -> tuple[Path, Path]:
+    """A ``pip`` that fails its first ``fail_times`` calls, then succeeds.
+
+    ``sleep`` is shimmed to a no-op alongside it so the retry loop's real
+    backoff runs at full speed here. Shimming the clock rather than
+    shortening it in ``action.yml`` keeps the published action's timing
+    honest — the test exercises the loop consumers actually get.
+    """
+    shim_dir = ws / "pipshim"
+    shim_dir.mkdir()
+    log = ws / "pip.log"
+    shim = shim_dir / "pip"
+    shim.write_text(
+        f"""#!/usr/bin/env bash
+printf "%s\\n" "$*" >> {log}
+attempts=$(wc -l < {log})
+if [ "$attempts" -le {fail_times} ]; then
+  echo "ERROR: No matching distribution found for compose-lint" >&2
+  exit 1
+fi
+""",
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    noop_sleep = shim_dir / "sleep"
+    noop_sleep.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    noop_sleep.chmod(0o755)
+    return shim_dir, log
+
+
+def test_install_retries_a_lagging_index(ws: Path, outputs: Path) -> None:
+    """PyPI's /simple/ index lags a publish, so the first install can 404.
+
+    The race broke this repo's own marketplace-smoke minutes after the
+    0.20.0 publish (#612), and a consumer pinning a just-released version
+    hits the identical window — which the action's pinned-by-default
+    behaviour makes the normal case.
+    """
+    shim_dir, log = _failing_pip_shim(ws, fail_times=2)
+    _require_exec(shim_dir)
+    rc, _out, _err = _run_step(
+        "Install compose-lint", {"CL_VERSION": ""}, ws, outputs, extra_path=shim_dir
+    )
+    assert rc == 0, "a lagging index must be retried, not fatal"
+    attempts = log.read_text(encoding="utf-8").strip().splitlines()
+    assert len(attempts) == 3, f"expected 2 failures then a success, got {attempts}"
+    assert all("compose-lint==" in line for line in attempts)
+
+
+def test_install_gives_up_naming_index_propagation(ws: Path, outputs: Path) -> None:
+    """Retrying forever would just move the mystery; the message must land.
+
+    A bare `Process completed with exit code 1` is what made the 0.20.0
+    occurrence read as a regression instead of a propagation delay.
+    """
+    shim_dir, log = _failing_pip_shim(ws, fail_times=99)
+    _require_exec(shim_dir)
+    rc, out, err = _run_step(
+        "Install compose-lint",
+        {"CL_VERSION": "0.0.0"},
+        ws,
+        outputs,
+        extra_path=shim_dir,
+    )
+    assert rc != 0
+    assert len(log.read_text(encoding="utf-8").strip().splitlines()) == 6, (
+        "the loop must be bounded"
+    )
+    assert "propagat" in (out + err), "the failure must name the index lag"
+
+
 def test_the_default_pin_matches_the_package_version() -> None:
     """Drift here would ship an action that installs a different linter."""
     import re

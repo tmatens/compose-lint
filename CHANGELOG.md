@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **GitHub Action: installing a just-released version no longer fails on
+  PyPI index lag.** PyPI's JSON API sees a release within seconds of the
+  publish, but the `/simple/` index pip resolves against can lag it by
+  minutes — so `uses: tmatens/compose-lint@<sha>` pinned to a version
+  released moments earlier could fail with "No matching distribution
+  found". The action's install now retries with backoff for ~100s, and
+  says so if it gives up instead of leaving a bare non-zero exit.
+
 ## [0.20.0] - 2026-08-18
 
 ### Upgrading from 0.19.x

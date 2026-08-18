@@ -48,6 +48,13 @@ on:
 
 permissions: {}
 
+# The release both jobs consume. Hoisted to workflow scope so the PyPI
+# propagation gate and the pre-commit rev read one pin; publish.yml's
+# bump-marketplace-smoke-pin seds this literal line, which does not care
+# where in the file it lives.
+env:
+  CL_RELEASE_TAG: v0.20.0
+
 jobs:
   marketplace-smoke:
     name: Smoke test published action
@@ -59,6 +66,39 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # This workflow's whole point is to run moments after a publish — the
+      # pin-bump merge is its trigger — and that is exactly when PyPI's
+      # /simple/ index has not caught up with the JSON API yet. The action
+      # steps below install `compose-lint==<the release>` from inside the
+      # published action, so the retry that now lives in action.yml only
+      # protects releases cut *after* this lands. Gate here as well, because
+      # the useful part is the diagnosis: without it the failure surfaces as
+      # `Process completed with exit code 1` on a workflow line, which is
+      # what made the 0.20.0 occurrence (#612) look like a real regression.
+      - name: Wait for the release to reach PyPI's /simple/ index
+        run: |
+          set -euo pipefail
+          version="${CL_RELEASE_TAG#v}"
+          # PEP 691 JSON view of the same /simple/ index pip resolves against,
+          # so a hit here means pip can see the version — unlike the JSON API
+          # (/pypi/<name>/json), which goes live seconds after publish and
+          # would report ready while pip still 404s.
+          for attempt in 1 2 3 4 5 6; do
+            if curl -fsSL \
+                 -H 'Accept: application/vnd.pypi.simple.v1+json' \
+                 https://pypi.org/simple/compose-lint/ \
+               | jq -e --arg v "${version}" 'any(.versions[]; . == $v)' >/dev/null; then
+              echo "compose-lint ${version} is visible on the /simple/ index."
+              exit 0
+            fi
+            if [ "${attempt}" = 6 ]; then
+              echo "::error::compose-lint ${version} is still absent from PyPI's /simple/ index after 6 attempts over ~100s. Either the release never published, or propagation is unusually slow — re-run this workflow before treating it as a regression."
+              exit 1
+            fi
+            echo "Attempt ${attempt}: ${version} not on the /simple/ index yet; sleeping 20s..."
+            sleep 20
+          done
 
       - name: Clean fixture should pass
         uses: tmatens/compose-lint@86aa003f03ac82a3c2544cc35eac56aff8be769e # v0.20.0
@@ -93,11 +133,6 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-    env:
-      # The release the hook is consumed at. Bumped alongside the action
-      # SHA by publish.yml's bump-marketplace-smoke-pin job, so the job
-      # runs against each new release automatically.
-      CL_RELEASE_TAG: v0.20.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
