@@ -309,6 +309,24 @@ jobs:
             echo "::error::Expected exit code 1, got ${exit_code}"
             exit 1
           fi
+      - name: Smoke test — one-shot pipx run from the wheel
+        # `pipx run compose-lint` / `uvx compose-lint` is the standard way
+        # to run a linter ad hoc without installing it, and the README
+        # documents it — so it gets executed against the release artifact
+        # here (#575). The wheel is fetched from TestPyPI explicitly
+        # (--no-deps, exact version, index already warm from the install
+        # step above) and handed to pipx as a file, so TestPyPI is never
+        # configured as an index — same register-and-wait reasoning as the
+        # install step. pipx builds an ephemeral env and resolves PyYAML
+        # from real PyPI, exactly what a consumer's one-shot run does.
+        # pipx is preinstalled on ubuntu-24.04 runners; uv is not, and the
+        # two one-shot paths share these mechanics.
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          pip download --no-deps -d "${RUNNER_TEMP}/oneshot" \
+            -i https://test.pypi.org/simple/ "compose-lint==${version}"
+          pipx run --spec "${RUNNER_TEMP}"/oneshot/*.whl \
+            compose-lint tests/smoke/clean.yml
 
   # Build the image natively on each target arch and run the fixture battery.
   # Emulated arm64 via QEMU crashes on Debian apt-get, and a single-arch smoke

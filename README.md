@@ -36,6 +36,12 @@ Use it if you ship Compose to production, want defense in depth in a homelab, or
 pip install compose-lint
 ```
 
+Or run it ad hoc without installing anything:
+
+```bash
+uvx compose-lint docker-compose.yml        # or: pipx run compose-lint docker-compose.yml
+```
+
 That resolves the newest release at install time. For a reproducible install (CI, production tooling), pin the version and install the dependency set from the repo's hash-pinned lockfile, which release automation keeps current:
 
 ```bash

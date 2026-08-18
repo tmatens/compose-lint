@@ -58,6 +58,23 @@ class TestCLI:
         assert result.returncode == 1
         assert "CL-0002" in result.stdout
 
+    def test_module_entrypoint_matches_the_console_script(self) -> None:
+        """``python -m compose_lint`` and ``compose-lint`` are one surface.
+
+        Every other test here runs the module form; the console script is
+        what pip installs. Both must route through ``cli.main``'s
+        ``sys.exit`` — a ``__main__.py`` that swallowed ``SystemExit`` or
+        dropped argv handling would drift silently (#575).
+        """
+        script = Path(sys.executable).with_name("compose-lint")
+        if not script.exists():  # pragma: no cover - env without the script
+            pytest.skip("console script not installed next to the interpreter")
+        args = ("--format", "json", "--", str(FIXTURES / "insecure_privileged.yml"))
+        module = run_cli(*args)
+        console = subprocess.run([str(script), *args], capture_output=True, text=True)
+        assert module.returncode == console.returncode == 1
+        assert json.loads(module.stdout) == json.loads(console.stdout)
+
     def test_bare_invocation_still_lints(self) -> None:
         # The argv shim must keep `compose-lint <file>` working as `check`.
         bare = run_cli(str(FIXTURES / "insecure_privileged.yml"))
