@@ -40,8 +40,11 @@ CIS_REF = (
 # create the container at all (and CONFIG_DEVKMEM is off on modern kernels).
 #
 # /dev/kmsg stays despite needing CAP_SYSLOG on this host: dmesg_restrict is a
-# *host* sysctl whose upstream default is 0, where the read needs no capability
-# — and no rule flags SYSLOG, so nothing else covers it.
+# *host* sysctl whose upstream default is 0, where the read needs no capability.
+# CL-0030 now flags a SYSLOG grant, but that is the capability axis and this is
+# the device axis: a file whose only mention of kernel logs is /dev/kmsg carries
+# no cap_add for CL-0030 to see, so dropping the device here would leave the
+# upstream-default case ungraded.
 _DANGEROUS_DEVICE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^/dev/sd[a-z]"), "/dev/sd* — SCSI/SATA block device"),
     (re.compile(r"^/dev/nvme"), "/dev/nvme* — NVMe block device"),
