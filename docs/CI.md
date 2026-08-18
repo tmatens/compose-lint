@@ -20,6 +20,7 @@ per-channel publish contract see [`DISTRIBUTION.md`](DISTRIBUTION.md).
 | `publish-channel.yml`     | Manual (`workflow_dispatch`, maintainer)   | Emergency single-channel publish                       |
 | `marketplace-smoke.yml`   | Push to `main` touching the file + manual + weekly cron | Verifies the published action and pre-commit hook end-to-end |
 | `forgejo-smoke.yml`       | Push to `main` touching the harness + manual + weekly cron | Runs README's Forgejo snippet on a live containerized Forgejo |
+| `os-smoke.yml`            | Push to `main` touching code + manual + weekly cron | pytest + pre-commit hook on macOS and Windows (non-gating) |
 
 ---
 
@@ -332,6 +333,18 @@ re-proves the snippet — and manually. Deliberately not on README PRs:
 the release-prep PR bumps the snippet's `compose-lint==X.Y.Z` pin before
 that version exists on PyPI, which would fail spuriously; the weekly run
 covers the new pin after release instead.
+
+### `os-smoke.yml`
+
+The developer-machine legs (issue #572): pytest and the pre-commit smoke
+on macOS and Windows at Python 3.13 — the platforms where the CLI and the
+hook predominantly run, and which the PR gate never touches. Deliberately
+**not** part of `ci-ok`: this is a staged rollout. The legs run on every
+merge touching code plus weekly, OS-specific failures get triaged
+out-of-band (they email like every scheduled workflow), and once the legs
+have stayed green long enough to trust, they graduate into `ci.yml`'s
+matrix and the `ci-ok` gate. A red run here is a triage signal, not a
+blocked PR.
 
 ---
 

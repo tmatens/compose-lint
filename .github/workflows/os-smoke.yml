@@ -1,0 +1,130 @@
+name: OS smoke (macOS/Windows)
+
+# The developer-machine legs (issue #572): the CLI and the pre-commit hook
+# run predominantly on macOS and Windows laptops — the population that hit
+# #465, on platforms the PR gate never touches. OS-specific risk lives in
+# path handling (backslashes, drive letters), pre-commit's hook-environment
+# build, and Windows console encodings.
+#
+# Deliberately NOT part of ci.yml / the `ci-ok` merge gate — this is the
+# staged rollout: run on every merge to code paths plus weekly, absorb the
+# OS-specific triage out-of-band (failures email like the other scheduled
+# workflows), and promote the legs into `ci-ok` once they have stayed
+# green long enough to trust in the merge path. Until then a red run here
+# is signal to triage, not a blocked PR.
+#
+# The pre-commit steps mirror ci.yml's `precommit-smoke` with one
+# portability change: throwaway repos live in `mktemp -d` (POSIX-style in
+# every bash, including Git Bash on Windows) rather than
+# `${{ runner.temp }}`, whose Windows backslash form fights shell quoting.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "27 10 * * 1"
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "scripts/**"
+      - pyproject.toml
+      - "requirements*.lock"
+      - .pre-commit-hooks.yaml
+      - .github/workflows/os-smoke.yml
+
+permissions: {}
+
+jobs:
+  test:
+    name: pytest (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2025]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            requirements-dev.lock
+            requirements-build.lock
+      - name: Install pinned dev env
+        # The lockfiles are compiled with `--universal`, so the hash set
+        # covers macOS/Windows wheels too.
+        run: |
+          pip install --require-hashes -r requirements-dev.lock
+          pip install --no-deps -e .
+      - run: pytest
+
+  precommit-smoke:
+    name: pre-commit hook (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2025]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-dev.lock
+      - name: Install pinned dev env
+        run: pip install --require-hashes -r requirements-dev.lock
+
+      - name: Clean stack with a config present should pass
+        run: |
+          set -euo pipefail
+          SMOKE="$(mktemp -d)"
+          cp tests/smoke/clean.yml "$SMOKE/docker-compose.yml"
+          printf 'rules:\n  CL-0004:\n    enabled: false\n    reason: "smoke"\n' \
+            > "$SMOKE/.compose-lint.yml"
+          git -C "$SMOKE" init -q
+          git -C "$SMOKE" add -A
+          cd "$SMOKE"
+          pre-commit try-repo "$GITHUB_WORKSPACE" compose-lint --all-files \
+            --verbose 2>&1 | tee out.txt
+          if grep -q "no files to check" out.txt; then
+            echo "::error::Hook selected no files — the smoke test proved nothing."
+            exit 1
+          fi
+          grep -q "docker-compose.yml" out.txt \
+            || { echo "::error::Hook did not receive docker-compose.yml"; exit 1; }
+          if grep -qE "appears to be a compose-lint config|could not be parsed" out.txt; then
+            echo "::error::Hook passed its own config to the linter (issue #465)."
+            exit 1
+          fi
+
+      - name: Insecure stack should fail the hook
+        run: |
+          set -euo pipefail
+          SMOKE="$(mktemp -d)"
+          cp tests/smoke/insecure.yml "$SMOKE/docker-compose.yml"
+          git -C "$SMOKE" init -q
+          git -C "$SMOKE" add -A
+          cd "$SMOKE"
+          if pre-commit try-repo "$GITHUB_WORKSPACE" compose-lint --all-files; then
+            echo "::error::Expected the hook to fail on the insecure fixture."
+            exit 1
+          fi
