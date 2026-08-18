@@ -58,8 +58,16 @@ def read_text_bounded(
     any check can run. It has no effect on a regular file. Symlinks are
     deliberately followed — a symlink to a real Compose file is ordinary, and
     it is the resolved target's shape that matters.
+
+    Both extra flags are POSIX-vs-Windows conditional, hence the ``getattr``:
+    Windows has no ``O_NONBLOCK`` — and no FIFO whose open would block this
+    way, so nothing is lost — and referencing it unconditionally crashed every
+    file read on Windows in 0.18.0. ``O_BINARY`` exists only on Windows, where
+    omitting it makes the CRT translate newlines *under* the text layer below,
+    silently breaking the ``newline=""`` real-bytes contract.
     """
-    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+    fd = os.open(path, flags)
     try:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode):

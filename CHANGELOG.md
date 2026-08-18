@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Action: `sarif-written` output — `"true"` when the SARIF file was
   written and non-empty, empty otherwise.
 
+### Fixed
+
+- **Windows: every invocation crashed with `AttributeError: module 'os' has
+  no attribute 'O_NONBLOCK'` in 0.18.0.** The bounded-read hardening opened
+  files with the POSIX-only `O_NONBLOCK` flag (its FIFO-open-blocking rationale
+  does not exist on Windows). File opens now apply `O_NONBLOCK` only where the
+  platform has it, and add Windows' `O_BINARY` so CRT newline translation
+  cannot corrupt reads that ask for the file's real bytes. Found by the new
+  macOS/Windows CI smoke on its first run.
+
 ## [0.18.0] - 2026-08-14
 
 ### Upgrading
