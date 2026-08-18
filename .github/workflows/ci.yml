@@ -746,7 +746,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -785,6 +785,128 @@ jobs:
         if: steps.insecure.outcome != 'failure'
         run: |
           echo "::error::Expected action to fail on insecure fixture, got '${{ steps.insecure.outcome }}'"
+          exit 1
+
+      # Everything below exercises the inputs the clean/insecure pair does
+      # not (issue #574). action.yml's composite shell is the most intricate
+      # in the repo, and its documented bug history — $GITHUB_OUTPUT newline
+      # forgery, `find -print0` path handling, the 0-byte-SARIF upload — all
+      # lived in code paths those two steps never run. The static assertions
+      # in tests/test_action_contract.py execute the step scripts in
+      # isolation but cannot catch a wiring bug between steps or in the
+      # `with:`→env plumbing, so every input gets at least one live
+      # `uses: ./` run here.
+
+      - name: Prepare pattern fixtures (spaced path + .git decoy)
+        run: |
+          set -euo pipefail
+          mkdir -p "pattern smoke"
+          cp tests/smoke/clean.yml "pattern smoke/pattern smoke fixture.yml"
+          # An insecure copy under .git/: if discovery stops pruning .git,
+          # the step below lints it and fails.
+          cp tests/smoke/insecure.yml ".git/pattern smoke fixture.yml"
+
+      # A pass here is meaningful on three axes: zero matches would exit 2
+      # (fail-closed), a mangled spaced path would exit 2 (file not found),
+      # and a linted .git decoy would exit 1. Only "found the spaced clean
+      # file, skipped .git" is green. `verbose` rides along for input
+      # coverage.
+      - name: Pattern discovery handles spaces and prunes .git
+        uses: ./
+        with:
+          pattern: "pattern smoke fixture.yml"
+          fail-on: high
+          verbose: "true"
+          version: latest
+
+      - name: Zero-match pattern must fail closed
+        id: zero-match
+        continue-on-error: true
+        uses: ./
+        with:
+          pattern: "matches-nothing-*.yml"
+          version: latest
+
+      - name: Assert zero-match run failed
+        if: steps.zero-match.outcome != 'failure'
+        run: |
+          echo "::error::Expected fail-closed exit on zero matched files, got '${{ steps.zero-match.outcome }}'"
+          exit 1
+
+      - name: Zero match with allow-no-files opts out
+        uses: ./
+        with:
+          pattern: "matches-nothing-*.yml"
+          allow-no-files: "true"
+          version: latest
+
+      # tests/smoke/insecure.yml's only at-or-above-high finding is CL-0002
+      # (privileged), so disabling it must flip the gate to a pass. If a new
+      # rule starts flagging the fixture at high+, this step fails — update
+      # the config below alongside the fixture. `skip-suppressed` and
+      # `quiet` ride along for input coverage.
+      - name: Prepare a config that suppresses the insecure finding
+        run: |
+          set -euo pipefail
+          printf 'rules:\n  CL-0002:\n    enabled: false\n    reason: "smoke: prove config pass-through flips the gate"\n' \
+            > smoke-config.yml
+
+      - name: Config pass-through flips the insecure outcome
+        uses: ./
+        with:
+          files: tests/smoke/insecure.yml
+          fail-on: high
+          config: smoke-config.yml
+          skip-suppressed: "true"
+          quiet: "true"
+          version: latest
+
+      # `upload-sarif: false` keeps the Code Scanning upload out of the
+      # smoke: this job holds no `security-events: write` (fork PRs never
+      # can), and fixture findings must not land in the repo's alerts.
+      - name: SARIF file is written without uploading
+        id: sarif
+        uses: ./
+        with:
+          files: tests/smoke/sarif-shape.yml
+          fail-on: critical
+          sarif-file: smoke-results.sarif
+          upload-sarif: "false"
+          version: latest
+
+      - name: Assert SARIF artifact exists and output is set
+        env:
+          SARIF_WRITTEN: ${{ steps.sarif.outputs.sarif-written }}
+        run: |
+          set -euo pipefail
+          if [ ! -s smoke-results.sarif ]; then
+            echo "::error::smoke-results.sarif is missing or empty"
+            exit 1
+          fi
+          python3 -c 'import json; json.load(open("smoke-results.sarif"))'
+          if [ "$SARIF_WRITTEN" != "true" ]; then
+            echo "::error::sarif-written output was '$SARIF_WRITTEN', expected 'true'"
+            exit 1
+          fi
+
+      # The documented `files:` contract is a space-separated list; a
+      # newline in it must be refused loudly (it could forge output records
+      # when filenames crossed $GITHUB_OUTPUT, and still means a malformed
+      # list today).
+      - name: Newline in files must be refused
+        id: newline
+        continue-on-error: true
+        uses: ./
+        with:
+          files: |
+            tests/smoke/clean.yml
+            tests/smoke/insecure.yml
+          version: latest
+
+      - name: Assert newline run failed
+        if: steps.newline.outcome != 'failure'
+        run: |
+          echo "::error::Expected rejection of a files list containing a newline, got '${{ steps.newline.outcome }}'"
           exit 1
 
   # The pre-commit arm of the integration-surface smoke set. `action-smoke`

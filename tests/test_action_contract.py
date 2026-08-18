@@ -284,6 +284,32 @@ def test_upload_is_gated_on_the_file_being_written(ws: Path) -> None:
     assert "always()" not in condition, condition
 
 
+def test_upload_can_be_switched_off(ws: Path) -> None:
+    """`upload-sarif: false` must skip the Code Scanning upload.
+
+    Runners without Code Scanning (Forgejo) and jobs without
+    `security-events: write` — every fork PR — need the SARIF file without
+    the upload; ci.yml's action-smoke relies on this to exercise
+    `sarif-file` live.
+    """
+    action = _action()
+    upload = action["inputs"]["upload-sarif"]
+    assert upload["default"] == "true", "uploading must stay the default"
+    condition = str(_step("Upload SARIF")["if"])
+    assert "inputs.upload-sarif == 'true'" in condition, condition
+
+
+def test_sarif_written_is_a_declared_output(ws: Path) -> None:
+    """Callers assert on `sarif-written`; composite steps are private.
+
+    A composite action exposes a step's outputs only through a declared
+    `outputs:` mapping — dropping it would silently break every workflow
+    gating on the output, including ci.yml's action-smoke.
+    """
+    value = _action()["outputs"]["sarif-written"]["value"]
+    assert "steps.lint.outputs.sarif-written" in value, value
+
+
 # --- VULN-041: the SARIF path is a write target ---------------------------
 
 

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- GitHub Action: `upload-sarif` input (default `"true"`). Set to `"false"` to
+  write the file requested via `sarif-file` without uploading it to GitHub
+  Code Scanning — for runners without Code Scanning (Forgejo) or jobs that
+  lack the `security-events: write` permission the upload needs.
+- GitHub Action: `sarif-written` output — `"true"` when the SARIF file was
+  written and non-empty, empty otherwise.
+
 ## [0.18.0] - 2026-08-14
 
 ### Upgrading

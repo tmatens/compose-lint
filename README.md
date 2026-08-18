@@ -417,7 +417,10 @@ releases. Denying everything at the workflow level and granting the two scopes
 the job actually uses keeps a compromised dependency in this job from reaching
 anything else.
 
-Drop `security-events: write` if you are not uploading SARIF.
+Drop `security-events: write` if you are not uploading SARIF. To write the
+SARIF file without the Code Scanning upload — for example to attach it as a
+build artifact instead — set `upload-sarif: "false"` alongside `sarif-file`
+(and drop the scope).
 
 Or install from PyPI directly:
 

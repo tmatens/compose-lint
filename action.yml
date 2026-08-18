@@ -51,6 +51,21 @@ inputs:
       CLI itself exits 2 in that case.
     required: false
     default: "false"
+  upload-sarif:
+    description: >-
+      Upload the written SARIF file to GitHub Code Scanning. Set to "false"
+      to only write the file — for runners without Code Scanning (Forgejo)
+      or jobs that lack the `security-events: write` permission the upload
+      needs.
+    required: false
+    default: "true"
+
+outputs:
+  sarif-written:
+    description: >-
+      "true" when the file requested via `sarif-file` was written and
+      non-empty; empty otherwise.
+    value: ${{ steps.lint.outputs.sarif-written }}
 
 runs:
   using: "composite"
@@ -234,7 +249,7 @@ runs:
       # Gated on the file actually having been written, not on `always()`.
       # `always()` uploaded whatever was at the path even when the lint step
       # had failed before producing a document.
-      if: inputs.sarif-file != '' && !cancelled() && steps.lint.outputs.sarif-written == 'true'
+      if: inputs.sarif-file != '' && inputs.upload-sarif == 'true' && !cancelled() && steps.lint.outputs.sarif-written == 'true'
       uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
       with:
         sarif_file: ${{ inputs.sarif-file }}
