@@ -20,7 +20,7 @@ per-channel publish contract see [`DISTRIBUTION.md`](DISTRIBUTION.md).
 | `publish-channel.yml`     | Manual (`workflow_dispatch`, maintainer)   | Emergency single-channel publish                       |
 | `marketplace-smoke.yml`   | Push to `main` touching the file + manual + weekly cron | Verifies the published action and pre-commit hook end-to-end |
 | `forgejo-smoke.yml`       | Push to `main` touching the harness + manual + weekly cron | Runs README's Forgejo snippet on a live containerized Forgejo |
-| `os-smoke.yml`            | Push to `main` touching code + manual + weekly cron | pytest + pre-commit hook on macOS and Windows (non-gating) |
+| `os-smoke.yml`            | Called by `ci.yml` on PRs touching code + push to `main` + manual + weekly cron | pytest + pre-commit hook on macOS and Windows — **gates via `ci-ok`** |
 
 ---
 
@@ -338,13 +338,31 @@ covers the new pin after release instead.
 
 The developer-machine legs (issue #572): pytest and the pre-commit smoke
 on macOS and Windows at Python 3.13 — the platforms where the CLI and the
-hook predominantly run, and which the PR gate never touches. Deliberately
-**not** part of `ci-ok`: this is a staged rollout. The legs run on every
-merge touching code plus weekly, OS-specific failures get triaged
-out-of-band (they email like every scheduled workflow), and once the legs
-have stayed green long enough to trust, they graduate into `ci.yml`'s
-matrix and the `ci-ok` gate. A red run here is a triage signal, not a
-blocked PR.
+hook predominantly run.
+
+**Part of the merge gate since #608.** `ci.yml` calls this workflow
+(`workflow_call`) as its `os-smoke` job whenever the `code` or `workflows`
+path filter matches, and `ci-ok` needs that job — so a macOS or Windows
+regression blocks the PR that introduces it. Branch protection needed no
+change, because it points only at `ci-ok`. Roughly 2 minutes of wall clock
+for all four legs, in parallel with the rest of the suite.
+
+Note that lockfile PRs do **not** skip these legs: the `code` filter
+matches `requirements*.lock`. That is intended — the locks are compiled
+`--universal`, so a dependency bump is exactly the change that can break
+on one OS alone — but it does mean Renovate PRs wait on macOS/Windows.
+
+The `workflow_dispatch`, weekly `schedule` and `push: main` triggers all
+remain. The cron is not redundant with the gate: drift that arrives with
+no PR at all — a yanked dependency, a resolver change, a runner-image
+update — is structurally invisible to a merge gate.
+
+The soak behind the promotion was narrow: the legs' only failures were the
+rollout commits that introduced them (#584–#587, which is what they were
+for), and every run from `d757ee3` onward was green — but that was 9 runs
+inside a single day. If a leg turns out to flake in the merge path, the
+fix is to quarantine that leg here, not to widen `ci-ok`'s pass
+condition.
 
 ---
 
