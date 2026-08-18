@@ -1089,6 +1089,41 @@ jobs:
       - name: Validate each runtime rule's premise against a live container
         run: python scripts/validate_rule_premises.py
 
+  # `fix` is the only mode that writes to a user's files, and until #611 it
+  # was the only mode no workflow ran. The failure modes that matter live in
+  # the round trip rather than in any single function — 0.20.0 shipped one:
+  # the line-inserting fixers spliced bare-LF lines into CRLF files, and the
+  # mixed-endings result made every line of the user's next diff light up.
+  # Nothing in the parsed tree is wrong in that file, so `verify_apply`'s
+  # in-process re-run (which already covers convergence and "no new finding")
+  # cannot see it. The script closes the loop on disk and hands the result to
+  # `docker compose config` — a consumer that is not our own mental model.
+  # Docker is preinstalled on the runners, as `rule-premises` already relies
+  # on; the script fails closed if it is ever absent rather than skipping.
+  fix-smoke:
+    name: Smoke test fix round trip
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - name: Install the pinned runtime closure and the working tree
+        run: |
+          pip install --require-hashes -r requirements.lock
+          pip install --no-deps -e .
+      - name: fix --apply survives a round trip on LF and CRLF inputs
+        run: python scripts/smoke_fix_roundtrip.py
+
   # Developer-machine legs (macOS/Windows) for the two modes that run off
   # this repo's CI platform: the CLI and the pre-commit hook. Defined in
   # os-smoke.yml so the weekly scheduled run and this PR gate share one
@@ -1137,6 +1172,7 @@ jobs:
       - docker-smoke
       - action-smoke
       - precommit-smoke
+      - fix-smoke
       - rule-premises
       - os-smoke
     if: always()
