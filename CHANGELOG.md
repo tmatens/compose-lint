@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-08-18
+
 ### Added
 
 - GitHub Action: `upload-sarif` input (default `"true"`). Set to `"false"` to
@@ -2282,7 +2284,8 @@ First public release.
   inputs through `env:` rather than direct `${{ }}` interpolation to prevent
   shell injection.
 
-[Unreleased]: https://github.com/tmatens/compose-lint/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/tmatens/compose-lint/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/tmatens/compose-lint/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/tmatens/compose-lint/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/tmatens/compose-lint/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/tmatens/compose-lint/compare/v0.15.2...v0.16.0
