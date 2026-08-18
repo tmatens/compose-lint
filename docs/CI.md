@@ -18,9 +18,9 @@ per-channel publish contract see [`DISTRIBUTION.md`](DISTRIBUTION.md).
 | `publish.yml`             | `v*` tag push                              | Release pipeline — see `RELEASING.md`                  |
 | `release-prep.yml`        | Manual (`workflow_dispatch`, maintainer)   | Opens the "Prepare X.Y.Z release" PR                   |
 | `publish-channel.yml`     | Manual (`workflow_dispatch`, maintainer)   | Emergency single-channel publish                       |
-| `marketplace-smoke.yml`   | Push to `main` touching the file + manual + weekly cron | Verifies the published action and pre-commit hook end-to-end |
+| `marketplace-smoke.yml`   | Push to `main` touching the file + manual + weekly cron | Verifies the published action, pre-commit hook, and the `uvx`/`pipx run` one-shot forms end-to-end |
 | `forgejo-smoke.yml`       | Push to `main` touching the harness + manual + weekly cron | Runs README's Forgejo snippet on a live containerized Forgejo |
-| `os-smoke.yml`            | Called by `ci.yml` on PRs touching code + push to `main` + manual + weekly cron | pytest + pre-commit hook on macOS and Windows — **gates via `ci-ok`** |
+| `os-smoke.yml`            | Called by `ci.yml` on PRs touching code + push to `main` + manual + weekly cron | pytest (3.10 and 3.13) + pre-commit hook on macOS and Windows — **gates via `ci-ok`** |
 | `sarif-ingestion.yml`     | Push to `main` touching SARIF inputs + manual + weekly cron | Uploads a probe SARIF to Code Scanning and asserts GitHub ingested it — then deletes its own alerts |
 
 
@@ -63,7 +63,7 @@ cancels in-progress runs when you push new commits to the same PR.
 | `dependency-review`       | Blocks PRs adding deps with known high-severity CVEs or disallowed licenses               |
 | `actionlint`              | Lints every workflow under `.github/workflows/` (embeds shellcheck for `run:` blocks)     |
 | `dockerfile-digests`      | Fails if any `FROM @sha256:` in the Dockerfile is a per-arch manifest instead of an index |
-| `docker-smoke`            | Builds `linux/amd64` from the Dockerfile and runs it against fixtures (only when build inputs change) |
+| `docker-smoke`            | Builds `linux/amd64` **and `linux/arm64`** from the Dockerfile on native runners and runs each against fixtures (only when build inputs change) |
 | `action-smoke`            | Runs `./action.yml` against clean and insecure fixtures; asserts exit codes               |
 | `fix-smoke`               | `fix --apply` round trip on LF and CRLF copies of the insecure fixture — result parses, `docker compose config` accepts it, endings stay uniform, no new finding, idempotent |
 | `rule-premises`           | Runs `scripts/validate_rule_premises.py` in a live container to prove each rule's premise  |
@@ -267,9 +267,9 @@ so the smoke runs against the release just cut. It also means the smoke
 runs minutes after the publish, inside the window where PyPI's JSON API
 already shows the release but the `/simple/` index pip resolves against
 does not. That race failed the 0.20.0 run ([#612]), so two things now
-absorb it: `marketplace-smoke.yml` gates its action steps on the version
-being visible on `/simple/`, and `action.yml`'s install retries with
-backoff for ~100s. A propagation delay therefore costs wall-clock, not a
+absorb it: `marketplace-smoke.yml`'s `pypi-propagated` job gates every
+PyPI-consuming job on the version being visible on `/simple/`, and
+`action.yml`'s install retries with backoff for ~100s. A propagation delay therefore costs wall-clock, not a
 red run, and if it does exhaust the retries the message says so instead
 of `Process completed with exit code 1`.
 

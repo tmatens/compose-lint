@@ -48,15 +48,27 @@ permissions: {}
 
 jobs:
   test:
-    name: pytest (${{ matrix.os }})
+    name: pytest (${{ matrix.os }}, py${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     permissions:
       contents: read
+    # 3.10 is the `requires-python` floor and, until #613, was tested only
+    # on Linux — while the OS legs ran only 3.13. That left the realistic
+    # worst case uncovered: an old Python on Windows. It is also the leg
+    # most likely to differ, because what varies across these platforms is
+    # `pathlib`/`os` behavior and that is exactly where the floor is
+    # furthest from the version the ubuntu matrix's other legs pin.
+    #
+    # Deliberately the floor and the ceiling, not the full 3.10-3.14 range
+    # the ubuntu matrix runs: the versions in between differ from their
+    # neighbours far less than either end differs from the other, so they
+    # would buy little for 6 more jobs on two of the slowest runners.
     strategy:
       fail-fast: false
       matrix:
         os: [macos-15, windows-2025]
+        python-version: ["3.10", "3.13"]
     defaults:
       run:
         shell: bash
@@ -66,7 +78,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python-version }}
           cache: pip
           cache-dependency-path: |
             requirements.lock
@@ -80,6 +92,11 @@ jobs:
           pip install --no-deps -e .
       - run: pytest
 
+  # Stays on one Python: what this leg exercises is pre-commit's
+  # hook-environment build and the OS's path/console handling, neither of
+  # which is a function of the interpreter version the way the pytest leg
+  # is. It is also the slower of the two jobs — it builds an environment
+  # per run — so doubling it buys the least and costs the most.
   precommit-smoke:
     name: pre-commit hook (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

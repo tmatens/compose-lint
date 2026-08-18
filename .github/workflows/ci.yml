@@ -696,13 +696,35 @@ jobs:
   # `docker-smoke` job is the first thing to notice. amd64-only to keep
   # the gate cheap; the release pipeline covers multi-arch.
   docker-smoke:
-    name: Smoke test Dockerfile (amd64)
+    name: Smoke test Dockerfile (${{ matrix.arch }})
     # Build inputs are detected centrally by the `changes` job (the `docker`
     # group: Dockerfile, .dockerignore, the runtime/build lockfiles,
     # pyproject.toml, src/). On push, that group is always true.
     needs: changes
     if: needs.changes.outputs.docker == 'true'
-    runs-on: ubuntu-24.04
+    # arm64 used to appear only in publish.yml, so an arm64-specific image
+    # regression was caught *after* the irreversible trigger — the tag is
+    # pushed, TestPyPI has consumed the version, and the only way out is a
+    # new patch release (#613). The image ships multi-arch, so both arches
+    # are release surfaces and both belong on the PR path.
+    #
+    # `ubuntu-24.04-arm` is a native GitHub-hosted runner and free for
+    # public repos, so this costs wall-clock rather than money, and it runs
+    # in parallel with the amd64 leg. Native also means no QEMU, which is
+    # what made an arm64 PR leg expensive before these runners existed.
+    # The same platform/runner pairing is already used by publish.yml's
+    # docker-build and docker-smoke.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -715,11 +737,14 @@ jobs:
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          platforms: linux/amd64
+          platforms: ${{ matrix.platform }}
           load: true
           tags: composelint/compose-lint:pr-smoke
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Scope the layer cache per arch. A shared scope has the two legs
+          # writing the same `mode=max` cache concurrently, where each can
+          # evict the other's layers — turning a cache into a coin flip.
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,scope=${{ matrix.arch }},mode=max
       - name: Clean fixture exits 0
         run: |
           cat > /tmp/clean.yml <<'YAML'

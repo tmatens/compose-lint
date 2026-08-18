@@ -56,26 +56,22 @@ env:
   CL_RELEASE_TAG: v0.20.0
 
 jobs:
-  marketplace-smoke:
-    name: Smoke test published action
+  # This workflow's whole point is to run moments after a publish — the
+  # pin-bump merge is its trigger — and that is exactly when PyPI's /simple/
+  # index has not caught up with the JSON API yet. Every job below that
+  # resolves compose-lint from PyPI waits on this one (#612).
+  #
+  # It was a step inside marketplace-smoke when it landed; the one-shot job
+  # below is a second consumer, and duplicating a retry loop is how two
+  # copies start drifting toward the weaker one. The extra runner spin-up
+  # buys a failure that names itself in the job list instead of hiding in
+  # another job's step log.
+  pypi-propagated:
+    name: Release is visible on PyPI's index
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    permissions:
-      contents: read
+    permissions: {}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      # This workflow's whole point is to run moments after a publish — the
-      # pin-bump merge is its trigger — and that is exactly when PyPI's
-      # /simple/ index has not caught up with the JSON API yet. The action
-      # steps below install `compose-lint==<the release>` from inside the
-      # published action, so the retry that now lives in action.yml only
-      # protects releases cut *after* this lands. Gate here as well, because
-      # the useful part is the diagnosis: without it the failure surfaces as
-      # `Process completed with exit code 1` on a workflow line, which is
-      # what made the 0.20.0 occurrence (#612) look like a real regression.
       - name: Wait for the release to reach PyPI's /simple/ index
         run: |
           set -euo pipefail
@@ -99,6 +95,18 @@ jobs:
             echo "Attempt ${attempt}: ${version} not on the /simple/ index yet; sleeping 20s..."
             sleep 20
           done
+
+  marketplace-smoke:
+    name: Smoke test published action
+    needs: pypi-propagated
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Clean fixture should pass
         uses: tmatens/compose-lint@86aa003f03ac82a3c2544cc35eac56aff8be769e # v0.20.0
@@ -183,5 +191,86 @@ jobs:
           git add -A
           if pre-commit run --all-files; then
             echo "::error::Expected the published hook to fail on the insecure fixture."
+            exit 1
+          fi
+
+  # README's Installation section offers two ad-hoc runners as first-class
+  # alternatives to `pip install`:
+  #
+  #     uvx compose-lint docker-compose.yml
+  #     pipx run compose-lint docker-compose.yml
+  #
+  # Every install in CI — ci.yml, publish.yml's testpypi-smoke,
+  # marketplace-smoke, os-smoke — went through `pip` (#613). The one
+  # adjacent case, testpypi-smoke's `pipx run --spec <local wheel>` (#575),
+  # deliberately hands pipx a *file* so TestPyPI is never configured as an
+  # index — so it exercises neither name resolution from PyPI nor uv at
+  # all. Console-script generation and isolated-environment layout differ
+  # enough between pip, pipx and uv that any one of them can break alone,
+  # and a broken `uvx compose-lint` is invisible to us until a user says so.
+  #
+  # Weekly rather than PR-time, alongside the other published-surface
+  # checks: what this can catch is a regression in the published artifact
+  # or in a third-party runner, neither of which a PR changes.
+  oneshot-runners-smoke:
+    name: Smoke test the advertised one-shot runners
+    needs: pypi-propagated
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # Exactly the two forms README advertises. `pipx install` /
+        # `uv tool install` are not tested because they are not offered —
+        # testing an install method we do not document would assert a
+        # contract with nobody on the other end.
+        include:
+          - runner: uvx
+            command: uvx compose-lint
+          - runner: pipx
+            command: pipx run compose-lint
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # pipx is preinstalled on ubuntu-24.04; uv is not.
+      - if: matrix.runner == 'uvx'
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+
+      # The advertised form pins nothing — it resolves the newest release,
+      # which is what CL_RELEASE_TAG names both after a pin bump and on the
+      # weekly cron. Asserting they agree is what makes this job meaningful
+      # between releases: a yanked release, or a resolver that starts
+      # preferring something older, shows up here as a mismatch rather than
+      # as a silent pass on the wrong version.
+      - name: Resolves the current release
+        env:
+          CL_RUN: ${{ matrix.command }}
+        run: |
+          set -euo pipefail
+          expected="compose-lint ${CL_RELEASE_TAG#v}"
+          actual="$(${CL_RUN} --version)"
+          echo "Expected: ${expected}"
+          echo "Actual:   ${actual}"
+          if [ "${actual}" != "${expected}" ]; then
+            echo "::error::${CL_RUN} resolved '${actual}', expected '${expected}'"
+            exit 1
+          fi
+
+      - name: Clean fixture exits 0
+        env:
+          CL_RUN: ${{ matrix.command }}
+        run: ${CL_RUN} tests/smoke/clean.yml
+
+      - name: Insecure fixture exits 1
+        env:
+          CL_RUN: ${{ matrix.command }}
+        run: |
+          exit_code=0
+          ${CL_RUN} tests/smoke/insecure.yml || exit_code=$?
+          if [ "${exit_code}" -ne 1 ]; then
+            echo "::error::Expected exit code 1 from ${CL_RUN}, got ${exit_code}"
             exit 1
           fi
