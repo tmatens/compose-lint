@@ -21,6 +21,30 @@ per-channel publish contract see [`DISTRIBUTION.md`](DISTRIBUTION.md).
 | `marketplace-smoke.yml`   | Push to `main` touching the file + manual + weekly cron | Verifies the published action and pre-commit hook end-to-end |
 | `forgejo-smoke.yml`       | Push to `main` touching the harness + manual + weekly cron | Runs README's Forgejo snippet on a live containerized Forgejo |
 | `os-smoke.yml`            | Called by `ci.yml` on PRs touching code + push to `main` + manual + weekly cron | pytest + pre-commit hook on macOS and Windows — **gates via `ci-ok`** |
+| `sarif-ingestion.yml`     | Push to `main` touching SARIF inputs + manual + weekly cron | Uploads a probe SARIF to Code Scanning and asserts GitHub ingested it — then deletes its own alerts |
+
+
+### Why SARIF ingestion is not a PR check
+
+`ci.yml`'s action smoke passes `upload-sarif: "false"` on purpose, so
+nothing on the PR path ingests a compose-lint SARIF into Code Scanning.
+SARIF rejections are schema- and semantics-level — a duplicate `ruleId`,
+an out-of-range region, a `level` GitHub does not accept — and none of
+them are visible to a shape assertion written against the same mental
+model that produced the file. They surface in the *consumer's* job.
+
+`sarif-ingestion.yml` closes that (#610) off the PR path deliberately:
+fork PRs can never hold `security-events: write`, and a PR-time job would
+push deliberately-insecure fixture findings into this repo's alert set on
+every run. Post-merge and weekly also matches what it can actually catch
+— GitHub tightening SARIF acceptance has no PR to attach to.
+
+The probe deletes its own analysis afterwards, so the fixtures' findings
+do not linger in Code Scanning. The parts that *can* be checked on the PR
+are: `tests/test_sarif_ingestion_probe.py` asserts the probe's lint still
+exits 0 (so only an upload failure can fail that job) and that the
+document still carries several artifact locations, more than one `level`,
+a suppression, and no duplicate `ruleId`.
 
 ---
 

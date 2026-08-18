@@ -1,0 +1,95 @@
+name: SARIF ingestion
+
+# Proves GitHub accepts the SARIF compose-lint emits (issue #610).
+#
+# `tests/test_sarif.py` asserts the document's shape against the same
+# mental model that produced it, and no job anywhere ingested a
+# compose-lint SARIF into Code Scanning — `ci.yml`'s action smoke sets
+# `upload-sarif: "false"` deliberately, and the only `upload-sarif` calls
+# in the repo carry Scorecard, Docker Scout and CodeQL output. So the
+# rejections that are invisible to a shape assertion — a duplicate
+# `ruleId`, an out-of-range region, a missing `artifactLocation` base, a
+# `level` GitHub does not accept — surfaced first in a *consumer's* job.
+# `upload-sarif` became a first-class input in 0.19.0, which makes the
+# upload path more of a surface, not less.
+#
+# Not on the PR gate, for three reasons rather than one:
+#   1. Fork PRs can never hold `security-events: write` (the same reason
+#      action-smoke passes `upload-sarif: "false"`), so the job would be
+#      structurally unavailable on exactly the contributions least likely
+#      to have been checked locally.
+#   2. It would push deliberately-insecure fixture findings into this
+#      repo's alert set on every PR.
+#   3. What it can catch is a change in our SARIF or in GitHub's
+#      acceptance of it — the first is caught post-merge one commit later,
+#      the second has no PR to attach to at all.
+# Its own workflow rather than a job in ci.yml so `security-events: write`
+# is scoped to one file that does nothing else.
+on:
+  push:
+    branches: [main]
+    paths:
+      - src/compose_lint/formatters/**
+      - src/compose_lint/attack.py
+      - src/compose_lint/rules/**
+      - src/compose_lint/models.py
+      - tests/smoke/**
+      - action.yml
+      - scripts/verify_sarif_ingestion.py
+      - .github/workflows/sarif-ingestion.yml
+  workflow_dispatch:
+  schedule:
+    # GitHub can tighten SARIF acceptance with no change on our side, and
+    # that has no commit to hang off. Same reasoning as marketplace-smoke's
+    # weekly re-verification of published surfaces (#570).
+    - cron: "41 11 * * 1"
+
+permissions: {}
+
+jobs:
+  ingest:
+    name: GitHub ingests our SARIF
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # All three fixtures together, so the document carries several
+      # artifactLocations, all three SARIF levels, and a suppression — the
+      # constructs a single-file probe would never produce.
+      #
+      # The config keeps the lint itself at exit 0, so a failed upload is the
+      # only thing that can turn this job red; it explains itself, and
+      # tests/test_sarif_ingestion_probe.py holds this step to that contract
+      # at PR time.
+      - name: Upload the probe SARIF to Code Scanning
+        uses: ./
+        with:
+          files: tests/smoke/insecure.yml tests/smoke/sarif-shape.yml tests/smoke/clean.yml
+          config: tests/smoke/sarif-probe-config.yml
+          fail-on: critical
+          sarif-file: sarif-ingestion-probe.sarif
+          upload-sarif: "true"
+          version: latest
+
+      # An accepted POST is not ingestion. `upload-sarif` waits for
+      # processing, but a document that lands with every result discarded
+      # still passes that step.
+      - name: Assert the results actually landed
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/verify_sarif_ingestion.py verify
+
+      # `always()`: the probe cleans up after a failed assertion too,
+      # otherwise a red run leaves the fixture findings behind precisely
+      # when nobody is looking for them.
+      - name: Remove the probe's alerts
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/verify_sarif_ingestion.py cleanup

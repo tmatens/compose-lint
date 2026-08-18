@@ -1,0 +1,18 @@
+# Config for the SARIF ingestion probe (.github/workflows/sarif-ingestion.yml).
+#
+# The probe's lint must exit 0, so that a failed upload is the *only* thing
+# that can turn that job red. `continue-on-error` on the action step would be
+# the obvious way to tolerate a non-zero lint — and it would swallow exactly
+# the failure the job exists to detect.
+#
+# tests/smoke/insecure.yml's only critical finding is CL-0002, so disabling it
+# puts every remaining finding below `--fail-on critical`. Suppression is not a
+# workaround here: a disabled rule still emits a suppressed result carrying a
+# `justification`, which is one more SARIF construct GitHub has to accept.
+#
+# tests/test_sarif_ingestion_probe.py holds this to that contract, so a new
+# critical rule fails on the PR that adds it rather than a week later.
+rules:
+  CL-0002:
+    enabled: false
+    reason: "SARIF ingestion probe: keeps the lint exit 0 so only an upload failure fails the job"
