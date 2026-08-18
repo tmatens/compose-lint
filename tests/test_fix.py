@@ -878,3 +878,30 @@ def test_verify_apply_flags_new_finding(tmp_path: Path) -> None:
     assert msg is not None
     assert "introduces a new finding" in msg
     assert "CL-0002" in msg
+
+
+# --- #601: line endings are content the fix must respect ------------------
+
+
+def test_dominant_newline_prefers_the_majority() -> None:
+    from compose_lint.fix import _dominant_newline
+
+    assert _dominant_newline("a\nb\n") == "\n"
+    assert _dominant_newline("a\r\nb\r\n") == "\r\n"
+    assert _dominant_newline("a\r\nb\r\nc\n") == "\r\n"
+    assert _dominant_newline("a\r\nb\nc\n") == "\n"
+    assert _dominant_newline("") == "\n"
+
+
+def test_render_diff_escapes_a_lone_cr_but_not_crlf_endings() -> None:
+    # A trailing CR that is part of a CRLF ending is the file's line-ending
+    # convention, not content — it no longer renders as an escape. A *lone*
+    # CR (splitlines treats it as its own terminator) is the smuggling shape
+    # the sanitizer exists for and still surfaces as \\u000d.
+    from compose_lint.fix import render_file_diff
+
+    original = 'a: 1\r\nb: "x\rY"\r\n'
+    patched = 'a: 2\r\nb: "x\rY"\r\n'
+    out = render_file_diff("f.yml", original, patched, [])
+    assert 'b: "x\\u000d' in out, out  # the lone CR stays visible
+    assert "1\\u000d" not in out and "2\\u000d" not in out, out

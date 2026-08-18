@@ -20,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`fix` now respects a CRLF file's line endings end to end.** The
+  line-inserting fixers spliced bare-LF lines into CRLF files, shipping a
+  mixed-endings result that editors and VCS `autocrlf` flag on every line;
+  inserted text now adopts the file's dominant ending. And the dry-run diff
+  no longer renders every line of a CRLF file with a trailing `\u000d`
+  escape — a CR that is part of the line-ending convention is not content,
+  while a *lone* CR (the smuggling shape the output sanitizer exists for)
+  still surfaces escaped.
 - **Windows lint hosts no longer miss climb-to-root bind mounts.** A
   `..`-climb source resolved with Windows path semantics never matched the
   whole-root (CL-0001) and root-equivalent (CL-0025) claims — the known

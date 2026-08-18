@@ -14,7 +14,8 @@ and :func:`render_file_diff` turns the result into the dry-run unified diff.
 from __future__ import annotations
 
 import difflib
-from dataclasses import dataclass, field
+import re
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 from compose_lint._lines import line_starts, split_lines
@@ -310,6 +311,27 @@ def _coordinate_security_opt(
     return _FixUnit([*cl0003, *cl0009], [edit], caveat_rule_id="CL-0009")
 
 
+def _dominant_newline(text: str) -> str:
+    """The line ending spliced-in fix text should use: the file's dominant one.
+
+    Fixers build replacements with bare ``\n``. Splicing that into a CRLF
+    file shipped a mixed-endings result — original lines ``\r\n``, inserted
+    lines ``\n`` — which editors and VCS autocrlf setups flag on every line
+    (#601).
+    """
+    crlf = text.count("\r\n")
+    return "\r\n" if crlf > text.count("\n") - crlf else "\n"
+
+
+def _adapted_to_newline(edit: TextEdit, newline: str) -> TextEdit:
+    if newline == "\n" or "\n" not in edit.replacement:
+        return edit
+    # Only bare LFs adapt: a replacement can embed kept original content that
+    # already carries the file's endings, and doubling those CRs would corrupt
+    # the very lines the fix promised not to touch.
+    return replace(edit, replacement=re.sub("(?<!\r)\n", newline, edit.replacement))
+
+
 def collect_edits(
     findings: Iterable[Finding],
     data: dict[str, Any],
@@ -415,16 +437,18 @@ def collect_edits(
                 refused.add(b_unit)
 
     result = FixResult()
+    newline = _dominant_newline(text)
     seen_caveats: set[tuple[str, str]] = set()
     for index, (unit, _spans) in enumerate(spanned):
         if index in refused:
             result.manual.extend(unit.findings)
             continue
+        edits = [_adapted_to_newline(edit, newline) for edit in unit.edits]
         result.fixed.extend(unit.findings)
-        result.edits.extend(unit.edits)
+        result.edits.extend(edits)
         for finding in unit.findings:
-            result.fixed_edits.append((finding, unit.edits))
-        for edit in unit.edits:
+            result.fixed_edits.append((finding, edits))
+        for edit in edits:
             if not edit.caveat:
                 continue
             key = (unit.caveat_rule_id, edit.caveat)
@@ -468,6 +492,12 @@ def render_file_diff(
         fromfile=sanitize_line(path),
         tofile=sanitize_line(path),
     ):
+        if raw_line.endswith("\r\n"):
+            # A trailing CR is the file's line-ending convention, not content;
+            # sanitizing it rendered every line of a CRLF file's diff with a
+            # \u000d escape (#601). A CR anywhere *else* is still escaped
+            # below — that embedded shape is what sanitize guards against.
+            raw_line = raw_line[:-2] + "\n"
         line = sanitize(raw_line)
         # Header lines (`---`/`+++`/`@@`) always end in a newline; only a final
         # content line can lack one. Re-terminate it and add the git sentinel.

@@ -529,6 +529,33 @@ _BARE_SERVICE = "services:\n  web:\n    image: nginx:1.27\n"
 class TestFixSubcommand:
     """Tests for the `fix` subcommand (ADR-014, promoted in 0.11.0)."""
 
+    def test_apply_inserts_new_lines_with_the_files_crlf_endings(
+        self, tmp_path: Path
+    ) -> None:
+        # The #515 regression test below covers in-line edits; this covers
+        # the line-*inserting* fixers, which spliced bare-LF lines into a
+        # CRLF file and shipped a mixed-endings result that editors and
+        # autocrlf flag on every line (#601).
+        target = tmp_path / "docker-compose.yml"
+        with open(target, "w", newline="\r\n", encoding="utf-8") as fh:
+            fh.write("services:\n  web:\n    image: nginx:1.27\n")
+        result = run_cli("fix", "--apply", str(target))
+        assert result.returncode == 0, result.stderr
+        raw = target.read_bytes()
+        crlf = raw.count(b"\r\n")
+        assert crlf > 3, raw  # fixes were inserted, as CRLF
+        assert raw.count(b"\n") == crlf, raw  # and not one lone LF remains
+
+    def test_dry_run_diff_of_a_crlf_file_carries_no_cr_escapes(
+        self, tmp_path: Path
+    ) -> None:
+        target = tmp_path / "docker-compose.yml"
+        with open(target, "w", newline="\r\n", encoding="utf-8") as fh:
+            fh.write("services:\n  web:\n    image: nginx:1.27\n")
+        result = run_cli("fix", str(target))
+        assert "+    read_only: true" in result.stdout
+        assert "\\u000d" not in result.stdout, result.stdout
+
     def test_dry_run_prints_diff_to_stdout(self, tmp_path: Path) -> None:
         f = tmp_path / "docker-compose.yml"
         f.write_text(_BARE_SERVICE)
