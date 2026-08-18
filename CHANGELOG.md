@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.20.0] - 2026-08-18
 
+### Upgrading from 0.19.x
+
+**On Windows lint hosts, files that passed may now fail.** Bind-source
+resolution is now lexical segment math in POSIX notation on every platform
+(ADR-023), so the whole-root (CL-0001) and root-equivalent (CL-0025) claims
+now fire on a `..`-climb source that Windows path semantics previously left
+unmatched. This closes a platform gap rather than adding a new claim: the
+same file already failed on Linux and macOS, and the miss shipped as a known
+limitation in 0.19.0 ([#588](https://github.com/tmatens/compose-lint/issues/588)).
+
+Two Windows-only spelling changes come with it. A resolved relative source is
+now reported `/`-rooted instead of with the lint host's separators and drive
+letter, and a `~` source is left as written rather than expanded against a
+Windows home directory — which is no proxy for the POSIX home of the host the
+compose file actually deploys to. Anything that pattern-matches compose-lint's
+reported source paths on Windows needs updating.
+
+**On Linux and macOS, nothing changes** — verified across the 5,417-file
+corpus: zero findings changed.
+
+`fix` also now preserves a CRLF file's line endings, so re-running it on a
+file it previously touched can produce a different, correct diff. No action
+needed.
+
 ### Changed
 
 - Bind-source resolution is now lexical segment math in POSIX notation on
