@@ -61,7 +61,7 @@ jobs:
           persist-credentials: false
 
       - name: Clean fixture should pass
-        uses: tmatens/compose-lint@f11d751f71aef2bcbaa61f682f6456c3c97f95bf # v0.18.0
+        uses: tmatens/compose-lint@79fa86c6d6792a85e27367f34b8c4337578f4021 # v0.19.0
         with:
           files: tests/smoke/clean.yml
           fail-on: high
@@ -69,7 +69,7 @@ jobs:
       - name: Insecure fixture should fail
         id: insecure
         continue-on-error: true
-        uses: tmatens/compose-lint@f11d751f71aef2bcbaa61f682f6456c3c97f95bf # v0.18.0
+        uses: tmatens/compose-lint@79fa86c6d6792a85e27367f34b8c4337578f4021 # v0.19.0
         with:
           files: tests/smoke/insecure.yml
           fail-on: high
@@ -97,7 +97,7 @@ jobs:
       # The release the hook is consumed at. Bumped alongside the action
       # SHA by publish.yml's bump-marketplace-smoke-pin job, so the job
       # runs against each new release automatically.
-      CL_RELEASE_TAG: v0.18.0
+      CL_RELEASE_TAG: v0.19.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
