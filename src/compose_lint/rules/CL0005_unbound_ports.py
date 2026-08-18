@@ -61,11 +61,22 @@ _WILDCARD_LITERALS = frozenset({"*"})
 def _is_wildcard_ip(value: str) -> bool:
     """Return True if the value publishes on all interfaces.
 
-    Tests the *address*, not its spelling. `ipaddress.is_unspecified` covers
-    every way of writing the all-zeroes address in either family, including the
-    IPv4-mapped IPv6 form; brackets are stripped first because the port syntax
-    wraps IPv6 literals in them. An unparseable value is not a wildcard — it is
-    either a hostname or junk, and guessing would invent a finding.
+    Tests the *address*, not its spelling: brackets are stripped first
+    because the port syntax wraps IPv6 literals in them, and every way of
+    writing the all-zeroes address in either family is then the same
+    address. An unparseable value is not a wildcard — it is either a
+    hostname or junk, and guessing would invent a finding.
+
+    The IPv4-mapped form (``::ffff:0.0.0.0``) is unwrapped here rather than
+    left to ``is_unspecified``. Whether that property sees through the
+    mapping depends on the interpreter: CPython grew the delegation late
+    and backported it unevenly, so on some builds in this project's
+    supported range ``ipaddress.ip_address("::ffff:0.0.0.0")`` reports
+    ``is_unspecified`` as False. Relying on it made CL-0005 miss a
+    published-on-all-interfaces port on those hosts and fire on others —
+    the same compose file graded differently by interpreter patch level,
+    which is the worst failure mode available to a security linter. Doing
+    the unwrap ourselves makes the classification ours on every host.
     """
     if not value:
         return True
@@ -75,9 +86,18 @@ def _is_wildcard_ip(value: str) -> bool:
     if candidate.startswith("[") and candidate.endswith("]"):
         candidate = candidate[1:-1]
     try:
-        return ipaddress.ip_address(candidate).is_unspecified
+        address = ipaddress.ip_address(candidate)
     except ValueError:
         return False
+    if address.is_unspecified:
+        return True
+    if isinstance(address, ipaddress.IPv6Address):
+        mapped = address.ipv4_mapped
+        # Only the mapped address being unspecified counts. ::ffff:127.0.0.1
+        # is a loopback bind wearing an IPv6 spelling, not a wildcard.
+        if mapped is not None and mapped.is_unspecified:
+            return True
+    return False
 
 
 @register_rule

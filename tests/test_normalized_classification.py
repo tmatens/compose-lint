@@ -69,7 +69,17 @@ WILDCARD_SPELLINGS = [
     "[::ffff:0.0.0.0]",
     "0000:0000:0000:0000:0000:0000:0000:0000",
 ]
-BOUND_SPELLINGS = ["127.0.0.1", "[::1]", "192.168.1.10", "10.0.0.1"]
+BOUND_SPELLINGS = [
+    "127.0.0.1",
+    "[::1]",
+    "192.168.1.10",
+    "10.0.0.1",
+    # An IPv4-mapped *bind* address. The wildcard check unwraps the mapping,
+    # so this is the case that proves the unwrap is not blanket "any mapped
+    # address is a wildcard".
+    "[::ffff:127.0.0.1]",
+    "[::ffff:192.168.1.10]",
+]
 
 
 @pytest.mark.parametrize("host_ip", WILDCARD_SPELLINGS)
@@ -88,7 +98,33 @@ def test_an_unparseable_host_is_not_treated_as_a_wildcard() -> None:
     assert _is_wildcard_ip("db.internal") is False
 
 
-@pytest.mark.parametrize("host_ip", ["[::0]", "[0:0:0:0:0:0:0:0]", "[::ffff:0.0.0.0]"])
+@pytest.mark.parametrize(
+    "host_ip", ["[::ffff:0.0.0.0]", "[::ffff:0:0]", "::ffff:0.0.0.0"]
+)
+def test_the_ipv4_mapped_wildcard_does_not_depend_on_the_interpreter(
+    host_ip: str,
+) -> None:
+    """``::ffff:0.0.0.0`` is the unspecified address in an IPv6 spelling.
+
+    ``_is_wildcard_ip`` used to hand this to ``ipaddress.is_unspecified``,
+    whose treatment of IPv4-mapped addresses depends on the CPython build:
+    the macOS and Windows 3.10 legs reported False while 3.13 reported
+    True, so the same compose file was graded differently by interpreter
+    patch level and CL-0005 silently missed a port published on all
+    interfaces. Assert the classification directly — it is ours now.
+    """
+    assert _is_wildcard_ip(host_ip) is True, host_ip
+
+
+@pytest.mark.parametrize("host_ip", ["[::ffff:127.0.0.1]", "[::ffff:10.0.0.1]"])
+def test_an_ipv4_mapped_bind_address_is_still_not_a_wildcard(host_ip: str) -> None:
+    """The unwrap must not turn every mapped address into a finding."""
+    assert _is_wildcard_ip(host_ip) is False, host_ip
+
+
+@pytest.mark.parametrize(
+    "host_ip", ["[::0]", "[0:0:0:0:0:0:0:0]", "[::ffff:0.0.0.0]", "[::ffff:0:0]"]
+)
 def test_ipv6_wildcard_spellings_fire_cl0005(host_ip: str) -> None:
     source = (
         "services:\n  web:\n    image: nginx:1.25\n"

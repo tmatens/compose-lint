@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CL-0005 now flags `::ffff:0.0.0.0` on every supported interpreter.** The
+  IPv4-mapped spelling of the unspecified address was classified by
+  `ipaddress.is_unspecified`, whose handling of IPv4-mapped addresses varies
+  with the CPython build — so a port published on all interfaces was reported
+  on some hosts and missed on others, with no way for a user to tell which
+  they had. The mapping is now unwrapped explicitly. A compose file binding
+  `[::ffff:0.0.0.0]` that previously passed on macOS or Windows will now
+  correctly report CL-0005.
 - **GitHub Action: installing a just-released version no longer fails on
   PyPI index lag.** PyPI's JSON API sees a release within seconds of the
   publish, but the `/simple/` index pip resolves against can lag it by
