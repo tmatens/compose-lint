@@ -526,6 +526,24 @@ jobs:
           fi
           echo "Found matching CHANGELOG section for ${head_version}."
 
+      # The [Unreleased] *shape* is graded on the PR that changes it, not
+      # only at release-prep dispatch (#593): #590 landed an unrecognised
+      # heading on fully green CI and cost the first 0.19.0 dispatch,
+      # because the check lived only in release-prep.yml. Same script as
+      # release-prep, minus --require-content — a PR that adds no
+      # user-facing entry is legitimate; an empty section at release time
+      # is not.
+      - name: Validate [Unreleased] shape when CHANGELOG.md changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if ! git diff --name-only "${BASE_SHA}" "${HEAD_SHA}" | grep -q '^CHANGELOG.md$'; then
+            echo "CHANGELOG.md not touched; nothing to validate."
+            exit 0
+          fi
+          python3 scripts/check_changelog_unreleased.py
+
   dco:
     name: Developer Certificate of Origin
     runs-on: ubuntu-24.04

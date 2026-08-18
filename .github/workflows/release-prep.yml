@@ -72,77 +72,14 @@ jobs:
       #   - 0.18.0: it carried two "### Security" and two "### Fixed" blocks
       #     with "### Changed" between them, so renaming the header would have
       #     shipped the duplicates inside [0.18.0].
-      # The changelog-gate job catches neither: it only asserts a section
-      # exists for the bumped version, which a renamed-but-malformed section
-      # satisfies. Check here, before anything is modified, so a bad changelog
-      # costs nothing but a re-dispatch.
+      # The changelog-gate job runs the same script (without
+      # --require-content) on every PR touching CHANGELOG.md, so shape
+      # breakage is normally caught on the PR that introduces it (#593);
+      # this dispatch-time run is the last line of defence and the only
+      # place emptiness is an error. Check here, before anything is
+      # modified, so a bad changelog costs nothing but a re-dispatch.
       - name: Validate CHANGELOG [Unreleased] section
-        run: |
-          python - <<'PY'
-          import pathlib, re, sys
-
-          # Keep a Changelog's order, with this repo's "Upgrading" preamble
-          # first and its "Known limitations" postscript last. Both are local
-          # conventions that predate this check: "Upgrading from 0.15.x" and
-          # "Upgrading from 0.16.x" already shipped inside released sections,
-          # and "Known limitations" landed in #590. Normalise the versioned
-          # "Upgrading from X.Y.x" spelling to the bare key so the ordering
-          # comparison below sees one heading, not an unknown one.
-          ORDER = [
-              "Upgrading", "Added", "Changed", "Deprecated", "Removed",
-              "Fixed", "Security", "Known limitations",
-          ]
-
-          def key(heading: str) -> str:
-              return "Upgrading" if re.fullmatch(r"Upgrading(\s+from\s+.+)?", heading) else heading
-
-          lines = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8").splitlines()
-          start = next((i for i, ln in enumerate(lines) if ln.startswith("## [Unreleased]")), None)
-          if start is None:
-              sys.exit("::error::No '## [Unreleased]' section in CHANGELOG.md")
-          end = next(
-              (i for i in range(start + 1, len(lines)) if lines[i].startswith("## [")),
-              len(lines),
-          )
-
-          # A '###' inside a fenced block is sample text, not a section heading.
-          headings: list[str] = []
-          fenced = has_content = False
-          for line in lines[start + 1 : end]:
-              if re.match(r"^(```|~~~)", line.strip()):
-                  fenced = not fenced
-              if not fenced and line.startswith("### "):
-                  headings.append(line[4:].strip())
-                  continue
-              if line.strip():
-                  has_content = True
-
-          if not has_content:
-              sys.exit(
-                  "::error::[Unreleased] is empty. This workflow only renames the "
-                  "header, so releasing now would ship a blank section and blank "
-                  "GitHub Release notes. Author the entries first — `git log "
-                  "v<PREV>..HEAD` lists what landed."
-              )
-
-          if dupes := sorted({h for h in headings if headings.count(h) > 1}):
-              sys.exit(
-                  f"::error::[Unreleased] has duplicate sections: {dupes}. Merge each "
-                  "pair into one before releasing, or the duplicates ship inside the "
-                  "release section."
-              )
-
-          if unknown := [h for h in headings if key(h) not in ORDER]:
-              sys.exit(f"::error::[Unreleased] has unrecognised sections: {unknown}. Expected some of {ORDER}.")
-
-          if [ORDER.index(key(h)) for h in headings] != sorted(ORDER.index(key(h)) for h in headings):
-              sys.exit(
-                  f"::error::[Unreleased] sections are out of order: {headings}. "
-                  f"Expected: {[h for h in ORDER if h in headings]}"
-              )
-
-          print("[Unreleased] OK:", ", ".join(headings) or "(no subsections)")
-          PY
+        run: python scripts/check_changelog_unreleased.py --require-content
 
       # Delegate to the same script a maintainer runs by hand, so there is one
       # definition of "what a version bump is". This workflow used to
