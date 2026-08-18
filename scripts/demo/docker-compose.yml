@@ -15,7 +15,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 
   db:
-    image: postgres:16-alpine@sha256:0aafd2ae4b1ec5b3d9e0e0b7f0f1e3ca5e5a2b3c4d5e6f708192a3b4c5d6e7f8
+    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
     read_only: true
     cap_drop:
       - ALL
