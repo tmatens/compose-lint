@@ -14,9 +14,12 @@ name: OS smoke (macOS/Windows)
 # is signal to triage, not a blocked PR.
 #
 # The pre-commit steps mirror ci.yml's `precommit-smoke` with one
-# portability change: throwaway repos live in `mktemp -d` (POSIX-style in
-# every bash, including Git Bash on Windows) rather than
-# `${{ runner.temp }}`, whose Windows backslash form fights shell quoting.
+# portability change: throwaway repos are created with `mktemp -d` under
+# RUNNER_TEMP (converted to POSIX form via cygpath where that exists).
+# The base directory matters on Windows: the workspace lives on D: while
+# the default temp dir is on C:, and pre-commit's try-repo computes a
+# relative path between the two — os.path.relpath cannot cross drives
+# and crashes. Keeping the throwaway on the workspace drive avoids it.
 on:
   workflow_dispatch:
   schedule:
@@ -96,7 +99,9 @@ jobs:
       - name: Clean stack with a config present should pass
         run: |
           set -euo pipefail
-          SMOKE="$(mktemp -d)"
+          TMPBASE="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+          command -v cygpath >/dev/null 2>&1 && TMPBASE="$(cygpath -u "$TMPBASE")"
+          SMOKE="$(mktemp -d -p "$TMPBASE")"
           cp tests/smoke/clean.yml "$SMOKE/docker-compose.yml"
           printf 'rules:\n  CL-0004:\n    enabled: false\n    reason: "smoke"\n' \
             > "$SMOKE/.compose-lint.yml"
@@ -119,7 +124,9 @@ jobs:
       - name: Insecure stack should fail the hook
         run: |
           set -euo pipefail
-          SMOKE="$(mktemp -d)"
+          TMPBASE="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+          command -v cygpath >/dev/null 2>&1 && TMPBASE="$(cygpath -u "$TMPBASE")"
+          SMOKE="$(mktemp -d -p "$TMPBASE")"
           cp tests/smoke/insecure.yml "$SMOKE/docker-compose.yml"
           git -C "$SMOKE" init -q
           git -C "$SMOKE" add -A

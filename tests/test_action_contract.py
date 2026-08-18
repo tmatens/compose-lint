@@ -49,6 +49,22 @@ def _step(name: str) -> dict[str, Any]:
     raise AssertionError(f"no step named {name!r}")
 
 
+def _bash_major() -> int:
+    try:
+        out = subprocess.run(
+            ["bash", "-c", "echo ${BASH_VERSINFO[0]}"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout.strip()
+        return int(out)
+    except (OSError, ValueError):
+        return 0
+
+
+_BASH_MAJOR = _bash_major()
+
+
 def _run_step(
     name: str,
     env: dict[str, str],
@@ -57,6 +73,16 @@ def _run_step(
     extra_path: Path | None = None,
 ) -> tuple[int, str, str]:
     """Execute a step's `run:` body the way the runner would."""
+    if _BASH_MAJOR < 4:
+        # The scripts target the GitHub runner's bash (5.x) and use
+        # bash-4 features (`mapfile`). macOS ships bash 3.2, which fails
+        # them for reasons the action never sees in production — every
+        # `runs-on` that executes action.yml provides a modern bash. The
+        # static assertions below still run everywhere.
+        pytest.skip(
+            "action.yml step scripts need bash >= 4 "
+            f"(this platform has {_BASH_MAJOR or 'no bash'})"
+        )
     script = _step(name)["run"]
     path = f"{VENV_BIN}:{os.environ.get('PATH', '')}"
     if extra_path is not None:
