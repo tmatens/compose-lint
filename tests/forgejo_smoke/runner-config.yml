@@ -1,0 +1,6 @@
+# Minimal act_runner config for the forgejo-smoke harness. The one thing
+# that matters: job containers must join the harness network, or
+# `http://forgejo:3000` (the instance ROOT_URL the checkout action clones
+# from) does not resolve inside them. Everything else stays at defaults.
+container:
+  network: forgejo-smoke

@@ -329,6 +329,12 @@ After approval, `publish` and `docker-publish` run in parallel.
       smoke. Merging it auto-triggers the workflow, which verifies the
       published Action and pre-commit hook end-to-end (it can also be
       re-run from **Actions → Marketplace smoke test**).
+- [ ] **Forgejo snippet with the new pin** — optional: the README
+      snippet's `compose-lint==X.Y.Z` pin (bumped by release-prep) gets
+      its first live execution on the next weekly `forgejo-smoke.yml`
+      run; dispatch **Actions → Forgejo smoke test** to verify it
+      immediately instead. (It deliberately doesn't run pre-release —
+      the new version isn't on PyPI yet.)
 - [ ] **Docker Hub overview sync** — runs automatically in
       `publish.yml`'s `dockerhub-description` job after `docker-publish`,
       via the first-party composite action at

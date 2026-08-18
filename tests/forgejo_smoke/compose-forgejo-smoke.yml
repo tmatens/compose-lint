@@ -1,0 +1,66 @@
+# Throwaway Forgejo + act_runner stack for the forgejo-smoke workflow
+# (issue #573): scripts/forgejo_smoke.py boots it, executes README's
+# Forgejo Actions snippet against it verbatim, and tears it down. This is
+# harness infrastructure, not a lint fixture — nothing in CI runs
+# compose-lint against this file (it would rightly object to the Docker
+# socket mount the runner needs to spawn job containers).
+#
+# The compose-* filename keeps both images under Renovate's
+# docker-compose manager, so digest bumps arrive automatically and a
+# Forgejo/runner version bump re-runs the harness when it merges (the
+# workflow triggers on pushes touching this file). The versions here are
+# what README's "Verified on ..." line claims: forgejo_smoke.py asserts
+# the claim against the *live* instance, so bumping an image without
+# updating the README fails the run.
+services:
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:16.0.2@sha256:2fdfe28b5c68f82f49580e227b84e2afb43af0250e0631a54a386ef3b1d9b759
+    environment:
+      # Headless install: lock the installer and configure via env.
+      FORGEJO__security__INSTALL_LOCK: "true"
+      FORGEJO__database__DB_TYPE: sqlite3
+      # ROOT_URL must be resolvable from *job containers* (checkout clones
+      # from it), which is why everything joins the named network below
+      # and the runner config pins that network for job containers.
+      FORGEJO__server__DOMAIN: forgejo
+      FORGEJO__server__ROOT_URL: http://forgejo:3000/
+      FORGEJO__actions__ENABLED: "true"
+    ports:
+      # Bound to loopback: the orchestration script talks to the API from
+      # the host; nothing else should. The host port is overridable so the
+      # harness can run on machines where 3000 is taken (CI leaves the
+      # default).
+      - "127.0.0.1:${FORGEJO_SMOKE_PORT:-3000}:3000"
+    networks: [forgejo-smoke]
+
+  runner:
+    image: data.forgejo.org/forgejo/runner:13.0.0@sha256:7fb853bfe73c229be6349398359c0a7bd01fadfd17c106607b2221150b799ed2
+    # root so the runner can use the host Docker socket on the CI runner.
+    user: root
+    depends_on: [forgejo]
+    environment:
+      # Registration token minted by forgejo_smoke.py (via the Forgejo
+      # CLI) after the instance is up; passed through the environment so
+      # it never lands in a file or command line.
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./runner-config.yml:/config/config.yml:ro
+    working_dir: /data
+    # Retry registration until Forgejo is ready, then run the daemon. The
+    # `docker:` label maps the snippet's `runs-on: docker` to a Debian
+    # image with apt + root, matching what the snippet assumes (README
+    # documents the node-in-container requirement). Tag-pinned only: the
+    # label string is runner config Renovate cannot see, and a digest
+    # here would just go permanently stale.
+    command: >-
+      sh -c 'while ! forgejo-runner register --no-interactive
+      --instance http://forgejo:3000 --token "$$RUNNER_TOKEN"
+      --name smoke-runner --labels "docker:docker://node:24-bookworm";
+      do sleep 2; done &&
+      exec forgejo-runner --config /config/config.yml daemon'
+    networks: [forgejo-smoke]
+
+networks:
+  forgejo-smoke:
+    name: forgejo-smoke

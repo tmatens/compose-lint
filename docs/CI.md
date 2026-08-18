@@ -19,6 +19,7 @@ per-channel publish contract see [`DISTRIBUTION.md`](DISTRIBUTION.md).
 | `release-prep.yml`        | Manual (`workflow_dispatch`, maintainer)   | Opens the "Prepare X.Y.Z release" PR                   |
 | `publish-channel.yml`     | Manual (`workflow_dispatch`, maintainer)   | Emergency single-channel publish                       |
 | `marketplace-smoke.yml`   | Push to `main` touching the file + manual + weekly cron | Verifies the published action and pre-commit hook end-to-end |
+| `forgejo-smoke.yml`       | Push to `main` touching the harness + manual + weekly cron | Runs README's Forgejo snippet on a live containerized Forgejo |
 
 ---
 
@@ -310,6 +311,27 @@ triggerable from the Actions tab for ad-hoc re-verification, and runs
 weekly on a schedule so a regression that develops *between* releases
 (a yanked dependency, a resolver change, a registry-side issue) is
 noticed before a user's workflow breaks.
+
+### `forgejo-smoke.yml`
+
+Proves README's Forgejo Actions snippet — and its "Verified on Forgejo X,
+runner Y" claim — empirically (issue #573). GitHub-hosted CI cannot *be*
+a Forgejo runner, but it can host one: `scripts/forgejo_smoke.py` boots a
+throwaway Forgejo + act_runner stack
+(`tests/forgejo_smoke/compose-forgejo-smoke.yml`), extracts the snippet
+from `README.md` **verbatim** at runtime (documented and tested cannot
+drift — they are one string), pushes a repo whose workflow is that
+snippet with the shared clean fixture as its compose file, dispatches it,
+and requires success. It then asserts the README's verified-on versions
+against the live instance and runner, so bumping the harness images
+without moving the claim (or vice versa) fails the run.
+
+Runs weekly, on pushes to `main` touching the harness — which includes
+Renovate bumps of the Forgejo/runner images, so each Forgejo release
+re-proves the snippet — and manually. Deliberately not on README PRs:
+the release-prep PR bumps the snippet's `compose-lint==X.Y.Z` pin before
+that version exists on PyPI, which would fail spuriously; the weekly run
+covers the new pin after release instead.
 
 ---
 
