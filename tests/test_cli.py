@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 import subprocess
 import sys
@@ -57,6 +58,33 @@ class TestCLI:
         result = run_cli("check", str(FIXTURES / "insecure_privileged.yml"))
         assert result.returncode == 1
         assert "CL-0002" in result.stdout
+
+    def test_findings_survive_a_cp1252_stdio(self) -> None:
+        """A narrow stdio encoding must not crash the report.
+
+        Windows pipes inherit the locale code page (cp1252), which cannot
+        encode the ⚠/·/│ characters the text report uses — every run with
+        findings died with UnicodeEncodeError there. The CLI reconfigures
+        its stdio to UTF-8; PYTHONIOENCODING=cp1252 reproduces the Windows
+        condition on any platform.
+        """
+        env = {**os.environ, "PYTHONIOENCODING": "cp1252"}
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "compose_lint",
+                str(FIXTURES / "insecure_privileged.yml"),
+            ],
+            capture_output=True,
+            env=env,
+        )
+        stdout = result.stdout.decode("utf-8")
+        assert result.returncode == 1, result.stderr.decode("utf-8", "replace")
+        assert "CL-0002" in stdout
+        # The excerpt gutter is the exact character the Windows crash died
+        # on; its presence proves the output is real UTF-8, not degraded.
+        assert "│" in stdout
 
     def test_module_entrypoint_matches_the_console_script(self) -> None:
         """``python -m compose_lint`` and ``compose-lint`` are one surface.

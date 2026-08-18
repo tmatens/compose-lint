@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import io
 import json
 import os
 import stat
@@ -340,8 +341,29 @@ def _normalize_argv(argv: list[str]) -> list[str]:
     return ["check", *argv]
 
 
+def _utf8_stdio() -> None:
+    """Make stdout/stderr UTF-8 on Windows, matching every other platform.
+
+    Windows pipes and redirected files inherit the locale code page
+    (typically cp1252), which cannot encode the characters this tool
+    prints — the ⚠/· verdict marks and the │/─ excerpt gutters — so any
+    run with findings died with UnicodeEncodeError instead of a report.
+    Interactive consoles are unaffected: modern Python drives them through
+    the wide-character API and they are already UTF-8-capable, so this
+    only changes what lands in pipes and files — where UTF-8 is what the
+    other platforms (and PEP 686's direction) already produce.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper) and stream.encoding.lower() not in (
+            "utf-8",
+            "utf8",
+        ):
+            stream.reconfigure(encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> NoReturn:
     """Main entry point for the CLI."""
+    _utf8_stdio()
     parser = _build_parser()
     raw = sys.argv[1:] if argv is None else argv
     args = parser.parse_args(_normalize_argv(raw))

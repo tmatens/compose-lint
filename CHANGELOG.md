@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   platform has it, and add Windows' `O_BINARY` so CRT newline translation
   cannot corrupt reads that ask for the file's real bytes. Found by the new
   macOS/Windows CI smoke on its first run.
+- **Windows: any run with findings crashed with `UnicodeEncodeError`.**
+  Windows pipes and redirected files inherit the locale code page (usually
+  cp1252), which cannot encode the report's ⚠/·/│ characters. The CLI now
+  reconfigures stdout/stderr to UTF-8 when they aren't already — a no-op on
+  every other platform and on interactive Windows consoles — so piped and
+  redirected output is UTF-8 everywhere. Also found by the macOS/Windows
+  smoke.
 
 ## [0.18.0] - 2026-08-14
 
