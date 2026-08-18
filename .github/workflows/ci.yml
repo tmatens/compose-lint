@@ -988,6 +988,66 @@ jobs:
             exit 1
           fi
 
+      # The two cases below exercise the user `args:` override contract
+      # (issue #571). `.pre-commit-hooks.yaml` ships `args: [--]`, and a
+      # consumer's own `args:` replaces that default entirely — the README
+      # tells them to end their list with `--`. `try-repo` cannot inject a
+      # consumer `args:`, so these cases write a real
+      # `.pre-commit-config.yaml` pinning this checkout at its own SHA,
+      # which also makes them the only PR-gate steps that install the hook
+      # the way a consumer does (from a rev, not the working tree).
+
+      # The clean fixture passes at the default high threshold (proved
+      # above) and carries two medium findings, so `--fail-on medium` must
+      # flip the hook to a failure. A pass here means the override was
+      # dropped; a failure without the threshold verdict means it failed
+      # for the wrong reason.
+      - name: User args override with trailing -- is honored
+        env:
+          SMOKE: ${{ runner.temp }}/args-override
+        run: |
+          set -euo pipefail
+          REV="$(git rev-parse HEAD)"
+          mkdir -p "$SMOKE"
+          cp tests/smoke/clean.yml "$SMOKE/docker-compose.yml"
+          printf 'repos:\n  - repo: %s\n    rev: %s\n    hooks:\n      - id: compose-lint\n        args: [--fail-on, medium, "--"]\n' \
+            "$GITHUB_WORKSPACE" "$REV" > "$SMOKE/.pre-commit-config.yaml"
+          cd "$SMOKE"
+          git init -q
+          git add -A
+          if pre-commit run --all-files 2>&1 | tee out.txt; then
+            echo "::error::Expected the --fail-on medium override to fail the clean fixture."
+            exit 1
+          fi
+          grep -q "at or above medium" out.txt \
+            || { echo "::error::Hook failed for a reason other than the overridden threshold."; exit 1; }
+
+      # A directory named `--config=cfgdir` is the manifest comment's
+      # attack shape: with the trailing `--` omitted, argparse absorbs the
+      # repository path as a --config flag. The pinned outcome is the loud
+      # failure observed live — exit 2, "Config file not found" — never a
+      # green run that skipped the file.
+      - name: Omitted trailing -- fails loudly, never silently passes
+        env:
+          SMOKE: ${{ runner.temp }}/args-no-separator
+        run: |
+          set -euo pipefail
+          REV="$(git rev-parse HEAD)"
+          mkdir -p "$SMOKE/--config=cfgdir"
+          cp tests/smoke/clean.yml "$SMOKE/--config=cfgdir/compose.yml"
+          cp tests/smoke/clean.yml "$SMOKE/docker-compose.yml"
+          printf 'repos:\n  - repo: %s\n    rev: %s\n    hooks:\n      - id: compose-lint\n        args: [--fail-on, medium]\n' \
+            "$GITHUB_WORKSPACE" "$REV" > "$SMOKE/.pre-commit-config.yaml"
+          cd "$SMOKE"
+          git init -q
+          git add -A
+          if pre-commit run --all-files 2>&1 | tee out.txt; then
+            echo "::error::A flag-shaped path with no -- must not produce a passing run."
+            exit 1
+          fi
+          grep -q "Config file not found" out.txt \
+            || { echo "::error::Expected the absorbed-path config error; the failure shape changed — re-pin it."; exit 1; }
+
   # Runtime arm of the rule-grounding bar: every rule that describes container
   # runtime state must demonstrate its premise against a live container (the
   # insecure state is the Docker default, or the flagged config produces the

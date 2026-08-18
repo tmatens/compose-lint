@@ -73,6 +73,24 @@ def test_manifest_declares_at_least_one_hook(hooks: list[dict[str, Any]]) -> Non
     assert hooks
 
 
+def test_default_args_end_with_the_option_terminator(
+    hooks: list[dict[str, Any]],
+) -> None:
+    """The trailing ``--`` keeps a flag-shaped repository path a path.
+
+    pre-commit runs ``entry + args + filenames``, so without the terminator
+    a path like ``--config=cfgdir/compose.yml`` is absorbed as a flag and
+    an attacker-authored policy is installed for the run. A user's own
+    ``args:`` replaces this default entirely; ci.yml's ``precommit-smoke``
+    pins both override shapes live.
+    """
+    for hook in hooks:
+        args = hook.get("args", [])
+        assert args and args[-1] == "--", (
+            f"hook '{hook['id']}' default args must end with '--'"
+        )
+
+
 def test_every_hook_declares_a_files_pattern(hooks: list[dict[str, Any]]) -> None:
     # pre-commit defaults an absent ``files`` to "", which matches every path
     # the ``types`` filter admits — every YAML file in the repo, for us.
