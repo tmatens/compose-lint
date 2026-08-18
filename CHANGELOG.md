@@ -33,6 +33,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   redirected output is UTF-8 everywhere. Also found by the macOS/Windows
   smoke.
 
+### Known limitations
+
+- **On Windows hosts, bind-source path resolution uses the host's path
+  semantics**, so the climb-to-root detections (CL-0001, CL-0025) can miss
+  findings that the same file produces on Linux/macOS, and a bind source
+  containing `${VAR:?err}` can surface an OS error. Tracked in
+  [#588](https://github.com/tmatens/compose-lint/issues/588). Linting the
+  same files on Linux CI is unaffected.
+
 ## [0.18.0] - 2026-08-14
 
 ### Upgrading
