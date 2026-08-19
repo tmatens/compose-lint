@@ -1,0 +1,48 @@
+{
+  "_comment": "Golden finding set for tests/smoke/insecure.yml, shared by every surface smoke (#621). Regenerate with: compose-lint check --format json --fail-on low tests/smoke/insecure.yml | python3 scripts/assert_golden_findings.py --update",
+  "fixture": "tests/smoke/insecure.yml",
+  "findings": [
+    {
+      "rule": "CL-0002",
+      "line": 8,
+      "severity": "critical",
+      "service": "app",
+      "suppressed": false
+    },
+    {
+      "rule": "CL-0003",
+      "line": 6,
+      "severity": "medium",
+      "service": "app",
+      "suppressed": false
+    },
+    {
+      "rule": "CL-0006",
+      "line": 6,
+      "severity": "medium",
+      "service": "app",
+      "suppressed": false
+    },
+    {
+      "rule": "CL-0007",
+      "line": 6,
+      "severity": "low",
+      "service": "app",
+      "suppressed": false
+    },
+    {
+      "rule": "CL-0019",
+      "line": 7,
+      "severity": "medium",
+      "service": "app",
+      "suppressed": false
+    },
+    {
+      "rule": "CL-0026",
+      "line": 6,
+      "severity": "medium",
+      "service": "app",
+      "suppressed": false
+    }
+  ]
+}

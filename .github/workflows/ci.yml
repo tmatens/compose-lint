@@ -767,6 +767,23 @@ jobs:
             echo "::error::Expected exit code 1, got ${exit_code}"
             exit 1
           fi
+      # Exit codes are a one-bit assertion: the insecure fixture trips six
+      # rules and only CL-0002 is at or above the default threshold, so this
+      # surface could stop reporting the other five and the step above would
+      # still be green (#621). Compare the whole set instead.
+      - name: Findings match the golden set
+        run: |
+          # `|| true` is safe because the assertion is the comparison below,
+          # not this exit code: the fixture's CL-0002 is critical so the run
+          # exits 1 at every threshold, and an image that crashed writes no
+          # parseable report and fails the comparison anyway.
+          docker run --rm \
+            -v "${PWD}/tests/smoke/insecure.yml:/src/docker-compose.yml:ro" \
+            composelint/compose-lint:pr-smoke --format json --fail-on critical \
+            > "${RUNNER_TEMP}/docker.json" || true
+          python3 scripts/assert_golden_findings.py \
+            --surface "docker/${{ matrix.arch }}" "${RUNNER_TEMP}/docker.json"
+
       # The mount shape decides whether the user's policy exists at all.
       # `.compose-lint.yml` is discovered in the working directory, which is
       # /src in the image — so mounting the *directory* is what puts a config
@@ -1119,6 +1136,30 @@ jobs:
   # insecure state is the Docker default, or the flagged config produces the
   # insecure behavior). Catches the CL-0022/CL-0023 failure mode — a rule that
   # flags a Docker default — before it ships. Runners have Docker preinstalled.
+      # Same one-bit problem as everywhere else: the steps above prove the
+      # hook runs and fails, not that it found the right things. `try-repo`
+      # builds the hook from the working tree, so the tree's golden applies
+      # here — unlike action-smoke, which installs `version: latest` on
+      # purpose and is therefore testing published-against-source drift, a
+      # different contract a tree-derived golden would wrongly fail.
+      - name: Findings match the golden set
+        env:
+          SMOKE: ${{ runner.temp }}/golden
+        run: |
+          set -euo pipefail
+          mkdir -p "$SMOKE"
+          cp tests/smoke/insecure.yml "$SMOKE/docker-compose.yml"
+          cd "$SMOKE"
+          git init -q
+          git add -A
+          # The hook exits 1 on the insecure fixture by design; the assertion
+          # is the comparison below, not this exit code.
+          pre-commit try-repo "$GITHUB_WORKSPACE" compose-lint --all-files \
+            > out.txt 2>&1 || true
+          cat out.txt
+          python3 "$GITHUB_WORKSPACE/scripts/assert_golden_findings.py" \
+            --in-text --surface pre-commit out.txt
+
   rule-premises:
     name: Validate rule premises (live container)
     needs: changes

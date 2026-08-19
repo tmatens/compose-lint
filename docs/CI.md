@@ -65,6 +65,7 @@ cancels in-progress runs when you push new commits to the same PR.
 | `dockerfile-digests`      | Fails if any `FROM @sha256:` in the Dockerfile is a per-arch manifest instead of an index |
 | `docker-smoke`            | Builds `linux/amd64` **and `linux/arm64`** from the Dockerfile on native runners and runs each against fixtures (only when build inputs change) |
 | `action-smoke`            | Runs `./action.yml` against clean and insecure fixtures; asserts exit codes               |
+| `docker-smoke` / `precommit-smoke` | Also compare the reported findings against `tests/smoke/insecure.golden.json` — exit codes alone hid five of the fixture's six rules |
 | `fix-smoke`               | `fix --apply` round trip on LF and CRLF copies of the insecure fixture — result parses, `docker compose config` accepts it, endings stay uniform, no new finding, idempotent |
 | `rule-premises`           | Runs `scripts/validate_rule_premises.py` in a live container to prove each rule's premise  |
 | `version-consistency`     | Fails if `pyproject.toml` and `src/compose_lint/__init__.py` disagree on the version      |
