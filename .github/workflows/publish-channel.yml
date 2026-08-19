@@ -83,30 +83,9 @@ jobs:
         run: |
           python -m venv /tmp/smoke-venv
           /tmp/smoke-venv/bin/pip install dist/*.whl
-          cat > /tmp/clean.yml <<'YAML'
-          services:
-            web:
-              image: nginx:1.27-alpine
-              ports:
-                - "127.0.0.1:8080:80"
-              security_opt:
-                - no-new-privileges:true
-              cap_drop:
-                - ALL
-              read_only: true
-              tmpfs:
-                - /tmp
-                - /run
-          YAML
-          cat > /tmp/insecure.yml <<'YAML'
-          services:
-            app:
-              image: myapp:1.0
-              privileged: true
-          YAML
-          /tmp/smoke-venv/bin/compose-lint /tmp/clean.yml
+          /tmp/smoke-venv/bin/compose-lint tests/smoke/clean.yml
           exit_code=0
-          /tmp/smoke-venv/bin/compose-lint /tmp/insecure.yml || exit_code=$?
+          /tmp/smoke-venv/bin/compose-lint tests/smoke/insecure.yml || exit_code=$?
           if [ "${exit_code}" -ne 1 ]; then
             echo "::error::Expected exit 1 on insecure fixture, got ${exit_code}"
             exit 1
@@ -180,21 +159,6 @@ jobs:
           fi
       - name: Test — clean fixture exits 0 (hardened)
         run: |
-          cat > /tmp/clean.yml <<'YAML'
-          services:
-            web:
-              image: nginx:1.27-alpine
-              ports:
-                - "127.0.0.1:8080:80"
-              security_opt:
-                - no-new-privileges:true
-              cap_drop:
-                - ALL
-              read_only: true
-              tmpfs:
-                - /tmp
-                - /run
-          YAML
           docker run --rm \
             --read-only \
             --cap-drop ALL \
@@ -202,16 +166,10 @@ jobs:
             --network none \
             --user 65532:65532 \
             --pids-limit 256 \
-            -v /tmp/clean.yml:/src/docker-compose.yml:ro \
+            -v "${PWD}/tests/smoke/clean.yml:/src/docker-compose.yml:ro" \
             composelint/compose-lint:channel-smoke
       - name: Test — insecure fixture exits 1 (hardened)
         run: |
-          cat > /tmp/insecure.yml <<'YAML'
-          services:
-            app:
-              image: myapp:1.0
-              privileged: true
-          YAML
           exit_code=0
           docker run --rm \
             --read-only \
@@ -220,7 +178,7 @@ jobs:
             --network none \
             --user 65532:65532 \
             --pids-limit 256 \
-            -v /tmp/insecure.yml:/src/docker-compose.yml:ro \
+            -v "${PWD}/tests/smoke/insecure.yml:/src/docker-compose.yml:ro" \
             composelint/compose-lint:channel-smoke || exit_code=$?
           if [ "${exit_code}" -ne 1 ]; then
             echo "::error::Expected exit 1 on insecure fixture, got ${exit_code}"

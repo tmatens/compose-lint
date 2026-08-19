@@ -745,43 +745,33 @@ jobs:
           # evict the other's layers — turning a cache into a coin flip.
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,scope=${{ matrix.arch }},mode=max
+      # The shared fixtures, mounted read-only — same documents publish.yml's
+      # docker-smoke uses, and the same ones action-smoke, precommit-smoke and
+      # marketplace-smoke grade. These steps used to write their own heredoc
+      # copies, which is how the image ended up validated against the pre-0.3.x
+      # `clean` fixture (no `tmpfs:`) long after every other surface moved on.
+      # `:ro` because a linter must never be able to write to the file it is
+      # linting, least of all one in the checkout.
       - name: Clean fixture exits 0
         run: |
-          cat > /tmp/clean.yml <<'YAML'
-          services:
-            web:
-              image: nginx:1.27-alpine
-              ports:
-                - "127.0.0.1:8080:80"
-              security_opt:
-                - no-new-privileges:true
-              cap_drop:
-                - ALL
-              read_only: true
-          YAML
-          docker run --rm -v /tmp/clean.yml:/src/docker-compose.yml composelint/compose-lint:pr-smoke
+          docker run --rm \
+            -v "${PWD}/tests/smoke/clean.yml:/src/docker-compose.yml:ro" \
+            composelint/compose-lint:pr-smoke
       - name: Insecure fixture exits 1
         run: |
-          cat > /tmp/insecure.yml <<'YAML'
-          services:
-            app:
-              image: myapp:1.0
-              privileged: true
-          YAML
           exit_code=0
-          docker run --rm -v /tmp/insecure.yml:/src/docker-compose.yml composelint/compose-lint:pr-smoke || exit_code=$?
+          docker run --rm \
+            -v "${PWD}/tests/smoke/insecure.yml:/src/docker-compose.yml:ro" \
+            composelint/compose-lint:pr-smoke || exit_code=$?
           if [ "${exit_code}" -ne 1 ]; then
             echo "::error::Expected exit code 1, got ${exit_code}"
             exit 1
           fi
       - name: SARIF output is valid JSON
         run: |
-          cat > /tmp/test.yml <<'YAML'
-          services:
-            db:
-              image: postgres:16
-          YAML
-          docker run --rm -v /tmp/test.yml:/src/docker-compose.yml composelint/compose-lint:pr-smoke --format sarif --fail-on critical \
+          docker run --rm \
+            -v "${PWD}/tests/smoke/sarif-shape.yml:/src/docker-compose.yml:ro" \
+            composelint/compose-lint:pr-smoke --format sarif --fail-on critical \
             | python3 -c "import sys, json; json.load(sys.stdin); print('Valid SARIF JSON')"
 
   action-smoke:
@@ -798,9 +788,11 @@ jobs:
           persist-credentials: false
 
       # Smoke fixtures live in tests/smoke/ and are shared with every
-      # other workflow that runs compose-lint end-to-end (publish.yml
-      # testpypi-smoke, publish.yml docker-smoke, marketplace-smoke.yml).
-      # One source of truth prevents per-workflow drift.
+      # other job that runs compose-lint end-to-end (docker-smoke above,
+      # precommit-smoke and fix-smoke below, publish.yml's testpypi-smoke
+      # and docker-smoke, marketplace-smoke.yml). One source of truth
+      # prevents per-workflow drift; tests/test_release_layer.py enforces
+      # it, because this list was wrong for as long as it existed.
 
       # `version: latest` is deliberate. The action now *pins* by default so a
       # consumer's SHA-pinned `uses:` gets a reproducible check, but what this

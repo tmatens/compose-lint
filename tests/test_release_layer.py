@@ -283,3 +283,53 @@ def test_a_called_workflow_is_granted_what_its_jobs_request(
 def test_the_reusable_call_scan_finds_something() -> None:
     """Guard the guard: an empty scan would make the check above vacuous."""
     assert _reusable_calls(), "no reusable-workflow calls detected"
+
+
+# --- Smoke fixtures: one copy, or they drift (#624) -----------------------
+
+
+def _run_scripts() -> list[tuple[str, str]]:
+    """Every ``run:`` script in every workflow, as (workflow, script)."""
+    scripts: list[tuple[str, str]] = []
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for job in (workflow.get("jobs") or {}).values():
+            for step in job.get("steps") or []:
+                run = step.get("run")
+                if isinstance(run, str):
+                    scripts.append((path.name, run))
+    return scripts
+
+
+def test_no_workflow_inlines_a_compose_document() -> None:
+    """Smoke fixtures live in tests/smoke/, and nowhere else.
+
+    ``tests/smoke/clean.yml`` exists because the fixture once lived in five
+    heredocs and only some of them included ``tmpfs:``. That consolidation
+    missed all five: ci.yml's docker-smoke was still grading the pre-0.3.x
+    document, and publish-channel.yml carried four more copies (#624). A
+    comment naming the participating workflows had been wrong for as long
+    as it existed, because nothing checked it.
+
+    A duplicated fixture is not a style problem. It is a surface being
+    graded against a definition of "insecure" that no longer matches the
+    one every other surface uses, reporting success either way.
+    """
+    offenders = [
+        name
+        for name, script in _run_scripts()
+        if re.search(r"^\s*services:\s*$", script, re.MULTILINE)
+    ]
+    assert not offenders, (
+        "workflow run: blocks contain an inline Compose document "
+        f"({sorted(set(offenders))}). Mount tests/smoke/*.yml instead — see #624."
+    )
+
+
+def test_the_shared_fixtures_are_actually_consumed() -> None:
+    """Guard the guard: the check above passes trivially if nothing uses them."""
+    consumers = {name for name, script in _run_scripts() if "tests/smoke/" in script}
+    assert len(consumers) >= 3, (
+        f"only {sorted(consumers)} reference tests/smoke/ — the no-inline-fixture "
+        "check above would pass vacuously if the fixtures fell out of use"
+    )
