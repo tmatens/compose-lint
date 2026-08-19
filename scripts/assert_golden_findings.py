@@ -106,6 +106,16 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    # Every diagnostic this script prints contains an em dash, and its own
+    # error prefix is read by a human. On Windows a piped stdout defaults to
+    # cp1252, so `print()` raises UnicodeEncodeError — an *unhandled* one,
+    # which exits 1. That is indistinguishable from "the comparison failed",
+    # except the reason never reaches anyone: the process reports the right
+    # code for the wrong cause and prints nothing. Pin both streams to UTF-8
+    # before writing anything.
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+
     # UTF-8 explicitly, both ways. Text reports carry the verdict marks and
     # excerpt gutters (⚠ · │ ─), and Windows defaults these to the locale
     # encoding — cp1252 — which mangles or refuses them. The workflows pass a
@@ -152,9 +162,7 @@ def main() -> int:
                         "| python3 scripts/assert_golden_findings.py --update"
                     ),
                     "fixture": "tests/smoke/insecure.yml",
-                    "findings": sorted(
-                        findings, key=lambda f: (f["rule"], f["line"])
-                    ),
+                    "findings": sorted(findings, key=lambda f: (f["rule"], f["line"])),
                 },
                 indent=2,
             )

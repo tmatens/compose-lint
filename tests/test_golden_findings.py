@@ -65,8 +65,20 @@ def _compare(
         capture_output=True,
         text=True,
         encoding="utf-8",
+        errors="replace",
         timeout=60,
     )
+
+
+def _said(result: subprocess.CompletedProcess[str]) -> str:
+    """Everything the comparator emitted, whichever stream it chose.
+
+    Asserting against ``result.stdout`` alone made a Windows failure read as
+    ``TypeError: argument of type 'NoneType' is not iterable`` — the real
+    cause (an unhandled UnicodeEncodeError in the child, which exits 1 and
+    prints nothing) was invisible behind it.
+    """
+    return (result.stdout or "") + (result.stderr or "")
 
 
 def test_the_golden_still_describes_the_fixture() -> None:
@@ -79,7 +91,7 @@ def test_the_golden_still_describes_the_fixture() -> None:
     gives.
     """
     result = _compare(_lint("--format", "json", "--fail-on", "low"))
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.returncode == 0, _said(result)
 
 
 def test_the_golden_is_not_empty() -> None:
@@ -102,13 +114,13 @@ def test_the_golden_holds_at_every_threshold(fail_on: str) -> None:
     comparison is unaffected.
     """
     result = _compare(_lint("--format", "json", "--fail-on", fail_on))
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.returncode == 0, _said(result)
 
 
 def test_sarif_matches_the_same_golden() -> None:
     """The Action writes SARIF and never JSON, so the comparator reads both."""
     result = _compare(_lint("--format", "sarif", "--fail-on", "critical"))
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.returncode == 0, _said(result)
 
 
 def test_a_dropped_finding_is_caught() -> None:
@@ -117,8 +129,8 @@ def test_a_dropped_finding_is_caught() -> None:
     report["findings"] = [f for f in report["findings"] if f["rule_id"] != "CL-0006"]
     result = _compare(json.dumps(report))
     assert result.returncode == 1
-    assert "CL-0006" in result.stdout
-    assert "missing" in result.stdout
+    assert "CL-0006" in _said(result), _said(result)
+    assert "missing" in _said(result), _said(result)
 
 
 def test_an_unexpected_finding_is_caught() -> None:
@@ -129,7 +141,7 @@ def test_an_unexpected_finding_is_caught() -> None:
     report["findings"].append(invented)
     result = _compare(json.dumps(report))
     assert result.returncode == 1
-    assert "unexpected" in result.stdout
+    assert "unexpected" in _said(result), _said(result)
 
 
 def test_a_silently_applied_config_is_caught() -> None:
@@ -142,7 +154,7 @@ def test_a_silently_applied_config_is_caught() -> None:
     report["findings"][0]["suppressed"] = True
     result = _compare(json.dumps(report))
     assert result.returncode == 1
-    assert "suppressed" in result.stdout
+    assert "suppressed" in _said(result), _said(result)
 
 
 def test_a_regraded_severity_is_caught() -> None:
@@ -150,7 +162,7 @@ def test_a_regraded_severity_is_caught() -> None:
     report["findings"][0]["severity"] = "low"
     result = _compare(json.dumps(report))
     assert result.returncode == 1
-    assert "severity" in result.stdout
+    assert "severity" in _said(result), _said(result)
 
 
 def test_text_mode_catches_a_missing_rule() -> None:
@@ -160,7 +172,7 @@ def test_text_mode_catches_a_missing_rule() -> None:
     thinned = "\n".join(line for line in text.splitlines() if "CL-0019" not in line)
     result = _compare(thinned, "--in-text")
     assert result.returncode == 1
-    assert "CL-0019" in result.stdout
+    assert "CL-0019" in _said(result), _said(result)
 
 
 def test_more_than_one_linted_file_is_refused() -> None:
@@ -191,4 +203,4 @@ def test_more_than_one_linted_file_is_refused() -> None:
     )
     result = _compare(proc.stdout)
     assert result.returncode == 1
-    assert "exactly one linted file" in result.stdout
+    assert "exactly one linted file" in _said(result), _said(result)
