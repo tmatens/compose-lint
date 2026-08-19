@@ -106,7 +106,15 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    raw = pathlib.Path(args.report).read_text() if args.report else sys.stdin.read()
+    # UTF-8 explicitly, both ways. Text reports carry the verdict marks and
+    # excerpt gutters (⚠ · │ ─), and Windows defaults these to the locale
+    # encoding — cp1252 — which mangles or refuses them. The workflows pass a
+    # path; stdin stays supported for ad-hoc use.
+    if args.report:
+        raw = pathlib.Path(args.report).read_text(encoding="utf-8")
+    else:
+        sys.stdin.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+        raw = sys.stdin.read()
 
     if args.in_text:
         # The pre-commit hook runs the CLI in text mode and there is no way to
@@ -115,7 +123,7 @@ def main() -> int:
         # assertion it can support: every rule the golden says fires must be
         # named in what the hook actually printed. Weaker than a set
         # comparison, and still far past "it exited 1".
-        golden_text = json.loads(GOLDEN.read_text())["findings"]
+        golden_text = json.loads(GOLDEN.read_text(encoding="utf-8"))["findings"]
         missing = [g["rule"] for g in golden_text if g["rule"] not in raw]
         if missing:
             print(
@@ -150,12 +158,13 @@ def main() -> int:
                 },
                 indent=2,
             )
-            + "\n"
+            + "\n",
+            encoding="utf-8",
         )
         print(f"golden updated: {len(findings)} finding(s)")
         return 0
 
-    golden = json.loads(GOLDEN.read_text())["findings"]
+    golden = json.loads(GOLDEN.read_text(encoding="utf-8"))["findings"]
 
     if len(files) != 1:
         print(

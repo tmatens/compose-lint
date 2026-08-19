@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -45,13 +46,25 @@ def _lint(*args: str) -> str:
     return proc.stdout
 
 
-def _compare(report: str, *extra: str) -> subprocess.CompletedProcess[str]:
+def _compare(
+    report: str, *extra: str, tmp_path: Path | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Hand the comparator a file, the way the workflows do.
+
+    Not stdin: a text report carries the verdict marks and excerpt gutters
+    (⚠ · │ ─), and piping those to a subprocess on Windows deadlocked the
+    parent — the test timed out at 60s rather than failing (#621). Writing
+    UTF-8 to a file and passing the path is both what CI actually does and
+    the one shape that behaves the same on every platform.
+    """
+    target = (tmp_path or Path(tempfile.mkdtemp())) / "report.txt"
+    target.write_text(report, encoding="utf-8")
     return subprocess.run(
-        [sys.executable, str(COMPARATOR), "--surface", "test", *extra],
-        input=report,
+        [sys.executable, str(COMPARATOR), "--surface", "test", *extra, str(target)],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=60,
     )
 
