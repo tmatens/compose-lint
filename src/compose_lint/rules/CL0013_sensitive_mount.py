@@ -257,6 +257,7 @@ class SensitiveMountRule(BaseRule):
                 rule_id="CL-0013",
                 severity=Severity.HIGH,
                 service=service_name,
+                evidence=mount.host_path,
                 message=(
                     f"Service mounts sensitive host path '{mount.host_path}' "
                     f"(under {matched}). The mount {reason}."

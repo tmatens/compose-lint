@@ -197,6 +197,7 @@ class DockerSocketRule(BaseRule):
                 rule_id="CL-0001",
                 severity=Severity.CRITICAL,
                 service=service_name,
+                evidence=host_path,
                 message=message,
                 line=lines.get(f"services.{service_name}.volumes[{i}]")
                 or lines.get(f"services.{service_name}.volumes"),

@@ -62,6 +62,7 @@ class HostDisclosureCapAddRule(BaseRule):
                 rule_id="CL-0030",
                 severity=Severity.HIGH,
                 service=service_name,
+                evidence=bare,
                 message=(f"Service adds {as_written}: {HOST_DISCLOSURE_CAPS[bare]}."),
                 line=line,
                 fix=(

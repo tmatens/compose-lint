@@ -77,6 +77,7 @@ class HostAvailabilityCapAddRule(BaseRule):
                 rule_id="CL-0029",
                 severity=Severity.HIGH,
                 service=service_name,
+                evidence=bare,
                 message=(f"Service adds {as_written}: {HOST_AVAILABILITY_CAPS[bare]}."),
                 line=line,
                 fix=(

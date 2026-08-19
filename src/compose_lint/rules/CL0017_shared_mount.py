@@ -96,6 +96,7 @@ class SharedMountRule(BaseRule):
             rule_id="CL-0017",
             severity=Severity.LOW,
             service=service_name,
+            evidence=volume_str,
             message=(
                 "Service uses shared mount propagation. Mounts created inside "
                 "the container will appear on the host and vice versa."

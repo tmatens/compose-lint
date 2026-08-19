@@ -38,19 +38,36 @@ the internal finding-to-edit key.
    profile key rather than the raw `security_opt` string. Rewriting
    `SYS_ADMIN` as `CAP_SYS_ADMIN` is the same capability and must keep the
    same alert.
-2. **A rule that can fire more than once per service must set it.** Nine do
-   (CL-0005, 0009, 0010, 0016, 0020, 0021, 0024, 0025, 0027). Rules that fire
-   at most once per service leave it `None`; `(file, rule, service)` already
-   distinguishes those. The obligation is enforced, not documented:
-   `tests/test_finding_identity.py` sweeps every fixture and fails on any two
-   findings in one document sharing a fingerprint — a collision is not
-   cosmetic, because GitHub shows one alert per fingerprint and the others
-   simply do not appear.
-3. **The key is versioned, and the version was bumped.**
+2. **A rule that can fire more than once per service must set it.**
+   Seventeen do. Rules that fire at most once per service leave it `None`;
+   `(file, rule, service)` already distinguishes those.
+
+   The obligation is enforced **structurally**, by reading the rule source:
+   any module that constructs a `Finding` inside a loop must pass
+   `evidence`. A fixture sweep also runs, but it is the weaker check and
+   knowing why matters. The first version of this work enforced the rule
+   *only* by sweeping fixtures, and shipped four colliding rules — CL-0001
+   among them, the tool's flagship CRITICAL — because no fixture happened
+   to put two socket mounts on one service. Three more (the `cap_add`
+   family) were missed again by a hand-written grep. A guard whose coverage
+   equals fixture coverage silently degrades every time a rule grows a case
+   nobody wrote a fixture for. Both checks live in
+   `tests/test_finding_identity.py`.
+
+   A collision is not cosmetic: GitHub shows one alert per fingerprint, so
+   the other findings never appear at all.
+
+3. **Each rule's evidence derivation is a contract.** `evidence` never
+   appears in the output, which makes it easy to mistake for an
+   implementation detail and "tidy up" — silently re-keying that rule's
+   alerts, a partial unannounced repeat of the transition this ADR exists
+   to make unnecessary. `EVIDENCE_CONTRACT` pins the exact derived value
+   per rule against a fixed document, so changing one is a reviewed act.
+4. **The key is versioned, and the version was bumped.**
    `composeLintFinding/v1` -> `/v2`. The key was versioned from the start
    precisely so a consumer can tell an algorithm change from a genuine new
    finding; this is the first use of that affordance.
-4. **The service becomes visible.** It rides as a SARIF `logicalLocation`
+5. **The service becomes visible.** It rides as a SARIF `logicalLocation`
    (`{name, fullyQualifiedName: services.<name>, kind: resource}`) — the
    construct for a named element *within* an artifact, as opposed to the file
    and line it occupies — and is threaded into `message.text`, because GitHub
@@ -71,6 +88,15 @@ paying even if it is not zero.
 
 Messages are now free to change. That is the point: a rule's wording can be
 improved without asking what it will break.
+
+**Validating future SARIF changes.** The ingestion probe
+(`sarif-ingestion.yml`, ADR-referenced from #610) originally exercised only
+the *published* package, so a change to the emitted document would have met
+GitHub for the first time after publishing — past the point of no return.
+It now uploads the working tree's SARIF as a second, separately-categorised
+analysis. Any future change to the SARIF shape is therefore checked against
+real ingestion before it ships, which is the condition under which this
+transition never needs repeating.
 
 Out of scope, deliberately: **region spans.** A `region` covering the whole
 service block (`startLine`..`endLine`) would let the location itself scope to

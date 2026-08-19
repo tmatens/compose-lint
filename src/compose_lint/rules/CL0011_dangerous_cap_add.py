@@ -70,6 +70,7 @@ class DangerousCapAddRule(BaseRule):
                 rule_id="CL-0011",
                 severity=Severity.HIGH,
                 service=service_name,
+                evidence=bare,
                 message=(f"Service adds {as_written}: {STRONG_CAPS[bare]}."),
                 line=line,
                 fix=(

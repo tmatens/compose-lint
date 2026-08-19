@@ -90,6 +90,7 @@ class TmpfsInsecureOptionsRule(BaseRule):
                 rule_id="CL-0022",
                 severity=Severity.LOW,
                 service=service_name,
+                evidence=path,
                 message=(
                     f"tmpfs mount '{path}' re-enables {opts}. Docker mounts tmpfs "
                     "noexec,nosuid,nodev by default; this turns that off, making "

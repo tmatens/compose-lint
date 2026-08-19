@@ -20,6 +20,7 @@ Scanning.
 
 from __future__ import annotations
 
+import ast
 import collections
 import pathlib
 
@@ -133,3 +134,161 @@ def test_the_remaining_identity_components_still_discriminate(field: str) -> Non
     assert _partial_fingerprints(str(path), original) != _partial_fingerprints(
         str(path), altered
     )
+
+
+# --- The static guard: coverage must not depend on fixtures (#632 review) ---
+
+
+def _rule_modules() -> list[pathlib.Path]:
+    return sorted((REPO_ROOT / "src" / "compose_lint" / "rules").glob("CL*.py"))
+
+
+def _finding_calls_inside_loops(tree: ast.AST) -> list[ast.Call]:
+    """Every ``Finding(...)`` construction that sits inside a loop.
+
+    A construction under ``for``/``while`` can run more than once per
+    service, which is exactly the condition that requires ``evidence``.
+    """
+    found: list[ast.Call] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.For, ast.AsyncFor, ast.While)):
+            continue
+        for inner in ast.walk(node):
+            if (
+                isinstance(inner, ast.Call)
+                and isinstance(inner.func, ast.Name)
+                and inner.func.id == "Finding"
+            ):
+                found.append(inner)
+    return found
+
+
+def _sets_evidence(call: ast.Call) -> bool:
+    return any(kw.arg == "evidence" for kw in call.keywords)
+
+
+@pytest.mark.parametrize("module", _rule_modules(), ids=lambda p: p.stem)
+def test_a_rule_that_can_fire_twice_sets_evidence(module: pathlib.Path) -> None:
+    """Structural, because the fixture sweep only sees what fixtures cover.
+
+    The sweep below is honest about what it observes and blind to what it
+    does not: when this guard was first written, no fixture put two socket
+    mounts on one service, so CL-0001 — the tool's flagship CRITICAL —
+    shipped colliding into a single alert while the sweep stayed green.
+    CL-0013, CL-0017 and CL-0022 were wrong the same way.
+
+    Reading the source instead removes the dependency on someone having
+    imagined the right fixture. If a rule constructs a Finding inside a
+    loop, it can fire more than once per service, and its findings need
+    distinguishing whether or not a fixture happens to prove it.
+
+    A rule that legitimately cannot repeat despite looping (the loop picks
+    one winner and breaks, say) should still pass ``evidence`` — it costs
+    nothing and keeps this check free of exceptions to argue about.
+    """
+    tree = ast.parse(module.read_text(encoding="utf-8"))
+    offenders = [c for c in _finding_calls_inside_loops(tree) if not _sets_evidence(c)]
+    assert not offenders, (
+        f"{module.name} builds a Finding inside a loop at line(s) "
+        f"{[c.lineno for c in offenders]} without evidence=. It can fire more "
+        "than once per service, and GitHub shows one alert per fingerprint — "
+        "so the others would never appear. See ADR-024."
+    )
+
+
+def test_the_static_guard_actually_inspects_rules() -> None:
+    """Guard the guard: a broken glob or parser would pass everything."""
+    modules = _rule_modules()
+    assert len(modules) >= 20, f"only found {len(modules)} rule modules"
+    with_loops = [
+        m for m in modules if _finding_calls_inside_loops(ast.parse(m.read_text()))
+    ]
+    assert len(with_loops) >= 10, (
+        f"only {len(with_loops)} rules appear to build Findings in loops — "
+        "the AST matcher has probably stopped matching"
+    )
+
+
+# --- Evidence derivations are a contract, not an implementation detail ------
+
+# Exact evidence each rule must derive, on the fixture below. Changing a
+# value here re-keys that rule's alerts for every consumer, so it has to be
+# a deliberate, reviewed edit rather than a side effect of refactoring the
+# rule. Normalized forms on purpose: rewriting `SYS_ADMIN` as
+# `CAP_SYS_ADMIN`, or reordering a ports list, is the same configuration and
+# must keep the same alert.
+EVIDENCE_CONTRACT = {
+    "CL-0001": {"/var/run/docker.sock", "/run/containerd/containerd.sock"},
+    "CL-0005": {"8080:80", "3000"},
+    "CL-0009": {"apparmor", "seccomp"},
+    "CL-0010": {"pid", "ipc"},
+    "CL-0011": {"NET_ADMIN"},
+    "CL-0013": {"/etc"},
+    "CL-0016": {"/dev/sda"},
+    "CL-0022": {"/c1", "/c2"},
+    "CL-0024": {"SYS_ADMIN"},
+    "CL-0027": {"SYS_PTRACE"},
+    "CL-0029": {"SYS_NICE"},
+}
+
+_CONTRACT_DOC = """
+services:
+  sink:
+    image: x:1
+    ports: ["8080:80", "3000"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /run/containerd/containerd.sock:/s2:ro
+      - /etc:/host-etc:ro
+    tmpfs: ["/c1:exec", "/c2:suid"]
+    devices:
+      - /dev/sda:/dev/sda
+    cap_add: [SYS_ADMIN, NET_ADMIN, SYS_NICE, SYS_PTRACE]
+    security_opt: ["apparmor:unconfined", "seccomp:unconfined"]
+    pid: host
+    ipc: host
+"""
+
+
+def _contract_evidence() -> dict[str, set[str]]:
+    data, lines = loads(_CONTRACT_DOC)
+    got: dict[str, set[str]] = collections.defaultdict(set)
+    for f in run_rules(data, lines):
+        if f.evidence is not None:
+            got[f.rule_id].add(f.evidence)
+    return got
+
+
+@pytest.mark.parametrize("rule_id", sorted(EVIDENCE_CONTRACT))
+def test_evidence_derivation_is_pinned(rule_id: str) -> None:
+    """A refactor must not silently re-key a rule's alerts.
+
+    ``evidence`` is the alert's identity, so the expression a rule derives
+    it from is a consumer-facing contract even though it never appears in
+    the output. Without this, tidying a rule's internals could change every
+    fingerprint it produces — a partial, unannounced repeat of the v1 -> v2
+    transition this design exists to make unnecessary (ADR-024).
+    """
+    got = _contract_evidence()
+    assert got.get(rule_id) == EVIDENCE_CONTRACT[rule_id], (
+        f"{rule_id} evidence changed: expected {sorted(EVIDENCE_CONTRACT[rule_id])}, "
+        f"got {sorted(got.get(rule_id, []))}. If deliberate, this re-keys that "
+        "rule's Code Scanning alerts — say so in the CHANGELOG's Upgrading note."
+    )
+
+
+def test_evidence_is_normalized_not_as_written() -> None:
+    """Cosmetic rewrites of the same config must keep the same alert."""
+    variants = [
+        "    cap_add: [SYS_ADMIN]\n",
+        "    cap_add: [CAP_SYS_ADMIN]\n",
+        "    cap_add: [cap_sys_admin]\n",
+    ]
+    seen = set()
+    for cap in variants:
+        doc = "services:\n  s:\n    image: x:1\n" + cap
+        data, lines = loads(doc)
+        seen.update(
+            f.evidence for f in run_rules(data, lines) if f.rule_id == "CL-0024"
+        )
+    assert len(seen) == 1, f"the same capability derived {len(seen)} evidences: {seen}"

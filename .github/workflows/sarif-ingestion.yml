@@ -58,6 +58,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # ubuntu-24.04's system python is externally managed (PEP 668), so a
+      # bare `pip install` into it fails. The working-tree steps below need
+      # a real install of the checkout.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.lock
 
       # All three fixtures together, so the document carries several
       # artifactLocations, all three SARIF levels, and a suppression — the
@@ -81,6 +89,40 @@ jobs:
       # processing, but a document that lands with every result discarded
       # still passes that step.
       - name: Assert the results actually landed
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/verify_sarif_ingestion.py verify
+
+      # The job above installs `version: latest` — the *published* package —
+      # so it validates whatever PyPI is serving, not what is on this branch.
+      # That is right for catching drift between the source action and the
+      # release, and useless for a change to the SARIF we are about to ship:
+      # a new construct would first meet GitHub only after publishing, past
+      # the point of no return (#632 review).
+      #
+      # So the working tree gets its own upload. It bypasses the action and
+      # calls the uploader directly, because the action installs from PyPI by
+      # design and there is no input that points it at a checkout. A separate
+      # `category` keeps the two analyses distinct so cleanup can tell them
+      # apart.
+      - name: Generate SARIF from the working tree
+        run: |
+          python3 -m pip install --quiet --require-hashes -r requirements.lock
+          python3 -m pip install --quiet --no-deps -e .
+          python3 -m compose_lint check \
+            --config tests/smoke/sarif-probe-config.yml \
+            --fail-on critical --format sarif \
+            tests/smoke/insecure.yml tests/smoke/sarif-shape.yml tests/smoke/clean.yml \
+            > working-tree.sarif
+          python3 -c "import json;d=json.load(open('working-tree.sarif'));print('results:',len(d['runs'][0]['results']))"
+
+      - name: Upload the working tree's SARIF to Code Scanning
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          sarif_file: working-tree.sarif
+          category: compose-lint-working-tree
+
+      - name: Assert the working tree's results landed too
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 scripts/verify_sarif_ingestion.py verify

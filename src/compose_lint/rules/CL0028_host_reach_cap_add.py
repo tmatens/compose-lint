@@ -67,6 +67,7 @@ class HostReachCapAddRule(BaseRule):
                 rule_id="CL-0028",
                 severity=Severity.HIGH,
                 service=service_name,
+                evidence=bare,
                 message=(f"Service adds {as_written}: {HOST_REACH_CAPS[bare]}."),
                 line=line,
                 fix=(
