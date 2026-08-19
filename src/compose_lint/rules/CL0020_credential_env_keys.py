@@ -274,6 +274,7 @@ class CredentialEnvKeysRule(BaseRule):
                 rule_id="CL-0020",
                 severity=Severity.HIGH,
                 service=service_name,
+                evidence=key,
                 message=(
                     f"Service has credential-shaped env key '{key}' with a "
                     "literal value. Env vars are exposed via `docker inspect`, "

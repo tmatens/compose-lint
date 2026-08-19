@@ -7,7 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrading
+
+**SARIF consumers: your Code Scanning alerts will be re-keyed once.** The
+`partialFingerprints` key moves from `composeLintFinding/v1` to `/v2`, and
+the digest no longer includes the finding's message. On the first upload
+after upgrading, GitHub closes every existing compose-lint alert and opens a
+replacement — dismissal state on those alerts is lost. This happens once.
+
+The reason is that v1 made prose part of the alert's identity: rewording any
+rule message silently closed and reopened every matching alert in every
+consuming repository, so improving a message was a breaking change with no
+warning. Identity is now structured data (file, rule, service, and the
+specific offending value), and message text is free to change (ADR-024).
+
+Nothing to do beyond expecting the one-time churn. If you dismiss alerts,
+re-dismiss after the first post-upgrade scan.
+
 ### Added
+
+- **SARIF results now name the service.** A finding carries the service as a
+  `logicalLocation` (`services.<name>`) and names it in the alert title.
+  Previously SARIF results carried only rule, file and line, so a Code
+  Scanning user disambiguated a multi-service file by line number while a
+  terminal user was told the service outright — even though the service was
+  already part of the alert's fingerprint.
 
 - **`check` and `fix` now say when no config was in effect.** A run that
   reports findings — or a `fix` that has changes to make — with no

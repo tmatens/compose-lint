@@ -66,6 +66,7 @@ class HostExecCapAddRule(BaseRule):
                 rule_id="CL-0024",
                 severity=Severity.CRITICAL,
                 service=service_name,
+                evidence=bare,
                 message=(
                     f"Service adds {as_written}, which grants host code "
                     f"execution: {HOST_EXEC_CAPS[bare]}."

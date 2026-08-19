@@ -151,14 +151,18 @@ def _from_json(out: str) -> dict[Finding, Detail]:
 def _from_sarif(out: str) -> dict[Finding, Detail]:
     parsed: dict[Finding, Detail] = {}
     for r in json.loads(out)["runs"][0]["results"]:
-        physical = r["locations"][0]["physicalLocation"]
+        location = r["locations"][0]
+        physical = location["physicalLocation"]
         suppressed = bool(r.get("suppressions"))
+        logical = location.get("logicalLocations") or [{}]
         finding = Finding(
             physical["artifactLocation"]["uri"],
             r["ruleId"],
             physical["region"]["startLine"],
         )
-        parsed[finding] = Detail("" if suppressed else r["level"], suppressed, None)
+        parsed[finding] = Detail(
+            "" if suppressed else r["level"], suppressed, logical[0].get("name")
+        )
     return parsed
 
 
@@ -259,28 +263,43 @@ def test_the_suppression_reason_survives_into_every_view(
     assert SUPPRESSION_REASON not in outputs["quiet"]
 
 
-def test_sarif_still_cannot_name_the_service(outputs: dict[str, str]) -> None:
-    """A known asymmetry, pinned so it cannot change unnoticed.
+def test_all_three_name_the_same_service(outputs: dict[str, str]) -> None:
+    """SARIF can name the service now, so all three views are compared on it.
 
-    text and json both name the service a finding belongs to; SARIF results
-    carry only ``ruleId``, ``artifactLocation`` and ``startLine``. In a
-    multi-service file the line number is a Code Scanning user's only
-    disambiguator, while a terminal user is told "service: web" outright.
-
-    This is why the comparisons above key on (rule, line) rather than the
-    (rule, service) the three views cannot all express. Asserting it here
-    keeps that a deliberate limitation rather than an oversight — and if
-    SARIF ever does carry the service, this test is where the equivalence
-    key gets widened.
+    This test replaces ``test_sarif_still_cannot_name_the_service``, which
+    pinned the gap: SARIF results carried only ``ruleId``,
+    ``artifactLocation`` and ``startLine``, so a Code Scanning user had the
+    line number where a terminal user had the name. The service now rides as
+    a ``logicalLocation``, and the equivalence key widens accordingly — which
+    is exactly what that test's docstring said would happen.
     """
-    findings = json.loads(outputs["json"])["findings"]
-    assert all(f.get("service") for f in findings), "json lost the service name"
+    text = _from_text(outputs["quiet"])
+    js = _from_json(outputs["json"])
+    sarif = _from_sarif(outputs["sarif"])
+    for finding, detail in js.items():
+        assert detail.service, f"{finding}: json lost the service name"
+        assert text[finding].service == detail.service, f"{finding}: text differs"
+        assert sarif[finding].service == detail.service, (
+            f"{finding}: sarif logicalLocation says "
+            f"{sarif[finding].service!r}, json says {detail.service!r}"
+        )
 
-    results = json.loads(outputs["sarif"])["runs"][0]["results"]
-    services = {f["service"] for f in findings}
-    for r in results:
-        blob = json.dumps(r)
-        assert not any(
-            f'"{s}"' == r.get("properties", {}).get("service") for s in services
-        ), "SARIF now carries a service property — widen the equivalence key"
-        assert "service" not in r.get("properties", {}), blob[:200]
+
+def test_the_sarif_title_names_the_service(outputs: dict[str, str]) -> None:
+    """``logicalLocations`` is structured; the title is what a user reads.
+
+    GitHub renders ``message.text`` as the alert title and gives no
+    guarantee it surfaces a logical location anywhere a reader will look, so
+    the name goes in both. Losing it from the title would be invisible to
+    the structural comparison above.
+    """
+    for result in json.loads(outputs["sarif"])["runs"][0]["results"]:
+        service = (result["locations"][0].get("logicalLocations") or [{}])[0].get(
+            "name"
+        )
+        if not service:
+            continue
+        assert f"'{service}'" in result["message"]["text"], (
+            f"{result['ruleId']}: title does not name the service — "
+            f"{result['message']['text'][:80]!r}"
+        )

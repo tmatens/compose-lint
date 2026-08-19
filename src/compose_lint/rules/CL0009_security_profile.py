@@ -120,6 +120,7 @@ class SecurityProfileRule(BaseRule):
                 rule_id="CL-0009",
                 severity=Severity.HIGH,
                 service=service_name,
+                evidence=profile_key,
                 message=(
                     f"Service disables {profile_name} "
                     f"('{opt_str}'). This removes {removal} "

@@ -209,6 +209,7 @@ class ConnectionStringCredentialsRule(BaseRule):
                 rule_id="CL-0021",
                 severity=Severity.HIGH,
                 service=service_name,
+                evidence=key,
                 message=(
                     f"Service has env var '{key}' containing an inline "
                     f"credential in a {scheme}:// connection string "

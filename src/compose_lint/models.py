@@ -75,6 +75,15 @@ class Finding:
     # gave a reader no way to tell it apart from a rule that never fired that
     # hard. None means the rule's declared severity is what is shown.
     severity_overridden_from: Severity | None = None
+    # The specific thing this finding is about, when a rule can fire more than
+    # once for one service — the port spec, the device path, the mounted
+    # source. It is the finding's *identity*, not its prose: SARIF
+    # fingerprints are built from it so that rewording a message never
+    # orphans a consumer's alerts (ADR-024). Rules that fire at most once per
+    # service leave it None; `(file, rule, service)` already distinguishes
+    # those. tests/test_finding_identity.py fails if a rule needs one and
+    # does not set it.
+    evidence: str | None = None
 
 
 @dataclass(frozen=True)

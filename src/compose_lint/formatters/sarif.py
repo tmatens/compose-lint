@@ -91,38 +91,106 @@ def _physical_location(filepath: str, line: int | None) -> dict[str, Any]:
     return location
 
 
+def _logical_locations(finding: Finding) -> list[dict[str, Any]]:
+    """Name the service as a SARIF logical location.
+
+    A Compose service is exactly what ``logicalLocation`` is for: a named
+    element *within* the artifact, distinct from the file and line it happens
+    to occupy. Before this, a Code Scanning user had only the line number to
+    tell which of a dozen services a finding belonged to, while a terminal
+    user was told outright — the service was in the alert's fingerprint and
+    nowhere the reader could see it.
+
+    ``properties`` would also have carried the value, but it is an untyped
+    bag; consumers that understand SARIF can act on a logical location.
+    """
+    if not finding.service:
+        return []
+    return [
+        {
+            "name": finding.service,
+            "fullyQualifiedName": f"services.{finding.service}",
+            "kind": "resource",
+        }
+    ]
+
+
+def _result_message(finding: Finding) -> str:
+    """The alert title, naming the service the finding is about.
+
+    ``logicalLocations`` is the structured answer, but GitHub renders the
+    message as the alert's title and there is no guarantee it surfaces a
+    logical location anywhere a reader will look. The service therefore goes
+    in the text too — belt and braces, because the title is what a user
+    triages from.
+
+    Most rule messages open with "Service ...", so the name is threaded into
+    that clause and reads as written prose. The rest are prefixed. A message
+    that stops matching the first shape degrades to the second rather than
+    losing the service.
+
+    Safe to change now: message text is no longer part of the fingerprint
+    (see :func:`_partial_fingerprints`), so wording is free.
+    """
+    if not finding.service:
+        return finding.message
+    if finding.message.startswith("Service "):
+        return f"Service '{finding.service}' " + finding.message[len("Service ") :]
+    return f"Service '{finding.service}': {finding.message}"
+
+
 def _finding_key(finding: Finding) -> tuple[str, int | None, str, str]:
     """A stable logical identity for matching a finding to its edits.
 
-    Covers rule, line, service, and message — the message carries the specific
-    offending value, so it distinguishes multiple hits of one rule on one
-    service. Unlike ``id(finding)`` this survives a finding being copied or
+    Covers rule, line, service, and evidence — ``evidence`` carries the
+    specific offending value, so it distinguishes multiple hits of one rule
+    on one service. It used to key on the message; prose is no longer part of
+    any identity in this module.
+
+    Unlike ``id(finding)`` this survives a finding being copied or
     reconstructed between the ``fixes`` and ``findings`` arguments.
     """
-    return (finding.rule_id, finding.line, str(finding.service), finding.message)
+    return (finding.rule_id, finding.line, str(finding.service), finding.evidence or "")
 
 
 # Fingerprint scheme version. Bump if the inputs below change, so a consumer can
 # tell an algorithm change from a genuine new finding.
-_FINGERPRINT_KEY = "composeLintFinding/v1"
+_FINGERPRINT_KEY = "composeLintFinding/v2"
 
 
 def _partial_fingerprints(uri: str, finding: Finding) -> dict[str, str]:
     """A stable per-finding fingerprint for GitHub alert dedup/tracking.
 
-    GitHub uses ``partialFingerprints`` to match the *same* alert across commits
-    and to deduplicate uploads; without them, repeated SARIF uploads create
-    duplicate alerts and lose continuity when code moves. The digest covers the
-    finding's logical identity — file, rule, service, and message (the message
-    carries the specific offending value, which distinguishes multiple hits of
-    one rule on one service) — but deliberately **not** the line number, so an
-    alert survives unrelated line shifts. Optional in base SARIF; emitting it is
-    additive to the contract (ADR-015).
+    GitHub uses ``partialFingerprints`` to match the *same* alert across
+    commits and to deduplicate uploads; without them, repeated SARIF uploads
+    create duplicate alerts and lose continuity when code moves.
+
+    The digest covers the finding's logical identity — file, rule, service,
+    and ``evidence`` (the specific offending value, which distinguishes
+    multiple hits of one rule on one service). It deliberately excludes the
+    line number, so an alert survives unrelated line shifts.
+
+    **v1 digested the message instead of ``evidence``, which made prose part
+    of the API.** Rewording a rule's message — a typo fix, a clarification —
+    changed the digest, and every consumer's matching alert was closed and
+    reopened as new. Nothing warned about it, and the tool's own docs work
+    was the trigger. Identity is now structured data only; messages are free
+    to change (ADR-024).
+
+    The key is versioned precisely so this transition is legible: a consumer
+    sees ``composeLintFinding/v2`` and can tell an algorithm change from a
+    genuine new finding. The v1 -> v2 move re-keys every existing alert once.
+
+    ``tests/test_finding_identity.py`` enforces the obligation this creates:
+    a rule that can fire more than once per service must set ``evidence``,
+    or its findings collide into one alert and the rest are never shown.
+    Optional in base SARIF; emitting it is additive to the contract
+    (ADR-015).
     """
     # repr() of the component list is an unambiguous, collision-safe
     # serialization (it escapes embedded quotes), so distinct findings
     # cannot alias by component-boundary coincidence.
-    parts = [uri, finding.rule_id, str(finding.service), finding.message]
+    parts = [uri, finding.rule_id, str(finding.service), finding.evidence or ""]
     digest = hashlib.sha256(repr(parts).encode("utf-8")).hexdigest()
     return {_FINGERPRINT_KEY: digest}
 
@@ -343,8 +411,17 @@ def format_findings(
         result: dict[str, Any] = {
             "ruleId": f.rule_id,
             "level": _SARIF_LEVEL.get(f.severity, "warning"),
-            "message": {"text": f.message},
-            "locations": [{"physicalLocation": physical_location}],
+            "message": {"text": _result_message(f)},
+            "locations": [
+                {
+                    "physicalLocation": physical_location,
+                    **(
+                        {"logicalLocations": logical}
+                        if (logical := _logical_locations(f))
+                        else {}
+                    ),
+                }
+            ],
             "partialFingerprints": _partial_fingerprints(
                 physical_location["artifactLocation"]["uri"], f
             ),

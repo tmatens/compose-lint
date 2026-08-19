@@ -86,6 +86,7 @@ class HostNamespaceRule(BaseRule):
                     rule_id="CL-0010",
                     severity=Severity.HIGH,
                     service=service_name,
+                    evidence=key,
                     message=f"Service shares the host's {desc}",
                     line=lines.get(f"services.{service_name}.{key}"),
                     fix=f"Remove '{key}: {value}' to restore namespace isolation.",

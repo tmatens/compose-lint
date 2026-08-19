@@ -42,7 +42,12 @@ class TestFormatFindings:
         r = results[0]
         assert r["ruleId"] == "CL-0001"
         assert r["level"] == "error"
-        assert r["message"]["text"] == _sample_finding().message
+        # The title names the service: it is what a Code Scanning user
+        # triages from, and the line number was previously their only way to
+        # tell which of a file's services a result belonged to.
+        assert r["message"]["text"] == (
+            f"Service '{_sample_finding().service}': {_sample_finding().message}"
+        )
 
     def test_location_includes_file_and_line(self) -> None:
         results = format_findings([_sample_finding()], "docker-compose.yml")
@@ -463,8 +468,11 @@ class TestPartialFingerprints:
     def test_present_on_every_result(self) -> None:
         results = format_findings([_sample_finding()], "x.yml")
         fp = results[0]["partialFingerprints"]
-        assert isinstance(fp["composeLintFinding/v1"], str)
-        assert len(fp["composeLintFinding/v1"]) == 64  # sha256 hex
+        assert isinstance(fp["composeLintFinding/v2"], str)
+        assert len(fp["composeLintFinding/v2"]) == 64  # sha256 hex
+        # v1 keyed on the message and is gone; a consumer seeing only the
+        # versioned key can tell a re-key from a genuine new finding.
+        assert "composeLintFinding/v1" not in fp
 
     def test_stable_across_runs(self) -> None:
         a = format_findings([_sample_finding()], "x.yml")[0]
@@ -486,17 +494,46 @@ class TestPartialFingerprints:
         fb = format_findings([moved], "x.yml")[0]["partialFingerprints"]
         assert fa == fb
 
-    def test_differs_by_rule_service_and_message(self) -> None:
+    def test_differs_by_rule_service_and_evidence(self) -> None:
         base = _sample_finding()
         variants = [
             Finding("CL-0002", base.severity, base.service, base.message, base.line),
             Finding(base.rule_id, base.severity, "other", base.message, base.line),
-            Finding(base.rule_id, base.severity, base.service, "other msg", base.line),
+            Finding(
+                base.rule_id,
+                base.severity,
+                base.service,
+                base.message,
+                base.line,
+                evidence="something-else",
+            ),
         ]
         baseline = format_findings([base], "x.yml")[0]["partialFingerprints"]
         for v in variants:
             other = format_findings([v], "x.yml")[0]["partialFingerprints"]
             assert other != baseline
+
+    def test_does_not_differ_by_message(self) -> None:
+        """Prose is not identity — the inverse of what v1 asserted.
+
+        v1 digested the message, so rewording a rule closed every matching
+        alert in every consuming repository and opened a new one. A typo fix
+        was a breaking change with no warning. Identity is now structured
+        (rule, service, evidence); see ADR-024.
+        """
+        base = _sample_finding()
+        reworded = Finding(
+            base.rule_id,
+            base.severity,
+            base.service,
+            base.message + " (clarified)",
+            base.line,
+            evidence=base.evidence,
+        )
+        assert (
+            format_findings([reworded], "x.yml")[0]["partialFingerprints"]
+            == format_findings([base], "x.yml")[0]["partialFingerprints"]
+        )
 
 
 class TestArtifactUri:

@@ -126,6 +126,7 @@ class DangerousDevicesRule(BaseRule):
                         rule_id="CL-0016",
                         severity=Severity.CRITICAL,
                         service=service_name,
+                        evidence=host_device,
                         message=(
                             f"Service exposes dangerous host device "
                             f"'{host_device}' ({description})."

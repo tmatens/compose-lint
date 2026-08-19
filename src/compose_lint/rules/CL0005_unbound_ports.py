@@ -234,6 +234,7 @@ class UnboundPortsRule(BaseRule):
             rule_id="CL-0005",
             severity=Severity.MEDIUM,
             service=service_name,
+            evidence=port_str,
             message=message,
             line=lines.get(f"services.{service_name}.ports[{index}]")
             or lines.get(f"services.{service_name}.ports"),

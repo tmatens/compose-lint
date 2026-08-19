@@ -70,6 +70,7 @@ class LesserCapAddRule(BaseRule):
                 rule_id="CL-0027",
                 severity=Severity.MEDIUM,
                 service=service_name,
+                evidence=bare,
                 message=(f"Service adds {as_written}: {LESSER_CAPS[bare]}."),
                 line=line,
                 fix=(
