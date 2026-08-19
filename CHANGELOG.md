@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`check` and `fix` now say when no config was in effect.** A run that
+  reports findings — or a `fix` that has changes to make — with no
+  `.compose-lint.yml` found and none passed via `--config` prints a one-line
+  note on stderr naming the directory it looked in. This is aimed at the
+  Docker case: the image's working directory is `/src`, so a run that mounts
+  only the compose file leaves the config outside the container and silently
+  drops every suppression. Passing runs, and runs that found a config, stay
+  quiet.
+
 ### Fixed
 
 - **CL-0005 now flags `::ffff:0.0.0.0` on every supported interpreter.** The

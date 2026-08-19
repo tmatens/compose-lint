@@ -2,6 +2,16 @@
 
 compose-lint reads `.compose-lint.yml` from the current working directory by default. Use `--config PATH` to point at a different file.
 
+> **Running in Docker: mount the directory, not the file.** The image's working directory is `/src`, so the config has to be *inside* it:
+>
+> ```bash
+> docker run --rm -v "$(pwd):/src" composelint/compose-lint            # config found
+> docker run --rm -v "$(pwd)/docker-compose.yml:/src/docker-compose.yml" \
+>   composelint/compose-lint                                            # config NOT found
+> ```
+>
+> The second form leaves `.compose-lint.yml` outside the container, so every suppression is silently absent and findings you disabled come back. compose-lint cannot tell that apart from having no config at all, so it does not fail — but when a run reports findings with no config in effect it says so on stderr, naming the directory it looked in.
+
 ## Which files get linted
 
 Given explicit paths or a `--pattern`, compose-lint lints exactly those. With no arguments it looks in the **current directory only**, for exactly four names:

@@ -767,6 +767,37 @@ jobs:
             echo "::error::Expected exit code 1, got ${exit_code}"
             exit 1
           fi
+      # The mount shape decides whether the user's policy exists at all.
+      # `.compose-lint.yml` is discovered in the working directory, which is
+      # /src in the image — so mounting the *directory* is what puts a config
+      # in scope, and mounting just the file leaves every suppression outside
+      # the container (#625). Only the directory form is supported, so the
+      # directory form is what gets asserted: CL-0002 is the insecure
+      # fixture's one critical finding, and suppressing it must flip the
+      # verdict. If it does not, the config was not read.
+      - name: Config in a mounted directory is honoured
+        run: |
+          set -euo pipefail
+          workdir="${RUNNER_TEMP}/config-mount"
+          mkdir -p "$workdir"
+          cp tests/smoke/insecure.yml "$workdir/docker-compose.yml"
+          printf 'rules:\n  CL-0002:\n    enabled: false\n    reason: "smoke: prove a mounted config is read"\n' \
+            > "$workdir/.compose-lint.yml"
+
+          # Without the config the same stack must still fail, or the check
+          # below would pass for reasons that have nothing to do with it.
+          exit_code=0
+          docker run --rm \
+            -v "${PWD}/tests/smoke/insecure.yml:/src/docker-compose.yml:ro" \
+            composelint/compose-lint:pr-smoke || exit_code=$?
+          if [ "${exit_code}" -ne 1 ]; then
+            echo "::error::Expected exit 1 without a config, got ${exit_code}"
+            exit 1
+          fi
+
+          docker run --rm -v "${workdir}:/src:ro" \
+            composelint/compose-lint:pr-smoke
+
       - name: SARIF output is valid JSON
         run: |
           docker run --rm \

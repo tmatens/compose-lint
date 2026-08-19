@@ -96,6 +96,30 @@ def _effective_config_path(explicit: str | None) -> Path | None:
     return p if p.exists() else None
 
 
+def _note_no_config_in_effect() -> None:
+    """Say that nothing was suppressed, naming the directory we looked in.
+
+    A config that was never found is indistinguishable from one that was
+    never written, so this cannot be an error — most runs legitimately have
+    no config. What it can do is name the directory, which is the whole
+    diagnosis for the case it exists for: the image's working directory is
+    ``/src``, so a ``docker run -v "$(pwd)/docker-compose.yml:/src/docker-
+    compose.yml"`` mounts the file and not the config beside it, and every
+    suppression the user wrote is silently absent (#625). Seeing ``/src``
+    in the message is what makes that click.
+
+    Deliberately not printed on every run. It is emitted only where the
+    missing config would have changed the outcome — a failing ``check``, or
+    a ``fix`` that is about to touch a file — because a line on every green
+    run is noise, and noise on green runs is how a diagnostic stops being
+    read at all.
+    """
+    emit(
+        f"Note: no .compose-lint.yml found in '{Path.cwd()}' — all rules are "
+        "enabled and no suppressions are in effect."
+    )
+
+
 # Flags handled by the top-level parser, not `check`. A flag-only invocation
 # carrying one of these (e.g. `compose-lint --version`) is left untouched so the
 # top-level parser sees it; any other flag-only invocation routes to `check`.
@@ -604,6 +628,12 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         )
         print(json.dumps(sarif_log, indent=2, allow_nan=False))
 
+    # A failing run with no config loaded is the shape of a config that was
+    # never found. This is the moment the user asks "why is this failing?",
+    # so it is the moment naming the working directory is worth a line.
+    if has_errors and config_path is None:
+        _note_no_config_in_effect()
+
     if run_errors or rule_errors:
         sys.exit(2)
     sys.exit(1 if has_errors else 0)
@@ -730,6 +760,8 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
 
     only = set(args.only) if args.only else None
     had_error = False
+    # Whether any file had a fix applied or offered — see the note below.
+    touched = False
 
     for filepath in args.files:
         try:
@@ -853,6 +885,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
                 f"{filepath}: applied {len(result.edits)} fix(es) across "
                 f"{len(result.fixed)} finding(s)"
             )
+            touched = True
         else:
             print(
                 render_file_diff(filepath, text, patched, result.caveats),
@@ -863,6 +896,14 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
                 f"{filepath}: {len(result.edits)} fix(es) available; "
                 f"{len(result.manual)} finding(s) need manual review"
             )
+            touched = touched or bool(result.edits)
+
+    # `fix` honours suppressions — a suppressed finding is never touched — so a
+    # config that went missing here does not just change a report, it changes
+    # which of the user's files get written. Say so whenever there was
+    # something to fix, applied or merely offered.
+    if touched and _effective_config_path(args.config) is None:
+        _note_no_config_in_effect()
 
     sys.exit(2 if had_error else 0)
 
