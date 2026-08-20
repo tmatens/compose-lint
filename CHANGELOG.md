@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Upgrading
+### Upgrading from 0.20.x
 
 **SARIF consumers: your Code Scanning alerts will be re-keyed once.** The
 `partialFingerprints` key moves from `composeLintFinding/v1` to `/v2`, and
@@ -41,6 +41,17 @@ re-dismiss after the first post-upgrade scan.
   only the compose file leaves the config outside the container and silently
   drops every suppression. Passing runs, and runs that found a config, stay
   quiet.
+
+### Changed
+
+- **SARIF alert identity no longer includes the finding's message.** The
+  `partialFingerprints` key moves from `composeLintFinding/v1` to `/v2`, and
+  the digest is now `[uri, rule_id, service, evidence]` rather than
+  `[uri, rule_id, service, message]`. `evidence` is a new internal field
+  holding the specific offending value in normalized form, so a rule that
+  fires more than once for one service still distinguishes its hits without
+  making prose part of the alert's identity (ADR-024). See Upgrading above
+  for the one-time re-key.
 
 ### Fixed
 
