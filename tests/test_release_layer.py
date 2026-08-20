@@ -333,3 +333,74 @@ def test_the_shared_fixtures_are_actually_consumed() -> None:
         f"only {sorted(consumers)} reference tests/smoke/ — the no-inline-fixture "
         "check above would pass vacuously if the fixtures fell out of use"
     )
+
+
+# --- The pre-publish smoke is one definition, not two (#633) --------------
+
+_SHARED_DOCKER_SMOKE = "release-docker-smoke.yml"
+
+
+@pytest.mark.parametrize("workflow", ["publish.yml", "publish-channel.yml"])
+def test_publish_paths_call_the_shared_docker_smoke(workflow: str) -> None:
+    """Both publish paths smoke the image with the same steps, or one drifts.
+
+    publish-channel.yml is dispatch-only and last ran in April, so its copy of
+    the battery was never executed — edits to it were checked by reading and by
+    actionlint, and nothing else. It had already lost a check the normal path
+    ran: publish.yml asserted the container emits valid SARIF and the emergency
+    path did not, so the escape hatch graded the image against a smaller
+    definition of "works" than every normal release used.
+
+    A `uses:` job cannot carry `steps:`, so this also makes the drift
+    impossible to reintroduce by hand rather than merely detectable.
+    """
+    job = _load(workflow)["jobs"]["docker-smoke"]
+    assert job.get("uses", "").endswith(_SHARED_DOCKER_SMOKE), (
+        f"{workflow}: docker-smoke defines its own battery instead of calling "
+        f"{_SHARED_DOCKER_SMOKE} — the emergency path is the one nothing runs"
+    )
+    assert "steps" not in job, (
+        f"{workflow}: docker-smoke calls the shared smoke but also carries its "
+        "own steps"
+    )
+
+
+def test_the_shared_docker_smoke_keeps_its_whole_battery() -> None:
+    """Sharing stops the paths diverging; it does not stop both losing a check.
+
+    With one definition a dropped assertion is invisible in review — every
+    caller still "runs the smoke". Pin what the battery asserts, the same way
+    tests/smoke/insecure.golden.json pins what a surface must report.
+    """
+    doc = _load(_SHARED_DOCKER_SMOKE)
+    steps = doc["jobs"]["docker-smoke"]["steps"]
+    names = [str(step.get("name", "")) for step in steps]
+    for expected in ("version output", "clean fixture", "insecure fixture", "SARIF"):
+        assert any(expected in name for name in names), (
+            f"{_SHARED_DOCKER_SMOKE} no longer asserts '{expected}'; every "
+            f"publish path lost that check at once. Steps: {names}"
+        )
+
+
+def test_the_shared_docker_smoke_runs_the_documented_hardened_flags() -> None:
+    """The smoke runs README.md's copy-paste recipe, so a broken one fails CI.
+
+    These flags exist to prove the hardening users are told to apply still
+    works against the shipped image. A smoke that quietly dropped, say,
+    ``--read-only`` would keep passing while the documented recipe broke.
+    """
+    raw = (WORKFLOWS / _SHARED_DOCKER_SMOKE).read_text(encoding="utf-8")
+    docker_runs = raw.count("docker run --rm")
+    for flag in (
+        "--read-only",
+        "--cap-drop ALL",
+        "--security-opt no-new-privileges:true",
+        "--network none",
+        "--user 65532:65532",
+        "--pids-limit 256",
+    ):
+        assert raw.count(flag) == docker_runs, (
+            f"{_SHARED_DOCKER_SMOKE}: '{flag}' appears {raw.count(flag)} times "
+            f"across {docker_runs} `docker run` invocations — every smoke step "
+            "runs the fully-hardened flag set documented in README.md"
+        )

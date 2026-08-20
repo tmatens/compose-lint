@@ -331,23 +331,35 @@ jobs:
   # Build the image natively on each target arch and run the fixture battery.
   # Emulated arm64 via QEMU crashes on Debian apt-get, and a single-arch smoke
   # can't catch per-arch digest pins or native-wheel mismatches before the
-  # release-gate — so both legs are exercised here, on their own runners, no
-  # QEMU. Scout CVE scanning stays single-arch (amd64): CVE findings come from
-  # base-image layers that are identical across arch in practice, and running
-  # Scout twice would double-upload SARIF under the same category.
+  # release-gate — so both legs are exercised, on their own runners, no QEMU.
+  #
+  # The battery itself lives in release-docker-smoke.yml because
+  # publish-channel.yml runs the same one. See that file for why it is shared
+  # rather than copied (#633).
   docker-smoke:
     needs: build
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: linux/amd64
-            runner: ubuntu-24.04
-            scout: true
-          - platform: linux/arm64
-            runner: ubuntu-24.04-arm
-            scout: false
-    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-docker-smoke.yml
+    with:
+      tag: ${{ github.ref_name }}
+      matrix: >-
+        {"include":[
+        {"platform":"linux/amd64","runner":"ubuntu-24.04"},
+        {"platform":"linux/arm64","runner":"ubuntu-24.04-arm"}]}
+
+  # Scout is a separate job from the smoke above because it answers a
+  # different question and needs a stronger token. Keeping it here rather
+  # than in the shared workflow means publish-channel.yml — which does not
+  # CVE-scan — is not made to grant `security-events: write` to a job whose
+  # steps it never runs. It costs one extra amd64 build on the release path.
+  #
+  # Single-arch (amd64) is deliberate: CVE findings come from base-image
+  # layers that are identical across arch in practice, and scanning twice
+  # would double-upload SARIF under the same category.
+  docker-scout:
+    needs: build
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -357,84 +369,22 @@ jobs:
         with:
           persist-credentials: false
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-      - name: Build image for testing
+      - name: Build image for scanning
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          platforms: ${{ matrix.platform }}
+          platforms: linux/amd64
           load: true
-          tags: composelint/compose-lint:test
-      # Every docker-smoke step uses the fully-hardened flag set documented
-      # in README.md ("Running with full hardening"). If a user copy-pastes
-      # that recipe and it breaks, this matrix fails the release gate. Keep
-      # these flags in sync with README.md — both should change together.
-      - name: Test — version output matches tag (hardened)
-        run: |
-          expected="compose-lint ${GITHUB_REF_NAME#v}"
-          actual="$(docker run --rm \
-            --read-only \
-            --cap-drop ALL \
-            --security-opt no-new-privileges:true \
-            --network none \
-            --user 65532:65532 \
-            --pids-limit 256 \
-            composelint/compose-lint:test --version)"
-          echo "Expected: ${expected}"
-          echo "Actual:   ${actual}"
-          if [ "${actual}" != "${expected}" ]; then
-            echo "::error::Version mismatch: image reports '${actual}', expected '${expected}'"
-            exit 1
-          fi
-      - name: Test — clean fixture exits 0 (hardened)
-        run: |
-          docker run --rm \
-            --read-only \
-            --cap-drop ALL \
-            --security-opt no-new-privileges:true \
-            --network none \
-            --user 65532:65532 \
-            --pids-limit 256 \
-            -v "${PWD}/tests/smoke/clean.yml:/src/docker-compose.yml:ro" \
-            composelint/compose-lint:test
-      - name: Test — insecure fixture exits 1 (hardened)
-        run: |
-          exit_code=0
-          docker run --rm \
-            --read-only \
-            --cap-drop ALL \
-            --security-opt no-new-privileges:true \
-            --network none \
-            --user 65532:65532 \
-            --pids-limit 256 \
-            -v "${PWD}/tests/smoke/insecure.yml:/src/docker-compose.yml:ro" \
-            composelint/compose-lint:test || exit_code=$?
-          if [ "${exit_code}" -ne 1 ]; then
-            echo "::error::Expected exit code 1, got ${exit_code}"
-            exit 1
-          fi
-      - name: Test — SARIF output is valid JSON (hardened)
-        run: |
-          docker run --rm \
-            --read-only \
-            --cap-drop ALL \
-            --security-opt no-new-privileges:true \
-            --network none \
-            --user 65532:65532 \
-            --pids-limit 256 \
-            -v "${PWD}/tests/smoke/sarif-shape.yml:/src/docker-compose.yml:ro" \
-            composelint/compose-lint:test --format sarif --fail-on critical \
-            | python3 -c "import sys, json; json.load(sys.stdin); print('Valid SARIF JSON')"
+          tags: composelint/compose-lint:scout
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        if: matrix.scout
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Scan for vulnerabilities (Docker Scout)
-        if: matrix.scout
         uses: docker/scout-action@7c6b6c3f7844478ace1ffd4e7aef649053d1f87d # v1.24.0
         with:
           command: cves
-          image: local://composelint/compose-lint:test
+          image: local://composelint/compose-lint:scout
           only-severities: critical
           exit-code: true
           sarif-file: scout-results.sarif
@@ -453,7 +403,7 @@ jobs:
           # image manifest. See ADR-012.
           vex-author: .*
       - name: Upload Scout results to GitHub Security
-        if: matrix.scout && always()
+        if: always()
         uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
         with:
           sarif_file: scout-results.sarif
@@ -462,7 +412,7 @@ jobs:
   # Single approval gate — all smoke tests (PyPI + Docker) must pass first.
   # Configure the 'release' GitHub Environment with required reviewers.
   release-gate:
-    needs: [testpypi-smoke, docker-smoke]
+    needs: [testpypi-smoke, docker-smoke, docker-scout]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     environment:

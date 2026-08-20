@@ -110,80 +110,24 @@ jobs:
           TAG: ${{ inputs.tag }}
         run: gh release upload "${TAG}" sbom.spdx.json --clobber
 
-  # Pre-publish smoke for the docker channel. publish.yml runs docker-smoke
-  # multi-arch before the release-gate; this emergency path has no shared
-  # gate, so a broken Dockerfile or runtime dep could push straight to Docker
-  # Hub on a single approval. Single-arch (amd64) keeps the smoke cheap —
-  # multi-arch is still covered by the real build-docker matrix below.
+  # Pre-publish smoke for the docker channel. publish.yml runs the same
+  # battery before its release-gate; this emergency path has no shared gate,
+  # so a broken Dockerfile or runtime dep could push straight to Docker Hub
+  # on a single approval.
+  #
+  # One definition, called by both paths, so the steps this break-glass
+  # workflow runs under pressure are the ones every normal release has
+  # already run (#633). Single-arch (amd64) keeps the smoke cheap; multi-arch
+  # is still covered by the build-docker matrix below.
   docker-smoke:
     needs: verify-tag
     if: inputs.channel == 'docker'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
     permissions:
       contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          ref: ${{ inputs.tag }}
-          persist-credentials: false
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-      - name: Build image for testing
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          platforms: linux/amd64
-          load: true
-          tags: composelint/compose-lint:channel-smoke
-      # Every docker-smoke step uses the fully-hardened flag set documented
-      # in README.md ("Running with full hardening"). If a user copy-pastes
-      # that recipe and it breaks, this matrix fails the release gate. Keep
-      # these flags in sync with README.md — both should change together.
-      - name: Test — version output matches tag (hardened)
-        env:
-          TAG: ${{ inputs.tag }}
-        run: |
-          expected="compose-lint ${TAG#v}"
-          actual="$(docker run --rm \
-            --read-only \
-            --cap-drop ALL \
-            --security-opt no-new-privileges:true \
-            --network none \
-            --user 65532:65532 \
-            --pids-limit 256 \
-            composelint/compose-lint:channel-smoke --version)"
-          if [ "${actual}" != "${expected}" ]; then
-            echo "::error::Version mismatch: '${actual}' vs expected '${expected}'"
-            exit 1
-          fi
-      - name: Test — clean fixture exits 0 (hardened)
-        run: |
-          docker run --rm \
-            --read-only \
-            --cap-drop ALL \
-            --security-opt no-new-privileges:true \
-            --network none \
-            --user 65532:65532 \
-            --pids-limit 256 \
-            -v "${PWD}/tests/smoke/clean.yml:/src/docker-compose.yml:ro" \
-            composelint/compose-lint:channel-smoke
-      - name: Test — insecure fixture exits 1 (hardened)
-        run: |
-          exit_code=0
-          docker run --rm \
-            --read-only \
-            --cap-drop ALL \
-            --security-opt no-new-privileges:true \
-            --network none \
-            --user 65532:65532 \
-            --pids-limit 256 \
-            -v "${PWD}/tests/smoke/insecure.yml:/src/docker-compose.yml:ro" \
-            composelint/compose-lint:channel-smoke || exit_code=$?
-          if [ "${exit_code}" -ne 1 ]; then
-            echo "::error::Expected exit 1 on insecure fixture, got ${exit_code}"
-            exit 1
-          fi
+    uses: ./.github/workflows/release-docker-smoke.yml
+    with:
+      tag: ${{ inputs.tag }}
+      matrix: '{"include":[{"platform":"linux/amd64","runner":"ubuntu-24.04"}]}'
 
   # Build one image per arch on a native runner (no QEMU) and push by
   # digest only. See the matching block in publish.yml for the full

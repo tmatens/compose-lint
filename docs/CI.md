@@ -232,8 +232,23 @@ Tag-triggered. Full detail in [`RELEASING.md`](RELEASING.md) and the
 per-channel contract in [`DISTRIBUTION.md`](DISTRIBUTION.md). Summary:
 
 `verify-tag` → `build` → `testpypi` → `testpypi-smoke` + `docker-smoke`
-→ **`release-gate` (manual approval)** → `publish` + `docker-publish`
-in parallel → `create-release` → `bump-marketplace-smoke-pin`.
++ `docker-scout` → **`release-gate` (manual approval)** → `publish` +
+`docker-publish` in parallel → `create-release` →
+`bump-marketplace-smoke-pin`.
+
+`docker-smoke` calls [`release-docker-smoke.yml`](../.github/workflows/release-docker-smoke.yml),
+the shared pre-publish battery — build the image, then assert the version
+matches the tag, the clean fixture exits 0, the insecure fixture exits 1,
+and SARIF output parses, each under the fully-hardened flag set README
+documents. `publish-channel.yml` calls the same workflow, so the
+emergency path's smoke is exercised by every normal release rather than
+only when someone reaches for the escape hatch (#633).
+
+`docker-scout` is separate from the smoke because it needs
+`security-events: write` to upload its SARIF, and the emergency path does
+not CVE-scan; keeping it here means that path is not made to grant a
+permission it never uses. It gates `release-gate` alongside the smoke, so
+a critical CVE still blocks the release.
 
 `verify-tag` is the first gate: it asserts the tag is annotated (not
 lightweight), that the tag commit is reachable from `origin/main`, and
@@ -327,6 +342,14 @@ Both paths re-apply the `verify-tag` check (annotated + reachable from
 gates. The pypi path also generates an SBOM and attaches it to the
 existing GitHub Release with `gh release upload --clobber`, matching
 what `publish.yml`'s normal path produces.
+
+The docker path's pre-publish smoke is the shared
+[`release-docker-smoke.yml`](../.github/workflows/release-docker-smoke.yml),
+not a copy of it. This workflow is `workflow_dispatch`-only, so nothing
+routinely runs it and an edit to a private copy would first execute
+mid-emergency — which is how its copy came to omit the SARIF check the
+normal path ran. Calling the shared definition means every normal release
+exercises the steps this path will take under pressure.
 
 Document why you used it in the GitHub Release notes — every invocation
 should leave a paper trail.
