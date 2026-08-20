@@ -85,7 +85,7 @@ runs:
         # the package it installs. Release automation keeps DEFAULT_VERSION in
         # step with the release, and CI's "Version strings in sync" job fails
         # if it drifts.
-        DEFAULT_VERSION="0.20.0"
+        DEFAULT_VERSION="0.21.0"
         if [ -z "$CL_VERSION" ]; then
           SPEC="compose-lint==${DEFAULT_VERSION}"
         elif [ "$CL_VERSION" = "latest" ]; then
