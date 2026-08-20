@@ -31,35 +31,18 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Gate the run on criticals so a fresh critical CVE fails the job
-      # and the `Report scheduled failure as issue` step downstream fires
-      # on schedule. High-severity stays warning-only — still uploaded to
-      # the Security tab by the second scan, just doesn't page.
-      - name: Scan for critical CVEs (fails the run)
-        uses: docker/scout-action@7c6b6c3f7844478ace1ffd4e7aef649053d1f87d # v1.24.0
-        with:
-          command: cves
-          image: composelint/compose-lint:latest
-          only-severities: critical
-          exit-code: true
-          # Apply the same OpenVEX document the release asset and image
-          # attestation carry, so any critical-rated CVE already marked
-          # not_affected doesn't spuriously fail the schedule.
-          vex-location: .vex/compose-lint.openvex.json
-          # Scout's default vex-author allowlist is `<.*@docker.com>`,
-          # which silently drops our maintainer-authored statements.
-          # The first override attempt (`<.*@gmail\.com>`) was also
-          # silently dropped — Scout appears to require a full-string
-          # regex match on the author field, not substring. `.*`
-          # accepts any author and is safe because the document is
-          # also cosign-attested to the image manifest. See ADR-012.
-          vex-author: .*
-
-      # Full-severity sweep for SARIF upload. Runs even when the
-      # critical scan fails, so the Security tab always reflects the
-      # complete picture rather than a partial snapshot.
+      # Full-severity sweep, ordered first so it also warms the Scout
+      # CLI. `docker/scout-action` downloads its ~180 MB binary from the
+      # docker/scout-action release on first use in a job and reuses it
+      # for every later step (observed in runs 142/143), and the
+      # `@actions/tool-cache` download it uses does not retry 4xx. A
+      # transient 403 on that download killed run 142 before either scan
+      # ran. Putting the `exit-code: false` scan first means only this
+      # step can hit the download path, and it fails on infra errors
+      # only — never on findings — so the retry below is unambiguous.
       - name: Scan all severities for SARIF upload
-        if: always()
+        id: sweep
+        continue-on-error: true
         uses: docker/scout-action@7c6b6c3f7844478ace1ffd4e7aef649053d1f87d # v1.24.0
         with:
           command: cves
@@ -71,13 +54,59 @@ jobs:
           # vulnerable_code_not_present against the published image.
           # See .vex/compose-lint.openvex.json.
           vex-location: .vex/compose-lint.openvex.json
-          # See note on the gate step above re: the default vex-author
-          # allowlist. Same override required here.
+          # Scout's default vex-author allowlist is `<.*@docker.com>`,
+          # which silently drops our maintainer-authored statements.
+          # The first override attempt (`<.*@gmail\.com>`) was also
+          # silently dropped — Scout appears to require a full-string
+          # regex match on the author field, not substring. `.*`
+          # accepts any author and is safe because the document is
+          # also cosign-attested to the image manifest. See ADR-012.
           vex-author: .*
 
+      # One retry, for the transient-download case described above.
+      # Deliberately no `continue-on-error`: if the download fails twice
+      # the run should fail loudly rather than scan nothing quietly.
+      - name: Retry sweep after a failed Scout CLI download
+        if: steps.sweep.outcome == 'failure'
+        uses: docker/scout-action@7c6b6c3f7844478ace1ffd4e7aef649053d1f87d # v1.24.0
+        with:
+          command: cves
+          image: composelint/compose-lint:latest
+          exit-code: false
+          sarif-file: scout-results.sarif
+          vex-location: .vex/compose-lint.openvex.json
+          vex-author: .*
+
+      # Gate the run on criticals so a fresh critical CVE fails the job
+      # and the `Report scheduled failure as issue` step downstream fires
+      # on schedule. High-severity stays warning-only — still uploaded to
+      # the Security tab by the sweep above, just doesn't page. The CLI
+      # is already warm by this point, so this step cannot fail on the
+      # binary download; a failure here means a real critical finding.
+      - name: Scan for critical CVEs (fails the run)
+        uses: docker/scout-action@7c6b6c3f7844478ace1ffd4e7aef649053d1f87d # v1.24.0
+        with:
+          command: cves
+          image: composelint/compose-lint:latest
+          only-severities: critical
+          exit-code: true
+          # Apply the same OpenVEX document the release asset and image
+          # attestation carry, so any critical-rated CVE already marked
+          # not_affected doesn't spuriously fail the schedule.
+          vex-location: .vex/compose-lint.openvex.json
+          # See the note on the sweep step above re: the default
+          # vex-author allowlist. Same override required here.
+          vex-author: .*
+
+      # Upload only when a SARIF actually exists. Bare `always()` turned
+      # run 142's failed download into two further errors — this step's
+      # "Path does not exist" plus a CodeQL CONFIGURATION_ERROR — which
+      # buried the real cause. `hashFiles` still uploads when the gate
+      # step fails on a genuine critical (the sweep wrote the file
+      # already) and skips only when no scan produced one.
       - name: Upload Scout results to GitHub Security
         uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
-        if: always()
+        if: always() && hashFiles('scout-results.sarif') != ''
         with:
           sarif_file: scout-results.sarif
           category: docker-scout-scheduled

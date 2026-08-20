@@ -402,8 +402,15 @@ jobs:
           # safe because the document is also cosign-attested to the
           # image manifest. See ADR-012.
           vex-author: .*
+      # `always()` is gated on the SARIF existing so a Scout CLI download
+      # failure surfaces as one error instead of cascading into a second
+      # ("Path does not exist") plus a CodeQL CONFIGURATION_ERROR. The
+      # scan step still writes the file when it exits non-zero on a real
+      # critical, so that upload is unaffected. Deliberately no retry
+      # here, unlike the scheduled scans: this is a release gate and
+      # should fail closed for a human to re-run.
       - name: Upload Scout results to GitHub Security
-        if: always()
+        if: always() && hashFiles('scout-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
         with:
           sarif_file: scout-results.sarif
