@@ -156,12 +156,27 @@ def format_header(
     config_path: str | None,
     fail_on: Severity,
     version: str,
+    merged: dict[str, str] | None = None,
 ) -> str:
-    """Format a branded run header showing the tool version and active parameters."""
+    """Format a branded run header showing the tool version and active parameters.
+
+    ``merged`` maps a base file to the overlay Compose merges into it. The
+    header is the one line that states what was read, so a run that read two
+    documents has to say two: naming only the base was the complaint this
+    behaviour exists to answer, and naming it after the merge lands would just
+    move the false claim rather than remove it.
+    """
     sep = _colorize("·", _DIM)
     config_str = _sanitize_line(config_path) if config_path else "none"
+    pairs = merged or {}
+    shown = [
+        f"{_sanitize_line(f)} + {_sanitize_line(pairs[f])}"
+        if f in pairs
+        else _sanitize_line(f)
+        for f in files
+    ]
     params = (
-        f"files: {', '.join(_sanitize_line(f) for f in files)}"
+        f"files: {', '.join(shown)}"
         f"  {sep}  config: {config_str}"
         f"  {sep}  fail-on: {fail_on.value}"
     )

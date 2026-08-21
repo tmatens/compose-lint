@@ -1144,3 +1144,20 @@ def load_merged(paths: list[str | Path]) -> Merged:
     for ``-f a -f b`` and for a base file plus its ``compose.override.yml``.
     """
     return merge_documents([load_document(p) for p in paths])
+
+
+def merge_patched(
+    patched: str, base_path: str | Path, overlays: list[str]
+) -> tuple[dict[str, Any], dict[str, int]]:
+    """Re-merge a candidate patch of ``base_path`` with its overlay documents.
+
+    The verification counterpart of :func:`load_merged`. ``fix`` proposes an
+    edit to the base file's *text*; the property that has to hold afterwards is
+    about the document Compose would run, so the candidate is merged with the
+    same overlays before the engine re-runs over it.
+    """
+    base_dir = Path(base_path).absolute().parent
+    data, lines, resets = _loads_full(patched, base_dir=base_dir)
+    candidate = Document(path=str(base_path), data=data, lines=lines, resets=resets)
+    merged = merge_documents([candidate, *(load_document(p) for p in overlays)])
+    return merged.data, merged.lines

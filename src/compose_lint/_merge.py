@@ -241,8 +241,10 @@ class _Recorder:
         self.lines: dict[str, int] = {}
         self.sources: dict[str, str] = {}
 
-    def take(self, out_path: str, side: _Side) -> None:
+    def take(self, out_path: str, side: _Side | None) -> None:
         """Record that ``out_path`` was supplied by ``side``."""
+        if side is None:
+            return
         line = side.doc.lines.get(side.path)
         if line is not None:
             self.lines[out_path] = SourcedLine(line, side.doc.path)
@@ -380,6 +382,19 @@ def _merge_mappings(
         child_out = _join(out_path, key)
         over_child = _child(over_side, key) if over_side else None
         if key in base and key not in drop_keys:
+            # Seed the key's own location from the base before merging. A key
+            # both documents mention is otherwise never recorded: the branches
+            # above only fire for keys unique to one side, and the recursion
+            # below records this key's *children*, not the key itself. That lost
+            # the line of every container present in both files — including
+            # `services.<name>`, which is where an absence-rule fixer inserts.
+            #
+            # Seeding is safe because the merge overwrites it wherever the
+            # overriding document actually wins: a scalar re-records from
+            # `over`, and a merged mapping or sequence keeps the base's line,
+            # which is the file the key is written in.
+            if rec is not None and base_side is not None:
+                rec.take(child_out, _child(base_side, key))
             merged[key] = merge_values(
                 base[key],
                 value,

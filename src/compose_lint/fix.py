@@ -33,7 +33,7 @@ from compose_lint._yaml_edit import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
     from pathlib import Path
 
     from compose_lint.models import Finding, Severity, TextEdit
@@ -596,6 +596,8 @@ def verify_apply(
     disabled_rules: dict[str, str | None] | None = None,
     severity_overrides: dict[str, Severity] | None = None,
     excluded_services: dict[str, dict[str, str | None]] | None = None,
+    reparse: Callable[[str], tuple[dict[str, Any], dict[str, int]]] | None = None,
+    fixable: Callable[[Finding], bool] | None = None,
 ) -> str | None:
     """Verify a patched candidate beyond "it parses" before it is written.
 
@@ -625,8 +627,14 @@ def verify_apply(
     from compose_lint.engine import run_rules
     from compose_lint.parser import ComposeError, loads
 
+    # `reparse` lets a caller verify against something other than the patched
+    # file alone. When an overlay is merged in, the property that must hold is
+    # about the *merged* document — patching the base and re-linting it by
+    # itself would compare a single-file result against a merged one and report
+    # drift that is not there.
+    reload_document = reparse or (lambda text: loads(text, base_dir=base_dir))
     try:
-        re_data, re_lines = loads(patched, base_dir=base_dir)
+        re_data, re_lines = reload_document(patched)
     except ComposeError as e:  # pragma: no cover - reparse guard runs first
         return f"computed fix does not parse as Compose ({e})"
 
@@ -642,7 +650,14 @@ def verify_apply(
         excluded_services=excluded_services,
     )
 
-    if collect_edits(re_findings, re_data, re_lines, patched, only=only).edits:
+    # Convergence is only meaningful over the findings this run would actually
+    # fix. On a merged run the rest belong to another document, and asking for
+    # their edits against this file's text would report a second pass that is
+    # never attempted.
+    convergence_input = (
+        [f for f in re_findings if fixable(f)] if fixable is not None else re_findings
+    )
+    if collect_edits(convergence_input, re_data, re_lines, patched, only=only).edits:
         return "computed fix does not converge: a second pass would still edit it"
 
     before = {(f.rule_id, f.service, f.message) for f in findings}

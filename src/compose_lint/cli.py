@@ -47,6 +47,7 @@ from compose_lint.parser import (
     coverage_gaps,
     load_compose,
     load_merged,
+    merge_patched,
 )
 
 
@@ -62,6 +63,8 @@ def _severity_type(value: str) -> Severity:
 
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from compose_lint._merge import Merged
 
 
@@ -257,6 +260,17 @@ def _add_check_subparser(
             "partial view; with it, the gap is reported on stderr only"
         ),
     )
+    check.add_argument(
+        "--no-merge-overrides",
+        action="store_true",
+        default=False,
+        help=(
+            "lint each file on its own instead of merging the "
+            "'compose.override.yml' Compose would merge beside it. The merged "
+            "view is what actually runs, so this is only right when the base "
+            "file is deliberately graded in isolation"
+        ),
+    )
     verbosity = check.add_mutually_exclusive_group()
     verbosity.add_argument(
         "-v",
@@ -319,6 +333,17 @@ def _add_fix_subparser(
         action="store_true",
         default=False,
         help="write fixes in place instead of printing a dry-run diff",
+    )
+    fix.add_argument(
+        "--no-merge-overrides",
+        action="store_true",
+        default=False,
+        help=(
+            "lint each file on its own instead of merging the "
+            "'compose.override.yml' Compose would merge beside it. The merged "
+            "view is what actually runs, so this is only right when the base "
+            "file is deliberately graded in isolation"
+        ),
     )
     fix.add_argument(
         "--only",
@@ -521,20 +546,6 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             )
             sys.exit(2)
 
-    # Print branded header in text mode before scanning begins. flush=True here
-    # (and on the per-file text prints below) keeps block-buffered stdout from
-    # landing after unbuffered stderr when both are captured together (2>&1).
-    if args.output_format == "text":
-        print(
-            format_header(
-                args.files,
-                str(config_path) if config_path else None,
-                args.fail_on,
-                __version__,
-            ),
-            flush=True,
-        )
-
     # Pair each base file with the overlay Compose would merge into it. Done
     # before the sweep so an overlay that is also listed explicitly (a shell
     # glob expands to it) is linted as part of its pair rather than standalone,
@@ -543,10 +554,25 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     overlay_of: dict[str, str] = {}
     consumed: set[Path] = set()
     for candidate in args.files:
-        overlay = _sibling_override(candidate)
+        overlay = None if args.no_merge_overrides else _sibling_override(candidate)
         if overlay is not None:
             overlay_of[candidate] = overlay
             consumed.add(Path(overlay).absolute())
+
+    # Print branded header in text mode before scanning begins. flush=True here
+    # (and on the per-file text prints below) keeps block-buffered stdout from
+    # landing after unbuffered stderr when both are captured together (2>&1).
+    if args.output_format == "text":
+        print(
+            format_header(
+                [f for f in args.files if Path(f).absolute() not in consumed],
+                str(config_path) if config_path else None,
+                args.fail_on,
+                __version__,
+                merged=overlay_of,
+            ),
+            flush=True,
+        )
 
     all_json: list[dict[str, object]] = []
     all_sarif: list[dict[str, object]] = []
@@ -828,6 +854,25 @@ def _atomic_write(path: Path, content: str) -> None:
         raise
 
 
+def _merged_reparser(
+    filepath: str, overlay: str | None
+) -> Callable[[str], tuple[dict[str, Any], dict[str, int]]] | None:
+    """Re-parse hook that merges a candidate patch with its overlay.
+
+    ``verify_apply`` checks properties of the document Compose runs. On a merged
+    run that is the patched base *plus* the overlay, so the candidate has to be
+    re-merged before the engine sees it. Returns None when nothing is merged,
+    which leaves the default single-file re-parse in place.
+    """
+    if overlay is None:
+        return None
+
+    def reparse(candidate: str) -> tuple[dict[str, Any], dict[str, int]]:
+        return merge_patched(candidate, filepath, [overlay])
+
+    return reparse
+
+
 def _run_fix(args: argparse.Namespace) -> NoReturn:
     """Run the `fix` operation (ADR-014).
 
@@ -855,29 +900,37 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             )
             sys.exit(2)
 
+    # Same pairing as `check`: an overlay listed explicitly is handled as part
+    # of its base's pair rather than fixed on its own.
+    fix_overlay_of: dict[str, str] = {}
+    fix_consumed: set[Path] = set()
+    for candidate_path in args.files:
+        candidate_overlay = (
+            None if args.no_merge_overrides else _sibling_override(candidate_path)
+        )
+        if candidate_overlay is not None:
+            fix_overlay_of[candidate_path] = candidate_overlay
+            fix_consumed.add(Path(candidate_overlay).absolute())
+
     only = set(args.only) if args.only else None
     had_error = False
     # Whether any file had a fix applied or offered — see the note below.
     touched = False
 
     for filepath in args.files:
-        overlay = _sibling_override(filepath)
-        if overlay is not None:
-            # `fix` edits one file in place. With an overlay present the graded
-            # document spans two, so a fixer cannot know which one to write:
-            # adding `read_only: true` to the base is wrong if the overlay turns
-            # it off again, and writing the overlay is wrong whenever the base
-            # already sets the key. Refusing is the only answer that cannot
-            # produce a wrong edit, and `fix` is not the gate — it reports and
-            # moves on (see the coverage-gap precedent below).
-            emit(
-                f"{filepath}: skipped — {overlay} is merged into it by Compose, "
-                "so a fix cannot be attributed to a single file. Lint with "
-                "`check` and edit by hand."
-            )
+        if Path(filepath).absolute() in fix_consumed:
             continue
+        overlay = fix_overlay_of.get(filepath)
         try:
-            data, lines = load_compose(filepath)
+            if overlay is not None:
+                merged = load_merged([filepath, overlay])
+                data, lines = merged.data, merged.lines
+                emit(
+                    f"note: {filepath}: merged {overlay} before linting. Only "
+                    "findings written in this file can be fixed here."
+                )
+            else:
+                data, lines = load_compose(filepath)
         except ComposeNotApplicableError as e:
             # v1 / fragment file: skipped, not an error (ADR-013). Must precede
             # the ComposeError clause below — it is a subclass.
@@ -910,8 +963,25 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             severity_overrides=severity_overrides,
             excluded_services=excluded_services,
         )
+
+        # A finding's line knows which document it came from. Only the ones
+        # written in *this* file can be edited here: its line is a line in this
+        # text, and its fix lands where the user would put it by hand. A finding
+        # from the overlay is left to manual review — writing it into the base
+        # would put the key in a file the overlay overrides anyway.
+        def _is_local(f: Finding, _path: str = filepath) -> bool:
+            origin = getattr(f.line, "source", None)
+            return origin is None or Path(origin).absolute() == Path(_path).absolute()
+
+        fixable_findings = [f for f in findings if _is_local(f)]
+        deferred = len(findings) - len(fixable_findings)
+        if deferred:
+            emit(
+                f"{filepath}: {deferred} finding(s) come from {overlay} and "
+                "need manual review there"
+            )
         try:
-            result = collect_edits(findings, data, lines, text, only=only)
+            result = collect_edits(fixable_findings, data, lines, text, only=only)
         except LineOutOfRangeError as e:
             # Same fail-closed treatment as the check path: refuse this file,
             # write nothing, let the rest of the batch run (VULN-017).
@@ -964,6 +1034,13 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             disabled_rules=disabled_rules,
             severity_overrides=severity_overrides,
             excluded_services=excluded_services,
+            # The properties being verified — structure preserved, converges,
+            # no new finding — are properties of the document Compose runs, so
+            # the candidate is re-merged with the overlay before they are
+            # checked. Verifying the patched base alone would compare a
+            # single-file result against a merged one.
+            reparse=_merged_reparser(filepath, overlay),
+            fixable=_is_local if overlay is not None else None,
         )
         if verify_error is not None:
             emit_block(render_file_diff(filepath, text, patched, result.caveats))

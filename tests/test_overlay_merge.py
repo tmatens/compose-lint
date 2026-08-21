@@ -12,6 +12,7 @@ The merge itself is verified against the real Compose binary in
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from typing import TYPE_CHECKING
@@ -178,23 +179,87 @@ def test_explicitly_listed_overlay_is_not_linted_standalone(tmp_path: Path) -> N
     assert sum(1 for f in findings if f["rule_id"] == "CL-0001") == 1
 
 
-def test_fix_refuses_to_write_when_an_overlay_is_merged(tmp_path: Path) -> None:
-    """`fix` edits one file; a merged run's findings may belong to the other.
+def test_fix_edits_findings_written_in_the_file_it_is_fixing(tmp_path: Path) -> None:
+    """`fix` writes the base's own findings and defers the overlay's.
 
-    Adding `read_only: true` to the base is a wrong edit when the overlay turns
-    it off again, so refusing is the only answer that cannot corrupt intent.
+    A finding whose line belongs to this file can be edited here: the line is a
+    line in this text and the fix lands where the user would put it by hand. An
+    absence finding is safe for the same reason — it only fires when the key is
+    missing from the *merged* document, so adding it to the base really does
+    harden what Compose runs.
     """
     _write_pair(
         tmp_path,
-        "services:\n  web:\n    image: myapp:1.0\n",
-        "services:\n  web:\n    ports: ['8080:80']\n",
+        'services:\n  web:\n    image: myapp:1.0\n    ports:\n      - "8080:80"\n',
+        "services:\n  web:\n    volumes:\n"
+        '      - "/var/run/docker.sock:/var/run/docker.sock"\n',
     )
-    before = (tmp_path / "compose.yml").read_text()
+    overlay_before = (tmp_path / "compose.override.yml").read_text()
     result = run_cli("fix", "--apply", cwd=tmp_path)
 
-    assert (tmp_path / "compose.yml").read_text() == before
-    assert "skipped" in result.stderr
-    assert "compose.override.yml" in result.stderr
+    base_after = (tmp_path / "compose.yml").read_text()
+    # The base's own port finding is fixed in place...
+    assert "127.0.0.1:8080:80" in base_after
+    # ...and the overlay is never a write target.
+    assert (tmp_path / "compose.override.yml").read_text() == overlay_before
+    assert "need manual review" in result.stderr
+
+
+def test_fix_leaves_a_document_compose_still_accepts(tmp_path: Path) -> None:
+    """The patched pair must remain a valid project, not just valid YAML."""
+    _write_pair(
+        tmp_path,
+        'services:\n  web:\n    image: myapp:1.0\n    ports:\n      - "8080:80"\n',
+        'services:\n  web:\n    volumes:\n      - "/app:/app"\n',
+    )
+    run_cli("fix", "--apply", cwd=tmp_path)
+
+    check = subprocess.run(
+        ["docker", "compose", "config"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    if shutil.which("docker") is None:  # pragma: no cover - environment dependent
+        return
+    assert check.returncode == 0, check.stderr
+
+
+def test_no_merge_overrides_restores_single_file_grading(tmp_path: Path) -> None:
+    """The opt-out has to reproduce the pre-merge result exactly.
+
+    Someone publishing the base as a template, with the overlay local-only, may
+    legitimately want it graded alone — and the flag is the escape hatch if the
+    merge is ever wrong.
+    """
+    _write_pair(tmp_path, BASE_HARDENED, OVERRIDE_DANGEROUS)
+    result = run_cli(
+        "check",
+        "--no-merge-overrides",
+        "--format",
+        "json",
+        "--fail-on",
+        "low",
+        cwd=tmp_path,
+    )
+
+    rule_ids = {f["rule_id"] for f in _findings(result)}
+    # The overlay is not read, so its socket mount is not seen — the old
+    # behaviour, now reachable only by asking for it.
+    assert "CL-0001" not in rule_ids
+    assert "merged" not in result.stderr
+
+
+def test_banner_names_both_documents(tmp_path: Path) -> None:
+    """The header states what was read, so it must state both files.
+
+    Naming only the base is the complaint this behaviour answers; leaving the
+    banner alone would move the false claim rather than remove it.
+    """
+    _write_pair(tmp_path, BASE_HARDENED, OVERRIDE_DANGEROUS)
+    result = run_cli("check", "--fail-on", "low", cwd=tmp_path)
+
+    assert "files: compose.yml + compose.override.yml" in result.stdout
 
 
 def test_no_overlay_means_no_behaviour_change(tmp_path: Path) -> None:
