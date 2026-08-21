@@ -204,3 +204,31 @@ def test_no_overlay_means_no_behaviour_change(tmp_path: Path) -> None:
 
     assert "merged" not in result.stderr
     assert "(merged into this run)" not in result.stdout
+
+
+def test_sarif_points_at_the_contributing_file(tmp_path: Path) -> None:
+    """Code Scanning annotates the artifact SARIF names, so it must be right.
+
+    A finding whose line belongs to the overlay, reported against the base
+    file's URI, annotates an unrelated line of an unrelated file.
+    """
+    _write_pair(tmp_path, BASE_HARDENED, OVERRIDE_DANGEROUS)
+    result = run_cli("check", "--format", "sarif", "--fail-on", "low", cwd=tmp_path)
+    results = json.loads(result.stdout)["runs"][0]["results"]
+
+    by_rule = {r["ruleId"]: r["locations"][0]["physicalLocation"] for r in results}
+    socket = by_rule["CL-0001"]
+    assert socket["artifactLocation"]["uri"].endswith("compose.override.yml")
+    assert socket["region"]["startLine"] == 4
+    # A finding whose evidence is in the base keeps the base's URI, so its
+    # partialFingerprints are unchanged (ADR-024).
+    assert by_rule["CL-0019"]["artifactLocation"]["uri"].endswith("compose.yml")
+
+
+def test_sarif_offers_no_suggested_fix_on_a_merged_run(tmp_path: Path) -> None:
+    """`fix` refuses a merged run; SARIF must not offer the same edit anyway."""
+    _write_pair(tmp_path, BASE_HARDENED, OVERRIDE_DANGEROUS)
+    result = run_cli("check", "--format", "sarif", "--fail-on", "low", cwd=tmp_path)
+    results = json.loads(result.stdout)["runs"][0]["results"]
+
+    assert all(not r.get("fixes") for r in results)

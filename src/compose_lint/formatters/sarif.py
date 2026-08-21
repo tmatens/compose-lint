@@ -407,7 +407,14 @@ def format_findings(
     }
 
     for f in findings:
-        physical_location = _physical_location(filepath, f.line)
+        # A merged run grades more than one document, and `f.line` is a line in
+        # whichever one supplied the evidence. Pointing every result at
+        # `filepath` made Code Scanning annotate an unrelated line of the base
+        # file. Only findings that came from elsewhere carry `source_file`, so
+        # single-file runs — and every base-file finding in a merged run — keep
+        # the URI they had, and with it their partialFingerprints (ADR-024).
+        result_path = f.source_file or filepath
+        physical_location = _physical_location(result_path, f.line)
         result: dict[str, Any] = {
             "ruleId": f.rule_id,
             "level": _SARIF_LEVEL.get(f.severity, "warning"),

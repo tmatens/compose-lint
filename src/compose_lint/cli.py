@@ -643,7 +643,16 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                 emit(f"Error: {filepath}: {e}")
                 continue
             try:
-                fixes = collect_edits(findings, data, lines, text).fixed_edits
+                # Suggested changes are computed against one file's text using
+                # the merged line map, so on a merged run they would splice at a
+                # line belonging to the other document. `fix` refuses the same
+                # case; SARIF must not offer through a different door what the
+                # fixer declines to do.
+                fixes = (
+                    []
+                    if merged is not None
+                    else collect_edits(findings, data, lines, text).fixed_edits
+                )
             except LineOutOfRangeError as e:
                 # A fixer addressed a line this file does not have. Report the
                 # file and keep going: SARIF is serialized once for the whole
