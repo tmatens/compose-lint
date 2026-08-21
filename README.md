@@ -268,6 +268,9 @@ check options:
                                could not be resolved, instead of failing (exit 2)
   --no-merge-overrides         Lint each file alone instead of merging the
                                `compose.override.yml` Compose merges beside it
+  --no-env                     Ignore a `.env` sitting beside the Compose file,
+                               which Compose reads for COMPOSE_FILE and for
+                               `${VAR}` values
   --config PATH                Path to config file (default: .compose-lint.yml)
   --strict-config              Treat config diagnostics (unknown rule id or key) as errors, not warnings
   --explain CL-XXXX            Print the full documentation for a single rule
@@ -276,6 +279,9 @@ check options:
 fix options:
   --apply                      Write fixes in place (default: print a dry-run diff)
   --only CL-XXXX               Restrict fixes to the named rule(s); repeatable
+  --no-merge-overrides         Fix each file alone instead of merging the
+                               `compose.override.yml` Compose merges beside it
+  --no-env                     Ignore a `.env` sitting beside the Compose file
   --config PATH                Path to config file (suppressions are honored)
   --strict-config              Treat config diagnostics (unknown rule id or key) as errors, not warnings
 
@@ -383,6 +389,15 @@ CI log that renders ANSI.
 | 2 | compose-lint couldn't run, or couldn't see the whole stack (invalid args, file not found, invalid Compose file, a rule crashed, or a coverage gap — see below) |
 
 **Overlays are merged.** `docker compose up` loads a `compose.override.yml` sitting beside the base file and merges it, with no flag and no opt-in, so the merged pair is what actually runs. compose-lint grades that pair: the run header names both documents, findings report the file their evidence is written in, and the exit code is unaffected because merging is coverage achieved, not a gap ([ADR-025](docs/adr/025-lint-the-merged-configuration.md)). `--no-merge-overrides` grades the base alone. `fix` edits only findings written in the file it is fixing; anything from the overlay is left for manual review.
+
+**A sibling `.env` is read, because Compose reads it.** `docker compose` loads a `.env` from the Compose file's own directory and uses it for two things, and compose-lint follows both ([ADR-026](docs/adr/026-read-the-sibling-env-file.md)):
+
+- **`COMPOSE_FILE` chooses the documents.** It replaces discovery *and* suppresses the automatic override merge, so a project configured that way is graded as the file set Compose actually loads. For a file you name on the command line, a `.env` can only *add* documents, never drop the one you asked for.
+- **`${VAR}` resolves to what the `.env` supplies.** `volumes: ["${MOUNT}:/data"]` with `MOUNT=/var/run/docker.sock` is a control-socket mount, and is now graded as one. A supplied value beats a written default, matching Compose; a name the `.env` does not define stays unresolved rather than guessed.
+
+Two deliberate limits. Values under `environment:` are **never** resolved from a `.env` — that is where secrets live, the only rules reading them grade sensitivity rather than deployment, and resolving there would make CL-0021 flag the very pattern its own fix text recommends. And references *inside* the `.env` are not expanded from your shell, so nothing about the machine running the lint reaches a finding.
+
+The run header names the `.env` it read, so two machines that read different ones produce a visible difference rather than a mystery. `--no-env` ignores it entirely. The ambient shell environment is out of scope: a `COMPOSE_FILE` exported in a session and never written down would make the same checkout lint differently depending on who ran the command.
 
 **Coverage gaps.** Beyond that overlay, compose-lint follows no references out of a file, so `include:` and cross-file `extends: {file: ...}` leave part of the stack unlinted. Reporting a pass over a partial view is the one failure mode a merge gate cannot have, so a gap is an error: exit 2, a JSON `errors[]` entry, and a SARIF `toolExecutionNotifications` record. Lint the merged output (`docker compose config`) to cover everything, or pass `--allow-partial-coverage` to accept the gap and grade what is visible.
 
