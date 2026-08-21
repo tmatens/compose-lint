@@ -630,6 +630,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                 args.fail_on,
                 __version__,
                 merged=overlay_of,
+                env_files=selection.env_files,
             ),
             flush=True,
         )
@@ -648,7 +649,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         merged: Merged | None = None
         try:
             if overlays:
-                merged = load_merged([filepath, *overlays])
+                merged = load_merged([filepath, *overlays], use_env=not args.no_env)
                 data, lines = merged.data, merged.lines
                 # Not a coverage gap — coverage was achieved, not missed — so
                 # this warns without touching the exit code. What it must never
@@ -672,7 +673,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                     "configuration."
                 )
             else:
-                data, lines = load_compose(filepath)
+                data, lines = load_compose(filepath, use_env=not args.no_env)
         except ComposeNotApplicableError as e:
             # v1 / fragment file: not malformed, just outside what we lint.
             # Per ADR-013 this is exit 0 (skipped, not a parse error). Must
@@ -924,7 +925,7 @@ def _atomic_write(path: Path, content: str) -> None:
 
 
 def _merged_reparser(
-    filepath: str, overlays: list[str] | None
+    filepath: str, overlays: list[str] | None, *, use_env: bool = True
 ) -> Callable[[str], tuple[dict[str, Any], dict[str, int]]] | None:
     """Re-parse hook that merges a candidate patch with its overlay.
 
@@ -937,7 +938,7 @@ def _merged_reparser(
         return None
 
     def reparse(candidate: str) -> tuple[dict[str, Any], dict[str, int]]:
-        return merge_patched(candidate, filepath, overlays)
+        return merge_patched(candidate, filepath, overlays, use_env=use_env)
 
     return reparse
 
@@ -983,14 +984,14 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
         overlays = fix_overlay_of.get(filepath)
         try:
             if overlays:
-                merged = load_merged([filepath, *overlays])
+                merged = load_merged([filepath, *overlays], use_env=not args.no_env)
                 data, lines = merged.data, merged.lines
                 emit(
                     f"note: {filepath}: merged {', '.join(overlays)} before "
                     "linting. Only findings written in this file can be fixed here."
                 )
             else:
-                data, lines = load_compose(filepath)
+                data, lines = load_compose(filepath, use_env=not args.no_env)
         except ComposeNotApplicableError as e:
             # v1 / fragment file: skipped, not an error (ADR-013). Must precede
             # the ComposeError clause below — it is a subclass.
@@ -1099,7 +1100,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             # the candidate is re-merged with the overlay before they are
             # checked. Verifying the patched base alone would compare a
             # single-file result against a merged one.
-            reparse=_merged_reparser(filepath, overlays),
+            reparse=_merged_reparser(filepath, overlays, use_env=not args.no_env),
             fixable=_is_local if overlays else None,
         )
         if verify_error is not None:

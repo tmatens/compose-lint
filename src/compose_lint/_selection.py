@@ -31,7 +31,7 @@ committing one file. In bare discovery there is no named file to protect and
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
@@ -105,6 +105,12 @@ class Selection:
     groups: tuple[DocumentGroup, ...] = ()
     consumed: frozenset[str] = frozenset()
     notes: tuple[str, ...] = field(default=())
+    # Every `.env` that will be read for this run, so the header can say so.
+    # ADR-026 §5: a read that is announced is the declared input ADR-023
+    # clause 2 permits; an unannounced one is the kind it forbids, and it is
+    # also what makes a laptop-versus-CI difference a diff rather than a
+    # mystery.
+    env_files: tuple[str, ...] = ()
 
     def is_consumed(self, path: str) -> bool:
         """Whether ``path`` is already being graded inside another group."""
@@ -149,6 +155,8 @@ def _plan_discovered(
     file list Compose would load.
     """
     selected, notes = _compose_file_entries(directory, read_env_files=read_env_files)
+    env_file = env_file_for(directory, read_env_files=read_env_files)
+    env_files = (env_file,) if env_file else ()
     if selected is not None:
         return Selection(
             groups=(
@@ -156,9 +164,11 @@ def _plan_discovered(
             ),
             consumed=frozenset(_key(path) for path in selected[1:]),
             notes=tuple(notes),
+            env_files=env_files,
         )
     discovered = [name for name in COMPOSE_FILENAMES if (directory / name).is_file()]
-    return _pair_with_overrides(discovered, merge_overrides, notes)
+    selection = _pair_with_overrides(discovered, merge_overrides, notes)
+    return replace(selection, env_files=env_files if discovered else ())
 
 
 def _plan_named(
@@ -169,6 +179,7 @@ def _plan_named(
     consumed: set[str] = set()
     notes: list[str] = []
     planned: set[str] = set()
+    env_files: list[str] = []
 
     for path in named:
         if _key(path) in planned:
@@ -178,6 +189,9 @@ def _plan_named(
             directory, read_env_files=read_env_files
         )
         notes.extend(file_notes)
+        env_file = env_file_for(directory, read_env_files=read_env_files)
+        if env_file is not None and env_file not in env_files:
+            env_files.append(env_file)
 
         if selected is None:
             group = _with_override(path, merge_overrides)
@@ -203,7 +217,10 @@ def _plan_named(
         consumed.update(_key(entry) for entry in group.overlays)
 
     return Selection(
-        groups=tuple(groups), consumed=frozenset(consumed), notes=tuple(notes)
+        groups=tuple(groups),
+        consumed=frozenset(consumed),
+        notes=tuple(notes),
+        env_files=tuple(env_files),
     )
 
 
@@ -230,6 +247,14 @@ def _with_override(path: str, merge_overrides: bool) -> DocumentGroup:
     if not candidate.is_file():
         return DocumentGroup(path)
     return DocumentGroup(path, (str(candidate),))
+
+
+def env_file_for(directory: Path, *, read_env_files: bool) -> str | None:
+    """The ``.env`` that will be read for ``directory``, if there is one."""
+    if not read_env_files:
+        return None
+    candidate = directory / ENV_FILENAME
+    return str(candidate) if candidate.is_file() else None
 
 
 def _compose_file_entries(

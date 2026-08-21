@@ -11,8 +11,12 @@ anything literal at all, which :func:`ships_no_literal` answers.
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 
 from compose_lint._limits import MAX_SCAN_LEN
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 # Upper bound on a scalar these regexes will scan. Both the pattern below and
 # the two in `substitute_defaults` are quadratic on pathological input (measured
@@ -103,8 +107,10 @@ def _matching_brace(value: str, start: int) -> int | None:
     return None
 
 
-def _resolve_defaults(value: str, depth: int = 0) -> str | None:
-    """Rewrite each ``${VAR:-default}`` to its default, innermost first.
+def _resolve_defaults(
+    value: str, depth: int = 0, env: Mapping[str, str] | None = None
+) -> str | None:
+    """Rewrite each reference to its value: ``env`` first, then its default.
 
     A single regex pass cannot do this. With the default written ``[^}]*`` it
     stops at the *first* ``}``, which for a nested reference is the inner one:
@@ -133,6 +139,7 @@ def _resolve_defaults(value: str, depth: int = 0) -> str | None:
     """
     if depth > _MAX_NESTING:
         return None
+    lookup: Mapping[str, str] = env or {}
     out: list[str] = []
     i = 0
     end = len(value)
@@ -147,9 +154,15 @@ def _resolve_defaults(value: str, depth: int = 0) -> str | None:
             if following == "{":
                 close = _matching_brace(value, i + 1)
                 if close is not None:
-                    default = _default_of(value[i + 2 : close])
+                    interior = value[i + 2 : close]
+                    supplied = _supplied(interior, lookup)
+                    if supplied is not None:
+                        out.append(supplied)
+                        i = close + 1
+                        continue
+                    default = _default_of(interior)
                     if default is not None:
-                        resolved = _resolve_defaults(default, depth + 1)
+                        resolved = _resolve_defaults(default, depth + 1, env)
                         if resolved is None:
                             return None
                         out.append(resolved)
@@ -158,9 +171,78 @@ def _resolve_defaults(value: str, depth: int = 0) -> str | None:
                     out.append(value[i : close + 1])  # no default; as written
                     i = close + 1
                     continue
+            name = _BARE_NAME_RE.match(value, i + 1)
+            if name is not None and name.group() in lookup:
+                out.append(lookup[name.group()])
+                i = name.end()
+                continue
         out.append(char)
         i += 1
     return "".join(out)
+
+
+# The name in a bare `$VAR` reference. Only consulted when a `.env` supplies
+# that name: without one the value is left as written, exactly as before.
+_BARE_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def reference_names(value: str) -> set[str]:
+    """Every variable name ``value`` interpolates, defaults included.
+
+    The wanted-set filter (ADR-026 §5) needs this before anything is resolved:
+    only the names a document could consume are read out of a ``.env``, and
+    everything else is discarded rather than parsed into the run.
+    """
+    if len(value) > _MAX_SCAN_LEN:
+        return set()
+    found: set[str] = set()
+    index = 0
+    while index < len(value):
+        if value[index] != "$" or index + 1 >= len(value):
+            index += 1
+            continue
+        following = value[index + 1]
+        if following == "$":  # escaped literal dollar, not a reference
+            index += 2
+            continue
+        if following == "{":
+            close = _matching_brace(value, index + 1)
+            if close is None:
+                index += 1
+                continue
+            interior = value[index + 2 : close]
+            head = _REF_HEAD_RE.match(interior)
+            if head is not None:
+                found.add(head.group(1))
+            default = _default_of(interior)
+            if default is not None:
+                found |= reference_names(default)
+            index = close + 1
+            continue
+        name = _BARE_NAME_RE.match(value, index + 1)
+        if name is None:
+            index += 1
+            continue
+        found.add(name.group())
+        index = name.end()
+    return found
+
+
+def _supplied(interior: str, env: Mapping[str, str]) -> str | None:
+    """What ``env`` supplies for a ``${...}`` interior, or ``None``.
+
+    A supplied value beats a written default, which is Compose's precedence --
+    the default applies only when the variable is unset. Operators that carry
+    no default (``:?``/``?``, ``:+``/``+``) are left to the caller, because
+    what they ship is not the variable's value.
+    """
+    head = _REF_HEAD_RE.match(interior)
+    if head is None:
+        return None
+    operator = head.group(2)
+    if operator is not None and operator not in _DEFAULT_OPERATORS:
+        return None
+    return env.get(head.group(1))
 
 
 def _default_of(interior: str) -> str | None:
@@ -171,8 +253,13 @@ def _default_of(interior: str) -> str | None:
     return interior[head.end() :]
 
 
-def substitute_defaults(value: str) -> str | None:
-    """Resolve ``${VAR:-default}`` to its default, or ``None`` if unresolvable.
+def substitute_defaults(value: str, env: Mapping[str, str] | None = None) -> str | None:
+    """Resolve ``${VAR}`` against ``env`` and ``${VAR:-default}`` to its default.
+
+    ``env`` is what a sibling ``.env`` supplies (ADR-026). It wins over a
+    written default, because that is Compose's own precedence: the default
+    applies only when the variable is unset. Without it the function answers
+    the narrower question it always did -- what the document ships on its own.
 
     With no ``.env`` and no exported variable, Compose substitutes the default,
     so the default *is* the configuration the file ships: it is what a fresh
@@ -194,7 +281,7 @@ def substitute_defaults(value: str) -> str | None:
     escaped = value.replace("$$", "")
     if not _VAR_REF_RE.search(escaped):
         return value  # nothing to substitute
-    resolved = _resolve_defaults(value)
+    resolved = _resolve_defaults(value, env=env)
     if resolved is None:
         return None  # nested deeper than we resolve -- not knowable
     if _VAR_NO_DEFAULT_RE.search(resolved.replace("$$", "")):

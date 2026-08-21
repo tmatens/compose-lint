@@ -157,6 +157,7 @@ def format_header(
     fail_on: Severity,
     version: str,
     merged: dict[str, list[str]] | None = None,
+    env_files: tuple[str, ...] = (),
 ) -> str:
     """Format a branded run header showing the tool version and active parameters.
 
@@ -179,8 +180,18 @@ def format_header(
         else _sanitize_line(f)
         for f in files
     ]
+    # The `.env` is stated because it changes what the run grades and what a
+    # value resolves to (ADR-026 §5). Two machines that read different ones
+    # produce different findings, and the header is what makes that a diff
+    # instead of a mystery.
+    env_str = (
+        f"  {sep}  env: {', '.join(_sanitize_line(f) for f in env_files)}"
+        if env_files
+        else ""
+    )
     params = (
         f"files: {', '.join(shown)}"
+        f"{env_str}"
         f"  {sep}  config: {config_str}"
         f"  {sep}  fail-on: {fail_on.value}"
     )

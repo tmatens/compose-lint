@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import re
 from pathlib import Path, PurePath
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from compose_lint._env_file import read_env
 from compose_lint._lines import find_ambiguous_break
 from compose_lint._merge import Document, Merged, merge_documents, merge_values
 from compose_lint._safe_read import UnsafeFileError, read_text_bounded
 from compose_lint.config import KNOWN_TOP_LEVEL_KEYS
-from compose_lint.rules._interpolation import substitute_defaults
+from compose_lint.rules._interpolation import reference_names, substitute_defaults
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 class _LinesKey:
@@ -861,8 +865,15 @@ def coverage_gaps(data: dict[str, Any]) -> list[str]:
     return gaps
 
 
-def _substitute_interpolation_defaults(data: Any) -> None:
-    """Rewrite every string leaf to the value Compose ships with no ``.env``.
+# The one subtree a `.env` value never reaches. See the function below for why
+# position rather than a marker on the value is the robust test.
+ENVIRONMENT_KEY = "environment"
+
+
+def _substitute_interpolation_defaults(
+    data: Any, env: Mapping[str, str] | None = None
+) -> None:
+    """Rewrite every string leaf to the value Compose ships.
 
     Classification has to happen *after* canonicalization, not before. With
     substitution wired into a single call site (bind sources), every other rule
@@ -878,39 +889,98 @@ def _substitute_interpolation_defaults(data: Any) -> None:
     ``lines`` map is keyed by the raw key path, and rewriting a key would break
     every line lookup that indexes it.
 
-    A reference with no default (``${VAR}``) is left exactly as written:
-    :func:`substitute_defaults` returns ``None`` for it, and inventing a value
-    would invent a finding. Walks are memoized by ``id`` so a document built
-    from YAML aliases is visited once per distinct object rather than once per
-    path through the alias graph.
+    A reference with no default (``${VAR}``) is left exactly as written unless
+    ``env`` supplies it: :func:`substitute_defaults` returns ``None`` for it, and
+    inventing a value would invent a finding. Walks are memoized by ``id`` so a
+    document built from YAML aliases is visited once per distinct object rather
+    than once per path through the alias graph.
+
+    **``environment:`` values are never resolved from ``env``** (ADR-026 §2).
+    Everywhere else in a Compose document a value describes *what is deployed* --
+    a mount source, a port, an image, a privilege -- and a ``.env`` is entitled to
+    answer that. An ``environment:`` value is the payload itself, and the only
+    rules that read one (CL-0020, CL-0021) grade *how sensitive it is*, which is
+    a question about the document rather than the deployment. Resolving there
+    would make CL-0021 flag the very pattern its own fix text recommends:
+    ``DATABASE_URL: postgres://user:${DB_PASSWORD}@host/db`` is the remediation,
+    and a ``.env`` supplying ``DB_PASSWORD`` would turn it back into a finding.
+
+    Skipping by position rather than by marking the value is deliberate. ADR-026
+    §2 described a ``str`` subclass carrying the written spelling, but a subclass
+    does not survive string operations: CL-0021 splits a list-form entry on
+    ``=`` and CL-0001 splits a volume on ``:``, so the marker would be gone in
+    exactly the places that need it. ``environment:`` is the one subtree whose
+    values are payload by definition, which makes position the robust test.
+    The ADR is amended to match.
+
+    Written defaults are unaffected there: ``${PW:-changeme}`` still resolves,
+    because a default is committed in the file and ships to every clone.
     """
     seen: set[int] = set()
 
-    def resolve(value: str) -> str:
-        substituted = substitute_defaults(value)
+    def resolve(value: str, supplied: Mapping[str, str] | None) -> str:
+        substituted = substitute_defaults(value, supplied)
         return value if substituted is None else substituted
 
-    def walk(node: Any) -> None:
+    def walk(node: Any, supplied: Mapping[str, str] | None) -> None:
         if isinstance(node, dict):
             if id(node) in seen:
                 return
             seen.add(id(node))
             for key, value in node.items():
+                below = None if key == ENVIRONMENT_KEY else supplied
                 if isinstance(value, str):
-                    node[key] = resolve(value)
+                    node[key] = resolve(value, below)
                 else:
-                    walk(value)
+                    walk(value, below)
         elif isinstance(node, list):
             if id(node) in seen:
                 return
             seen.add(id(node))
             for index, value in enumerate(node):
                 if isinstance(value, str):
-                    node[index] = resolve(value)
+                    node[index] = resolve(value, supplied)
                 else:
-                    walk(value)
+                    walk(value, supplied)
 
-    walk(data)
+    walk(data, env)
+
+
+def _referenced_names(data: Any) -> set[str]:
+    """Every ``${VAR}`` name a rule could consume, for the wanted-set filter.
+
+    ``environment:`` is skipped for the same reason substitution skips it: a
+    ``.env`` value never reaches there, so retaining one would keep a secret the
+    run has no use for (ADR-026 §5).
+    """
+    seen: set[int] = set()
+    found: set[str] = set()
+
+    def walk(node: Any, under_env: bool) -> None:
+        if isinstance(node, dict):
+            if id(node) in seen:
+                return
+            seen.add(id(node))
+            for key, value in node.items():
+                below = under_env or key == ENVIRONMENT_KEY
+                if isinstance(value, str):
+                    if not below:
+                        found.update(reference_names(value))
+                else:
+                    walk(value, below)
+        elif isinstance(node, list):
+            if id(node) in seen:
+                return
+            seen.add(id(node))
+            for value in node:
+                if isinstance(value, str):
+                    if not under_env:
+                        found.update(reference_names(value))
+                else:
+                    walk(value, under_env)
+
+    walk(data, False)
+    return found
 
 
 def _split_short_volume(volume: str) -> tuple[str, str, str]:
@@ -977,7 +1047,7 @@ def _resolve_bind_sources(data: dict[str, Any], base_dir: Path) -> None:
 
 
 def load_compose(
-    path: str | Path,
+    path: str | Path, *, use_env: bool = True
 ) -> tuple[dict[str, Any], dict[str, int]]:
     """Load and validate a Docker Compose file.
 
@@ -1021,11 +1091,15 @@ def load_compose(
     # through a symlinked directory, "../etc" is the parent of the *link* path,
     # not of the link's target. Resolving physically named a different host path
     # than the one Compose actually mounts, in either direction.
-    return loads(content, base_dir=filepath.absolute().parent)
+    return loads(content, base_dir=filepath.absolute().parent, use_env=use_env)
 
 
 def _loads_full(
-    content: str, base_dir: Path | None = None, *, merging: bool = False
+    content: str,
+    base_dir: Path | None = None,
+    *,
+    merging: bool = False,
+    use_env: bool = True,
 ) -> tuple[dict[str, Any], dict[str, int], frozenset[str], frozenset[str]]:
     """Parse and validate Compose from an in-memory string.
 
@@ -1112,7 +1186,19 @@ def _loads_full(
         # Canonicalize before anything classifies: rules and the extends and
         # bind-source passes below all see the value the file actually ships
         # (see that function's docstring for why this is document-wide).
-        _substitute_interpolation_defaults(data)
+        #
+        # The `.env` is read *after* the document is parsed, because only the
+        # document says which names are worth reading (ADR-026 §5). The names
+        # come from outside `environment:` alone, so a credential the file
+        # externalises is never even retained.
+        supplied: Mapping[str, str] | None = None
+        if use_env and base_dir is not None:
+            wanted = _referenced_names(data)
+            if wanted:
+                parsed_env = read_env(base_dir, wanted)
+                if parsed_env is not None and parsed_env.values:
+                    supplied = parsed_env.values
+        _substitute_interpolation_defaults(data, supplied)
         _resolve_in_file_extends(data)
         if base_dir is not None:
             _resolve_bind_sources(data, base_dir)
@@ -1127,18 +1213,18 @@ def _loads_full(
 
 
 def loads(
-    content: str, base_dir: Path | None = None
+    content: str, base_dir: Path | None = None, *, use_env: bool = True
 ) -> tuple[dict[str, Any], dict[str, int]]:
     """Parse Compose from a string, returning ``(data, lines)``.
 
     The public string entry point. :func:`_loads_full` additionally reports the
     paths deleted by ``!reset``, which only a merge needs.
     """
-    data, lines, _, _ = _loads_full(content, base_dir=base_dir)
+    data, lines, _, _ = _loads_full(content, base_dir=base_dir, use_env=use_env)
     return data, lines
 
 
-def load_document(path: str | Path) -> Document:
+def load_document(path: str | Path, *, use_env: bool = True) -> Document:
     """Load one Compose file as a :class:`Document` ready to merge.
 
     The merge-aware sibling of :func:`load_compose`: same parse, same
@@ -1155,24 +1241,24 @@ def load_document(path: str | Path) -> Document:
     except OSError as e:
         raise ComposeError(f"Cannot read file: {e}") from e
     data, lines, resets, overrides = _loads_full(
-        content, base_dir=filepath.absolute().parent, merging=True
+        content, base_dir=filepath.absolute().parent, merging=True, use_env=use_env
     )
     return Document(
         path=str(path), data=data, lines=lines, resets=resets, overrides=overrides
     )
 
 
-def load_merged(paths: list[str | Path]) -> Merged:
+def load_merged(paths: list[str | Path], *, use_env: bool = True) -> Merged:
     """Load and merge several Compose files into the configuration Compose runs.
 
     Later paths override earlier ones, which is the order Compose itself uses
     for ``-f a -f b`` and for a base file plus its ``compose.override.yml``.
     """
-    return merge_documents([load_document(p) for p in paths])
+    return merge_documents([load_document(p, use_env=use_env) for p in paths])
 
 
 def merge_patched(
-    patched: str, base_path: str | Path, overlays: list[str]
+    patched: str, base_path: str | Path, overlays: list[str], *, use_env: bool = True
 ) -> tuple[dict[str, Any], dict[str, int]]:
     """Re-merge a candidate patch of ``base_path`` with its overlay documents.
 
@@ -1183,7 +1269,7 @@ def merge_patched(
     """
     base_dir = Path(base_path).absolute().parent
     data, lines, resets, overrides = _loads_full(
-        patched, base_dir=base_dir, merging=True
+        patched, base_dir=base_dir, merging=True, use_env=use_env
     )
     candidate = Document(
         path=str(base_path),
@@ -1192,5 +1278,7 @@ def merge_patched(
         resets=resets,
         overrides=overrides,
     )
-    merged = merge_documents([candidate, *(load_document(p) for p in overlays)])
+    merged = merge_documents(
+        [candidate, *(load_document(p, use_env=use_env) for p in overlays)]
+    )
     return merged.data, merged.lines

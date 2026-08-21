@@ -16,6 +16,12 @@ lint read neither, so a project configured that way had its real documents
 ungraded while an override Compose never loads contributed findings — under a
 warning stating that Compose merges it automatically, which was false there.
 
+Values are resolved from it too, so a `${VAR}` a rule consumes now grades as
+what deploys rather than as unknowable. Expect new findings on such projects,
+including CRITICAL ones, and some existing findings to disappear where the
+`.env` supplies a value that clears them (a pinned image tag, for instance) —
+the documented MINOR behaviour for tightened coverage.
+
 Expect the reported file list to change on such projects, in both directions.
 `--no-env` restores the previous selection exactly, including that false merge.
 A `.env` can only *add* documents to a file you named on the command line, never
@@ -84,6 +90,12 @@ the previous single-file grading exactly.
   either direction. This is the last chance to say so.
 
 ### Fixed
+- Credential rules are unaffected by a `.env`. A value there is never
+  substituted into an `environment:` value, so `POSTGRES_PASSWORD: "${PW}"`
+  stays clean however `PW` is set — otherwise CL-0021 would flag the exact
+  pattern its own fix text recommends. A written default is still graded:
+  `${PW:-changeme}` ships to every clone and keeps firing. Names referenced only
+  from `environment:` are not read out of the `.env` at all.
 - An overlay is no longer merged into a project whose `.env` sets
   `COMPOSE_FILE`. Compose does not load `compose.override.yml` when
   `COMPOSE_FILE` is set, so those findings described a document that never runs,

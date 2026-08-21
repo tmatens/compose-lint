@@ -147,6 +147,26 @@ at a different layer.
    patterns) and errs generous: a false "do not resolve" costs one finding, a false
    "resolve" is the disclosure TFLint's rule exists to prevent.
 
+   *Amended (#646):* the mechanism named here was a `str` subclass carrying the
+   written spelling, read by the credential rules and the formatters. It does not
+   work, because a subclass does not survive string operations: CL-0021 splits a
+   list-form `environment` entry on `=` and CL-0001 splits a volume on `:`, so the
+   marker is gone in exactly the places that need it. What replaces it is
+   positional and strictly stronger — **a `.env` value is never substituted into an
+   `environment:` value at all.** That subtree is the one place in a Compose
+   document whose values are payload rather than configuration, and the only rules
+   that read one are CL-0020 and CL-0021 (verified: no other rule touches
+   `environment` values). Nothing has to remember to unwrap anything, and the
+   guarantee holds for the mapping and list spellings alike. It also strengthens
+   §5: names referenced only from `environment:` are excluded from the wanted set,
+   so a credential the file externalises is never read out of the `.env` at all.
+
+   The output half of the original mechanism is narrowed by the same finding. A
+   `.env` value can still reach a report through a rule that grades a deployment
+   property — CL-0001 naming the mount source it resolved to — because that *is*
+   the finding. What is guaranteed is that nothing under `environment:`, which is
+   where secrets live, is ever resolved, so none of it can be printed.
+
 3. **`.env` chains do not expand from the process environment.** Compose resolves
    `FROM_SHELL=${SOME_SHELL_VAR}/tail` against the shell; compose-lint leaves it
    unknowable, exactly as it leaves a defaultless `${VAR}` in the compose file. This
