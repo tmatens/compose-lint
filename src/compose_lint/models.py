@@ -84,6 +84,11 @@ class Finding:
     # those. tests/test_finding_identity.py fails if a rule needs one and
     # does not set it.
     evidence: str | None = None
+    # The file this finding's evidence was written in, when a run merged more
+    # than one document (a base file plus its `compose.override.yml`) and that
+    # file is not the one named in the report. None on a single-file run, which
+    # is every run today, so no existing output shape changes.
+    source_file: str | None = None
 
 
 @dataclass(frozen=True)
