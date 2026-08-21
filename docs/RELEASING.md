@@ -363,7 +363,14 @@ After approval, `publish` and `docker-publish` run in parallel.
 - [ ] **Fresh `[Unreleased]` section** — already inserted by
       `release-prep.yml` as part of the release bump PR. No follow-up
       PR needed.
-- [ ] Announce in Discussions if the release has user-visible changes.
+- [ ] **Call out user-visible changes in the GitHub release notes** —
+      deprecations, new or tightened rules, and behaviour changes. The
+      release notes are the announcement channel: Discussions are not
+      enabled on this repo, so an item pointing there was one no releaser
+      could ever tick. Findings that are new because coverage tightened
+      deserve a sentence naming the escape hatches (`--fail-on`, pinning),
+      since `docs/compatibility.md` treats them as MINOR rather than
+      breaking and a pinned CI user will meet them without warning.
 
 ## If something goes wrong
 
