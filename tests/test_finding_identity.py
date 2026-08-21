@@ -219,7 +219,10 @@ def test_the_static_guard_actually_inspects_rules() -> None:
 # must keep the same alert.
 EVIDENCE_CONTRACT = {
     "CL-0001": {"/var/run/docker.sock", "/run/containerd/containerd.sock"},
-    "CL-0005": {"8080:80", "3000"},
+    # `53:53` is the tcp publishing: the default protocol is not spelled out,
+    # so every existing alert for a tcp port keeps its digest. Only the udp
+    # sibling gains a suffix, which is what makes the two distinguishable.
+    "CL-0005": {"8080:80", "3000", "53:53", "53:53/udp"},
     "CL-0009": {"apparmor", "seccomp"},
     "CL-0010": {"pid", "ipc"},
     "CL-0011": {"NET_ADMIN"},
@@ -235,7 +238,18 @@ _CONTRACT_DOC = """
 services:
   sink:
     image: x:1
-    ports: ["8080:80", "3000"]
+    # Short *and* long syntax. Pinning only the short form left the
+    # long-syntax descriptor unconstrained, which is how it came to omit
+    # `protocol` and collide two publishings into one alert (#647).
+    ports:
+      - "8080:80"
+      - "3000"
+      - target: 53
+        published: "53"
+        protocol: tcp
+      - target: 53
+        published: "53"
+        protocol: udp
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /run/containerd/containerd.sock:/s2:ro

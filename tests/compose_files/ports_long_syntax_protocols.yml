@@ -1,0 +1,19 @@
+# Two publishings of one container port that differ only by protocol, in long
+# syntax. This is the standard shape for a DNS service, and it is the case that
+# collided: the long-syntax descriptor omitted `protocol`, so both findings
+# derived the evidence `53:53`, shared a partialFingerprints digest, and Code
+# Scanning displayed one alert instead of two (#647).
+#
+# The identity sweep in tests/test_finding_identity.py rglobs tests/, so this
+# file is what makes that guard cover the case. The guard was always correct;
+# nothing reached it.
+services:
+  dns:
+    image: dns:1.0
+    ports:
+      - target: 53
+        published: "53"
+        protocol: tcp
+      - target: 53
+        published: "53"
+        protocol: udp

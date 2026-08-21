@@ -195,7 +195,25 @@ class UnboundPortsRule(BaseRule):
         if isinstance(host_ip, str) and not _is_wildcard_ip(host_ip):
             return
 
-        port_desc = f"{port_config.get('published')}:{port_config.get('target')}"
+        # The protocol is part of a port's identity: 53/tcp and 53/udp are two
+        # publishings, and a DNS service declares both. Omitted from the
+        # descriptor, they derived the same `evidence`, so SARIF gave them one
+        # fingerprint and Code Scanning showed one alert — the second finding
+        # was never displayed at all (#647).
+        #
+        # Only a non-default protocol is spelled out. `tcp` is Docker's default
+        # and the overwhelmingly common case, so suffixing it would re-key every
+        # existing port alert for a distinction nobody wrote, and this way the
+        # descriptor also matches how the short syntax spells the same port.
+        protocol = port_config.get("protocol")
+        suffix = (
+            f"/{protocol}"
+            if isinstance(protocol, str) and protocol.lower() not in ("", "tcp")
+            else ""
+        )
+        port_desc = (
+            f"{port_config.get('published')}:{port_config.get('target')}{suffix}"
+        )
         yield self._make_finding(port_desc, service_name, lines, index)
 
     def _make_finding(

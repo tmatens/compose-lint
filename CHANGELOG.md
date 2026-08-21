@@ -44,6 +44,12 @@ the previous single-file grading exactly.
 
 ### Fixed
 
+- CL-0005 includes a non-default protocol in a long-syntax port's evidence.
+  Two publishings of one container port that differ only by protocol — the
+  standard shape for a DNS service — derived the same evidence, so SARIF gave
+  them one `partialFingerprints` digest and Code Scanning displayed one alert
+  instead of two. `tcp` is still not spelled out, so no existing alert is
+  re-keyed. Text and JSON always reported both findings.
 - `extends:` no longer concatenates every sequence. Compose merges `volumes`
   and `devices` by container path, replaces `command`/`entrypoint`, and
   deduplicates the append-style sequences; concatenating reported a CRITICAL
