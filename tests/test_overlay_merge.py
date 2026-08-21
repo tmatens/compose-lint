@@ -423,11 +423,19 @@ def test_merged_fix_preserves_crlf_line_endings(tmp_path: Path) -> None:
 
 
 def test_merged_fix_leaves_lf_files_alone(tmp_path: Path) -> None:
-    """The converse: an LF file must not acquire CRLF from the merged path."""
-    _write_pair(
-        tmp_path,
-        'services:\n  web:\n    image: myapp:1.0\n    ports:\n      - "8080:80"\n',
-        'services:\n  web:\n    volumes:\n      - "/app:/app"\n',
+    """The converse: an LF file must not acquire CRLF from the merged path.
+
+    Written as bytes, not via `_write_pair`. `Path.write_text` opens in text
+    mode, so on Windows it translates the \n in these literals to \r\n and the
+    fixture is not the LF file the test claims to be — which is how the first
+    version of this test failed on the Windows leg while asserting about a
+    CRLF document it had created itself.
+    """
+    (tmp_path / "compose.yml").write_bytes(
+        b'services:\n  web:\n    image: myapp:1.0\n    ports:\n      - "8080:80"\n'
+    )
+    (tmp_path / "compose.override.yml").write_bytes(
+        b'services:\n  web:\n    volumes:\n      - "/app:/app"\n'
     )
     run_cli("fix", "--apply", cwd=tmp_path)
     after = (tmp_path / "compose.yml").read_bytes()
