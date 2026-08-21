@@ -52,13 +52,14 @@ CI) is a MAJOR.
 ## Deprecation lifecycle
 
 Nothing stable is removed without warning. When a flag, config key, output
-field, or rule is slated for removal:
+field, rule, or supported Python version is slated for removal:
 
 1. **Announce** — mark it deprecated under `Deprecated` in `CHANGELOG.md` and in
    the relevant doc, in the release that introduces the deprecation.
 2. **Warn at runtime** — where the deprecated surface is user-invoked (a flag, a
-   config key), emit a one-line `warning:` to **stderr** when it is used, naming
-   the replacement. Warnings never change exit codes or stdout.
+   config key, the interpreter the tool is running on), emit a one-line
+   `warning:` to **stderr** when it is used, naming the replacement. Warnings
+   never change exit codes or stdout.
 3. **Grace period** — the deprecated surface keeps working for **at least one
    MINOR release** after the announcement.
 4. **Remove** — removal happens only in a **MAJOR** release, listed under
@@ -93,3 +94,12 @@ within ~3 months of its October release (additive), and dropped at upstream
 end-of-life. Dropping a version is a MAJOR change post-1.0. The authoritative
 list is `requires-python` in `pyproject.toml`; see the
 [roadmap](ROADMAP.md#python-version-support) for the schedule.
+
+A drop follows the [deprecation lifecycle](#deprecation-lifecycle) above: the
+release that announces it warns on stderr when run on that interpreter, and the
+drop lands no earlier than the next MINOR. The warning matters more here than
+for a flag, because the removal itself is silent — `requires-python` does not
+fail an install on an unsupported interpreter, it makes pip resolve to the last
+release that allowed it. Without the warning, `pip install -U compose-lint`
+leaves that user on a frozen version indefinitely, with nothing printed in
+either direction.

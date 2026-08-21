@@ -132,7 +132,7 @@ Track current CPython: add new minor versions to the CI matrix within ~3 months 
 | 3.13    | 2024-10   | 2029-10   | 0.2.0           |
 | 3.14    | 2025-10   | 2030-10   | 0.3.8           |
 
-Python 3.10 is scheduled to age out of the matrix when it reaches upstream EOL in October 2026 (release bump to 0.4.x or later).
+Python 3.10 ages out of the matrix at its upstream EOL in October 2026. Because dropping a version is a MINOR pre-1.0 and a MAJOR after, the drop lands **before 1.0** rather than being forced into a 2.0 by a routine EOL. Deliberately stated as a milestone rather than a release number: the version that ships it is not chosen yet, and a number written here goes stale (this line promised "0.4.x or later" until 0.21.0). Running on 3.10 warns on stderr from the release that announced the deprecation onward, per [compatibility.md](compatibility.md#deprecation-lifecycle).
 
 ---
 
