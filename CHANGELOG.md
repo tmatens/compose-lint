@@ -22,6 +22,11 @@ the previous single-file grading exactly.
 
 ### Added
 
+- Contract tests pin the JSON envelope and the SARIF log shape, the two
+  surfaces `docs/compatibility.md` freezes at 1.0 that nothing enforced.
+  `SCHEMA_VERSION` is pinned to its literal value, so a silent bump fails;
+  additive keys stay allowed, renames and removals now require editing the
+  contract on purpose.
 - `check` and `fix` merge a sibling `compose.override.yml` and lint the
   effective configuration (ADR-025). The run header names both documents, and
   a note on stderr states what was merged; the exit code is unchanged, because
