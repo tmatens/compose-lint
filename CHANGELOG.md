@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrading
+
+**Files with a `compose.override.yml` beside them are now graded as the
+configuration Compose runs.** `docker compose up` merges that overlay with no
+flag and no opt-in, and compose-lint read only the base — so a control-socket
+mount added by an overlay was never reported, and the base's own findings were
+graded against a document nobody deploys.
+
+Expect new findings on such projects, including CRITICAL ones. That is the
+documented MINOR behaviour for tightened coverage; pin the version or gate on
+`--fail-on` if a pipeline needs determinism. `--no-merge-overrides` restores
+the previous single-file grading exactly.
+
+### Added
+
+- `check` and `fix` merge a sibling `compose.override.yml` and lint the
+  effective configuration (ADR-025). The run header names both documents, and
+  a note on stderr states what was merged; the exit code is unchanged, because
+  merging is coverage achieved rather than a coverage gap.
+- `--no-merge-overrides` on `check` and `fix` opts out.
+- Findings carry the document their evidence is written in. Text excerpts are
+  read from that file, SARIF points `artifactLocation` there, and JSON gains a
+  conditional `source_file` key — additive, so `SCHEMA_VERSION` is unchanged.
+
+### Changed
+
+- `fix` edits only findings written in the file it is fixing when an overlay is
+  merged; findings from the overlay are reported for manual review, and the
+  overlay is never a write target.
+
+### Fixed
+
+- `extends:` no longer concatenates every sequence. Compose merges `volumes`
+  and `devices` by container path, replaces `command`/`entrypoint`, and
+  deduplicates the append-style sequences; concatenating reported a CRITICAL
+  socket mount against a service that had replaced that mount at the same
+  container path, pointing at the line that replaced it.
+
 ## [0.21.0] - 2026-08-20
 
 ### Upgrading from 0.20.x
