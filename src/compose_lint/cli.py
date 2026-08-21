@@ -15,7 +15,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
 
 from compose_lint import __version__
+from compose_lint._env_file import ENV_FILENAME
 from compose_lint._output import emit, emit_block
+from compose_lint._selection import Selection, plan_documents
 from compose_lint.config import ConfigError, load_config
 from compose_lint.config_emit import render_config
 from compose_lint.engine import filter_findings, run_rules
@@ -68,45 +70,29 @@ if TYPE_CHECKING:
     from compose_lint._merge import Merged
 
 
-_COMPOSE_FILENAMES = [
-    "compose.yml",
-    "compose.yaml",
-    "docker-compose.yml",
-    "docker-compose.yaml",
-]
+def _plan(args: argparse.Namespace) -> Selection:
+    """Decide which documents this run grades, and say how it decided.
 
+    Running `docker compose up` with no `-f` loads the base file *and* a sibling
+    `compose.override.yml`, with no flag and no opt-in — unless a `.env` sets
+    `COMPOSE_FILE`, which replaces discovery and suppresses that pairing.
+    Linting the wrong set grades a document nobody deploys in either direction:
+    a socket mount added by an overlay is missed entirely, and an overlay
+    Compose never loads contributes findings against a stack that does not run
+    it.
 
-# The overlay Compose merges automatically when it sits beside a base file.
-# Compose pairs the spelling: `compose.yml` takes `compose.override.yml`, and
-# `docker-compose.yaml` takes `docker-compose.override.yaml`.
-_OVERRIDE_FILENAMES = {
-    "compose.yml": "compose.override.yml",
-    "compose.yaml": "compose.override.yaml",
-    "docker-compose.yml": "docker-compose.override.yml",
-    "docker-compose.yaml": "docker-compose.override.yaml",
-}
-
-
-def _discover_compose_files() -> list[str]:
-    """Find Compose files in the current directory."""
-    return [name for name in _COMPOSE_FILENAMES if Path(name).is_file()]
-
-
-def _sibling_override(filepath: str) -> str | None:
-    """The override Compose would merge into ``filepath``, if it exists.
-
-    Running `docker compose up` with no `-f` loads the base file *and* this
-    overlay, with no flag and no opt-in, so the merged pair is the configuration
-    that actually runs. Linting the base alone grades a document nobody deploys:
-    a socket mount added by the overlay is missed entirely, and the base's own
-    absence findings are judged against hardening the overlay may have removed.
+    The notes are stderr-only and never touch the exit code. What was read and
+    what it selected is the declared input ADR-023 clause 2 requires; a run that
+    silently changed its own file set would be the undeclared kind.
     """
-    base = Path(filepath)
-    override_name = _OVERRIDE_FILENAMES.get(base.name)
-    if override_name is None:
-        return None
-    candidate = base.parent / override_name
-    return str(candidate) if candidate.is_file() else None
+    selection = plan_documents(
+        args.files,
+        read_env_files=not args.no_env,
+        merge_overrides=not args.no_merge_overrides,
+    )
+    for note in selection.notes:
+        emit(f"note: {note}")
+    return selection
 
 
 def _attribute_sources(
@@ -271,6 +257,17 @@ def _add_check_subparser(
             "file is deliberately graded in isolation"
         ),
     )
+    check.add_argument(
+        "--no-env",
+        action="store_true",
+        default=False,
+        help=(
+            "ignore a '.env' sitting beside the Compose file. Compose reads it "
+            "to choose which documents to load (COMPOSE_FILE), so this "
+            "reproduces the previous file selection exactly -- including "
+            "merging an override that COMPOSE_FILE would have suppressed"
+        ),
+    )
     verbosity = check.add_mutually_exclusive_group()
     verbosity.add_argument(
         "-v",
@@ -343,6 +340,17 @@ def _add_fix_subparser(
             "'compose.override.yml' Compose would merge beside it. The merged "
             "view is what actually runs, so this is only right when the base "
             "file is deliberately graded in isolation"
+        ),
+    )
+    fix.add_argument(
+        "--no-env",
+        action="store_true",
+        default=False,
+        help=(
+            "ignore a '.env' sitting beside the Compose file. Compose reads it "
+            "to choose which documents to load (COMPOSE_FILE), so this "
+            "reproduces the previous file selection exactly -- including "
+            "merging an override that COMPOSE_FILE would have suppressed"
         ),
     )
     fix.add_argument(
@@ -591,28 +599,25 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         emit(f"Error: {e}")
         sys.exit(2)
 
-    if not args.files:
-        args.files = _discover_compose_files()
-        if not args.files:
-            emit(
-                "Error: no Compose files found. Searched for: "
-                "compose.yml, compose.yaml, "
-                "docker-compose.yml, docker-compose.yaml"
-            )
-            sys.exit(2)
-
-    # Pair each base file with the overlay Compose would merge into it. Done
-    # before the sweep so an overlay that is also listed explicitly (a shell
-    # glob expands to it) is linted as part of its pair rather than standalone,
-    # where its absence findings would be false positives against a base that
-    # supplies the hardening.
-    overlay_of: dict[str, str] = {}
-    consumed: set[Path] = set()
-    for candidate in args.files:
-        overlay = None if args.no_merge_overrides else _sibling_override(candidate)
-        if overlay is not None:
-            overlay_of[candidate] = overlay
-            consumed.add(Path(overlay).absolute())
+    selection = _plan(args)
+    if not selection.groups:
+        emit(
+            "Error: no Compose files found. Searched for: "
+            "compose.yml, compose.yaml, "
+            "docker-compose.yml, docker-compose.yaml"
+        )
+        sys.exit(2)
+    args.files = [group.primary for group in selection.groups]
+    overlay_of = {
+        group.primary: list(group.overlays)
+        for group in selection.groups
+        if group.overlays
+    }
+    merge_reason = {
+        group.primary: group.selected_by_env
+        for group in selection.groups
+        if group.overlays
+    }
 
     # Print branded header in text mode before scanning begins. flush=True here
     # (and on the per-file text prints below) keeps block-buffered stdout from
@@ -620,7 +625,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     if args.output_format == "text":
         print(
             format_header(
-                [f for f in args.files if Path(f).absolute() not in consumed],
+                args.files,
                 str(config_path) if config_path else None,
                 args.fail_on,
                 __version__,
@@ -639,23 +644,32 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     seen_services: set[str] = set()
 
     for filepath in args.files:
-        if Path(filepath).absolute() in consumed:
-            # Linted as the overlay half of a pair below.
-            continue
-        overlay = overlay_of.get(filepath)
+        overlays = overlay_of.get(filepath)
         merged: Merged | None = None
         try:
-            if overlay is not None:
-                merged = load_merged([filepath, overlay])
+            if overlays:
+                merged = load_merged([filepath, *overlays])
                 data, lines = merged.data, merged.lines
                 # Not a coverage gap — coverage was achieved, not missed — so
                 # this warns without touching the exit code. What it must never
                 # do is stay silent: the findings below describe a document that
                 # is not the file named in the report.
+                # The reason is not decoration. "Compose merges it
+                # automatically" is true of a discovered override and false of a
+                # COMPOSE_FILE list, and stating the wrong one is how the
+                # pre-ADR-026 report justified reading a file Compose never
+                # loaded.
+                why = (
+                    f"because COMPOSE_FILE in {ENV_FILENAME} selects them"
+                    if merge_reason.get(filepath)
+                    else "because Compose merges "
+                    + ("them" if len(overlays) > 1 else "it")
+                    + " automatically"
+                )
                 emit(
-                    f"warning: {filepath}: merged {overlay} before linting, "
-                    "because Compose merges it automatically. Findings describe "
-                    "the combined configuration."
+                    f"warning: {filepath}: merged {', '.join(overlays)} before "
+                    f"linting, {why}. Findings describe the combined "
+                    "configuration."
                 )
             else:
                 data, lines = load_compose(filepath)
@@ -910,7 +924,7 @@ def _atomic_write(path: Path, content: str) -> None:
 
 
 def _merged_reparser(
-    filepath: str, overlay: str | None
+    filepath: str, overlays: list[str] | None
 ) -> Callable[[str], tuple[dict[str, Any], dict[str, int]]] | None:
     """Re-parse hook that merges a candidate patch with its overlay.
 
@@ -919,11 +933,11 @@ def _merged_reparser(
     re-merged before the engine sees it. Returns None when nothing is merged,
     which leaves the default single-file re-parse in place.
     """
-    if overlay is None:
+    if not overlays:
         return None
 
     def reparse(candidate: str) -> tuple[dict[str, Any], dict[str, int]]:
-        return merge_patched(candidate, filepath, [overlay])
+        return merge_patched(candidate, filepath, overlays)
 
     return reparse
 
@@ -945,27 +959,20 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
         emit(f"Error: {e}")
         sys.exit(2)
 
-    if not args.files:
-        args.files = _discover_compose_files()
-        if not args.files:
-            emit(
-                "Error: no Compose files found. Searched for: "
-                "compose.yml, compose.yaml, "
-                "docker-compose.yml, docker-compose.yaml"
-            )
-            sys.exit(2)
-
-    # Same pairing as `check`: an overlay listed explicitly is handled as part
-    # of its base's pair rather than fixed on its own.
-    fix_overlay_of: dict[str, str] = {}
-    fix_consumed: set[Path] = set()
-    for candidate_path in args.files:
-        candidate_overlay = (
-            None if args.no_merge_overrides else _sibling_override(candidate_path)
+    selection = _plan(args)
+    if not selection.groups:
+        emit(
+            "Error: no Compose files found. Searched for: "
+            "compose.yml, compose.yaml, "
+            "docker-compose.yml, docker-compose.yaml"
         )
-        if candidate_overlay is not None:
-            fix_overlay_of[candidate_path] = candidate_overlay
-            fix_consumed.add(Path(candidate_overlay).absolute())
+        sys.exit(2)
+    args.files = [group.primary for group in selection.groups]
+    fix_overlay_of = {
+        group.primary: list(group.overlays)
+        for group in selection.groups
+        if group.overlays
+    }
 
     only = set(args.only) if args.only else None
     had_error = False
@@ -973,16 +980,14 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
     touched = False
 
     for filepath in args.files:
-        if Path(filepath).absolute() in fix_consumed:
-            continue
-        overlay = fix_overlay_of.get(filepath)
+        overlays = fix_overlay_of.get(filepath)
         try:
-            if overlay is not None:
-                merged = load_merged([filepath, overlay])
+            if overlays:
+                merged = load_merged([filepath, *overlays])
                 data, lines = merged.data, merged.lines
                 emit(
-                    f"note: {filepath}: merged {overlay} before linting. Only "
-                    "findings written in this file can be fixed here."
+                    f"note: {filepath}: merged {', '.join(overlays)} before "
+                    "linting. Only findings written in this file can be fixed here."
                 )
             else:
                 data, lines = load_compose(filepath)
@@ -1032,8 +1037,8 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
         deferred = len(findings) - len(fixable_findings)
         if deferred:
             emit(
-                f"{filepath}: {deferred} finding(s) come from {overlay} and "
-                "need manual review there"
+                f"{filepath}: {deferred} finding(s) come from "
+                f"{', '.join(overlays or [])} and need manual review there"
             )
         try:
             result = collect_edits(fixable_findings, data, lines, text, only=only)
@@ -1094,8 +1099,8 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             # the candidate is re-merged with the overlay before they are
             # checked. Verifying the patched base alone would compare a
             # single-file result against a merged one.
-            reparse=_merged_reparser(filepath, overlay),
-            fixable=_is_local if overlay is not None else None,
+            reparse=_merged_reparser(filepath, overlays),
+            fixable=_is_local if overlays else None,
         )
         if verify_error is not None:
             emit_block(render_file_diff(filepath, text, patched, result.caveats))

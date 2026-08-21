@@ -1,6 +1,6 @@
 """What counts as "a Compose file" is defined in three places (#622).
 
-``_COMPOSE_FILENAMES`` in the CLI, a hand-copied bash list in ``action.yml``,
+``COMPOSE_FILENAMES`` in ``_selection``, a hand-copied bash list in ``action.yml``,
 and a regex in ``.pre-commit-hooks.yaml``. A user who moves between surfaces
 expects the same repository to lint the same way, and nothing held the three
 together.
@@ -34,7 +34,7 @@ from typing import Any
 import pytest
 import yaml
 
-from compose_lint.cli import _COMPOSE_FILENAMES
+from compose_lint._selection import COMPOSE_FILENAMES
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ACTION = REPO_ROOT / "action.yml"
@@ -91,17 +91,17 @@ def test_the_action_list_is_recognisable() -> None:
 def test_the_action_default_matches_the_cli_exactly() -> None:
     """A hand-copied duplicate is a bug with a delay on it.
 
-    If ``_COMPOSE_FILENAMES`` gains an entry, the action keeps the old list
+    If ``COMPOSE_FILENAMES`` gains an entry, the action keeps the old list
     silently — and reports "no Compose files found" on a repository the CLI
     lints happily.
     """
-    assert _action_default_filenames() == set(_COMPOSE_FILENAMES), (
+    assert _action_default_filenames() == set(COMPOSE_FILENAMES), (
         "action.yml's default discovery list has drifted from "
-        "cli.py's _COMPOSE_FILENAMES; they are the same contract"
+        "_selection.py's COMPOSE_FILENAMES; they are the same contract"
     )
 
 
-@pytest.mark.parametrize("name", _COMPOSE_FILENAMES)
+@pytest.mark.parametrize("name", COMPOSE_FILENAMES)
 def test_the_hook_selects_everything_the_cli_would_lint(name: str) -> None:
     """The hook must never be narrower than the CLI.
 
@@ -122,5 +122,5 @@ def test_the_documented_divergence_is_still_exactly_this(name: str) -> None:
     (and where docs/configuration.md gets updated).
     """
     assert _hook_selects(name), f"the hook no longer selects {name}"
-    assert name not in _COMPOSE_FILENAMES
+    assert name not in COMPOSE_FILENAMES
     assert name not in _action_default_filenames()

@@ -156,21 +156,25 @@ def format_header(
     config_path: str | None,
     fail_on: Severity,
     version: str,
-    merged: dict[str, str] | None = None,
+    merged: dict[str, list[str]] | None = None,
 ) -> str:
     """Format a branded run header showing the tool version and active parameters.
 
-    ``merged`` maps a base file to the overlay Compose merges into it. The
-    header is the one line that states what was read, so a run that read two
-    documents has to say two: naming only the base was the complaint this
+    ``merged`` maps a base file to the documents merged into it. The header is
+    the one line that states what was read, so a run that read several documents
+    has to say all of them: naming only the base was the complaint this
     behaviour exists to answer, and naming it after the merge lands would just
     move the false claim rather than remove it.
+
+    A list rather than a single overlay because a ``.env`` may set
+    ``COMPOSE_FILE`` and name any number of documents (ADR-026), where the
+    convention-discovered overlay is always at most one.
     """
     sep = _colorize("·", _DIM)
     config_str = _sanitize_line(config_path) if config_path else "none"
     pairs = merged or {}
     shown = [
-        f"{_sanitize_line(f)} + {_sanitize_line(pairs[f])}"
+        " + ".join([_sanitize_line(f), *(_sanitize_line(m) for m in pairs[f])])
         if f in pairs
         else _sanitize_line(f)
         for f in files

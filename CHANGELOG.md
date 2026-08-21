@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Upgrading
 
+**A `.env` beside a Compose file now chooses which documents are linted.**
+Compose reads a sibling `.env` for `COMPOSE_FILE`, which replaces its file
+discovery *and* suppresses the automatic `compose.override.yml` merge. compose-
+lint read neither, so a project configured that way had its real documents
+ungraded while an override Compose never loads contributed findings — under a
+warning stating that Compose merges it automatically, which was false there.
+
+Expect the reported file list to change on such projects, in both directions.
+`--no-env` restores the previous selection exactly, including that false merge.
+A `.env` can only *add* documents to a file you named on the command line, never
+remove it, so nothing you asked for is skipped ([ADR-026](docs/adr/026-read-the-sibling-env-file.md)).
+
+
 **Files with a `compose.override.yml` beside them are now graded as the
 configuration Compose runs.** `docker compose up` merges that overlay with no
 flag and no opt-in, and compose-lint read only the base — so a control-socket
@@ -21,6 +34,19 @@ documented MINOR behaviour for tightened coverage; pin the version or gate on
 the previous single-file grading exactly.
 
 ### Added
+- `check` and `fix` read `COMPOSE_FILE` and `COMPOSE_PATH_SEPARATOR` from a
+  `.env` in the Compose file's own directory, select the documents it names, and
+  merge them in its order. The run states what it selected and why on stderr,
+  and the header names every document read. The ambient shell environment stays
+  out of scope: a `COMPOSE_FILE` exported in a session and never written down is
+  host state, and honouring it would make the same checkout lint differently
+  depending on who ran the command. The separator defaults to `:` on every
+  platform rather than to the host's, because a `.env` naming two documents
+  describes the project wherever it is linted from; Compose's own default is
+  the host's path separator, so this deliberately differs on a Windows lint
+  host, in the same direction ADR-023 already took for path semantics.
+- `--no-env` ignores a sibling `.env` entirely, reproducing the previous file
+  selection.
 
 - Contract tests pin the JSON envelope and the SARIF log shape, the two
   surfaces `docs/compatibility.md` freezes at 1.0 that nothing enforced.
@@ -58,6 +84,10 @@ the previous single-file grading exactly.
   either direction. This is the last chance to say so.
 
 ### Fixed
+- An overlay is no longer merged into a project whose `.env` sets
+  `COMPOSE_FILE`. Compose does not load `compose.override.yml` when
+  `COMPOSE_FILE` is set, so those findings described a document that never runs,
+  and the accompanying warning asserted the opposite.
 
 - CL-0005 includes a non-default protocol in a long-syntax port's evidence.
   Two publishings of one container port that differ only by protocol — the
