@@ -22,6 +22,17 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
+
+# `docker compose config` is the only external dependency in this suite, and it
+# is not on the macOS/Windows smoke runners. A decorator rather than an inline
+# check because the inline form ran *after* the subprocess call in one test, so
+# the guard never fired and the runner raised FileNotFoundError instead of
+# skipping — invisible locally, where docker is installed.
+requires_docker = pytest.mark.skipif(
+    shutil.which("docker") is None,
+    reason="needs the docker compose CLI",
+)
+
 BASE_HARDENED = """\
 services:
   web:
@@ -207,6 +218,7 @@ def test_fix_edits_findings_written_in_the_file_it_is_fixing(tmp_path: Path) -> 
     assert "need manual review" in result.stderr
 
 
+@requires_docker
 def test_fix_leaves_a_document_compose_still_accepts(tmp_path: Path) -> None:
     """The patched pair must remain a valid project, not just valid YAML."""
     _write_pair(
@@ -222,8 +234,6 @@ def test_fix_leaves_a_document_compose_still_accepts(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
     )
-    if shutil.which("docker") is None:  # pragma: no cover - environment dependent
-        return
     assert check.returncode == 0, check.stderr
 
 
@@ -351,10 +361,9 @@ def test_every_fixer_runs_on_a_merged_document(tmp_path: Path) -> None:
     assert "need manual review" in result.stderr
 
 
+@requires_docker
 def test_fixed_merged_pair_is_still_a_valid_project(tmp_path: Path) -> None:
     """Compose must accept the pair after every fixer has written to the base."""
-    if shutil.which("docker") is None:  # pragma: no cover - environment dependent
-        pytest.skip("needs the docker compose CLI")
     _write_pair(tmp_path, ALL_FIXERS_BASE, OVERRIDE_SOCKET_ONLY)
     run_cli("fix", "--apply", cwd=tmp_path)
 
