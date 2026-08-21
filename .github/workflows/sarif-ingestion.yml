@@ -105,6 +105,20 @@ jobs:
       # design and there is no input that points it at a checkout. A separate
       # `category` keeps the two analyses distinct so cleanup can tell them
       # apart.
+      # The overlay half of the probe is written here rather than committed,
+      # because the condition under test is precisely that the file is *not*
+      # in the repository. A `compose.override.yml` is normally gitignored —
+      # it is the documented home for local changes — so a SARIF result whose
+      # artifactLocation names it points at a path Code Scanning cannot
+      # resolve against the commit. Whether it keeps such a result or silently
+      # discards it decides how #631 should attribute merged findings, and
+      # nothing local can answer it.
+      - name: Write the untracked overlay half of the probe
+        run: |
+          cp tests/smoke/overlay/override.yml.tmpl \
+             tests/smoke/overlay/compose.override.yml
+          git status --porcelain --ignored tests/smoke/overlay/ | sed 's/^/  /'
+
       - name: Generate SARIF from the working tree
         run: |
           python3 -m pip install --quiet --require-hashes -r requirements.lock
@@ -113,8 +127,10 @@ jobs:
             --config tests/smoke/sarif-probe-config.yml \
             --fail-on critical --format sarif \
             tests/smoke/insecure.yml tests/smoke/sarif-shape.yml tests/smoke/clean.yml \
+            tests/smoke/overlay/compose.yml \
             > working-tree.sarif
           python3 -c "import json;d=json.load(open('working-tree.sarif'));print('results:',len(d['runs'][0]['results']))"
+          python3 -c "import json;d=json.load(open('working-tree.sarif'));print('locations:',sorted({r['locations'][0]['physicalLocation']['artifactLocation']['uri'] for r in d['runs'][0]['results']}))"
 
       - name: Upload the working tree's SARIF to Code Scanning
         uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
@@ -122,10 +138,15 @@ jobs:
           sarif_file: working-tree.sarif
           category: compose-lint-working-tree
 
+      # `--expect-path` is the #631 question: did the result whose location is
+      # the untracked overlay survive ingestion, or did GitHub keep the
+      # analysis and drop that one?
       - name: Assert the working tree's results landed too
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python3 scripts/verify_sarif_ingestion.py verify
+        run: |
+          python3 scripts/verify_sarif_ingestion.py verify \
+            --expect-path tests/smoke/overlay/compose.override.yml
 
       # `always()`: the probe cleans up after a failed assertion too,
       # otherwise a red run leaves the fixture findings behind precisely

@@ -21,8 +21,18 @@ refuses to let them near its alert set — ``ci.yml``'s action smoke sets
 its own analysis afterwards rather than leaving fixture findings in the
 repo's Code Scanning.
 
+``verify`` optionally takes ``--expect-path SUBSTRING``, which asserts an
+ingested alert is located in a file whose path contains SUBSTRING. That is
+how the overlay probe (#631) answers a question no local test can: when a
+finding's evidence lives in a ``compose.override.yml`` — a file Compose
+merges but which is usually gitignored, and so absent from the repository —
+does Code Scanning keep the result, or silently discard a location it cannot
+resolve? If it discards it, pointing SARIF at the contributing file is worse
+in practice than naming the base and attaching the overlay as a related
+location, and only GitHub can settle which.
+
 Usage:
-    python scripts/verify_sarif_ingestion.py verify
+    python scripts/verify_sarif_ingestion.py verify [--expect-path SUBSTRING]
     python scripts/verify_sarif_ingestion.py cleanup
 
 Reads GITHUB_TOKEN, GITHUB_REPOSITORY, GITHUB_REF, GITHUB_SHA.
@@ -76,7 +86,7 @@ def our_analyses() -> list[dict[str, object]]:
     return [a for a in found if a.get("commit_sha") == SHA]
 
 
-def verify() -> int:
+def verify(expect_path: str | None = None) -> int:
     # `upload-sarif` waits for processing, so an analysis should already
     # exist; alert indexing can still trail it by a few seconds.
     analyses: list[dict[str, object]] = []
@@ -125,6 +135,29 @@ def verify() -> int:
     rules = sorted({str(a["rule"]["id"]) for a in alerts})
     print(f"\nGitHub ingested {total} result(s); {len(alerts)} alert(s) queryable.")
     print(f"Rules that survived ingestion: {', '.join(rules)}")
+
+    if expect_path is not None:
+        located = sorted(
+            {
+                str(
+                    (a.get("most_recent_instance") or {})
+                    .get("location", {})
+                    .get("path", "")
+                )
+                for a in alerts
+            }
+        )
+        print(f"Alert locations: {', '.join(p for p in located if p)}")
+        if not any(expect_path in path for path in located):
+            print(
+                f"::error::No ingested alert is located in a path containing "
+                f"{expect_path!r}. GitHub kept the analysis but dropped the "
+                f"results whose artifactLocation names a file that is not in "
+                f"the repository. SARIF should then name the base file and "
+                f"carry the overlay as a relatedLocation instead (#631)."
+            )
+            return 1
+        print(f"Results located in {expect_path!r} survived ingestion.")
     return 0
 
 
@@ -166,7 +199,10 @@ def cleanup() -> int:
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else ""
     if mode == "verify":
-        sys.exit(verify())
+        expect = None
+        if "--expect-path" in sys.argv:
+            expect = sys.argv[sys.argv.index("--expect-path") + 1]
+        sys.exit(verify(expect))
     if mode == "cleanup":
         sys.exit(cleanup())
     print(f"usage: {sys.argv[0]} verify|cleanup", file=sys.stderr)

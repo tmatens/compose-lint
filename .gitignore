@@ -67,3 +67,10 @@ Thumbs.db
 # Raw VHS renders; the committed assets are docs/assets/demo{,-fix}.gif
 scripts/demo/demo.gif
 scripts/demo/fix.gif
+
+# Overlay half of the SARIF ingestion probe (#631). Untracked on purpose: the
+# question the probe answers is whether Code Scanning keeps a result whose
+# artifactLocation names a file absent from the repository, which is the normal
+# state of a compose.override.yml. Committing it would remove the condition
+# under test.
+tests/smoke/overlay/compose.override.yml

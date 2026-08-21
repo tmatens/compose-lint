@@ -1,0 +1,17 @@
+# Base half of the SARIF overlay-attribution probe (issue #631).
+#
+# Hardened on purpose: every finding this pair produces at or above the
+# probe's threshold comes from the *overlay*, so the SARIF results carry an
+# artifactLocation naming a file that is not in the repository. The sibling
+# compose.override.yml is deliberately gitignored and written at job time —
+# see .github/workflows/sarif-ingestion.yml.
+services:
+  web:
+    image: probe:1.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    mem_limit: 512m
+    cpus: 0.5
+    user: "1000:1000"
+    restart: on-failure

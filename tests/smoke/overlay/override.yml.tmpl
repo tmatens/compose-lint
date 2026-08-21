@@ -1,0 +1,11 @@
+# Overlay half of the SARIF overlay-attribution probe (issue #631).
+#
+# Tracked here as a .tmpl so it is a reviewed fixture like every other smoke
+# document (#624 forbids inlining one in a workflow), but copied to
+# `compose.override.yml` at job time and never committed under that name. The
+# condition under test is that the file compose-lint *names in the SARIF* is
+# absent from the repository, which is the normal state of an override.
+services:
+  web:
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
