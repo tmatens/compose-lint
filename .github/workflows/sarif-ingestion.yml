@@ -110,9 +110,13 @@ jobs:
       # in the repository. A `compose.override.yml` is normally gitignored —
       # it is the documented home for local changes — so a SARIF result whose
       # artifactLocation names it points at a path Code Scanning cannot
-      # resolve against the commit. Whether it keeps such a result or silently
-      # discards it decides how #631 should attribute merged findings, and
-      # nothing local can answer it.
+      # resolve against the commit.
+      #
+      # Answered (#631): GitHub keeps it. The upload ingested every result
+      # with no analysis warning, and the alert stayed queryable at the
+      # overlay's path. So this is no longer an open question but a regression
+      # guard — GitHub can tighten ingestion with no commit on our side, which
+      # is why the schedule above exists.
       - name: Write the untracked overlay half of the probe
         run: |
           cp tests/smoke/overlay/override.yml.tmpl \
