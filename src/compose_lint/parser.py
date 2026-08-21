@@ -595,8 +595,12 @@ def _collect_tagged(
     return frozenset(found)
 
 
-def _validate_compose(data: Any) -> dict[str, Any]:
-    """Validate that parsed YAML is a Docker Compose file."""
+def _validate_compose(data: Any, *, merging: bool = False) -> dict[str, Any]:
+    """Validate that parsed YAML is a Docker Compose file.
+
+    ``merging`` relaxes the per-service check for a document that is one
+    half of a merge, where a service may legitimately carry no body.
+    """
     if not isinstance(data, dict):
         raise ComposeError(
             "Not a valid Compose file: expected a YAML mapping at the top level"
@@ -611,6 +615,13 @@ def _validate_compose(data: Any) -> dict[str, Any]:
 
     for name, config in services.items():
         if name is _LINES:
+            continue
+        if config is None and merging:
+            # `web:` with no body is a legal overlay half — verified against
+            # `docker compose config`, which merges it as "no changes to web"
+            # and deploys the base unaltered. Refusing it failed the *pair*,
+            # so a valid stack did not lint at all. Standalone files keep the
+            # stricter rule: a service with no body cannot run on its own.
             continue
         if not isinstance(config, dict):
             raise ComposeError(
@@ -1014,7 +1025,7 @@ def load_compose(
 
 
 def _loads_full(
-    content: str, base_dir: Path | None = None
+    content: str, base_dir: Path | None = None, *, merging: bool = False
 ) -> tuple[dict[str, Any], dict[str, int], frozenset[str], frozenset[str]]:
     """Parse and validate Compose from an in-memory string.
 
@@ -1085,7 +1096,7 @@ def _loads_full(
     if raw is None:
         raise ComposeError("Not a valid Compose file: file is empty")
 
-    _validate_compose(raw)
+    _validate_compose(raw, merging=merging)
 
     # The post-parse passes recurse too, and the guard above covered only the
     # parse. A 2000-deep `extends:` chain, or a self-referential
@@ -1144,7 +1155,7 @@ def load_document(path: str | Path) -> Document:
     except OSError as e:
         raise ComposeError(f"Cannot read file: {e}") from e
     data, lines, resets, overrides = _loads_full(
-        content, base_dir=filepath.absolute().parent
+        content, base_dir=filepath.absolute().parent, merging=True
     )
     return Document(
         path=str(path), data=data, lines=lines, resets=resets, overrides=overrides
@@ -1171,7 +1182,9 @@ def merge_patched(
     same overlays before the engine re-runs over it.
     """
     base_dir = Path(base_path).absolute().parent
-    data, lines, resets, overrides = _loads_full(patched, base_dir=base_dir)
+    data, lines, resets, overrides = _loads_full(
+        patched, base_dir=base_dir, merging=True
+    )
     candidate = Document(
         path=str(base_path),
         data=data,

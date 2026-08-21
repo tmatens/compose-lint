@@ -17,6 +17,8 @@ import subprocess
 import sys
 from typing import TYPE_CHECKING
 
+import pytest
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -297,3 +299,148 @@ def test_sarif_offers_no_suggested_fix_on_a_merged_run(tmp_path: Path) -> None:
     results = json.loads(result.stdout)["runs"][0]["results"]
 
     assert all(not r.get("fixes") for r in results)
+
+
+ALL_FIXERS_BASE = """\
+services:
+  web:
+    image: myapp:1.0
+    ports:
+      - "8080:80"
+    security_opt:
+      - seccomp:unconfined
+    logging:
+      driver: "none"
+"""
+
+
+# Contributes an unfixable finding without touching any key the base declares,
+# so every base-side finding keeps base provenance. Using OVERRIDE_DANGEROUS
+# here instead was a fixture bug worth remembering: it republishes the same
+# "8080:80", which under keyed merge means the overlay's entry wins and the
+# CL-0005 finding is correctly deferred rather than fixed.
+OVERRIDE_SOCKET_ONLY = """\
+services:
+  web:
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
+"""
+
+
+def test_every_fixer_runs_on_a_merged_document(tmp_path: Path) -> None:
+    """All five fixers, on a base whose overlay contributes an unfixable finding.
+
+    Each fixer reads the *merged* data and edits the base's text, so any of them
+    could splice at a line belonging to the other document. Exercising one of
+    the five and generalising was how the earlier version of this change passed
+    while `verify_apply` was still comparing a merged run against a single-file
+    re-lint.
+    """
+    _write_pair(tmp_path, ALL_FIXERS_BASE, OVERRIDE_SOCKET_ONLY)
+    result = run_cli("fix", "--apply", cwd=tmp_path)
+    after = (tmp_path / "compose.yml").read_text()
+
+    # CL-0005 rebinds the port, CL-0003 adds no-new-privileges, CL-0007 adds
+    # read_only, CL-0009 drops the unconfined profile, CL-0014 drops the
+    # disabled logging driver.
+    assert "127.0.0.1:8080:80" in after
+    assert "no-new-privileges:true" in after
+    assert "read_only: true" in after
+    assert "seccomp:unconfined" not in after
+    assert 'driver: "none"' not in after
+    # The overlay's socket mount is not fixable and must be reported, not edited.
+    assert "need manual review" in result.stderr
+
+
+def test_fixed_merged_pair_is_still_a_valid_project(tmp_path: Path) -> None:
+    """Compose must accept the pair after every fixer has written to the base."""
+    if shutil.which("docker") is None:  # pragma: no cover - environment dependent
+        pytest.skip("needs the docker compose CLI")
+    _write_pair(tmp_path, ALL_FIXERS_BASE, OVERRIDE_SOCKET_ONLY)
+    run_cli("fix", "--apply", cwd=tmp_path)
+
+    check = subprocess.run(
+        ["docker", "compose", "config"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert check.returncode == 0, check.stderr
+
+
+def test_overlay_provenance_findings_are_never_fixed(tmp_path: Path) -> None:
+    """The same rule, written in the overlay, must be left alone.
+
+    CL-0009 has a fixer, so the deferral cannot be explained by the rule being
+    unfixable — only by where the finding is written.
+    """
+    _write_pair(
+        tmp_path,
+        "services:\n  web:\n    image: myapp:1.0\n",
+        "services:\n  web:\n    security_opt:\n      - seccomp:unconfined\n",
+    )
+    overlay_before = (tmp_path / "compose.override.yml").read_text()
+    result = run_cli("fix", "--apply", cwd=tmp_path)
+
+    assert (tmp_path / "compose.override.yml").read_text() == overlay_before
+    assert "seccomp:unconfined" not in (tmp_path / "compose.yml").read_text()
+    assert "need manual review" in result.stderr
+
+
+def test_merged_fix_preserves_crlf_line_endings(tmp_path: Path) -> None:
+    """`fix` writes to user files, and a merged run is a new path into that.
+
+    `fix` reads with `newline=""` so a CRLF file is rewritten with CRLF; the
+    merged path adds a second document to the read, and getting it wrong
+    rewrites every line's ending while the diff shows one.
+    """
+    base = (
+        "services:\r\n  web:\r\n    image: myapp:1.0\r\n"
+        '    ports:\r\n      - "8080:80"\r\n'
+    )
+    (tmp_path / "compose.yml").write_bytes(base.encode())
+    (tmp_path / "compose.override.yml").write_bytes(
+        b'services:\r\n  web:\r\n    volumes:\r\n      - "/app:/app"\r\n'
+    )
+
+    run_cli("fix", "--apply", cwd=tmp_path)
+    after = (tmp_path / "compose.yml").read_bytes()
+
+    assert b"127.0.0.1:8080:80" in after, "the fix did not apply"
+    assert b"\r\n" in after, "CRLF endings were lost"
+    # No line may have been converted to bare LF.
+    assert after.replace(b"\r\n", b"").count(b"\n") == 0, (
+        "mixed endings: some lines were rewritten as LF"
+    )
+
+
+def test_merged_fix_leaves_lf_files_alone(tmp_path: Path) -> None:
+    """The converse: an LF file must not acquire CRLF from the merged path."""
+    _write_pair(
+        tmp_path,
+        'services:\n  web:\n    image: myapp:1.0\n    ports:\n      - "8080:80"\n',
+        'services:\n  web:\n    volumes:\n      - "/app:/app"\n',
+    )
+    run_cli("fix", "--apply", cwd=tmp_path)
+    after = (tmp_path / "compose.yml").read_bytes()
+
+    assert b"127.0.0.1:8080:80" in after
+    assert b"\r\n" not in after
+
+
+def test_a_key_the_overlay_republishes_belongs_to_the_overlay(tmp_path: Path) -> None:
+    """Identical values still move provenance: the overlay's entry is the one that wins.
+
+    The base and overlay both publish `8080:80`. Under keyed merge the overlay's
+    entry replaces the base's, so the CL-0005 finding is written in the overlay
+    and `fix` must defer it rather than editing the base's now-superseded line.
+    """
+    _write_pair(
+        tmp_path,
+        'services:\n  web:\n    image: myapp:1.0\n    ports:\n      - "8080:80"\n',
+        'services:\n  web:\n    ports: ["8080:80"]\n',
+    )
+    result = run_cli("fix", "--apply", cwd=tmp_path)
+
+    assert '- "8080:80"' in (tmp_path / "compose.yml").read_text()
+    assert "127.0.0.1" not in (tmp_path / "compose.yml").read_text()
+    assert "need manual review" in result.stderr

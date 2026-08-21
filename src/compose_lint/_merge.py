@@ -350,6 +350,14 @@ def merge_values(
         return result
 
     # A mapping merges key-by-key, recursively, whatever it sits under.
+    # A service with no body (`web:` in an overlay) parses as None and means
+    # "no changes here". Treating it as an empty mapping keeps it a no-op
+    # instead of letting the None replace the other document's service.
+    if base is None and isinstance(over, dict):
+        base = {}
+    if over is None and isinstance(base, dict) and _leaf(out_path) != "":
+        return base
+
     if isinstance(base, dict) and isinstance(over, dict):
         return _merge_mappings(base, over, base_side, over_side, out_path, rec)
 
