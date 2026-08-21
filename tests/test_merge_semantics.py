@@ -344,3 +344,140 @@ def test_append_fields_match_compose_shape(field_name: str, tmp_path: Path) -> N
 
     # Compose stringifies numeric-looking entries; compare as strings.
     assert [str(v) for v in actual] == [str(v) for v in expected]
+
+
+# Every field whose merge strategy differs, crossed with every Compose merge
+# directive. Hand-picked cases test what the author thought of: `!override` was
+# probed while deriving the table above, was not turned into a case, and the
+# merge shipped ignoring it — an overlay dropping `no-new-privileges` via
+# `security_opt: !override [...]` left the base's entry visible, so the absence
+# rule stayed silent on hardening Compose had removed. The matrix below is
+# mechanical precisely so it does not depend on remembering.
+DIRECTIVE_FIELDS = [
+    # (field, base value, override value) — the override is the interesting half
+    (
+        "volumes",
+        '["/var/run/docker.sock:/var/run/docker.sock"]',
+        '["/tmp/safe:/var/run/docker.sock"]',
+    ),
+    ("volumes", '["/app:/app"]', '["/var/run/docker.sock:/var/run/docker.sock"]'),
+    ("devices", '["/dev/mem:/dev/probe"]', '["/dev/null:/dev/probe"]'),
+    ("ports", '["127.0.0.1:8080:80"]', '["9999:80"]'),
+    ("cap_add", "[SYS_ADMIN]", "[NET_ADMIN]"),
+    ("cap_drop", "[ALL]", "[NET_RAW]"),
+    ("security_opt", '["no-new-privileges:true"]', '["seccomp:unconfined"]'),
+    ("tmpfs", '["/tmp"]', '["/run:exec"]'),
+    ("environment", '{AWS_SECRET_ACCESS_KEY: "AKIAIOSFODNN7EXAMPLE"}', '{OTHER: "1"}'),
+    ("read_only", "true", "false"),
+    ("privileged", "false", "true"),
+    ("logging", '{driver: "json-file"}', '{driver: "none"}'),
+]
+
+DIRECTIVES = ["", "!override ", "!reset "]
+
+MATRIX = [
+    (
+        f"{field}-{directive.strip() or 'plain'}",
+        field,
+        base_value,
+        directive,
+        over_value,
+    )
+    for field, base_value, over_value in DIRECTIVE_FIELDS
+    for directive in DIRECTIVES
+]
+
+
+@pytest.mark.parametrize(
+    "case_id,field,base_value,directive,over_value",
+    MATRIX,
+    ids=[c[0] for c in MATRIX],
+)
+def test_field_and_directive_matrix_matches_compose(
+    case_id: str,
+    field: str,
+    base_value: str,
+    directive: str,
+    over_value: str,
+    tmp_path: Path,
+) -> None:
+    """Each merge strategy under each directive agrees with Compose itself."""
+    # `!reset` takes null: the directive deletes the key, so the value is moot
+    # and a typed one is rejected by the schema.
+    value = "null" if directive.startswith("!reset") else over_value
+    _write_pair(
+        tmp_path,
+        f"services:\n  web:\n    image: myapp:1.0\n    {field}: {base_value}\n",
+        f"services:\n  web:\n    {field}: {directive}{value}\n",
+    )
+
+    truth_file = tmp_path / "truth.yml"
+    truth_file.write_text(_compose_config(tmp_path))
+    truth_data, truth_lines = load_compose(truth_file)
+    expected = _findings_of(truth_data, truth_lines)
+
+    merged = load_merged([tmp_path / "compose.yml", tmp_path / "compose.override.yml"])
+    actual = _findings_of(merged.data, merged.lines)
+
+    assert actual == expected, (
+        f"{case_id}: merge disagrees with docker compose\n"
+        f"  only ours:   {sorted(actual - expected)}\n"
+        f"  only theirs: {sorted(expected - actual)}"
+    )
+
+
+def test_three_documents_each_keep_their_own_provenance(tmp_path: Path) -> None:
+    """Folding N documents must not credit the accumulator's first file.
+
+    With two documents the base side is a real single file, so a single `path`
+    is right and nothing notices it is a simplification. From three on, the
+    accumulator is a mixture: `ports` supplied by the middle document was
+    attributed to the first, which would point a finding at an unrelated line
+    of an unrelated file. Only reachable once more than one overlay is merged —
+    which `COMPOSE_FILE` support would do — so it is pinned before it is used.
+    """
+    (tmp_path / "a.yml").write_text(
+        "services:\n  web:\n    image: a:1\n    read_only: true\n"
+    )
+    (tmp_path / "b.yml").write_text('services:\n  web:\n    ports: ["8080:80"]\n')
+    (tmp_path / "c.yml").write_text(
+        "services:\n  web:\n"
+        '    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]\n'
+    )
+
+    merged = load_merged([tmp_path / "a.yml", tmp_path / "b.yml", tmp_path / "c.yml"])
+
+    assert merged.sources["services.web.image"].endswith("a.yml")
+    assert merged.sources["services.web.ports[0]"].endswith("b.yml")
+    assert merged.sources["services.web.volumes[0]"].endswith("c.yml")
+    # And the line travels with the file, not with the accumulator.
+    assert merged.lines["services.web.ports[0]"] == 3
+    assert merged.lines["services.web.volumes[0]"] == 3
+
+
+def test_three_document_merge_matches_docker_compose(tmp_path: Path) -> None:
+    """The N-document fold agrees with `-f a -f b -f c`, not just with a pair."""
+    (tmp_path / "a.yml").write_text(
+        "services:\n  web:\n    image: a:1\n"
+        "    security_opt: [no-new-privileges:true]\n    read_only: true\n"
+    )
+    (tmp_path / "b.yml").write_text('services:\n  web:\n    ports: ["8080:80"]\n')
+    (tmp_path / "c.yml").write_text("services:\n  web:\n    read_only: false\n")
+
+    result = subprocess.run(
+        ["docker", "compose", "-f", "a.yml", "-f", "b.yml", "-f", "c.yml", "config"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if result.returncode != 0:
+        pytest.skip(f"compose rejected the fixture: {result.stderr.strip()[:200]}")
+    truth_file = tmp_path / "truth.yml"
+    truth_file.write_text(result.stdout)
+    truth_data, truth_lines = load_compose(truth_file)
+
+    merged = load_merged([tmp_path / "a.yml", tmp_path / "b.yml", tmp_path / "c.yml"])
+    assert _findings_of(merged.data, merged.lines) == _findings_of(
+        truth_data, truth_lines
+    )

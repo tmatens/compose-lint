@@ -211,6 +211,18 @@ class Document:
     # `data` (the parser drops it), so this is the only record that the document
     # asked for the *other* document's value to go away.
     resets: frozenset[str] = frozenset()
+    # Dotted paths this document marked `!override`. The directive says the
+    # value replaces the other document's rather than merging with it, which is
+    # invisible in `data` — the parsed value looks identical either way. Missing
+    # it is not symmetric: an overlay whose `security_opt: !override [...]`
+    # drops `no-new-privileges` leaves the base's entry visible, so the absence
+    # rule stays silent on hardening Compose actually removed.
+    overrides: frozenset[str] = frozenset()
+    # Per-path source files, set only when this "document" is itself the result
+    # of an earlier merge. Folding three or more documents makes the
+    # accumulator a mixture, and attributing all of it to a single `path`
+    # credited the first document with values the second supplied.
+    sources: dict[str, str] | None = None
 
 
 @dataclass
@@ -234,6 +246,18 @@ class _Side:
     path: str
 
 
+def _origin_of(doc: Document, path: str) -> str:
+    """Which file a path in ``doc`` was actually written in.
+
+    For a real document that is its own path. For an accumulator produced by an
+    earlier fold it is whichever document contributed that path — the mixture is
+    the whole reason `sources` exists.
+    """
+    if doc.sources is not None:
+        return doc.sources.get(path, doc.path)
+    return doc.path
+
+
 class _Recorder:
     """Collects line/source provenance while a merge walks the documents."""
 
@@ -245,10 +269,11 @@ class _Recorder:
         """Record that ``out_path`` was supplied by ``side``."""
         if side is None:
             return
+        origin = _origin_of(side.doc, side.path)
         line = side.doc.lines.get(side.path)
         if line is not None:
-            self.lines[out_path] = SourcedLine(line, side.doc.path)
-        self.sources[out_path] = side.doc.path
+            self.lines[out_path] = SourcedLine(line, origin)
+        self.sources[out_path] = origin
 
     def take_subtree(self, out_path: str, side: _Side | None) -> None:
         """Record ``side``'s whole subtree as landing at ``out_path``.
@@ -272,13 +297,15 @@ class _Recorder:
             # key[0] — always a name character at the root — and silently copied
             # nothing, so a value neither document overrode lost its line.
             if not prefix:
-                self.lines[key] = SourcedLine(line, side.doc.path)
-                self.sources[key] = side.doc.path
+                origin = _origin_of(side.doc, key)
+                self.lines[key] = SourcedLine(line, origin)
+                self.sources[key] = origin
                 continue
             if key.startswith(prefix) and key[len(prefix)] in ".[":
                 moved = out_path + key[len(prefix) :]
-                self.lines[moved] = SourcedLine(line, side.doc.path)
-                self.sources[moved] = side.doc.path
+                origin = _origin_of(side.doc, key)
+                self.lines[moved] = SourcedLine(line, origin)
+                self.sources[moved] = origin
 
 
 def merge_values(
@@ -381,7 +408,11 @@ def _merge_mappings(
     for key, value in over.items():
         child_out = _join(out_path, key)
         over_child = _child(over_side, key) if over_side else None
-        if key in base and key not in drop_keys:
+        marked_override = (
+            over_side is not None
+            and _join(over_side.path, key) in over_side.doc.overrides
+        )
+        if key in base and key not in drop_keys and not marked_override:
             # Seed the key's own location from the base before merging. A key
             # both documents mention is otherwise never recorded: the branches
             # above only fire for keys unique to one side, and the recursion
@@ -607,7 +638,12 @@ def merge_documents(documents: list[Document]) -> Merged:
         # The accumulated document carries the *merged* line/source maps, so a
         # third file merges against provenance already resolved for the first
         # two rather than against the original first file.
-        acc_doc = Document(path=accumulated.path, data=merged_data, lines=rec.lines)
+        acc_doc = Document(
+            path=accumulated.path,
+            data=merged_data,
+            lines=rec.lines,
+            sources=dict(rec.sources),
+        )
         merged_data = _merge_mappings(
             merged_data,
             nxt.data,

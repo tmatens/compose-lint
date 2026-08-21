@@ -179,6 +179,11 @@ class LineLoader(yaml.SafeLoader):
         # other document supplies, and without this the base's value survives a
         # deletion Compose honours.
         self._resets: dict[int, set[str]] = {}
+        # id(mapping) -> {key names carrying `!override`}. Like `!reset`, the
+        # directive changes how the value *merges* rather than what it is, so a
+        # single file needs no record of it — but a merge does: `!override`
+        # replaces the other document's value instead of merging with it.
+        self._overrides: dict[int, set[str]] = {}
 
 
 def _mapping_key(loader: LineLoader, key_node: yaml.Node) -> Any:
@@ -233,6 +238,7 @@ def _reject_duplicate_keys(loader: LineLoader, node: yaml.MappingNode) -> None:
 
 
 _RESET_TAG = "!reset"
+_OVERRIDE_TAG = "!override"
 
 
 def _construct_mapping(loader: LineLoader, node: yaml.MappingNode) -> dict[Any, Any]:
@@ -258,6 +264,8 @@ def _construct_mapping(loader: LineLoader, node: yaml.MappingNode) -> dict[Any, 
                 "Compose files may only use scalar keys",
                 key_node.start_mark,
             ) from e
+        if value_node.tag == _OVERRIDE_TAG and isinstance(key, str):
+            loader._overrides.setdefault(id(mapping), set()).add(key)
         if value_node.tag == _RESET_TAG:
             if isinstance(key, str):
                 loader._resets.setdefault(id(mapping), set()).add(key)
@@ -550,16 +558,16 @@ def _collect_lines(
     return lines
 
 
-def _collect_resets(
-    data: Any, resets: dict[int, set[str]], prefix: str = ""
+def _collect_tagged(
+    data: Any, tagged: dict[int, set[str]], prefix: str = ""
 ) -> frozenset[str]:
-    """Collect dot-notation paths of keys deleted by ``!reset``.
+    """Collect dot-notation paths of keys carrying a Compose merge directive.
 
     Walks the *raw* document (before :func:`_strip_lines` rebuilds it, which
     would invalidate the id() keys) with the same iterative work-stack shape as
     :func:`_collect_lines`.
     """
-    if not resets:
+    if not tagged:
         return frozenset()
     found: set[str] = set()
     expanded: set[int] = set()
@@ -567,7 +575,7 @@ def _collect_resets(
     while stack:
         current, current_prefix = stack.pop()
         if isinstance(current, dict):
-            for key in resets.get(id(current), ()):
+            for key in tagged.get(id(current), ()):
                 found.add(f"{current_prefix}.{key}" if current_prefix else key)
             if id(current) in expanded:
                 continue
@@ -1007,7 +1015,7 @@ def load_compose(
 
 def _loads_full(
     content: str, base_dir: Path | None = None
-) -> tuple[dict[str, Any], dict[str, int], frozenset[str]]:
+) -> tuple[dict[str, Any], dict[str, int], frozenset[str], frozenset[str]]:
     """Parse and validate Compose from an in-memory string.
 
     The string form of :func:`load_compose`: identical YAML parsing, line
@@ -1059,6 +1067,7 @@ def _loads_full(
         raw = loader.get_single_data()
         seq_lines = loader._seq_lines
         raw_resets = loader._resets
+        raw_overrides = loader._overrides
     except yaml.YAMLError as e:
         raise ComposeError(f"Invalid YAML: {e}") from e
     except RecursionError as e:
@@ -1086,7 +1095,8 @@ def _loads_full(
     # each pass that walks the document, not only the one that builds it.
     try:
         lines = _collect_lines(raw, seq_lines)
-        reset_paths = _collect_resets(raw, raw_resets)
+        reset_paths = _collect_tagged(raw, raw_resets)
+        override_paths = _collect_tagged(raw, raw_overrides)
         data = _strip_lines(raw)
         # Canonicalize before anything classifies: rules and the extends and
         # bind-source passes below all see the value the file actually ships
@@ -1102,7 +1112,7 @@ def _loads_full(
             "`${VAR}` default)"
         ) from e
 
-    return data, lines, reset_paths
+    return data, lines, reset_paths, override_paths
 
 
 def loads(
@@ -1113,7 +1123,7 @@ def loads(
     The public string entry point. :func:`_loads_full` additionally reports the
     paths deleted by ``!reset``, which only a merge needs.
     """
-    data, lines, _ = _loads_full(content, base_dir=base_dir)
+    data, lines, _, _ = _loads_full(content, base_dir=base_dir)
     return data, lines
 
 
@@ -1133,8 +1143,12 @@ def load_document(path: str | Path) -> Document:
         raise ComposeError(f"Invalid encoding: file is not valid UTF-8 ({e})") from e
     except OSError as e:
         raise ComposeError(f"Cannot read file: {e}") from e
-    data, lines, resets = _loads_full(content, base_dir=filepath.absolute().parent)
-    return Document(path=str(path), data=data, lines=lines, resets=resets)
+    data, lines, resets, overrides = _loads_full(
+        content, base_dir=filepath.absolute().parent
+    )
+    return Document(
+        path=str(path), data=data, lines=lines, resets=resets, overrides=overrides
+    )
 
 
 def load_merged(paths: list[str | Path]) -> Merged:
@@ -1157,7 +1171,13 @@ def merge_patched(
     same overlays before the engine re-runs over it.
     """
     base_dir = Path(base_path).absolute().parent
-    data, lines, resets = _loads_full(patched, base_dir=base_dir)
-    candidate = Document(path=str(base_path), data=data, lines=lines, resets=resets)
+    data, lines, resets, overrides = _loads_full(patched, base_dir=base_dir)
+    candidate = Document(
+        path=str(base_path),
+        data=data,
+        lines=lines,
+        resets=resets,
+        overrides=overrides,
+    )
     merged = merge_documents([candidate, *(load_document(p) for p in overlays)])
     return merged.data, merged.lines
