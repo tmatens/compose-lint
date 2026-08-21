@@ -13,7 +13,11 @@ from compose_lint._lines import find_ambiguous_break
 from compose_lint._merge import Document, Merged, merge_documents, merge_values
 from compose_lint._safe_read import UnsafeFileError, read_text_bounded
 from compose_lint.config import KNOWN_TOP_LEVEL_KEYS
-from compose_lint.rules._interpolation import reference_names, substitute_defaults
+from compose_lint.rules._interpolation import (
+    reference_names,
+    ships_no_literal,
+    substitute_defaults,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -981,6 +985,53 @@ def _referenced_names(data: Any) -> set[str]:
 
     walk(data, False)
     return found
+
+
+def unresolved_mount_sources(data: dict[str, Any]) -> list[str]:
+    """Bind sources that are entirely an unresolved reference, per service.
+
+    Deliberately narrow. 22% of real Compose files carry *some* defaultless
+    ``${VAR}`` in a value a rule reads, and saying so on all of them would be
+    noise. This is the subset where the statement is unarguable: a source that
+    is nothing but references Compose cannot substitute ships an empty source,
+    and Compose then refuses to start at all --
+    ``invalid spec: :/data: empty section between colons`` (verified). So the
+    document being graded is not a configuration that deploys, and CL-0001 was
+    never evaluated for it.
+
+    Reported as a note rather than a coverage gap: ``--allow-partial-coverage``
+    governs stack we *cannot* read, and this is a value nobody supplied. Making
+    it exit 2 would fail a pipeline over a file that was already failing to
+    deploy, which the run is not the right place to discover.
+    """
+    notes: list[str] = []
+    services = data.get("services")
+    if not isinstance(services, dict):
+        return notes
+    for name, config in sorted(services.items()):
+        if not isinstance(config, dict):
+            continue
+        volumes = config.get("volumes")
+        if not isinstance(volumes, list):
+            continue
+        for volume in volumes:
+            source = (
+                _split_short_volume(volume)[0]
+                if isinstance(volume, str)
+                else volume.get("source")
+                if isinstance(volume, dict)
+                else None
+            )
+            if not isinstance(source, str) or not source:
+                continue
+            if ships_no_literal(source):
+                notes.append(
+                    f"service '{name}' mounts '{source}', which nothing "
+                    "supplies a value for. Compose refuses to start a project "
+                    "with an empty bind source, so this is not a configuration "
+                    "that deploys and the mount rules were not evaluated for it."
+                )
+    return notes
 
 
 def _split_short_volume(volume: str) -> tuple[str, str, str]:

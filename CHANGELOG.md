@@ -52,7 +52,14 @@ the previous single-file grading exactly.
   the host's path separator, so this deliberately differs on a Windows lint
   host, in the same direction ADR-023 already took for path semantics.
 - `--no-env` ignores a sibling `.env` entirely, reproducing the previous file
-  selection.
+  selection. A run that skips one says so, because an escape hatch that
+  silently changes what is graded is the failure the hatch exists to prevent.
+- A note when a bind source is *only* unresolved references (`"${MOUNT}:/data"`
+  with nothing supplying `MOUNT`). Compose refuses to start a project with an
+  empty bind source, so the document being graded is not one that deploys and
+  the mount rules were never evaluated for it. Deliberately narrow — 3.3% of a
+  5,417-file corpus, against the 22% that carry *some* defaultless `${VAR}` —
+  and it is a note on stderr, so the exit code is unchanged.
 
 - Contract tests pin the JSON envelope and the SARIF log shape, the two
   surfaces `docs/compatibility.md` freezes at 1.0 that nothing enforced.

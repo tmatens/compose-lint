@@ -50,6 +50,7 @@ from compose_lint.parser import (
     load_compose,
     load_merged,
     merge_patched,
+    unresolved_mount_sources,
 )
 
 
@@ -92,7 +93,32 @@ def _plan(args: argparse.Namespace) -> Selection:
     )
     for note in selection.notes:
         emit(f"note: {note}")
+    if args.no_env:
+        _note_env_not_read(selection)
     return selection
+
+
+def _note_env_not_read(selection: Selection) -> None:
+    """Say when a `.env` was there and deliberately skipped (ADR-026 §6).
+
+    An escape hatch that silently changes what is graded is the failure the
+    hatch was meant to prevent, one level up. Nothing here touches the exit
+    code; the point is only that the difference is stated, so a run that
+    disagrees with another machine's can be explained by reading its header
+    and notes instead of guessed at.
+    """
+    skipped = sorted(
+        {
+            str(Path(group.primary).parent / ENV_FILENAME)
+            for group in selection.groups
+            if (Path(group.primary).parent / ENV_FILENAME).is_file()
+        }
+    )
+    for path in skipped:
+        emit(
+            f"note: {path} was not read (--no-env), so it selected no documents "
+            "and supplied no values."
+        )
 
 
 def _attribute_sources(
@@ -687,6 +713,8 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         coverage_errors.extend(
             _report_coverage_gaps(filepath, data, fatal=not args.allow_partial_coverage)
         )
+        for note in unresolved_mount_sources(data):
+            emit(f"note: {filepath}: {note}")
         seen_services.update(data.get("services", {}).keys())
 
         def _record_rule_error(
