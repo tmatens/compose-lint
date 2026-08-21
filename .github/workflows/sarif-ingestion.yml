@@ -123,12 +123,24 @@ jobs:
         run: |
           python3 -m pip install --quiet --require-hashes -r requirements.lock
           python3 -m pip install --quiet --no-deps -e .
+          # Exit 1 is expected and is not this job's failure signal: the
+          # overlay probe deliberately produces a CRITICAL, and the point of
+          # the step is the document, not the gate. Exit 2 still fails — that
+          # is compose-lint unable to complete, which would leave the SARIF
+          # truncated or absent.
+          set +e
           python3 -m compose_lint check \
             --config tests/smoke/sarif-probe-config.yml \
             --fail-on critical --format sarif \
             tests/smoke/insecure.yml tests/smoke/sarif-shape.yml tests/smoke/clean.yml \
             tests/smoke/overlay/compose.yml \
             > working-tree.sarif
+          status=$?
+          set -e
+          if [ "$status" -gt 1 ]; then
+            echo "::error::compose-lint could not complete (exit $status)"
+            exit "$status"
+          fi
           python3 -c "import json;d=json.load(open('working-tree.sarif'));print('results:',len(d['runs'][0]['results']))"
           python3 -c "import json;d=json.load(open('working-tree.sarif'));print('locations:',sorted({r['locations'][0]['physicalLocation']['artifactLocation']['uri'] for r in d['runs'][0]['results']}))"
 
