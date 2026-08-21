@@ -42,6 +42,21 @@ the previous single-file grading exactly.
   merged; findings from the overlay are reported for manual review, and the
   overlay is never a write target.
 
+### Deprecated
+
+- **Python 3.10 is deprecated.** It reaches upstream end-of-life in October
+  2026, and compose-lint will require 3.11 or newer before its 1.0 release.
+  Running on 3.10 now prints a one-line warning to stderr naming the version
+  you are on and the version to pin if you need to stay there. Nothing else
+  changes yet: 3.10 remains in the test matrix and fully supported until the
+  drop lands.
+
+  The warning exists because the drop itself is silent. `requires-python` does
+  not fail an install on an unsupported interpreter — pip resolves to the last
+  release that allowed it, so after the floor moves `pip install -U
+  compose-lint` leaves a 3.10 user on a frozen version with nothing printed in
+  either direction. This is the last chance to say so.
+
 ### Fixed
 
 - CL-0005 includes a non-default protocol in a long-syntax port's evidence.
