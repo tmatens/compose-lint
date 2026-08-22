@@ -156,6 +156,14 @@ def test_parse_error_names_the_invalid_overlay(tmp_path: Path) -> None:
     assert "Error: compose.yml: Invalid YAML:" not in result.stderr
     assert json.loads(result.stdout)["errors"][0]["file"] == "compose.override.yml"
 
+    sarif_result = run_cli("check", "--format", "sarif", cwd=tmp_path)
+    assert sarif_result.returncode == 2
+    notification = json.loads(sarif_result.stdout)["runs"][0]["invocations"][0][
+        "toolExecutionNotifications"
+    ][0]
+    artifact = notification["locations"][0]["physicalLocation"]["artifactLocation"]
+    assert artifact["uri"] == "compose.override.yml"
+
 
 def test_findings_name_the_file_they_came_from(tmp_path: Path) -> None:
     """A finding whose evidence is in the overlay must say so.

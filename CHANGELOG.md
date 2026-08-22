@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A parse error in an automatically merged `compose.override.yml` is now
+  reported against the file that actually failed in text, JSON, and SARIF. It
+  previously named the base file at a line number that did not exist there
+  ([#666](https://github.com/tmatens/compose-lint/issues/666)).
+
 - Every Compose substitution operator now resolves against a sibling `.env`,
   not just `${VAR:-default}` and `${VAR-default}`. `${VAR:?err}`, `${VAR?err}`,
   `${VAR:+alt}` and `${VAR+alt}` fetched the `.env` value and then discarded it,
