@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Every Compose substitution operator now resolves against a sibling `.env`,
+  not just `${VAR:-default}` and `${VAR-default}`. `${VAR:?err}`, `${VAR?err}`,
+  `${VAR:+alt}` and `${VAR+alt}` fetched the `.env` value and then discarded it,
+  so a `${BIND:?required}` that Compose resolves to `0.0.0.0` reached the rules
+  as source text and CL-0005 could not fire. The same function also shipped the
+  empty string for `${VAR:-default}` where `.env` sets `VAR=` and Compose ships
+  the default — a `:`-prefixed operator treats an empty value as unset. All
+  eighteen operator/state combinations are now pinned by a differential test
+  against the Compose binary
+  ([#664](https://github.com/tmatens/compose-lint/issues/664)).
+
+  Findings only change for a project that ships a `.env`: with none, every
+  operator was and remains unresolved. The 5,417-file corpus produces a byte-
+  identical result set.
+
 ## [0.22.0] - 2026-08-22
 
 ### Upgrading

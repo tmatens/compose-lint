@@ -39,6 +39,12 @@ _REF_HEAD_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)(:?[-?+])?")
 
 _DEFAULT_OPERATORS = frozenset({":-", "-"})
 
+# The operators that substitute an *alternate* -- text used when the variable is
+# set, the mirror of a default. `${V:+alt}` ships `alt` for a set `V`, so the
+# alternate is a literal the file carries and a reference inside one is a name
+# the run consumes.
+_ALTERNATE_OPERATORS = frozenset({":+", "+"})
+
 # How deep a chain of nested defaults will be resolved. Resolution recurses
 # into each default, so without a bound a scalar of `${A:-` repeated ~1,200
 # times -- 7 KB, under `MAX_SCAN_LEN` -- exhausts the interpreter stack, and
@@ -217,6 +223,13 @@ def reference_names(value: str) -> set[str]:
             default = _default_of(interior)
             if default is not None:
                 found |= reference_names(default)
+            # An alternate is substituted text like a default, so a reference
+            # inside one is a name the run consumes: `${SET:+${OTHER}}` needs
+            # OTHER kept by the ADR-026 §5 wanted-set filter, or resolution
+            # would later find it missing from an env that did read it.
+            alternate = _alternate_of(interior)
+            if alternate is not None:
+                found |= reference_names(alternate)
             index = close + 1
             continue
         name = _BARE_NAME_RE.match(value, index + 1)
@@ -229,26 +242,92 @@ def reference_names(value: str) -> set[str]:
 
 
 def _supplied(interior: str, env: Mapping[str, str]) -> str | None:
-    """What ``env`` supplies for a ``${...}`` interior, or ``None``.
+    """What this ``${...}`` interior resolves to given ``env``, or ``None``.
 
     A supplied value beats a written default, which is Compose's precedence --
-    the default applies only when the variable is unset. Operators that carry
-    no default (``:?``/``?``, ``:+``/``+``) are left to the caller, because
-    what they ship is not the variable's value.
+    the default applies only when the variable is unset.
+
+    Every operator resolves once ``env`` supplies the name, not just the two
+    that carry a default. ``${V:?err}`` with ``V`` set is the plain reference
+    ``${V}``; the error text applies only when it is unset. ``${V:+alt}`` with
+    ``V`` set is the literal ``alt``, written in the file. Reading only ``:-``
+    and ``-`` here left the ``.env`` value fetched and then discarded, so a
+    ``${BIND:?required}`` that Compose resolves to ``0.0.0.0`` reached the rules
+    as source text and CL-0005 could not fire (issue #664).
+
+    The colon distinguishes *unset* from *set but empty*, and the two are not
+    interchangeable -- ``${V:-DEF}`` ships ``DEF`` for an empty ``V`` while
+    ``${V-DEF}`` ships the empty string. Captured from Docker Compose 5.4.0
+    with the name supplied by a sibling ``.env``:
+
+    ==================  ==============  ===========  ==========
+    written             ``V=hello``     ``V=``       unset
+    ==================  ==============  ===========  ==========
+    ``${V:-DEF}``       ``hello``       ``DEF``      ``DEF``
+    ``${V-DEF}``        ``hello``       *empty*      ``DEF``
+    ``${V:?err}``       ``hello``       *refused*    *refused*
+    ``${V?err}``        ``hello``       *empty*      *refused*
+    ``${V:+ALT}``       ``ALT``         *empty*      *empty*
+    ``${V+ALT}``        ``ALT``         ``ALT``      *empty*
+    ==================  ==============  ===========  ==========
+
+    ``None`` means this function does not answer, and the caller falls through
+    to the written default or leaves the reference as written. It covers three
+    distinct cases, all of which must stay unresolved:
+
+    * **The name is not in ``env``.** For ``:-``/``-`` the caller supplies the
+      default. For ``:?``/``?`` Compose refuses the project outright, so there
+      is no configuration to grade. For ``:+``/``+`` Compose ships empty *when
+      nothing else sets the variable* -- but ADR-026 deliberately does not model
+      the ambient shell, so a name absent from ``.env`` is not knowably unset,
+      exactly as it is not for a bare ``${VAR}``.
+    * **``${V:?err}`` with ``V`` empty**, which Compose refuses for the same
+      reason as unset.
+    * **``${V:-DEF}`` with ``V`` empty**, where the written default is what
+      ships and the caller already knows how to reach it.
     """
     head = _REF_HEAD_RE.match(interior)
     if head is None:
         return None
-    operator = head.group(2)
-    if operator is not None and operator not in _DEFAULT_OPERATORS:
+    name, operator = head.group(1), head.group(2)
+    if name not in env:
         return None
-    return env.get(head.group(1))
+    value = env[name]
+    # A ":"-prefixed operator treats an empty value as unset; the bare form
+    # treats it as set. Every divergence in the table above is this one bit.
+    empty = not value
+    if operator is None or operator == "-":
+        return value
+    if operator == ":-":
+        return None if empty else value
+    if operator == ":?":
+        return None if empty else value
+    if operator == "?":
+        return value
+    alternate = interior[head.end() :]
+    if operator == ":+":
+        return "" if empty else alternate
+    return alternate  # "+": set, empty or not, ships the alternate
 
 
 def _default_of(interior: str) -> str | None:
     """The default an interpolation interior carries, or ``None`` if it has none."""
     head = _REF_HEAD_RE.match(interior)
     if head is None or head.group(2) not in _DEFAULT_OPERATORS:
+        return None
+    return interior[head.end() :]
+
+
+def _alternate_of(interior: str) -> str | None:
+    """The alternate a ``:+``/``+`` interior carries, or ``None`` for any other.
+
+    Distinct from :func:`_default_of` because the two substitute under opposite
+    conditions -- a default when the variable is *unset*, an alternate when it
+    is *set* -- so nothing may treat one as the other. Both are substituted
+    text, which is why :func:`reference_names` walks into each.
+    """
+    head = _REF_HEAD_RE.match(interior)
+    if head is None or head.group(2) not in _ALTERNATE_OPERATORS:
         return None
     return interior[head.end() :]
 
