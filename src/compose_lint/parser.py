@@ -1034,6 +1034,77 @@ def unresolved_mount_sources(data: dict[str, Any]) -> list[str]:
     return notes
 
 
+def unread_env_files(data: dict[str, Any]) -> list[str]:
+    """Services whose ``env_file:`` targets were never read, per service.
+
+    Compose loads each named file and merges its keys into the container's
+    process environment, so a credential written there reaches every surface
+    CL-0020's documentation names -- ``docker inspect``, the daemon's view of
+    the static config, and any container with daemon access -- while never
+    appearing in the document. Moving one line from ``environment:`` into an
+    ``env_file:`` therefore silences CL-0020 and CL-0021 without changing what
+    deploys, which is the silent false negative ADR-023 ranks worst.
+
+    Reported as a note rather than a coverage gap, and the distinction is the
+    whole design question. ``--allow-partial-coverage`` governs *services* left
+    ungraded: an unresolved ``include:`` hides a whole service and a cross-file
+    ``extends:`` grades one against a fraction of its keys, so any rule may be
+    wrong and exit 2 is proportionate. Here the service is fully graded and
+    exactly two rules are blind to one subtree. Weighing the same, 420 of the
+    5,417-file corpus (7.75%) name an ``env_file:``, so making it fatal would
+    newly fail one CI run in thirteen -- the shape ``docs/compatibility.md``
+    calls a MAJOR, over a gap that was silent in every release to date.
+
+    So the note states what was not evaluated and leaves the exit code alone,
+    which is the treatment ADR-026 §6 gives an unread ``.env`` and
+    :func:`unresolved_mount_sources` gives a value nobody supplied. Resolving
+    the files properly is a separate decision, because reporting on what is
+    inside one runs into ADR-026 §2's rule against echoing a supplied value.
+    """
+    notes: list[str] = []
+    services = data.get("services")
+    if not isinstance(services, dict):
+        return notes
+    for name, config in sorted(services.items()):
+        if not isinstance(config, dict):
+            continue
+        paths = _env_file_paths(config.get("env_file"))
+        if not paths:
+            continue
+        listed = ", ".join(repr(path) for path in paths)
+        notes.append(
+            f"service '{name}' reads {listed}, which compose-lint does not "
+            "open. Values it supplies reach the container environment, so "
+            "CL-0020 and CL-0021 were not evaluated for them."
+        )
+    return notes
+
+
+def _env_file_paths(value: Any) -> list[str]:
+    """Every path an ``env_file:`` names, in written order.
+
+    Three spellings are legal and all three appear in the corpus: a bare string,
+    a list of strings, and a list of mappings carrying ``path:`` alongside
+    ``required:`` / ``format:``. The mapping form is the newer one and is the
+    easiest to miss -- 38 corpus files use it, and reading only the string forms
+    would report a service as covered precisely where the author reached for the
+    more explicit syntax.
+    """
+    if isinstance(value, str):
+        return [value] if value else []
+    if not isinstance(value, list):
+        return []
+    paths: list[str] = []
+    for entry in value:
+        if isinstance(entry, str) and entry:
+            paths.append(entry)
+        elif isinstance(entry, dict):
+            path = entry.get("path")
+            if isinstance(path, str) and path:
+                paths.append(path)
+    return paths
+
+
 def _split_short_volume(volume: str) -> tuple[str, str, str]:
     """Split ``source:target[:mode]`` at the separator, ignoring ``${...}``.
 

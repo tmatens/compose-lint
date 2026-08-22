@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A note when a service names an `env_file:`. Compose merges those files into
+  the container's process environment, so a credential written in one reaches
+  every surface CL-0020 describes while never appearing in the document —
+  moving a line out of `environment:` silenced CL-0020 and CL-0021 without
+  changing what deploys. The files are still not opened; the note states what
+  was not evaluated, so the gap is visible rather than silent
+  ([#665](https://github.com/tmatens/compose-lint/issues/665)).
+
+  Stderr only, like the unread-`.env` and unresolved-mount-source notes. No
+  finding, exit code, or machine-readable output changes: 415 of the 5,417-file
+  corpus (8.6% of those that lint) now carry the note and none of their results
+  moved.
+
 ### Fixed
 
 - Every Compose substitution operator now resolves against a sibling `.env`,

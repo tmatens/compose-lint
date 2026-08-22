@@ -50,6 +50,7 @@ from compose_lint.parser import (
     load_compose,
     load_merged,
     merge_patched,
+    unread_env_files,
     unresolved_mount_sources,
 )
 
@@ -714,6 +715,8 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             _report_coverage_gaps(filepath, data, fatal=not args.allow_partial_coverage)
         )
         for note in unresolved_mount_sources(data):
+            emit(f"note: {filepath}: {note}")
+        for note in unread_env_files(data):
             emit(f"note: {filepath}: {note}")
         seen_services.update(data.get("services", {}).keys())
 
