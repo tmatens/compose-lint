@@ -74,25 +74,6 @@ class SourcedLine(int):
 # command line would produce something the user never wrote.
 _REPLACE_SEQ = frozenset({"command", "entrypoint"})
 
-# Sequences that append, preserving base order, dropping exact duplicates.
-_APPEND_SEQ = frozenset(
-    {
-        "cap_add",
-        "cap_drop",
-        "dns",
-        "dns_search",
-        "env_file",
-        "expose",
-        "extra_hosts",
-        "group_add",
-        "networks",
-        "profiles",
-        "security_opt",
-        "tmpfs",
-        "volumes_from",
-    }
-)
-
 # Sequences keyed by an identity extracted from each entry: same key means the
 # child's entry replaces the parent's, different keys append.
 _KEYED_SEQ = frozenset({"volumes", "devices", "ports"})
@@ -474,8 +455,12 @@ def _merge_sequences(
     if leaf in _KEY_VALUE_SEQ:
         return _merge_keyed(base, over, _kv_name, base_side, over_side, out_path, rec)
 
-    # Default for a Compose sequence is append-with-dedup. Anything not in the
-    # tables above lands here, which matches every append-style field probed.
+    # Default for a Compose sequence is append-with-dedup: base order preserved,
+    # exact duplicates dropped. Anything not in the tables above lands here,
+    # which is what every append-style field probed does — cap_add, cap_drop,
+    # dns, dns_search, env_file, expose, extra_hosts, group_add, networks,
+    # profiles, security_opt, tmpfs, volumes_from. None needs a table of its
+    # own: naming them would only restate the default they already take.
     return _merge_appended(base, over, base_side, over_side, out_path, rec)
 
 
