@@ -239,6 +239,20 @@ what a named file grades — and that has not been designed. Recorded here rathe
 decided, because a reader of this ADR will reasonably ask what else was in that file;
 the measurement is in [#659](https://github.com/tmatens/compose-lint/issues/659).
 
+Also out of scope: **`--project-directory`.** Compose reads `.env` from the *project
+directory*, which defaults to the base directory of the first Compose file but is
+overridable, and the flag relocates the read: with `stack/.env` setting
+`BIND=127.0.0.1` and a parent `.env` setting `BIND=0.0.0.0`,
+`docker compose -f stack/compose.yml config` yields `host_ip: 127.0.0.1` while
+`--project-directory .` yields `host_ip: 0.0.0.0` (verified). compose-lint reads the
+sibling `.env` and so reports the first, which is the deployment the file describes on
+its own. Honouring the flag is the same category the paragraph above already excludes
+for `--env-file`: a flag on someone's deploy command, absent from every file under
+inspection, that would make the same checkout lint differently depending on how it is
+invoked. Named here because the governing principle — *use files as Docker Compose
+would, when run in that file's directory* — is stated in terms of a directory, and a
+reader is entitled to know which one wins when the two disagree.
+
 **Alternatives considered:**
 
 - **Keep the current rule, document it.** The gap stays exactly as silent as it is,
