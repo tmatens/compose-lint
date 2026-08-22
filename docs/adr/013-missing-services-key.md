@@ -188,3 +188,62 @@ This leaves a known gap: a non-Compose YAML that merely *matches* a compose
 glob (a `compose-values.yml` Helm file, say) still exits 2, and no hook
 `exclude` covers it. Whether more buckets are worth recognising, or whether
 sweep users should scope their globs, is left open rather than settled here.
+
+**Amendment (2026-08-22, issue #671) — a fragment that is an *overlay*, not a
+lint target:**
+
+This ADR decided what to do with a file that has no `services:` key. Every case
+it weighed was a file linted **on its own** — that is the wording of the skip
+message itself, and the sweep-mode UX in the rationale is a directory of
+independent files. Merging did not exist yet: [ADR-025](025-lint-the-merged-configuration.md)
+arrived on 2026-08-20, almost four months after this decision was accepted, and
+taught compose-lint to load a base file together with its overlays.
+
+At that intersection the skip policy produces a result neither ADR intended. A
+valid base file carrying `privileged: true`, beside a `compose.override.yml`
+containing only `volumes:`, `networks:`, or `{}`, reports `✓ PASS` at exit 0.
+The fragment classifier fires on the overlay, `load_merged` propagates
+`ComposeNotApplicableError`, and the CLI's per-file skip handler — correct for
+one file, blind to the merge set — discards the whole project. Docker Compose
+merges that same pair and deploys the privileged container. A two-byte
+`compose.override.yml` containing `{}` turns a failing merge gate green.
+
+**A fragment appearing as an overlay in a merge set is merged, not skipped.**
+Compose treats it as an ordinary document that happens to contribute only
+top-level keys, and ADR-025 says compose-lint grades the configuration Compose
+runs. Skipping it was never a decision this ADR made; it is what a single-file
+policy did when handed a case it had not seen.
+
+Two things are deliberately unchanged. **A fragment linted on its own still
+skips at exit 0** — that is what this ADR decided, the sweep-mode reasoning
+still holds, and nothing above touches it. And **the classifier is untouched**:
+what counts as a fragment stays exactly as narrow as it was, because a false
+positive there still silently loses findings.
+
+The choice between merging the fragment and ignoring the overlay was, in
+practice, not observable: no rule reads top-level `volumes:`, `networks:`,
+`configs:` or `secrets:`, and `engine.py` iterates `data["services"]`, to which
+a fragment contributes none. Both options yield identical findings today.
+Merging is recorded here because it is what ADR-025 claims the tool does and
+what Compose actually does, so it leaves no trap for a future rule that does
+read a top-level key.
+
+**Scope: fragments only.** The other two not-applicable buckets reach the same
+skip path and produce the same false pass, but Compose does not accept them, so
+merging would be wrong. Captured against Docker Compose 5.4.0:
+
+| overlay | Compose | compose-lint |
+|---|---|---|
+| fragment (`volumes:` / `networks:` / `{}`) | merges; project deploys | merge it |
+| v1-shaped (services at top level) | `additional properties 'db' not allowed` | error |
+| compose-lint's own config | `additional properties 'rules' not allowed` | error |
+
+Those two are tracked in [#673](https://github.com/tmatens/compose-lint/issues/673)
+and are not settled here.
+
+**Interaction with ADR-006.** Exit codes are unchanged. This removes an exit 0
+that was asserting a clean grade on an ungraded project; it does not add a code
+or move a boundary. Affected files move from `PASS` to `FAIL` where the base
+carries a finding, which is new findings appearing on tightened coverage — the
+MINOR behaviour `docs/compatibility.md` already describes, and the shape #648,
+#657 and #668 each shipped under.
