@@ -227,6 +227,18 @@ git", which is gitleaks/trufflehog territory and would make compose-lint git-awa
 answer. The advice that *is* actionable already exists and already fires — CL-0020,
 pointing at `secrets:` and the `*_FILE` convention.
 
+Also out of scope: **`COMPOSE_PROFILES`.** A `.env` may set it, and doing so
+activates a profile (verified), so it changes which services Compose starts — the
+same shape of claim `COMPOSE_FILE` makes about which files it loads, from the same
+file. It is left unread because compose-lint grades *every* service in a document
+today, and skipping the ones whose profile is inactive would trade a false positive
+for a silent false negative: 47 CRITICAL findings across the 4,834-file corpus sit on
+profiled services, 29 of them CL-0001, in 153 files that would then report nothing at
+all. Honouring it would need the treatment §4 gives `COMPOSE_FILE` — never narrowing
+what a named file grades — and that has not been designed. Recorded here rather than
+decided, because a reader of this ADR will reasonably ask what else was in that file;
+the measurement is in [#659](https://github.com/tmatens/compose-lint/issues/659).
+
 **Alternatives considered:**
 
 - **Keep the current rule, document it.** The gap stays exactly as silent as it is,
