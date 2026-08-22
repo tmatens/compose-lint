@@ -11,10 +11,12 @@ import pytest
 from compose_lint.parser import (
     _LINES,
     ComposeError,
+    ComposeFragmentError,
     ComposeNotApplicableError,
     _collect_lines,
     _strip_lines,
     load_compose,
+    load_merged,
     loads,
 )
 
@@ -594,3 +596,105 @@ class TestExtendsResolution:
         )
         assert "extends" in data["services"]["a"]
         assert "extends" in data["services"]["b"]
+
+
+class TestFragmentOverlayMerging:
+    """A structural fragment merges into a set instead of skipping it (#671).
+
+    Single-file behaviour is untouched: linted alone, a fragment still raises
+    the ADR-013 not-applicable error the CLI maps to a skip at exit 0.
+    """
+
+    def test_fragment_has_its_own_subtype(self) -> None:
+        # The fragment bucket needs an identity of its own so a merge can
+        # admit it without matching on message text (#671). v1-shaped and
+        # own-config documents stay distinguishable from it.
+        with pytest.raises(ComposeFragmentError, match="Compose fragment"):
+            load_compose(FIXTURES / "fragment_volumes_only.yml")
+
+    def test_fragment_subtype_is_a_not_applicable_error(self) -> None:
+        # Subclassing keeps every existing
+        # `except ComposeNotApplicableError` working untouched.
+        with pytest.raises(ComposeNotApplicableError) as excinfo:
+            load_compose(FIXTURES / "fragment_volumes_only.yml")
+        assert isinstance(excinfo.value, ComposeFragmentError)
+        assert isinstance(excinfo.value, ComposeError)
+
+    def test_fragment_overlay_merges_into_base(self, tmp_path: Path) -> None:
+        # Compose folds a volumes-only overlay into its base and deploys the
+        # result; load_merged grades that configuration rather than dropping
+        # the project (#671).
+        base = tmp_path / "compose.yml"
+        frag = tmp_path / "compose.override.yml"
+        base.write_text("services:\n  web:\n    image: nginx\n")
+        frag.write_text("volumes:\n  data: {}\n")
+
+        merged = load_merged([base, frag])
+
+        assert merged.data["services"]["web"]["image"] == "nginx"
+        assert merged.data["volumes"] == {"data": {}}
+
+    def test_empty_mapping_overlay_merges_into_base(self, tmp_path: Path) -> None:
+        # `{}` classifies as a fragment (no non-meta keys); merging it must
+        # not lose the services the base contributed.
+        base = tmp_path / "compose.yml"
+        frag = tmp_path / "compose.override.yml"
+        base.write_text("services:\n  web:\n    image: nginx\n")
+        frag.write_text("{}\n")
+
+        merged = load_merged([base, frag])
+
+        assert "web" in merged.data["services"]
+
+    def test_all_fragment_set_raises_not_applicable(self, tmp_path: Path) -> None:
+        # When no document contributes services there is nothing to lint;
+        # merging would report a vacuous PASS under the primary path.
+        first = tmp_path / "compose.yml"
+        second = tmp_path / "compose.override.yml"
+        first.write_text("volumes:\n  data: {}\n")
+        second.write_text("networks:\n  n: {}\n")
+
+        with pytest.raises(
+            ComposeNotApplicableError,
+            match="every selected file appears to be a Compose fragment",
+        ):
+            load_merged([first, second])
+
+    def test_include_only_overlay_is_not_admitted_as_a_fragment(
+        self, tmp_path: Path
+    ) -> None:
+        # #516 established that an include-only file is not a harmless
+        # fragment: compose-lint does not resolve include, so folding one into
+        # the merge would grade a stack whose services it never saw. This pins
+        # the boundary the fragment admission must respect — "services-less"
+        # is not wide enough to admit it, or a later widening of the bucket
+        # would silently undo #516.
+        base = tmp_path / "compose.yml"
+        over = tmp_path / "compose.override.yml"
+        base.write_text("services:\n  web:\n    image: nginx\n")
+        over.write_text("include:\n  - other.yml\n")
+
+        with pytest.raises(ComposeError, match="uses 'include:'") as excinfo:
+            load_merged([base, over])
+        assert not isinstance(excinfo.value, ComposeNotApplicableError)
+
+    def test_v1_shaped_overlay_still_raises(self, tmp_path: Path) -> None:
+        # Only the fragment bucket merges. A v1-shaped overlay keeps raising
+        # so its separate error path (#673) decides what happens next.
+        base = tmp_path / "compose.yml"
+        over = tmp_path / "compose.override.yml"
+        base.write_text("services:\n  web:\n    image: nginx\n")
+        over.write_text('web:\n  ports: ["8080:80"]\n')
+
+        with pytest.raises(ComposeNotApplicableError, match="Compose v1"):
+            load_merged([base, over])
+
+    def test_own_config_overlay_still_raises(self, tmp_path: Path) -> None:
+        # Same boundary for the own-config bucket: never merged, never silent.
+        base = tmp_path / "compose.yml"
+        over = tmp_path / "compose.override.yml"
+        base.write_text("services:\n  web:\n    image: nginx\n")
+        over.write_text("rules:\n  CL-0003:\n    enabled: false\n")
+
+        with pytest.raises(ComposeNotApplicableError, match="compose-lint config"):
+            load_merged([base, over])

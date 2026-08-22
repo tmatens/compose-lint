@@ -67,6 +67,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A fragment overlay carrying only top-level structural keys such as
+  `volumes:` or `networks:`, or just `{}`, now merges into the linted
+  configuration instead of skipping the whole project. Compose folds it
+  into its base and deploys the result, but compose-lint let the
+  fragment raise out of the merge and reported `PASS` at exit 0 without
+  grading anything in the base file: a two-byte overlay could silence
+  every finding, CRITICAL ones included
+  ([#671](https://github.com/tmatens/compose-lint/issues/671)).
+
+  Findings only move toward coverage here, the same shape that #648,
+  #657 and #668 shipped under: affected projects see previously
+  withheld findings. The merge direction does not care which half
+  holds the `services:` — a fragment *base* beside an overlay that
+  carries them now lints too, where it previously skipped whole. A
+  merge set where every selected file is a
+  fragment still skips at exit 0, files linted on their own are
+  unchanged, and v1-shaped or own-config overlays keep their current
+  behavior until their separate error path lands (#673).
+
 - A parse error in an automatically merged `compose.override.yml` is now
   reported against the file that actually failed in text, JSON, and SARIF. It
   previously named the base file at a line number that did not exist there

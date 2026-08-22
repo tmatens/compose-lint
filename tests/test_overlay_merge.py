@@ -484,3 +484,139 @@ def test_a_key_the_overlay_republishes_belongs_to_the_overlay(tmp_path: Path) ->
     assert '- "8080:80"' in (tmp_path / "compose.yml").read_text()
     assert "127.0.0.1" not in (tmp_path / "compose.yml").read_text()
     assert "need manual review" in result.stderr
+
+
+BASE_PRIVILEGED = """\
+services:
+  web:
+    image: nginx
+    privileged: true
+"""
+
+
+def test_fragment_override_does_not_skip_the_project(tmp_path: Path) -> None:
+    """A fragment overlay must merge, not skip the project (#671).
+
+    An override carrying only top-level structural keys is ordinary Compose:
+    `docker compose config` accepts it and deploys the base unaltered.
+    compose-lint used to let the fragment raise out of the merge, skip the
+    whole project, and report PASS at exit 0 — dropping every finding in the
+    base file, CRITICAL ones included.
+    """
+    _write_pair(tmp_path, BASE_PRIVILEGED, "volumes:\n  data: {}\n")
+    result = run_cli("check", cwd=tmp_path)
+
+    assert result.returncode == 1, result.stderr
+    assert "CL-0002" in result.stdout
+
+
+def test_networks_only_fragment_overlay_is_merged(tmp_path: Path) -> None:
+    """Same defect through the other structural key."""
+    _write_pair(tmp_path, BASE_PRIVILEGED, "networks:\n  n: {}\n")
+    result = run_cli("check", cwd=tmp_path)
+
+    assert result.returncode == 1, result.stderr
+    assert "CL-0002" in result.stdout
+
+
+def test_empty_mapping_fragment_overlay_is_merged(tmp_path: Path) -> None:
+    """A two-byte `{}` overlay deploys; the base beside it must be graded.
+
+    This is the smallest file that used to turn a failing gate green while
+    changing nothing about what deploys.
+    """
+    _write_pair(tmp_path, BASE_PRIVILEGED, "{}\n")
+    result = run_cli("check", cwd=tmp_path)
+
+    assert result.returncode == 1, result.stderr
+    assert "CL-0002" in result.stdout
+
+
+def test_all_fragment_merge_set_still_skips(tmp_path: Path) -> None:
+    """When no document contributes services there is nothing to lint.
+
+    Merging fragments (#671) must not turn an all-fragment set into a vacuous
+    PASS under the primary path: nothing was graded, so the project still
+    skips at exit 0, with the reason stated.
+    """
+    _write_pair(tmp_path, "volumes:\n  data: {}\n", "networks:\n  n: {}\n")
+    result = run_cli("check", cwd=tmp_path)
+
+    assert result.returncode == 0
+    assert "Skipped" in result.stderr
+    assert "no 'services:' key" in result.stderr
+
+
+def test_v1_shaped_overlay_still_skips(tmp_path: Path) -> None:
+    """Only the fragment bucket merges; v1 keeps today's behaviour.
+
+    Compose refuses a v1-shaped document outright, so merging one would grade
+    a configuration that never deploys. Its separate error path is #673's
+    job; here it must behave exactly as before #671.
+    """
+    _write_pair(
+        tmp_path,
+        BASE_PRIVILEGED,
+        'web:\n  ports: ["8080:80"]\n',
+    )
+    result = run_cli("check", cwd=tmp_path)
+
+    assert result.returncode == 0
+    assert "Skipped" in result.stderr
+    assert "Compose v1" in result.stderr
+
+
+def test_include_only_overlay_is_not_admitted_as_a_fragment(tmp_path: Path) -> None:
+    """An `include:`-only overlay stays a hard error, never a fragment (#516).
+
+    `_classify_missing_services` special-cases include precisely because
+    compose-lint does not resolve it: admitting the file as a harmless
+    fragment would report a clean pass on a deployable stack. This is the one
+    place where widening the fragment bucket would silently undo #516, so the
+    boundary is pinned here.
+    """
+    _write_pair(tmp_path, BASE_PRIVILEGED, "include:\n  - other.yml\n")
+    result = run_cli("check", cwd=tmp_path)
+
+    assert result.returncode == 2
+    assert "uses 'include:'" in result.stderr
+
+
+def test_fragment_base_with_services_in_the_overlay_lints(tmp_path: Path) -> None:
+    """A fragment *base* beside an overlay that carries services lints now.
+
+    The mirror of the headline fix, and as much a gap in #671's direction:
+    before it, this pair skipped whole under the same single-file skip
+    handler. Compose accepts base-plus-overlay regardless of which half holds
+    the services, so grading it is more coverage in the same direction.
+    """
+    _write_pair(
+        tmp_path,
+        "volumes:\n  data: {}\n",
+        "services:\n  web:\n    image: nginx\n    privileged: true\n",
+    )
+    result = run_cli("check", cwd=tmp_path)
+
+    assert result.returncode == 1, result.stderr
+    assert "CL-0002" in result.stdout
+
+
+def test_fix_applies_to_the_base_beside_a_fragment_overlay(tmp_path: Path) -> None:
+    """`fix` runs on a project whose overlay is a fragment, instead of skipping.
+
+    The defect was not check-only: fix reads the pair through load_merged too,
+    so a fragment overlay used to make it drop the entire project and edit
+    nothing. The base's own port finding is fixable without any help from the
+    overlay, and the fragment itself is never a write target.
+    """
+    _write_pair(
+        tmp_path,
+        'services:\n  web:\n    image: myapp:1.0\n    ports:\n      - "8080:80"\n',
+        "volumes:\n  data: {}\n",
+    )
+    overlay_before = (tmp_path / "compose.override.yml").read_text()
+    run_cli("fix", "--apply", cwd=tmp_path)
+
+    after = (tmp_path / "compose.yml").read_text()
+    assert "127.0.0.1:8080:80" in after
+    assert (tmp_path / "compose.override.yml").read_text() == overlay_before

@@ -66,6 +66,19 @@ class ComposeNotApplicableError(ComposeError):
     """
 
 
+class ComposeFragmentError(ComposeNotApplicableError):
+    """A structural fragment: parses as YAML but carries no `services:` key.
+
+    Its own bucket under ADR-013 so a merge can tell it apart from the
+    other not-applicable shapes without matching on message text. Compose
+    folds a fragment overlay into its base and deploys the result, so
+    :func:`load_merged` merges one instead of discarding the project
+    (#671); linted on its own the file is still skipped at exit 0.
+    Subclassing keeps every existing `except ComposeNotApplicableError`
+    working untouched.
+    """
+
+
 # Keys that v2/v3 Compose places at the top level alongside `services:`.
 # A file containing only these (plus any `x-*` extension keys) is treated
 # as a structural fragment when `services:` is absent.
@@ -144,7 +157,9 @@ def _classify_missing_services(data: dict[str, Any]) -> ComposeError:
             "via --config; it is not a lint target."
         )
     if not non_meta:
-        return ComposeNotApplicableError(
+        # Own subtype so a merge can fold the fragment into its base while
+        # v1 and own-config stay errors (#671).
+        return ComposeFragmentError(
             "Skipped: file appears to be a Compose fragment "
             "(no 'services:' key; only top-level structural keys present). "
             "Fragments are typically merged via `extends:` or `-f` overlays "
@@ -615,7 +630,11 @@ def _validate_compose(data: Any, *, merging: bool = False) -> dict[str, Any]:
     """Validate that parsed YAML is a Docker Compose file.
 
     ``merging`` relaxes the per-service check for a document that is one
-    half of a merge, where a service may legitimately carry no body.
+    half of a merge, where a service may legitimately carry no body, and
+    admits a structural fragment as an overlay half: Compose merges such a
+    document as-is and deploys the base unaltered, so refusing it there
+    discarded a lintable project and reported PASS on one that was never
+    graded (#671). Linted on its own the fragment still raises.
     """
     if not isinstance(data, dict):
         raise ComposeError(
@@ -623,7 +642,13 @@ def _validate_compose(data: Any, *, merging: bool = False) -> dict[str, Any]:
         )
 
     if "services" not in data:
-        raise _classify_missing_services(data)
+        classified = _classify_missing_services(data)
+        if merging and isinstance(classified, ComposeFragmentError):
+            # Fragment overlay half: contribute its top-level keys to the
+            # merge. v1-shaped and own-config documents still raise —
+            # Compose refuses those projects outright (#673).
+            return data
+        raise classified
 
     services = data["services"]
     if not isinstance(services, dict):
@@ -1312,6 +1337,13 @@ def load_merged(paths: list[str | Path], *, use_env: bool = True) -> Merged:
 
     Later paths override earlier ones, which is the order Compose itself uses
     for ``-f a -f b`` and for a base file plus its ``compose.override.yml``.
+
+    A structural fragment overlay is merged into the result rather than
+    treated as grounds for skipping the project (#671): the base beside it
+    is perfectly lintable, and ADR-025 grades what Compose runs. A set where
+    *every* document is a fragment still raises
+    :class:`ComposeNotApplicableError` — there is nothing to lint, and
+    merging them would report a vacuous PASS under the primary path.
     """
     documents: list[Document] = []
     for path in paths:
@@ -1321,7 +1353,22 @@ def load_merged(paths: list[str | Path], *, use_env: bool = True) -> Merged:
             raise
         except ComposeError as exc:
             raise ComposeFileError(path, str(exc)) from exc
-    return merge_documents(documents)
+    merged = merge_documents(documents)
+    if "services" not in merged.data:
+        # No document contributed services, so the merged result has none to
+        # lint. v1-shaped and own-config documents never reach here: they
+        # raise from :func:`load_document` above.
+        #
+        # Deliberately a bare ComposeNotApplicableError, not
+        # ComposeFragmentError: this is a condition of the merged *set*
+        # (no document contributed services), not a classification of any
+        # one file, so naming the fragment bucket would misdescribe it.
+        raise ComposeNotApplicableError(
+            "Skipped: merged configuration has no 'services:' key "
+            "(every selected file appears to be a Compose fragment), so "
+            "there are no services to lint."
+        )
+    return merged
 
 
 def merge_patched(
@@ -1333,6 +1380,13 @@ def merge_patched(
     edit to the base file's *text*; the property that has to hold afterwards is
     about the document Compose would run, so the candidate is merged with the
     same overlays before the engine re-runs over it.
+
+    Unlike :func:`load_merged` there is no all-fragment guard on the result.
+    Reaching here requires the same set to have passed through
+    :func:`load_merged` in the fix path, which raises when nothing contributed
+    services — so an all-fragment set cannot get this far unless a fixer
+    deleted every service from the patched base, which none does. If that
+    ever changes, the guard belongs here too.
     """
     base_dir = Path(base_path).absolute().parent
     data, lines, resets, overrides = _loads_full(
