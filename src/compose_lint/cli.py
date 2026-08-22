@@ -45,6 +45,7 @@ from compose_lint.formatters.text import format_findings as format_text
 from compose_lint.models import Finding, Severity
 from compose_lint.parser import (
     ComposeError,
+    ComposeFileError,
     ComposeNotApplicableError,
     coverage_gaps,
     load_compose,
@@ -154,6 +155,8 @@ def _report_parse_error(filepath: str, exc: FileNotFoundError | ComposeError) ->
     here — ``ComposeNotApplicableError`` is not an error (ADR-013) and is
     handled separately by each caller.
     """
+    if isinstance(exc, ComposeFileError):
+        filepath = exc.path
     reason = "file not found" if isinstance(exc, FileNotFoundError) else str(exc)
     emit(f"Error: {filepath}: {reason}")
     return reason
@@ -708,7 +711,8 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             emit(f"{filepath}: {e}")
             continue
         except (FileNotFoundError, ComposeError) as e:
-            parse_errors.append((filepath, _report_parse_error(filepath, e)))
+            error_path = e.path if isinstance(e, ComposeFileError) else filepath
+            parse_errors.append((error_path, _report_parse_error(filepath, e)))
             continue
 
         coverage_errors.extend(

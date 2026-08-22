@@ -142,6 +142,21 @@ def test_merge_warning_does_not_change_the_exit_code(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
 
 
+def test_parse_error_names_the_invalid_overlay(tmp_path: Path) -> None:
+    """A malformed overlay must not be reported as a malformed base file."""
+    _write_pair(
+        tmp_path,
+        "services:\n  web:\n    image: myapp:1.0\n",
+        "services:\n  web:\n    image: [\n",
+    )
+    result = run_cli("check", "--format", "json", cwd=tmp_path)
+
+    assert result.returncode == 2
+    assert "Error: compose.override.yml: Invalid YAML:" in result.stderr
+    assert "Error: compose.yml: Invalid YAML:" not in result.stderr
+    assert json.loads(result.stdout)["errors"][0]["file"] == "compose.override.yml"
+
+
 def test_findings_name_the_file_they_came_from(tmp_path: Path) -> None:
     """A finding whose evidence is in the overlay must say so.
 

@@ -46,6 +46,14 @@ class ComposeError(Exception):
     """Raised when a file is not a valid Docker Compose file."""
 
 
+class ComposeFileError(ComposeError):
+    """A Compose error attributed to one file in a multi-file load."""
+
+    def __init__(self, path: str | Path, message: str) -> None:
+        super().__init__(message)
+        self.path = str(path)
+
+
 class ComposeNotApplicableError(ComposeError):
     """Raised when a file parses as YAML but is not a v2/v3 Compose file.
 
@@ -1376,7 +1384,15 @@ def load_merged(paths: list[str | Path], *, use_env: bool = True) -> Merged:
     Later paths override earlier ones, which is the order Compose itself uses
     for ``-f a -f b`` and for a base file plus its ``compose.override.yml``.
     """
-    return merge_documents([load_document(p, use_env=use_env) for p in paths])
+    documents: list[Document] = []
+    for path in paths:
+        try:
+            documents.append(load_document(path, use_env=use_env))
+        except ComposeNotApplicableError:
+            raise
+        except ComposeError as exc:
+            raise ComposeFileError(path, str(exc)) from exc
+    return merge_documents(documents)
 
 
 def merge_patched(
