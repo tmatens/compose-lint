@@ -1,4 +1,4 @@
-"""CL-0022: tmpfs mount re-enables exec/suid/dev."""
+"""CL-0022: tmpfs mount re-enables exec/suid."""
 
 from __future__ import annotations
 
@@ -15,10 +15,17 @@ if TYPE_CHECKING:
 # kept even when other options (e.g. size=) are set. The only way to weaken that
 # is to explicitly pass one of these options, which removes the matching default.
 # Token -> the protection it turns back off.
+#
+# `dev` is deliberately absent (ADR-028). Removing `nodev` changes nothing a
+# container can do: the device cgroup refuses every non-allow-listed node
+# wherever it sits, and the rootfs and /dev — mounts every container already
+# has — carry no `nodev` either. Where the cgroup is off (`privileged`), /dev is
+# already a writable, device-capable tmpfs. Flagging `dev` would be a finding on
+# a config that changes nothing — the CL-0023 failure mode. Proven live by
+# `_cl0022_dev_inert` in scripts/validate_rule_premises.py.
 _INSECURE_OPTIONS: dict[str, str] = {
     "exec": "execution of binaries from the mount (default noexec)",
     "suid": "setuid/setgid bits on the mount (default nosuid)",
-    "dev": "device nodes on the mount (default nodev)",
 }
 
 OWASP_REF = (
@@ -41,18 +48,18 @@ def _insecure_options(entry: str) -> list[str]:
 
 @register_rule
 class TmpfsInsecureOptionsRule(BaseRule):
-    """Detects tmpfs mounts that re-enable exec/suid/dev."""
+    """Detects tmpfs mounts that re-enable exec or suid."""
 
     @property
     def metadata(self) -> RuleMetadata:
         return RuleMetadata(
             id="CL-0022",
-            name="tmpfs mount re-enables exec/suid/dev",
+            name="tmpfs mount re-enables exec/suid",
             description=(
-                "Docker mounts tmpfs with noexec, nosuid, and nodev by default. "
-                "Passing exec, suid, or dev removes that protection, making a "
-                "writable in-memory mount executable or able to carry setuid "
-                "binaries — a deliberate weakening of a secure default."
+                "Docker mounts tmpfs with noexec and nosuid by default. Passing "
+                "exec or suid removes that protection, making a writable "
+                "in-memory mount executable or able to carry setuid binaries — "
+                "a deliberate weakening of a secure default."
             ),
             severity=Severity.LOW,
             references=[OWASP_REF, DOCKER_REF],
@@ -93,14 +100,14 @@ class TmpfsInsecureOptionsRule(BaseRule):
                 evidence=path,
                 message=(
                     f"tmpfs mount '{path}' re-enables {opts}. Docker mounts tmpfs "
-                    "noexec,nosuid,nodev by default; this turns that off, making "
-                    "a writable in-memory mount a place to stage and run dropped "
+                    "noexec,nosuid by default; this turns that off, making a "
+                    "writable in-memory mount a place to stage and run dropped "
                     "payloads — especially under read_only: true."
                 ),
                 line=lines.get(line_key) or lines.get(f"services.{service_name}.tmpfs"),
                 fix=(
                     f"Remove the {opts} option to restore Docker's secure default "
-                    "(noexec,nosuid,nodev). Keep it only if the workload must "
+                    "(noexec,nosuid). Keep it only if the workload must "
                     "execute or setuid from this mount. No auto-fix: the option "
                     "is set deliberately, so reverting is left to manual review."
                 ),

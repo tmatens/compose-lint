@@ -303,6 +303,27 @@ def _cl0022() -> tuple[bool, str]:
     ), f"default has noexec={'noexec' in base}, :exec has noexec={'noexec' in ex}"
 
 
+def _cl0022_dev_inert() -> tuple[bool, str]:
+    """The ``dev`` tmpfs option CL-0022 does NOT flag grants nothing (ADR-028).
+
+    Both legs create a block node (``MKNOD`` is a Docker default) and try to
+    open it. With the default ``nodev`` the *mount* refuses (``Permission
+    denied``); with ``:dev`` the node is openable by the mount and the **device
+    cgroup** refuses instead (``Operation not permitted``). Different errno,
+    same outcome — which is why flagging ``dev`` would be a finding on a config
+    that changes nothing. A ``:dev`` leg that reads the device (or fails any
+    other way) refutes the premise and must fail this check.
+    """
+    cmd = ["sh", "-c", "mknod /d/blk b 8 0 && head -c 1 /d/blk >/dev/null"]
+    rc_nodev, err_nodev = _run_err(["--tmpfs", "/d"], cmd)
+    rc_dev, err_dev = _run_err(["--tmpfs", "/d:dev"], cmd)
+    mount_refused = rc_nodev != 0 and "Permission denied" in err_nodev
+    cgroup_refused = rc_dev != 0 and "Operation not permitted" in err_dev
+    return (
+        mount_refused and cgroup_refused
+    ), f"nodev: rc={rc_nodev} {err_nodev!r}; :dev: rc={rc_dev} {err_dev!r}"
+
+
 # --- CL-0006 symptom-table mappings (docs/rules/CL-0006.md) -----------------
 #
 # The rule doc's "Determining required capabilities" table quotes verbatim
@@ -1144,6 +1165,7 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool | None, str]]]] = [
     ("CL-0017", "shared propagation is observable", _cl0017),
     ("CL-0018", "explicit user maps to that uid", _cl0018),
     ("CL-0022", "tmpfs noexec by default; :exec removes it", _cl0022),
+    ("CL-0022", "premise: :dev grants nothing (cgroup refuses)", _cl0022_dev_inert),
     # CL-0006 symptom-table mappings — one per row of the rule doc's table.
     ("CL-0006", "map: chown -> CHOWN", _t_chown),
     ("CL-0006", "map: chmod on foreign-owned -> FOWNER", _t_fowner),

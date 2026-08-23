@@ -217,7 +217,7 @@ If you need broad IaC coverage across Terraform, Kubernetes, and more, KICS cove
 | [CL-0019](https://tmatens.github.io/compose-lint/rules/CL-0019/) | MEDIUM | Image tag without digest | [Rule #13][owasp13] | — |
 | [CL-0020](https://tmatens.github.io/compose-lint/rules/CL-0020/) | HIGH | Credential-shaped env key with literal value | [Rule #12][owasp12] | — |
 | [CL-0021](https://tmatens.github.io/compose-lint/rules/CL-0021/) | HIGH | Credential embedded in connection-string env value | [Rule #12][owasp12] | — |
-| [CL-0022](https://tmatens.github.io/compose-lint/rules/CL-0022/) | LOW | tmpfs mount re-enables exec/suid/dev | [Rule #8][owasp8] | — |
+| [CL-0022](https://tmatens.github.io/compose-lint/rules/CL-0022/) | LOW | tmpfs mount re-enables exec/suid | [Rule #8][owasp8] | — |
 | [CL-0024](https://tmatens.github.io/compose-lint/rules/CL-0024/) | CRITICAL | Host-code-execution capability added | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3-limit-capabilities-grant-only-specific-capabilities-needed-by-a-container) | 5.4 |
 | [CL-0025](https://tmatens.github.io/compose-lint/rules/CL-0025/) | CRITICAL | Root-equivalent host path mounted writable | [Rule #8][owasp8] | 5.6 |
 | [CL-0026](https://tmatens.github.io/compose-lint/rules/CL-0026/) | MEDIUM | No resource limits (memory/CPU) | [Rule #7](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-7-limit-resources-memory-cpu-file-descriptors-processes-restarts) | 5.10, 5.11 |

@@ -37,7 +37,7 @@ reading here) in the terminal.
 | [CL-0019](rules/CL-0019.md) | Image tag without digest |
 | [CL-0020](rules/CL-0020.md) | Credential-shaped env key with literal value |
 | [CL-0021](rules/CL-0021.md) | Credential embedded in a connection-string env value |
-| [CL-0022](rules/CL-0022.md) | tmpfs mount re-enables exec/suid/dev |
+| [CL-0022](rules/CL-0022.md) | tmpfs mount re-enables exec/suid |
 | [CL-0024](rules/CL-0024.md) | Host-code-execution capability added |
 | [CL-0025](rules/CL-0025.md) | Root-equivalent host path mounted writable |
 | [CL-0026](rules/CL-0026.md) | No resource limits (memory/CPU) |

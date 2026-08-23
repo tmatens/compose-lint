@@ -1,4 +1,4 @@
-"""Tests for CL-0022: tmpfs mount re-enables exec/suid/dev."""
+"""Tests for CL-0022: tmpfs mount re-enables exec/suid."""
 
 from __future__ import annotations
 
@@ -27,15 +27,24 @@ class TestTmpfsInsecureOptionsRule:
         assert findings[0].severity.value == "low"
         assert "exec" in findings[0].message
 
-    def test_detects_suid_and_dev(self) -> None:
-        findings = self._check("    tmpfs:\n      - /tmp:suid\n      - /run:dev\n")
-        assert len(findings) == 2
+    def test_detects_suid(self) -> None:
+        findings = self._check("    tmpfs:\n      - /tmp:suid\n")
+        assert len(findings) == 1
+        assert "suid" in findings[0].message
+
+    def test_dev_alone_is_clean(self) -> None:
+        # ADR-028: `dev` removes nothing observable. The device cgroup refuses
+        # every non-allow-listed node regardless of the mount, and the rootfs
+        # and /dev never had nodev — so a tmpfs without it grants nothing.
+        assert self._check("    tmpfs:\n      - /run:dev\n") == []
 
     def test_detects_multiple_on_one_entry(self) -> None:
         findings = self._check("    tmpfs:\n      - /tmp:exec,suid,dev\n")
         assert len(findings) == 1
-        for tok in ("exec", "suid", "dev"):
+        for tok in ("exec", "suid"):
             assert tok in findings[0].message
+        # `dev` rides along in the entry but is not what the finding reports.
+        assert "re-enables exec, suid." in findings[0].message
 
     def test_detects_scalar_form(self) -> None:
         findings = self._check("    tmpfs: /tmp:exec\n")
