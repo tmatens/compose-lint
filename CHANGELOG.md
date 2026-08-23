@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **CL-0022 no longer flags the `dev` tmpfs option.** The pre-1.0 rule-ID sweep
+  ([#645](https://github.com/tmatens/compose-lint/issues/645),
+  [ADR-028](docs/adr/028-pre-1.0-rule-id-sweep.md)) measured each of the rule's
+  three tokens on rootful Docker at defaults. `exec` and `suid` remove a real
+  default and stay. `dev` removes `nodev` and changes nothing a container can
+  do: a block node created on a `tmpfs:dev` is refused by the **device cgroup**
+  (`Operation not permitted`) exactly as it is on the rootfs and in `/dev`,
+  neither of which carries `nodev` either; where the cgroup is off
+  (`privileged`), `/dev` already permits the node. A finding on `dev` described
+  a configuration that changed nothing — the failure mode that removed
+  CL-0023 — so the token is gone, with a premise check (`_cl0022_dev_inert`)
+  that re-proves the cgroup refusal on every CI run. A file whose only CL-0022
+  finding was `:dev` now passes; `exec` and `suid` findings are unchanged. The
+  rule's name is now "tmpfs mount re-enables exec/suid".
+
+  The rule doc is corrected at the same time: OWASP Rule #8 recommends the
+  `read_only` + `tmpfs` pattern and says nothing about mount options, so it is
+  now cited for the pattern the rule protects, with the option semantics
+  grounded by the live checks. The doc also states what `noexec` does not
+  stop — `memfd_create`, interpreters, and a root workload's writable `/dev` —
+  which is why the rule is LOW.
+
+- **The pre-1.0 rule-ID reclamation window is closed.** ADR-028 records a
+  disposition for every one of the 27 rules against the four questions #645
+  set — would we ship it today, is its grounding container-context, is it
+  false-positive-prone beyond what the premise check sees, is the ID right —
+  with corpus prevalence and the live measurements behind each. All 27 are
+  kept; no ID is reclaimed; CL-0012, CL-0015 and CL-0023 stay fallow
+  permanently (already enforced by `tests/test_rule_surfaces.py`). One rule,
+  CL-0014, is recorded as retained on maintainer judgment rather than on the
+  grounding bar, so the divergence is visible rather than folklore.
+
 ## [0.23.0] - 2026-08-23
 
 ### Added

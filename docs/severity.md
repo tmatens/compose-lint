@@ -246,7 +246,8 @@ looks wrong against your benchmark copy, check the version first.
 
 ## Current rule assignments
 
-Sorted by rule ID. `Derived` is the matrix result for the row's cell after any
+Every rule below was given a recorded keep-or-reclaim disposition before the
+1.0 ID freeze — [ADR-028](adr/028-pre-1.0-rule-id-sweep.md). Sorted by rule ID. `Derived` is the matrix result for the row's cell after any
 qualifier or modifier; `Shipped` is the severity the rule actually emits. Where
 they differ, the `Override` column carries a reason from the closed list and a
 link. `tests/test_severity_matrix.py` enforces all four properties.
@@ -383,7 +384,7 @@ run does not mean the rule is broken.
 - **CL-0014** — `logging.driver: none`
 - **CL-0016** — `devices:` mapping a sensitive host device (e.g. `/dev/mem`, `/dev/kmem`)
 - **CL-0017** — `volumes:` using `:rshared` (shared mount propagation)
-- **CL-0022** — `tmpfs` mount passing `exec`, `suid`, or `dev` (re-enabling Docker's default `noexec,nosuid,nodev`)
+- **CL-0022** — `tmpfs` mount passing `exec` or `suid` (re-enabling Docker's default `noexec,nosuid`)
 
 Other rules (CL-0005, CL-0008, CL-0009, CL-0010, CL-0011, CL-0013, CL-0018) are
 also presence-based but target patterns common enough in real compose files that
