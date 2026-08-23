@@ -248,6 +248,35 @@ the fork, and open the PR from that branch back to `main` here. Everything
 below applies the same way; the DCO and commit-signing checks run on fork PRs
 too, so set those up before your first commit.
 
+Add this repository as a second remote when you clone your fork. `origin` is
+**your fork**, not this repository, so any instruction phrased as
+`git rebase origin/main` rebases you onto your fork's copy of `main` — which is
+frozen at whatever it held when you forked. That reports success and changes
+nothing, which is a confusing way to discover the problem.
+
+```bash
+git clone https://github.com/<you>/compose-lint.git
+cd compose-lint
+git remote add upstream https://github.com/tmatens/compose-lint.git
+```
+
+Then `git fetch upstream` and rebase onto `upstream/main`. `main` here moves
+several times a day, and the ruleset requires a PR to be up to date before it
+merges, so expect to rebase before yours lands:
+
+```bash
+git fetch upstream && git rebase upstream/main
+git push --force-with-lease
+```
+
+`git log --oneline -3` afterwards should show this repository's newest commit
+directly beneath yours. If it shows the commit you forked from, the rebase went
+to the wrong base.
+
+Don't use the **Update branch** button instead: it merges rather than rebases,
+and the merge commit it creates carries no `Signed-off-by` trailer, so the DCO
+check fails on a commit you did not write.
+
 1. **Create a branch** from `main`. Name it descriptively:
    `docs/contributor-workflow`, `rules/CL-0011-user-namespaces`,
    `fix/parser-merge-keys`.
