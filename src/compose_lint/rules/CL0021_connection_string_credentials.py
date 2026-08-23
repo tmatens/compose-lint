@@ -13,6 +13,8 @@ from compose_lint.rules._interpolation import ships_no_literal
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from compose_lint._service_env import EnvFileKey
+
 OWASP_REF = (
     "https://cheatsheetseries.owasp.org/cheatsheets/"
     "Docker_Security_Cheat_Sheet.html#rule-12-utilize-docker-secrets-for-sensitive-data-management"
@@ -229,6 +231,61 @@ class ConnectionStringCredentialsRule(BaseRule):
                     f"`{key}: {scheme}://user:" + "${DB_PASSWORD}@host/db`. "
                     "RFC 3986 §3.2.1 also deprecates passing passwords in "
                     "URI userinfo regardless of Docker context."
+                ),
+                references=[OWASP_REF, COMPOSE_SECRETS_REF, RFC3986_REF],
+            )
+
+    def check_env_file_keys(
+        self,
+        service_name: str,
+        keys: tuple[EnvFileKey, ...],
+        service_config: dict[str, Any],
+    ) -> Iterator[Finding]:
+        """Grade the values an ``env_file:`` contributes, on the same test.
+
+        The exposure surface is the one this rule already describes: the value
+        lands in the container's process environment either way, and where it
+        was written is not what the rule grades (ADR-027).
+
+        The credential itself never reaches the output. ``evidence`` is the
+        key, the message names the key, the scheme and the file, and
+        ``source_is_document=False`` stops the text formatter excerpting the
+        line — which for this rule would print the whole connection string.
+        """
+        del service_config  # shadowed keys are removed before this is called
+        for entry in keys:
+            match = _find_inline_credential(entry.value)
+            if match is None:
+                continue
+            scheme, _, _ = match
+
+            yield Finding(
+                rule_id="CL-0021",
+                severity=Severity.HIGH,
+                service=service_name,
+                evidence=entry.key,
+                message=(
+                    f"Service reads env var '{entry.key}' from "
+                    f"'{entry.source_file}' containing an inline credential in "
+                    f"a {scheme}:// connection string "
+                    "(scheme://user:password@host). Compose merges that file "
+                    "into the container's process environment, where it is "
+                    "exposed via `docker inspect`, `/proc/<pid>/environ`, "
+                    "`docker compose config`, process listings, and CI logs — "
+                    "any process or operator with daemon access can read them."
+                ),
+                line=entry.line or None,
+                source_file=entry.source_file,
+                source_is_document=False,
+                fix=(
+                    "Remove the literal password from the connection string. "
+                    "Preferred: store the credential in Compose `secrets:` and "
+                    "reassemble the URL in the workload's entrypoint. "
+                    "Acceptable as an interim step: pull the credential from "
+                    "process env via substitution, e.g. "
+                    f"`{entry.key}: {scheme}://user:" + "${DB_PASSWORD}@host/db`. "
+                    "RFC 3986 §3.2.1 also deprecates passing passwords in URI "
+                    "userinfo regardless of Docker context."
                 ),
                 references=[OWASP_REF, COMPOSE_SECRETS_REF, RFC3986_REF],
             )

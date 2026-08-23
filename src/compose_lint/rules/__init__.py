@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from compose_lint._service_env import EnvFileKey
     from compose_lint.models import Finding, RuleMetadata, TextEdit
 
 _registry: list[type[BaseRule]] = []
@@ -36,6 +37,26 @@ class BaseRule(abc.ABC):
 
         Yields Finding objects for each issue detected.
         """
+
+    def check_env_file_keys(
+        self,
+        service_name: str,
+        keys: tuple[EnvFileKey, ...],
+        service_config: dict[str, Any],
+    ) -> Iterator[Finding]:
+        """Check the keys a service's ``env_file:`` targets contribute.
+
+        Separate from :meth:`check` because these keys are not in the document:
+        they are values Compose merges into the container's process environment
+        from a file the document names (ADR-027). Only the two credential rules
+        implement it — an ``env_file:`` value reaches the process environment
+        and nothing else, verified against Compose, so no rule that grades a
+        deployment property has anything to read here.
+
+        The default yields nothing, so a rule that does not care is unaffected
+        and no existing rule had to change.
+        """
+        return iter(())
 
     def fix(
         self,

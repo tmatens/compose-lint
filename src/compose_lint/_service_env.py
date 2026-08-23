@@ -56,6 +56,7 @@ __all__ = [
     "ServiceEnvFiles",
     "Unread",
     "UnreadEnvFile",
+    "describe_unread",
     "env_file_refs",
     "resolve_env_files",
 ]
@@ -200,8 +201,6 @@ def _classify(ref: EnvFileRef, base_dir: Path) -> tuple[Path | None, Unread | No
 def resolve_env_files(
     data: dict[str, Any],
     base_dir: Path,
-    *,
-    read_dotenv: bool = True,
 ) -> dict[str, ServiceEnvFiles]:
     """Read every service's ``env_file:`` targets, keyed by service name.
 
@@ -213,7 +212,12 @@ def resolve_env_files(
     so those names have to be in scope; reading the ``.env`` in full to supply
     them would quietly retire ADR-026 §5's retention guarantee, so the env files
     are scanned for their references first and the ``.env`` read is narrowed to
-    those. ``read_dotenv=False`` is ``--no-env``.
+    those.
+
+    ``--no-env`` is handled by not calling this at all, rather than by a flag
+    here: it means "do not read the env files beside this one", and an
+    ``env_file:`` target read while the ``.env`` went unread would be a third
+    behaviour nobody asked for.
     """
     services = data.get("services")
     if not isinstance(services, dict):
@@ -237,7 +241,7 @@ def resolve_env_files(
     if not plans:
         return {}
 
-    supplied = _dotenv_scope(plans, texts, base_dir, read_dotenv=read_dotenv)
+    supplied = _dotenv_scope(plans, texts, base_dir)
 
     resolved: dict[str, ServiceEnvFiles] = {}
     for name, plan in plans.items():
@@ -263,12 +267,8 @@ def _dotenv_scope(
     plans: dict[str, list[tuple[EnvFileRef, Path | None, Unread | None]]],
     texts: dict[Path, str | None],
     base_dir: Path,
-    *,
-    read_dotenv: bool,
 ) -> Mapping[str, str]:
     """The ``.env`` values the env files chain to, and nothing else."""
-    if not read_dotenv:
-        return {}
     wanted: set[str] = set()
     for plan in plans.values():
         for ref, path, _refusal in plan:
@@ -336,3 +336,57 @@ def _environment_keys(env_block: Any) -> set[str]:
             elif isinstance(item, dict):
                 keys |= {key for key in item if isinstance(key, str)}
     return keys
+
+
+def describe_unread(resolved: Mapping[str, ServiceEnvFiles]) -> list[str]:
+    """One stderr note per target that contributed nothing, per service.
+
+    Replaces the blanket note #669 shipped, which said the credential rules
+    "were not evaluated" for *every* service naming an ``env_file:`` because
+    none was opened. Most now are, so the note has to say which target was
+    missed and why — a note that fires beside the findings it claims are
+    missing is worse than no note at all.
+
+    The wording distinguishes the two absent cases, which is the first of the
+    two questions ADR-027 left open. Only a *required* target's absence means
+    the project cannot deploy — ``docker compose config`` exits 1 — and only
+    then is there a configuration compose-lint failed to grade. An optional
+    target's absence is the deployed configuration, so the note states what
+    Compose does and claims no missed evaluation.
+
+    Notes never touch the exit code, like the unread-``.env`` and
+    unresolved-mount-source notes they sit beside.
+    """
+    unevaluated = "so CL-0020 and CL-0021 were not evaluated for its keys"
+    notes: list[str] = []
+    for service in sorted(resolved):
+        for entry in resolved[service].unread:
+            path = repr(entry.path)
+            if entry.reason is Unread.ABSENT and entry.required:
+                notes.append(
+                    f"service '{service}' reads {path}, which is not present. "
+                    "Compose refuses to start a project whose required "
+                    f"env_file is missing, {unevaluated}"
+                )
+            elif entry.reason is Unread.ABSENT:
+                notes.append(
+                    f"service '{service}' reads {path}, which is not present "
+                    "and not required. Compose starts the service without it, "
+                    "which is the configuration graded here"
+                )
+            elif entry.reason is Unread.UNREADABLE:
+                notes.append(
+                    f"service '{service}' reads {path}, which could not be "
+                    f"read, {unevaluated}"
+                )
+            elif entry.reason is Unread.OUTSIDE_PROJECT:
+                notes.append(
+                    f"service '{service}' reads {path}, which resolves outside "
+                    f"the project directory and is not opened, {unevaluated}"
+                )
+            else:
+                notes.append(
+                    f"service '{service}' reads {path}, whose path is still "
+                    f"unresolved and names no file, {unevaluated}"
+                )
+    return notes

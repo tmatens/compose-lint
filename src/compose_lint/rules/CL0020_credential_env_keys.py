@@ -13,6 +13,8 @@ from compose_lint.rules._interpolation import ships_no_literal
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from compose_lint._service_env import EnvFileKey
+
 OWASP_REF = (
     "https://cheatsheetseries.owasp.org/cheatsheets/"
     "Docker_Security_Cheat_Sheet.html#rule-12-utilize-docker-secrets-for-sensitive-data-management"
@@ -292,6 +294,67 @@ class CredentialEnvKeysRule(BaseRule):
                     "a gitignored file or `external: true`. Otherwise, have "
                     "the entrypoint read the secret file at startup and "
                     "export the value into the workload's environment."
+                ),
+                references=[OWASP_REF, COMPOSE_SECRETS_REF],
+            )
+
+    def check_env_file_keys(
+        self,
+        service_name: str,
+        keys: tuple[EnvFileKey, ...],
+        service_config: dict[str, Any],
+    ) -> Iterator[Finding]:
+        """Grade the keys an ``env_file:`` contributes, on the same tests.
+
+        Every gate above applies unchanged, because the question is the same
+        one: a credential-shaped key holding a literal value in a container's
+        process environment. Only the route differs, and ADR-027's whole
+        argument is that the route is not what the rule grades.
+
+        The value never reaches the output. ``evidence`` is the key, the
+        message names the key and the file, and ``source_is_document=False``
+        stops the text formatter excerpting the line the key was written on --
+        which is the one place a value could otherwise have been printed.
+        """
+        del service_config  # shadowed keys are removed before this is called
+        for entry in keys:
+            key_upper = entry.key.upper()
+            if not _matches_credential_pattern(key_upper):
+                continue
+            if _is_exempt_key(key_upper):
+                continue
+            if _is_quantity_knob(key_upper, entry.value):
+                continue
+            if not _is_literal_credential_value(entry.value):
+                continue
+
+            yield Finding(
+                rule_id="CL-0020",
+                severity=Severity.HIGH,
+                service=service_name,
+                evidence=entry.key,
+                message=(
+                    f"Service reads credential-shaped env key '{entry.key}' "
+                    f"with a literal value from '{entry.source_file}'. "
+                    "Compose merges that file into the container's process "
+                    "environment, where it is exposed via `docker inspect`, "
+                    "`/proc/<pid>/environ`, `docker compose config`, process "
+                    "listings, and CI logs — any process or operator with "
+                    "daemon access can read them."
+                ),
+                line=entry.line or None,
+                source_file=entry.source_file,
+                source_is_document=False,
+                fix=(
+                    f"Move '{entry.key}' out of '{entry.source_file}' and into "
+                    "Compose's `secrets:` primitive. If the image supports the "
+                    "`*_FILE` convention (Postgres, MySQL, MariaDB, MinIO, "
+                    f"etc.), set `{entry.key}_FILE: /run/secrets/<name>` and "
+                    "declare the secret under the top-level `secrets:` block "
+                    "sourced from a gitignored file or `external: true`. "
+                    "Otherwise, have the entrypoint read the secret file at "
+                    "startup and export the value into the workload's "
+                    "environment."
                 ),
                 references=[OWASP_REF, COMPOSE_SECRETS_REF],
             )

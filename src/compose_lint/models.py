@@ -89,6 +89,15 @@ class Finding:
     # file is not the one named in the report. None on a single-file run, which
     # is every run today, so no existing output shape changes.
     source_file: str | None = None
+    # Whether `source_file` names a Compose *document* this run graded. False
+    # when the evidence lives in a file the run merely read -- an `env_file:`
+    # target, whose lines are deployed values rather than document text. The
+    # text formatter never excerpts one: a credential rule's finding is about
+    # the key, and printing the line would print the value the rule exists to
+    # keep out of every output surface (ADR-027 §5). Deliberately not emitted
+    # in JSON or SARIF -- it describes where the tool may look, not anything a
+    # consumer grades, so the output contract does not move.
+    source_is_document: bool = True
 
 
 @dataclass(frozen=True)

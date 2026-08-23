@@ -10,7 +10,9 @@ from compose_lint.models import Finding, Severity
 from compose_lint.rules import get_registered_rules
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
+
+    from compose_lint._service_env import ServiceEnvFiles
 
 
 def _default_rule_error(rule_id: str, service_name: str, exc: Exception) -> None:
@@ -28,6 +30,7 @@ def run_rules(
     severity_overrides: dict[str, Severity] | None = None,
     excluded_services: dict[str, dict[str, str | None]] | None = None,
     on_error: Callable[[str, str, Exception], None] | None = None,
+    env_files: Mapping[str, ServiceEnvFiles] | None = None,
 ) -> list[Finding]:
     """Run all registered rules against the parsed Compose data.
 
@@ -35,6 +38,13 @@ def run_rules(
     those findings are marked suppressed with an appropriate reason. A
     global disable takes precedence over per-service exclusions (see
     ADR-010). Returns findings sorted by line number (None-line last).
+
+    ``env_files`` carries what each service's ``env_file:`` targets contribute
+    (ADR-027). It reaches rules through :meth:`BaseRule.check_env_file_keys`
+    rather than through ``service_config``, because those keys are not in the
+    document: merging them into the ``environment:`` a rule sees would put
+    values in the parsed document that nobody wrote there, and would expose
+    them to every rule rather than the two that grade them.
 
     A rule that raises is isolated rather than allowed to abort the whole
     run: the failure is reported via ``on_error`` (defaulting to a stderr
@@ -64,6 +74,13 @@ def run_rules(
                 rule_findings = list(
                     rule.check(service_name, service_config, data, lines)
                 )
+                contributed = (env_files or {}).get(service_name)
+                if contributed is not None and contributed.keys:
+                    rule_findings += list(
+                        rule.check_env_file_keys(
+                            service_name, contributed.keys, service_config
+                        )
+                    )
             except Exception as exc:  # noqa: BLE001 - isolate a crashing rule
                 report_error(rule_id, service_name, exc)
                 continue

@@ -286,6 +286,14 @@ def format_findings(
     extra_sources: dict[str, list[str] | None] = {}
     if not quiet:
         for f in findings:
+            # Only a Compose *document* is ever opened here. A finding whose
+            # evidence sits in an `env_file:` names a file of deployed values,
+            # and the excerpt would print the credential the rule exists to
+            # keep out of every output surface (ADR-027 §5). Skipping the read
+            # rather than only the render is the stronger guarantee: the
+            # contents never enter the formatter at all.
+            if not f.source_is_document:
+                continue
             if f.source_file and f.source_file not in extra_sources:
                 extra_sources[f.source_file] = _read_source_lines(f.source_file)
 
@@ -369,9 +377,13 @@ def format_findings(
                 f"{message}{suffix}"
             )
             if f.source_file:
+                whence = (
+                    "merged into this run"
+                    if f.source_is_document
+                    else "read for this run"
+                )
                 out.append(
-                    f"          {_colorize('in:', _DIM)} {f.source_file}"
-                    f" (merged into this run)"
+                    f"          {_colorize('in:', _DIM)} {f.source_file} ({whence})"
                 )
 
             excerpt_source = (
@@ -379,6 +391,7 @@ def format_findings(
             )
             if (
                 excerpt_source is not None
+                and f.source_is_document
                 and f.rule_id in _PRESENCE_RULES
                 and f.line is not None
             ):

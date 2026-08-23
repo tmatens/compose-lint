@@ -18,6 +18,7 @@ from compose_lint import __version__
 from compose_lint._env_file import ENV_FILENAME
 from compose_lint._output import emit, emit_block
 from compose_lint._selection import Selection, plan_documents
+from compose_lint._service_env import describe_unread, resolve_env_files
 from compose_lint.config import ConfigError, load_config
 from compose_lint.config_emit import render_config
 from compose_lint.engine import filter_findings, run_rules
@@ -51,7 +52,6 @@ from compose_lint.parser import (
     load_compose,
     load_merged,
     merge_patched,
-    unread_env_files,
     unresolved_mount_sources,
 )
 
@@ -292,10 +292,13 @@ def _add_check_subparser(
         action="store_true",
         default=False,
         help=(
-            "ignore a '.env' sitting beside the Compose file. Compose reads it "
+            "ignore the env files beside the Compose file: the sibling '.env' "
+            "and every 'env_file:' a service names. Compose reads the '.env' "
             "to choose which documents to load (COMPOSE_FILE), so this "
             "reproduces the previous file selection exactly -- including "
-            "merging an override that COMPOSE_FILE would have suppressed"
+            "merging an override that COMPOSE_FILE would have suppressed -- "
+            "and leaves CL-0020 and CL-0021 blind to any credential an "
+            "'env_file:' supplies"
         ),
     )
     verbosity = check.add_mutually_exclusive_group()
@@ -377,10 +380,13 @@ def _add_fix_subparser(
         action="store_true",
         default=False,
         help=(
-            "ignore a '.env' sitting beside the Compose file. Compose reads it "
+            "ignore the env files beside the Compose file: the sibling '.env' "
+            "and every 'env_file:' a service names. Compose reads the '.env' "
             "to choose which documents to load (COMPOSE_FILE), so this "
             "reproduces the previous file selection exactly -- including "
-            "merging an override that COMPOSE_FILE would have suppressed"
+            "merging an override that COMPOSE_FILE would have suppressed -- "
+            "and leaves CL-0020 and CL-0021 blind to any credential an "
+            "'env_file:' supplies"
         ),
     )
     fix.add_argument(
@@ -720,7 +726,15 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         )
         for note in unresolved_mount_sources(data):
             emit(f"note: {filepath}: {note}")
-        for note in unread_env_files(data):
+        # `--no-env` covers both env files beside the document, per ADR-027 §8:
+        # the flag's promise is that it reproduces the previous release, and
+        # after this change that release read `env_file:` targets too.
+        service_env_files = (
+            {}
+            if args.no_env
+            else resolve_env_files(data, Path(filepath).absolute().parent)
+        )
+        for note in describe_unread(service_env_files):
             emit(f"note: {filepath}: {note}")
         seen_services.update(data.get("services", {}).keys())
 
@@ -744,6 +758,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             severity_overrides=severity_overrides,
             excluded_services=excluded_services,
             on_error=_record_rule_error,
+            env_files=service_env_files,
         )
         if merged is not None:
             findings = _attribute_sources(findings, merged, filepath)

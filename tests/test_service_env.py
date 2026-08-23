@@ -114,12 +114,6 @@ class TestResolution:
         resolved = resolve_env_files(_document("app.env"), tmp_path)
         assert _keys(resolved) == {"K": "dotvalue-tail"}
 
-    def test_no_env_leaves_the_dotenv_unread(self, tmp_path: Path) -> None:
-        (tmp_path / ".env").write_text("FROMDOTENV=dotvalue\n", encoding="utf-8")
-        (tmp_path / "app.env").write_text("K=${FROMDOTENV}-tail\n", encoding="utf-8")
-        resolved = resolve_env_files(_document("app.env"), tmp_path, read_dotenv=False)
-        assert _keys(resolved) == {}, "the value is unresolvable without the .env"
-
     def test_records_the_line_a_key_was_written_on(self, tmp_path: Path) -> None:
         (tmp_path / "app.env").write_text(
             "# a comment\nFIRST=1\nPW=hunter2\n", encoding="utf-8"

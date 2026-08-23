@@ -9,18 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- A note when a service names an `env_file:`. Compose merges those files into
-  the container's process environment, so a credential written in one reaches
-  every surface CL-0020 describes while never appearing in the document —
-  moving a line out of `environment:` silenced CL-0020 and CL-0021 without
-  changing what deploys. The files are still not opened; the note states what
-  was not evaluated, so the gap is visible rather than silent
-  ([#665](https://github.com/tmatens/compose-lint/issues/665)).
+- **CL-0020 and CL-0021 now read the `env_file:` targets a service names**, and
+  fire on a credential written in one. Compose merges those files into the
+  container's process environment, so moving a line out of `environment:` and
+  into an `env_file:` silenced both rules without changing what deploys — the
+  silent false negative
+  ([#665](https://github.com/tmatens/compose-lint/issues/665)) opened on. The
+  decision and its grounding are
+  [ADR-027](docs/adr/027-grade-env-file-where-the-document-routes-it.md): a
+  value is graded where the document routes it, and an `env_file:` is a
+  declaration that every key in the named file becomes a literal in that
+  service's process environment.
 
-  Stderr only, like the unread-`.env` and unresolved-mount-source notes. No
-  finding, exit code, or machine-readable output changes: 415 of the 5,417-file
-  corpus (8.6% of those that lint) now carry the note and none of their results
-  moved.
+  Files clean on 0.22.0 may report new HIGH findings. This is the documented
+  MINOR behaviour, with the documented escape hatches: pin the version, or gate
+  on `--fail-on`. 414 of the 5,417-file corpus (7.64%) name an `env_file:`, and
+  496 of the 924 references name the sibling `.env` itself.
+
+  **No credential value reaches any output surface.** `evidence` is the key
+  name, as it always was, and the message names the key and the file. The text
+  formatter no longer reads — let alone excerpts — a file that is not a Compose
+  document, so the line a key was written on is never printed.
+
+  Paths resolving outside the project directory are refused rather than read,
+  and say so on stderr. Compose reads them; an `env_file:` naming a lint-host
+  path in a pull request would otherwise put that host's key names into a
+  report.
+
+- A note when an `env_file:` target contributed nothing, naming which one and
+  why: absent, unreadable, outside the project directory, or a path still
+  carrying an unresolved `${VAR}`. A *required* target's absence says Compose
+  refuses to start such a project, so the credential rules went unevaluated; an
+  optional one's absence says Compose ships the service without it, which is the
+  configuration that was graded. This replaces the blanket note added earlier in
+  this release cycle, which told every service naming an `env_file:` that the
+  rules had not been evaluated — true when nothing was opened, misleading beside
+  the findings that now fire. Stderr only, and it never touches the exit code.
+
+### Changed
+
+- `--no-env` now covers both env files beside the Compose file: the sibling
+  `.env` and every `env_file:` a service names. The flag's promise is that it
+  reproduces the previous release's behaviour, and after this change that
+  behaviour includes the `env_file:` read.
 
 ### Fixed
 
