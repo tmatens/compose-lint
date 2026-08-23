@@ -57,6 +57,9 @@ else                                                  → hard error
                                                         ("missing 'services' key")
 ```
 
+> **Amended.** The `include` branch of this pseudocode no longer matches the
+> code — see the 2026-08-23 amendment at the end of this ADR.
+
 The v1 service-marker set is the set of v1-schema keys that strongly
 identify a top-level mapping value as a service definition (`image`,
 `build`, `command`, `entrypoint`, `ports`, `volumes`, `environment`,
@@ -247,3 +250,97 @@ or move a boundary. Affected files move from `PASS` to `FAIL` where the base
 carries a finding, which is new findings appearing on tightened coverage — the
 MINOR behaviour `docs/compatibility.md` already describes, and the shape #648,
 #657 and #668 each shipped under.
+
+**Amendment (2026-08-23, issue #673) — the remaining two buckets, plus two
+corrections to the record above:**
+
+**1. A v1-shaped or own-config overlay is an error, not a skip.**
+
+The amendment above closed with "Those two are tracked in [#673] and are not
+settled here." They are settled now, along exactly the line its table
+predicted.
+
+A v1-shaped or own-config document appearing *anywhere in a merge set* raises
+`ComposeFileError`, which the CLI already reports at exit 2 against the file
+that caused it. Compose refuses a project containing either — `additional
+properties 'db' not allowed`, `additional properties 'rules' not allowed` — so
+unlike the fragment case there is no configuration for ADR-025 to grade.
+Merging would grade a document that never deploys; skipping asserted a clean
+grade on a project that was never read.
+
+The own-config half is worth stating on its own: a file whose entire purpose
+is to disable rules could, if named in `COMPOSE_FILE`, silence the linter
+completely rather than disabling one rule.
+
+Two things are unchanged, for the same reasons the fragment amendment gives.
+**A v1 file or a stray `.compose-lint.yml` linted on its own still skips at
+exit 0** — that is what this ADR decided and sweep-mode UX still rests on it.
+And **the classifier is untouched**: which bucket a file falls into is decided
+exactly as before; only what a merge does with the answer has changed.
+
+This also settles the second defect recorded in #671. The skip handler
+attributed its message to the primary path, so a valid v2 base was reported as
+the unlintable file. An error carrying a path names the overlay instead.
+
+**Interaction with ADR-006 — and how it differs from the amendment above.**
+That amendment could say exit codes were unchanged: the fragment fix moved
+affected projects from `PASS` to `FAIL`, both inside the finding contract. This
+one moves them from **exit 0 to exit 2**. No code is added and no code changes
+meaning — exit 2 still means "the linter could not run on this input", which is
+the property [`docs/compatibility.md`](../compatibility.md) protects when it
+says adding a new non-zero code is a MAJOR change. What changed is that a
+project with an unlintable overlay was being classified as "the linter ran,
+nothing to report" when it had not run at all.
+
+The user-visible consequence is real even so: a pinned pipeline that was green
+on such a project goes red. That is release-note material in its own right,
+not the tightened-coverage shape #648, #657, #668 and #671 shipped under.
+
+**2. Correction: the heuristic above no longer describes `include:`.**
+
+The pseudocode lists `include` among the fragment-skeleton keys excluded from
+`non_meta`, so an include-only file reaches the `non_meta is empty` branch and
+reads there as a fragment skip at exit 0. The code refuses it instead, with a
+plain `ComposeError` at exit 2.
+
+This is not a new decision and does not belong to this ADR to make. It is
+[ADR-023](023-deploy-host-independent-claims.md)'s principle — "`include:` /
+cross-file `extends:` are refused loudly as coverage gaps rather than resolved
+through the lint host's filesystem" — which [ADR-025](025-lint-the-merged-configuration.md)
+cites as "the `include:` precedent" and states in its own words: an unresolved
+`include:` is a gap because compose-lint *cannot* read the file. Issue #516
+established the consequence for a services-less file specifically: admitting
+one as a harmless fragment reports a clean pass on a deployable stack.
+
+The branch as the code implements it:
+
+```text
+if 'include' in data                                  → hard error
+                                                        (ADR-023; issue #516)
+elif non_meta is non-empty and every key is a
+     compose-lint config top-level key                → own-config skip
+elif non_meta is empty                                → fragment skip
+elif every non_meta value is service-shaped           → v1 skip
+else                                                  → hard error
+```
+
+The `include` test runs first and is unconditional, so an include-only file
+never reaches the fragment branch regardless of what else it carries.
+
+**3. A merge set has a fourth skip, and it describes a set rather than a file.**
+
+The three skip messages recorded above each describe one file. #671's
+implementation added one that does not: when *every* document in a merge set is
+a fragment, no document contributes `services:`, and `load_merged` raises a
+bare `ComposeNotApplicableError` —
+
+- All-fragment set: `Skipped: merged configuration has no 'services:' key
+  (every selected file appears to be a Compose fragment), so there are no
+  services to lint.`
+
+It is deliberately not the fragment subtype: this is a property of the merged
+set, not a classification of any one file, so naming the fragment bucket would
+misdescribe it. The outcome is a skip at exit 0, which is this ADR's policy
+applied to a set — merging the fragments would produce a vacuous `PASS` on a
+project with nothing in it, which is the failure this ADR's amendments exist to
+prevent.
