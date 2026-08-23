@@ -91,9 +91,18 @@ Inline comments anchored to lines go through
 finding about a file the PR does not touch — a rule doc that needs a matching
 row, say — has to live in the review body.
 
-`dismiss_stale_reviews_on_push` is enabled, so a *changes requested* review
-clears itself when the contributor pushes the fix. There is nothing to dismiss
-by hand.
+A *changes requested* review does **not** clear itself when the contributor
+pushes the fix. `dismiss_stale_reviews_on_push` is enabled on the ruleset, but
+it dismisses stale *approvals* only — GitHub's own wording for it is "dismiss
+stale pull request approvals when new commits are pushed". A changes-requested
+review keeps blocking the merge until you act on it, however many times the
+branch is rebased or amended in between.
+
+Two ways to clear it, and they say different things. Submitting an approving
+review supersedes it, because a reviewer's latest review is the one that counts
+— use this when the findings were addressed. Dismissing it leaves the review in
+place, marked dismissed with a reason — use this when the findings were waived
+or overtaken rather than fixed, since it keeps the objection legible.
 
 ## Before merging
 
