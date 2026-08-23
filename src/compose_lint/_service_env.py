@@ -54,6 +54,7 @@ __all__ = [
     "EnvFileKey",
     "EnvFileRef",
     "ServiceEnvFiles",
+    "SkippedLines",
     "Unread",
     "UnreadEnvFile",
     "describe_unread",
@@ -107,6 +108,14 @@ class UnreadEnvFile:
 
 
 @dataclass(frozen=True)
+class SkippedLines:
+    """Lines in a target that are not entries, and that Compose calls fatal."""
+
+    path: str
+    lines: tuple[int, ...]
+
+
+@dataclass(frozen=True)
 class ServiceEnvFiles:
     """What one service's ``env_file:`` targets contribute.
 
@@ -120,9 +129,10 @@ class ServiceEnvFiles:
 
     keys: tuple[EnvFileKey, ...]
     unread: tuple[UnreadEnvFile, ...]
+    skipped: tuple[SkippedLines, ...] = ()
 
     def __bool__(self) -> bool:
-        return bool(self.keys or self.unread)
+        return bool(self.keys or self.unread or self.skipped)
 
 
 def env_file_refs(value: Any) -> list[EnvFileRef]:
@@ -291,6 +301,7 @@ def _resolve_one(
     scope: dict[str, str] = dict(supplied)
     contributed: dict[str, EnvFileKey] = {}
     unread: list[UnreadEnvFile] = []
+    skipped: list[SkippedLines] = []
 
     for ref, path, refusal in plan:
         if refusal is not None or path is None:
@@ -304,6 +315,8 @@ def _resolve_one(
             unread.append(UnreadEnvFile(ref.path, reason, ref.required))
             continue
         parsed = parse_env_file(text, defined=scope, raw=ref.raw)
+        if parsed.skipped_lines:
+            skipped.append(SkippedLines(ref.path, parsed.skipped_lines))
         for key, value in parsed.values.items():
             scope[key] = value
             contributed[key] = EnvFileKey(
@@ -316,7 +329,11 @@ def _resolve_one(
     for key in _environment_keys(config.get("environment")):
         contributed.pop(key, None)
 
-    return ServiceEnvFiles(keys=tuple(contributed.values()), unread=tuple(unread))
+    return ServiceEnvFiles(
+        keys=tuple(contributed.values()),
+        unread=tuple(unread),
+        skipped=tuple(skipped),
+    )
 
 
 def _environment_keys(env_block: Any) -> set[str]:
@@ -354,6 +371,15 @@ def describe_unread(resolved: Mapping[str, ServiceEnvFiles]) -> list[str]:
     target's absence is the deployed configuration, so the note states what
     Compose does and claims no missed evaluation.
 
+    A skipped line gets a note too, and that settles the second question
+    ADR-027 left open. Compose refuses a whole env file over one malformed line
+    and starts nothing; compose-lint keeps the well-formed entries, because
+    refusing the file would drop real findings for every other key — a silent
+    false negative, traded for a file the user's next ``docker compose up``
+    will reject anyway. ADR-026 §5 justified the same leniency for a ``.env`` on
+    grounds that no longer hold here (every key is wanted now, §4), so the
+    leniency is kept on its own merits and stated rather than inferred.
+
     Notes never touch the exit code, like the unread-``.env`` and
     unresolved-mount-source notes they sit beside.
     """
@@ -389,4 +415,13 @@ def describe_unread(resolved: Mapping[str, ServiceEnvFiles]) -> list[str]:
                     f"service '{service}' reads {path}, whose path is still "
                     f"unresolved and names no file, {unevaluated}"
                 )
+        for skip in resolved[service].skipped:
+            numbers = ", ".join(str(number) for number in skip.lines)
+            plural = "lines" if len(skip.lines) > 1 else "line"
+            notes.append(
+                f"service '{service}' reads {skip.path!r}, whose {plural} "
+                f"{numbers} could not be read as KEY=value. Compose refuses a "
+                "whole env file over one such line; the remaining entries were "
+                "graded"
+            )
     return notes

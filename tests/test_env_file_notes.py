@@ -82,6 +82,31 @@ class TestWhatIsNoted:
         (note,) = notes_for(tmp_path, f"{_SAFE}    env_file: secrets.env\n")
         assert "could not be read" in note
 
+    def test_a_malformed_line_is_noted_and_the_rest_is_graded(
+        self, tmp_path: Path
+    ) -> None:
+        """The second question ADR-027 left open, settled toward leniency.
+
+        Compose refuses the whole file over one such line. Refusing it here
+        would drop real findings for every other key, which is the silent false
+        negative the ADR exists to remove — so the entries are kept and the
+        skipped line is stated instead of inferred.
+        """
+        (tmp_path / "secrets.env").write_text(
+            "not a pair\nPW=hunter2\n", encoding="utf-8"
+        )
+        (note,) = notes_for(tmp_path, f"{_SAFE}    env_file: secrets.env\n")
+        assert "line 1" in note
+        assert "could not be read as KEY=value" in note
+        assert "remaining entries were graded" in note
+
+    def test_several_malformed_lines_are_listed(self, tmp_path: Path) -> None:
+        (tmp_path / "secrets.env").write_text(
+            "not a pair\nPW=hunter2\nnor this\n", encoding="utf-8"
+        )
+        (note,) = notes_for(tmp_path, f"{_SAFE}    env_file: secrets.env\n")
+        assert "lines 1, 3" in note
+
     def test_one_note_per_unread_target(self, tmp_path: Path) -> None:
         notes = notes_for(tmp_path, f"{_SAFE}    env_file: [a.env, b.env]\n")
         assert len(notes) == 2
@@ -148,6 +173,17 @@ class TestEndToEnd:
         result = self._run(tmp_path, self._HARDENED, "A=b\n")
         assert result.returncode == 0, result.stderr
         assert "secrets.env" not in result.stderr, "nothing to say about a read file"
+
+    def test_a_credential_beside_a_malformed_line_still_fires(
+        self, tmp_path: Path
+    ) -> None:
+        result = self._run(
+            tmp_path, self._HARDENED, "not a pair\nPOSTGRES_PASSWORD=hunter2\n"
+        )
+        assert result.returncode == 1, result.stderr
+        assert "CL-0020" in result.stdout
+        assert "could not be read as KEY=value" in result.stderr
+        assert "hunter2" not in result.stdout + result.stderr
 
     def test_a_credential_in_the_file_is_now_reported(self, tmp_path: Path) -> None:
         """The whole point of ADR-027: this exited 0 before it."""

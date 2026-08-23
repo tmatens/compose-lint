@@ -38,7 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A note when an `env_file:` target contributed nothing, naming which one and
   why: absent, unreadable, outside the project directory, or a path still
-  carrying an unresolved `${VAR}`. A *required* target's absence says Compose
+  carrying an unresolved `${VAR}`. A malformed line is noted too, with its line
+  number: Compose refuses a whole env file over one, while compose-lint keeps
+  the well-formed entries — refusing the file would drop real findings for every
+  other key, which is the silent false negative this work exists to remove. A *required* target's absence says Compose
   refuses to start such a project, so the credential rules went unevaluated; an
   optional one's absence says Compose ships the service without it, which is the
   configuration that was graded. This replaces the blanket note added earlier in
