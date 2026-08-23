@@ -547,12 +547,13 @@ def test_all_fragment_merge_set_still_skips(tmp_path: Path) -> None:
     assert "no 'services:' key" in result.stderr
 
 
-def test_v1_shaped_overlay_still_skips(tmp_path: Path) -> None:
-    """Only the fragment bucket merges; v1 keeps today's behaviour.
+def test_v1_shaped_overlay_is_an_error_not_a_skip(tmp_path: Path) -> None:
+    """A v1-shaped overlay errors at exit 2 rather than passing (#673).
 
-    Compose refuses a v1-shaped document outright, so merging one would grade
-    a configuration that never deploys. Its separate error path is #673's
-    job; here it must behave exactly as before #671.
+    The fragment bucket merges; this one cannot. Compose refuses a project
+    that includes a v1-shaped document, so there is no configuration to
+    grade — and reporting PASS at exit 0 claimed the base file had been
+    cleared when it was never read.
     """
     _write_pair(
         tmp_path,
@@ -561,9 +562,46 @@ def test_v1_shaped_overlay_still_skips(tmp_path: Path) -> None:
     )
     result = run_cli("check", cwd=tmp_path)
 
-    assert result.returncode == 0
-    assert "Skipped" in result.stderr
+    assert result.returncode == 2
     assert "Compose v1" in result.stderr
+    assert "PASS" not in result.stdout
+
+
+def test_v1_overlay_error_names_the_overlay_not_the_base(tmp_path: Path) -> None:
+    """The error names the file that caused it — #671's second defect.
+
+    The single-file skip handler attributed the message to the primary path,
+    so a perfectly valid v2 base was reported as the v1 file. Nothing pinned
+    that until the bucket became an error with a path attached.
+    """
+    _write_pair(
+        tmp_path,
+        BASE_PRIVILEGED,
+        'web:\n  ports: ["8080:80"]\n',
+    )
+    result = run_cli("check", cwd=tmp_path)
+
+    assert "Error: compose.override.yml:" in result.stderr
+    assert "Error: compose.yml:" not in result.stderr
+
+
+def test_own_config_overlay_is_an_error_not_a_skip(tmp_path: Path) -> None:
+    """An overlay that is compose-lint's own config errors too (#673).
+
+    Worth its own case rather than folding into the v1 one: this file's whole
+    purpose is to disable rules, so the old behaviour let a file named in
+    COMPOSE_FILE silence the linter entirely instead of disabling one rule.
+    """
+    _write_pair(
+        tmp_path,
+        BASE_PRIVILEGED,
+        "rules:\n  CL-0002:\n    enabled: false\n",
+    )
+    result = run_cli("check", cwd=tmp_path)
+
+    assert result.returncode == 2
+    assert "compose-lint config" in result.stderr
+    assert "PASS" not in result.stdout
 
 
 def test_include_only_overlay_is_not_admitted_as_a_fragment(tmp_path: Path) -> None:

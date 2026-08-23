@@ -67,6 +67,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A v1-shaped or compose-lint-config overlay is now an error instead of a
+  silent pass.** Either one in a merge set made compose-lint skip the whole
+  project and report `PASS` at exit 0, dropping every finding in the base file.
+  Docker Compose *refuses* a project that includes either, so unlike the
+  fragment case (#671) there is no configuration to grade and merging is not
+  the answer: the run now exits 2 and names the file that caused it. The
+  own-config half mattered most — a file whose entire purpose is to disable
+  rules could, if named in `COMPOSE_FILE`, silence the linter completely
+  rather than disabling one rule
+  ([#673](https://github.com/tmatens/compose-lint/issues/673)).
+
+  This also settles the second defect in #671: the skip handler attributed the
+  message to the primary path, so a valid v2 base was reported as the
+  unlintable file. The error now names the overlay.
+
+  A file linted **on its own** is unchanged — a bare v1 file or a stray
+  `.compose-lint.yml` in a sweep still skips quietly at exit 0, which is
+  ADR-013 and the reason that policy exists. Only the merge-set case moves.
+  Projects that were passing on an overlay Compose would reject will start
+  failing, which is the point: they were never graded.
+
 - A fragment overlay carrying only top-level structural keys such as
   `volumes:` or `networks:`, or just `{}`, now merges into the linted
   configuration instead of skipping the whole project. Compose folds it

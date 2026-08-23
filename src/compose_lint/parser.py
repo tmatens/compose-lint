@@ -65,6 +65,15 @@ class ComposeNotApplicableError(ComposeError):
     See ADR-013.
     """
 
+    def __init__(self, message: str, *, reason: str | None = None) -> None:
+        super().__init__(message)
+        # The descriptive clause without the "Skipped:" framing. A merge set
+        # reports these buckets as errors rather than skips (#673), and
+        # "Error: ...: Skipped: ..." reads as a contradiction. Carrying the
+        # reason separately lets the merge path reframe it without matching
+        # on message text — the same reason ComposeFragmentError exists.
+        self.reason = reason if reason is not None else message
+
 
 class ComposeFragmentError(ComposeNotApplicableError):
     """A structural fragment: parses as YAML but carries no `services:` key.
@@ -150,12 +159,13 @@ def _classify_missing_services(data: dict[str, Any]) -> ComposeError:
 
     non_meta = [k for k in data if not _is_meta(k)]
     if non_meta and all(k in KNOWN_TOP_LEVEL_KEYS for k in non_meta):
-        return ComposeNotApplicableError(
-            "Skipped: file appears to be a compose-lint config "
+        reason = (
+            "file appears to be a compose-lint config "
             f"(top-level {', '.join(f'{k!r}' for k in sorted(non_meta))} and no "
             "'services:' key), not a Compose file. compose-lint reads its config "
             "via --config; it is not a lint target."
         )
+        return ComposeNotApplicableError(f"Skipped: {reason}", reason=reason)
     if not non_meta:
         # Own subtype so a merge can fold the fragment into its base while
         # v1 and own-config stay errors (#671).
@@ -170,12 +180,13 @@ def _classify_missing_services(data: dict[str, Any]) -> ComposeError:
         and any(marker in data[k] for marker in _V1_SERVICE_MARKERS)
         for k in non_meta
     ):
-        return ComposeNotApplicableError(
-            "Skipped: file appears to be Compose v1 "
+        reason = (
+            "file appears to be Compose v1 "
             "(services declared at the top level, no 'services:' wrapper). "
             "Docker retired Compose v1 in 2023; compose-lint targets v2/v3. "
             "Migrate the file under a top-level `services:` key to enable linting."
         )
+        return ComposeNotApplicableError(f"Skipped: {reason}", reason=reason)
     return ComposeError("Not a valid Compose file: missing 'services' key")
 
 
@@ -1344,13 +1355,36 @@ def load_merged(paths: list[str | Path], *, use_env: bool = True) -> Merged:
     *every* document is a fragment still raises
     :class:`ComposeNotApplicableError` — there is nothing to lint, and
     merging them would report a vacuous PASS under the primary path.
+
+    The other two not-applicable buckets go the opposite way (#673). A
+    v1-shaped or own-config document anywhere in the set raises
+    :class:`ComposeFileError`, naming the file that caused it, because
+    Compose refuses such a project outright: there is no deployable
+    configuration for ADR-025 to grade, so a skip at exit 0 would claim a
+    stack passed that was never read. Linted on its own each still skips
+    quietly, which is ADR-013 and unchanged.
     """
     documents: list[Document] = []
     for path in paths:
         try:
             documents.append(load_document(path, use_env=use_env))
-        except ComposeNotApplicableError:
-            raise
+        except ComposeNotApplicableError as exc:
+            # A v1-shaped or own-config document in a merge set is an error,
+            # not a skip (#673). Compose refuses a project that includes
+            # either, so there is no configuration to grade — reporting the
+            # project as PASS at exit 0 asserted a stack was cleared when it
+            # was never read. Attributing it to `path` also fixes the second
+            # defect in #671: the skip handler named the primary file when the
+            # overlay beside it was the unlintable one.
+            #
+            # A fragment cannot arrive here. `load_document` parses with
+            # merging=True, under which `_validate_compose` admits the
+            # fragment bucket instead of raising, which is what #671 shipped.
+            raise ComposeFileError(
+                path,
+                f"{exc.reason} Docker Compose refuses a project that includes "
+                "it, so there is no merged configuration to lint.",
+            ) from exc
         except ComposeError as exc:
             raise ComposeFileError(path, str(exc)) from exc
     merged = merge_documents(documents)

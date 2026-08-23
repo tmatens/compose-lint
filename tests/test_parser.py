@@ -11,6 +11,7 @@ import pytest
 from compose_lint.parser import (
     _LINES,
     ComposeError,
+    ComposeFileError,
     ComposeFragmentError,
     ComposeNotApplicableError,
     _collect_lines,
@@ -678,23 +679,55 @@ class TestFragmentOverlayMerging:
             load_merged([base, over])
         assert not isinstance(excinfo.value, ComposeNotApplicableError)
 
-    def test_v1_shaped_overlay_still_raises(self, tmp_path: Path) -> None:
-        # Only the fragment bucket merges. A v1-shaped overlay keeps raising
-        # so its separate error path (#673) decides what happens next.
+    def test_v1_shaped_overlay_raises_a_file_error(self, tmp_path: Path) -> None:
+        # Only the fragment bucket merges. A v1-shaped overlay is an error
+        # attributed to its own path (#673), never a skip: Compose refuses a
+        # project that includes it, so nothing is left to grade.
         base = tmp_path / "compose.yml"
         over = tmp_path / "compose.override.yml"
         base.write_text("services:\n  web:\n    image: nginx\n")
         over.write_text('web:\n  ports: ["8080:80"]\n')
 
-        with pytest.raises(ComposeNotApplicableError, match="Compose v1"):
+        with pytest.raises(ComposeFileError, match="Compose v1") as excinfo:
             load_merged([base, over])
+        # Not a skip: the CLI routes ComposeNotApplicableError to exit 0.
+        assert not isinstance(excinfo.value, ComposeNotApplicableError)
+        assert excinfo.value.path == str(over)
 
-    def test_own_config_overlay_still_raises(self, tmp_path: Path) -> None:
-        # Same boundary for the own-config bucket: never merged, never silent.
+    def test_own_config_overlay_raises_a_file_error(self, tmp_path: Path) -> None:
+        # Same answer for the own-config bucket: never merged, never silent.
         base = tmp_path / "compose.yml"
         over = tmp_path / "compose.override.yml"
         base.write_text("services:\n  web:\n    image: nginx\n")
         over.write_text("rules:\n  CL-0003:\n    enabled: false\n")
 
-        with pytest.raises(ComposeNotApplicableError, match="compose-lint config"):
+        with pytest.raises(ComposeFileError, match="compose-lint config") as excinfo:
             load_merged([base, over])
+        assert not isinstance(excinfo.value, ComposeNotApplicableError)
+        assert excinfo.value.path == str(over)
+
+    def test_v1_base_beside_a_valid_overlay_also_errors(self, tmp_path: Path) -> None:
+        # The mirror case. Which half is unlintable does not matter: Compose
+        # refuses the project either way, so neither ordering may pass.
+        base = tmp_path / "compose.yml"
+        over = tmp_path / "compose.override.yml"
+        base.write_text('web:\n  ports: ["8080:80"]\n')
+        over.write_text("services:\n  web:\n    image: nginx\n")
+
+        with pytest.raises(ComposeFileError, match="Compose v1") as excinfo:
+            load_merged([base, over])
+        assert excinfo.value.path == str(base)
+
+    def test_skip_message_keeps_its_framing_for_a_single_file(
+        self, tmp_path: Path
+    ) -> None:
+        # ADR-013 is unchanged for a file linted on its own: still a skip, and
+        # still worded as one. The merge path reframes via `reason` precisely
+        # so "Error: ...: Skipped: ..." can never be printed.
+        solo = tmp_path / "compose.yml"
+        solo.write_text('web:\n  ports: ["8080:80"]\n')
+
+        with pytest.raises(ComposeNotApplicableError) as excinfo:
+            load_compose(solo)
+        assert str(excinfo.value).startswith("Skipped: ")
+        assert not excinfo.value.reason.startswith("Skipped: ")
