@@ -33,6 +33,8 @@ Disables still produce suppressed findings. `reason` flows to `suppression_reaso
 
 `ruff check src/ tests/`, `ruff format --check src/ tests/`, `mypy src/` (strict), `pytest`. All four must pass, scoped exactly as written — CI lints only `src/` and `tests/`, and a bare `ruff check` also sweeps `scripts/`, which has known, accepted violations. CI test matrix: Python 3.10–3.14 on ubuntu-24.04.
 
+Running a branch's tests from a `git worktree` needs `PYTHONPATH` pointed at that worktree's `src/`. The dev install is editable and resolves `compose_lint` to the **main checkout's** `src/`, so a bare `pytest` in a worktree grades the branch's tests against `main`'s source and fails in exactly the way a genuinely broken change would. Confirm with `python -c 'import compose_lint; print(compose_lint.__file__)'` before believing a red run.
+
 ## Adding a rule
 
 See CONTRIBUTING.md for the full checklist. Every rule must cite OWASP, CIS, or Docker docs **that demonstrate the need in a container context** — generic host/Linux hardening a container's defaults already neutralize is not enough (see CL-0022/CL-0023). If a container-context source is thin, the rule's premise must be **validated at runtime**: a rule that describes container runtime state gets a check in `scripts/validate_rule_premises.py`, which proves the insecure state is Docker's *default* (for absence rules) or that the flagged config produces the insecure behavior (for presence rules). That suite runs in CI (`rule-premises` job), and asserts the daemon is at Docker's defaults before measuring — a premise measured on a departed posture cannot ground a rule. Every finding must be actionable with specific fix guidance.
@@ -45,6 +47,7 @@ CONTRIBUTING.md is the source of truth for commits, signing, and PRs. Key points
 - One logical change per commit, imperative subject under 72 chars, no Conventional Commits prefixes
 - All commits signed (SSH). Verify with `git log --format='%h %G? %s'` — every commit shows `G`
 - All changes go through a PR, squash-merge to main
+- Maintainer side of an outside contribution — approving fork CI, review states, pre-merge checks — is `docs/MAINTAINING.md`
 - Releases: follow `docs/RELEASING.md` checklist — version lives in both `pyproject.toml` and `src/compose_lint/__init__.py`
 
 ## Rule docs (docs/rules/)

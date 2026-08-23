@@ -35,7 +35,7 @@ markdown_extensions:
 
 # Curated nav: user-facing pages only. Everything else in docs/ (ADRs,
 # ROADMAP, CI/RELEASING internals) still builds and stays linkable, just
-# unlisted. Maintainer docs that link outside docs/ (CI.md,
+# unlisted. Maintainer docs that link outside docs/ (CI.md, MAINTAINING.md,
 # SECURITY-EXPECTATIONS.md) are deliberately not in the nav.
 nav:
   - Home: index.md
