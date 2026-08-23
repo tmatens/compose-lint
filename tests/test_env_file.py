@@ -1,10 +1,12 @@
-"""Tests for the ``.env`` reader.
+"""Tests for the ``.env`` and ``env_file:`` readers.
 
 Two halves. The unit tests below pin the behaviour compose-lint promises,
-including the two places it deliberately diverges from Compose. The
-differential suite in ``test_env_semantics.py`` re-derives the grammar from the
-``docker compose`` binary, so a Compose release that changes it fails there
-rather than silently mis-resolving a user's stack.
+including the places it deliberately diverges from Compose. The differential
+suites in ``test_env_semantics.py`` and ``test_env_file_semantics.py``
+re-derive both grammars from the ``docker compose`` binary, so a Compose
+release that changes one fails there rather than silently mis-resolving a
+user's stack. Those suites need the CLI and skip without it; these do not, so
+the promised behaviour stays covered on a Docker-less leg.
 """
 
 from __future__ import annotations
@@ -13,7 +15,14 @@ import os
 import stat
 from typing import TYPE_CHECKING
 
-from compose_lint._env_file import MAX_ENV_BYTES, EnvFile, parse_env, read_env
+from compose_lint._env_file import (
+    MAX_ENV_BYTES,
+    EnvFile,
+    parse_env,
+    parse_env_file,
+    read_env,
+    read_env_file,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -270,3 +279,93 @@ class TestEnvFile:
 
     def test_is_truthy_when_it_supplies_something(self) -> None:
         assert EnvFile(values={"K": "v"}, unresolved=frozenset(), skipped_lines=())
+
+
+class TestParseEnvFile:
+    """The ``env_file:`` reader, where it differs from the ``.env`` one."""
+
+    def test_every_key_is_returned_without_a_wanted_filter(self) -> None:
+        """ADR-027 §4: every key is deployed, so every key is graded."""
+        parsed = parse_env_file("PW=hunter2\nUNRELATED=1\n")
+        assert parsed.values == {"PW": "hunter2", "UNRELATED": "1"}
+
+    def test_a_bare_key_is_unresolved_rather_than_empty(self) -> None:
+        """The sharpest divergence from ``parse_env``, which ships it empty.
+
+        Compose treats ``KEY`` with no ``=`` as a lookup in its own process
+        environment and omits the key when that is unset. Claiming an empty
+        value would put a lint-host fact into the document (ADR-023).
+        """
+        parsed = parse_env_file("K\n")
+        assert parsed.values == {}
+        assert parsed.unresolved == frozenset({"K"})
+        assert parse_env("K\n").values == {"K": ""}, "the .env reader is unchanged"
+
+    def test_defined_names_are_in_scope_but_are_not_returned(self) -> None:
+        parsed = parse_env_file("P=${BASE}/p\n", defined={"BASE": "/opt"})
+        assert parsed.values == {"P": "/opt/p"}, "the earlier name resolved"
+        assert "BASE" not in parsed.values, "but it is not this file's key"
+
+    def test_a_key_redefining_a_defined_name_is_returned(self) -> None:
+        parsed = parse_env_file("BASE=/srv\n", defined={"BASE": "/opt"})
+        assert parsed.values == {"BASE": "/srv"}
+
+    def test_no_process_environment_fallback(self) -> None:
+        parsed = parse_env_file("K=${NOT_DEFINED_ANYWHERE}\n")
+        assert parsed.values == {}
+        assert parsed.unresolved == frozenset({"K"})
+
+    def test_a_malformed_line_is_skipped_not_fatal(self) -> None:
+        parsed = parse_env_file("not a pair\nK=v\n")
+        assert parsed.values == {"K": "v"}
+        assert parsed.skipped_lines == (1,)
+
+
+class TestParseEnvFileRawFormat:
+    """``format: raw`` is a different grammar, not a relaxed one."""
+
+    def test_quotes_hashes_and_spacing_are_payload(self) -> None:
+        parsed = parse_env_file('A=v # trail\nB="quoted"\nC=  spaced  \n', raw=True)
+        assert parsed.values == {
+            "A": "v # trail",
+            "B": '"quoted"',
+            "C": "  spaced  ",
+        }
+
+    def test_nothing_interpolates(self) -> None:
+        parsed = parse_env_file("A=one\nK=${A}-two\n", raw=True)
+        assert parsed.values == {"A": "one", "K": "${A}-two"}
+
+    def test_full_line_comments_are_still_skipped(self) -> None:
+        assert parse_env_file("# note\nK=v\n", raw=True).values == {"K": "v"}
+
+    def test_an_export_prefix_is_not_consumed(self) -> None:
+        """And the resulting key has a space, which Compose calls fatal."""
+        parsed = parse_env_file("export D=v\n", raw=True)
+        assert parsed.values == {}
+        assert parsed.skipped_lines == (1,)
+
+
+class TestReadEnvFile:
+    def test_reads_a_file(self, tmp_path: Path) -> None:
+        (tmp_path / "app.env").write_text("K=v\n", encoding="utf-8", newline="")
+        parsed = read_env_file(tmp_path / "app.env")
+        assert parsed is not None
+        assert parsed.values == {"K": "v"}
+
+    def test_absent_is_none(self, tmp_path: Path) -> None:
+        assert read_env_file(tmp_path / "nope.env") is None
+
+    def test_over_cap_is_none(self, tmp_path: Path) -> None:
+        (tmp_path / "app.env").write_text(
+            "K=" + "x" * MAX_ENV_BYTES, encoding="utf-8", newline=""
+        )
+        assert read_env_file(tmp_path / "app.env") is None
+
+    def test_non_utf8_is_none(self, tmp_path: Path) -> None:
+        (tmp_path / "app.env").write_bytes(b"K=\xff\xfe\n")
+        assert read_env_file(tmp_path / "app.env") is None
+
+    def test_a_directory_is_none(self, tmp_path: Path) -> None:
+        (tmp_path / "app.env").mkdir()
+        assert read_env_file(tmp_path / "app.env") is None

@@ -64,6 +64,25 @@ Only the values a run actually needs are kept, per ADR-026 §5. The bytes are
 still scanned — there is no seeking to one key — so the honest claim is that
 values the run does not need are discarded rather than parsed into it, never
 that the file is not read.
+
+The module also reads the *other* env file: an ``env_file:`` target, named in
+the document rather than found beside it, under
+[ADR-027](../../docs/adr/027-grade-env-file-where-the-document-routes-it.md).
+The grammar is godotenv's both times, which is why one scanner serves both, but
+the two readers are not interchangeable and :func:`parse_env_file` is separate
+for three reasons, each derived from the binary the same way:
+
+1. **A bare ``KEY`` means different things.** A ``.env`` ships it empty; an
+   ``env_file:`` treats it as a lookup in Compose's own process environment and
+   omits the key when that is unset. So it is reported unresolved rather than
+   empty — claiming the empty string would be claiming a lint-host fact.
+2. **``format: raw`` exists only here**, and is a different grammar rather than
+   a relaxed one: no ``export`` prefix, no trimming, no quote or comment
+   processing, no interpolation.
+3. **Nothing is filtered by wantedness.** Every key in an ``env_file:`` lands in
+   a named service's process environment, so every key is one a rule may grade
+   (ADR-027 §4). The §5 retention claim above does not extend to these files,
+   and the honest statement for them is that every key is examined.
 """
 
 from __future__ import annotations
@@ -79,7 +98,14 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
     from pathlib import Path
 
-__all__ = ["ENV_FILENAME", "EnvFile", "parse_env", "read_env"]
+__all__ = [
+    "ENV_FILENAME",
+    "EnvFile",
+    "parse_env",
+    "parse_env_file",
+    "read_env",
+    "read_env_file",
+]
 
 ENV_FILENAME = ".env"
 
@@ -143,6 +169,12 @@ class _Entry:
     key: str
     raw: str
     expands: bool  # false for a single-quoted value
+    # `KEY` with no `=` at all. The two files disagree about what that means:
+    # a `.env` ships it empty, while an `env_file:` treats it as a lookup in
+    # the process environment and omits the key entirely when it is unset
+    # (both verified against Compose 5.4.0). Recorded here so one scanner can
+    # serve both readers.
+    bare: bool = False
 
 
 def read_env(directory: Path, wanted: Iterable[str] | None = None) -> EnvFile | None:
@@ -222,7 +254,7 @@ def _split_env_lines(text: str) -> list[str]:
     return text.split("\n")
 
 
-def _scan(text: str) -> tuple[list[_Entry], list[int]]:
+def _scan(text: str, *, raw: bool = False) -> tuple[list[_Entry], list[int]]:
     """Split text into entries as written, plus the lines that are not entries.
 
     Nothing is expanded here. Separating the scan from the resolution is what
@@ -238,8 +270,21 @@ def _scan(text: str) -> tuple[list[_Entry], list[int]]:
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
+        if raw:
+            # `format: raw` is a different grammar, not a relaxation of this
+            # one: `export` is not a prefix (Compose rejects `export D=v` as a
+            # key containing whitespace), nothing is trimmed, quotes and `#`
+            # are payload, and `$$` is two literal dollars. Verified against
+            # Compose 5.4.0, whose output for `A=v # trail` is `v # trail` and
+            # for `F=  spaced  ` is `  spaced  `.
+            key, separator, value = line.partition("=")
+            if not separator or not _KEY_RE.match(key):
+                skipped.append(number)
+                continue
+            entries.append(_Entry(key=key, raw=value, expands=False))
+            continue
         stripped = _EXPORT_RE.sub("", stripped)
-        key, separator, raw = stripped.partition("=")
+        key, separator, value = stripped.partition("=")
         key = key.strip()
         if not _KEY_RE.match(key):
             # Compose refuses the whole file here; see the module docstring for
@@ -247,10 +292,9 @@ def _scan(text: str) -> tuple[list[_Entry], list[int]]:
             skipped.append(number)
             continue
         if not separator:
-            # `K` with no `=` ships empty, exactly as `K=` does (verified).
-            entries.append(_Entry(key=key, raw="", expands=False))
+            entries.append(_Entry(key=key, raw="", expands=False, bare=True))
             continue
-        entries.append(_entry(key, raw.strip()))
+        entries.append(_entry(key, value.strip()))
     return entries, skipped
 
 
@@ -349,7 +393,11 @@ def _closure(entries: list[_Entry], wanted: Iterable[str] | None) -> set[str] | 
 
 
 def _resolve(
-    entries: list[_Entry], needed: set[str] | None
+    entries: list[_Entry],
+    needed: set[str] | None,
+    *,
+    initial: Mapping[str, str] | None = None,
+    bare_is_empty: bool = True,
 ) -> tuple[dict[str, str], set[str]]:
     """Expand entries in file order, which is the order Compose expands them.
 
@@ -363,9 +411,16 @@ def _resolve(
     resolve removes any earlier successful binding for that key, so nothing
     downstream can read a stale value for a name the file went on to redefine.
     """
-    values: dict[str, str] = {}
+    values: dict[str, str] = dict(initial or {})
     unresolved: set[str] = set()
     for entry in entries:
+        if entry.bare and not bare_is_empty:
+            # An `env_file:` bare key is a process-environment lookup and
+            # nothing else, so there is no file value to ship. Left unresolved
+            # rather than guessed at, for the reason in divergence 1.
+            unresolved.add(entry.key)
+            values.pop(entry.key, None)
+            continue
         resolved = entry.raw if not entry.expands else _expand(entry.raw, values)
         if resolved is None:
             unresolved.add(entry.key)
@@ -441,3 +496,60 @@ def _substitute(interior: str, defined: Mapping[str, str]) -> str | None:
     if default is None:
         return None  # nothing to fall back to but the host's environment
     return _expand(default, defined)
+
+
+def read_env_file(
+    path: Path,
+    *,
+    defined: Mapping[str, str] | None = None,
+    raw: bool = False,
+) -> EnvFile | None:
+    """Read one ``env_file:`` target, or ``None`` if it cannot be read.
+
+    ``None`` covers absent, unreadable, over-cap and undecodable alike, because
+    the caller's next move is the same for all four: say the file was not read
+    and grade nothing from it. Compose distinguishes them — an absent
+    ``required`` target aborts the run — but that distinction is about whether
+    the project deploys, which the caller answers by testing the path, not by
+    reading it.
+
+    ``defined`` seeds the names this file's values may reference: the sibling
+    ``.env`` and every earlier ``env_file:`` on the same service, which is the
+    scope Compose resolves against (verified: ``P=${BASE}/p`` in the second file
+    picks up ``BASE`` from the first). Seeded names are *not* returned — only
+    keys this file writes are, because only those are keys it contributes to the
+    container.
+
+    Unlike :func:`read_env`, nothing is filtered by wantedness. Every key in an
+    ``env_file:`` is deployed into a named service's process environment, so
+    every key is one a rule may grade (ADR-027 §4).
+    """
+    try:
+        text = read_text_bounded(path, max_bytes=MAX_ENV_BYTES)
+    except (FileNotFoundError, UnsafeFileError, UnicodeDecodeError, OSError):
+        return None
+    return parse_env_file(text, defined=defined, raw=raw)
+
+
+def parse_env_file(
+    text: str,
+    *,
+    defined: Mapping[str, str] | None = None,
+    raw: bool = False,
+) -> EnvFile:
+    """Parse one ``env_file:`` target's text.
+
+    ``raw`` is the ``format: raw`` spelling, which is a different grammar rather
+    than a relaxed one — see :func:`_scan`. In both grammars a bare ``KEY`` is
+    Compose's process-environment lookup and is reported unresolved, which is
+    where this reader diverges from :func:`parse_env`: a ``.env`` ships that key
+    empty.
+    """
+    entries, skipped = _scan(text, raw=raw)
+    own = {entry.key for entry in entries}
+    values, unresolved = _resolve(entries, own, initial=defined, bare_is_empty=False)
+    return EnvFile(
+        values=values,
+        unresolved=frozenset(unresolved),
+        skipped_lines=tuple(skipped),
+    )
