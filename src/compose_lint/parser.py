@@ -12,6 +12,7 @@ from compose_lint._env_file import read_env
 from compose_lint._lines import find_ambiguous_break
 from compose_lint._merge import Document, Merged, merge_documents, merge_values
 from compose_lint._safe_read import UnsafeFileError, read_text_bounded
+from compose_lint._service_env import env_file_refs
 from compose_lint.config import KNOWN_TOP_LEVEL_KEYS
 from compose_lint.rules._interpolation import (
     reference_names,
@@ -1091,26 +1092,11 @@ def unread_env_files(data: dict[str, Any]) -> list[str]:
 def _env_file_paths(value: Any) -> list[str]:
     """Every path an ``env_file:`` names, in written order.
 
-    Three spellings are legal and all three appear in the corpus: a bare string,
-    a list of strings, and a list of mappings carrying ``path:`` alongside
-    ``required:`` / ``format:``. The mapping form is the newer one and is the
-    easiest to miss -- 38 corpus files use it, and reading only the string forms
-    would report a service as covered precisely where the author reached for the
-    more explicit syntax.
+    A thin projection of :func:`compose_lint._service_env.env_file_refs`, which
+    is the one reader of the three legal spellings, so the note below and the
+    resolution that acts on it can never disagree about what a service names.
     """
-    if isinstance(value, str):
-        return [value] if value else []
-    if not isinstance(value, list):
-        return []
-    paths: list[str] = []
-    for entry in value:
-        if isinstance(entry, str) and entry:
-            paths.append(entry)
-        elif isinstance(entry, dict):
-            path = entry.get("path")
-            if isinstance(path, str) and path:
-                paths.append(path)
-    return paths
+    return [ref.path for ref in env_file_refs(value)]
 
 
 def _split_short_volume(volume: str) -> tuple[str, str, str]:

@@ -88,7 +88,7 @@ for three reasons, each derived from the binary the same way:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from compose_lint._safe_read import UnsafeFileError, read_text_bounded
@@ -101,6 +101,7 @@ if TYPE_CHECKING:
 __all__ = [
     "ENV_FILENAME",
     "EnvFile",
+    "env_file_references",
     "parse_env",
     "parse_env_file",
     "read_env",
@@ -157,6 +158,10 @@ class EnvFile:
     values: Mapping[str, str]
     unresolved: frozenset[str]
     skipped_lines: tuple[int, ...]
+    # Where each resolved key was written, 1-indexed. Populated by
+    # :func:`parse_env_file` and left empty by :func:`parse_env`, which has no
+    # caller that needs it.
+    lines: Mapping[str, int] = field(default_factory=dict)
 
     def __bool__(self) -> bool:
         return bool(self.values)
@@ -175,6 +180,11 @@ class _Entry:
     # (both verified against Compose 5.4.0). Recorded here so one scanner can
     # serve both readers.
     bare: bool = False
+    # 1-indexed line this entry was written on. Only the ``env_file:`` reader
+    # keeps it: a finding about a key in one of those files points at the key
+    # (ADR-027 §6), while a ``.env`` value is only ever reported through the
+    # document position that consumed it.
+    line: int = 0
 
 
 def read_env(directory: Path, wanted: Iterable[str] | None = None) -> EnvFile | None:
@@ -281,7 +291,7 @@ def _scan(text: str, *, raw: bool = False) -> tuple[list[_Entry], list[int]]:
             if not separator or not _KEY_RE.match(key):
                 skipped.append(number)
                 continue
-            entries.append(_Entry(key=key, raw=value, expands=False))
+            entries.append(_Entry(key=key, raw=value, expands=False, line=number))
             continue
         stripped = _EXPORT_RE.sub("", stripped)
         key, separator, value = stripped.partition("=")
@@ -292,19 +302,23 @@ def _scan(text: str, *, raw: bool = False) -> tuple[list[_Entry], list[int]]:
             skipped.append(number)
             continue
         if not separator:
-            entries.append(_Entry(key=key, raw="", expands=False, bare=True))
+            entries.append(
+                _Entry(key=key, raw="", expands=False, bare=True, line=number)
+            )
             continue
-        entries.append(_entry(key, value.strip()))
+        entries.append(_entry(key, value.strip(), number))
     return entries, skipped
 
 
-def _entry(key: str, raw: str) -> _Entry:
+def _entry(key: str, raw: str, line: int = 0) -> _Entry:
     """Build one entry, applying the quoting rules for its style."""
     if len(raw) >= 2 and raw[0] == raw[-1] == "'":
-        return _Entry(key=key, raw=raw[1:-1], expands=False)
+        return _Entry(key=key, raw=raw[1:-1], expands=False, line=line)
     if len(raw) >= 2 and raw[0] == raw[-1] == '"':
-        return _Entry(key=key, raw=_unescape(raw[1:-1]), expands=True)
-    return _Entry(key=key, raw=_UNQUOTED_COMMENT_RE.sub("", raw), expands=True)
+        return _Entry(key=key, raw=_unescape(raw[1:-1]), expands=True, line=line)
+    return _Entry(
+        key=key, raw=_UNQUOTED_COMMENT_RE.sub("", raw), expands=True, line=line
+    )
 
 
 def _unescape(value: str) -> str:
@@ -548,8 +562,32 @@ def parse_env_file(
     entries, skipped = _scan(text, raw=raw)
     own = {entry.key for entry in entries}
     values, unresolved = _resolve(entries, own, initial=defined, bare_is_empty=False)
+    # Last definition wins, so the line recorded is the one whose value shipped.
+    lines = {entry.key: entry.line for entry in entries if entry.key in values}
     return EnvFile(
         values=values,
         unresolved=frozenset(unresolved),
         skipped_lines=tuple(skipped),
+        lines=lines,
     )
+
+
+def env_file_references(text: str, *, raw: bool = False) -> set[str]:
+    """Every name an ``env_file:``'s values interpolate.
+
+    Exists so that the sibling ``.env`` can be read for exactly the names an
+    ``env_file:`` chains to, instead of being read in full. Compose resolves an
+    ``env_file:`` value against the ``.env`` (verified: ``K=${FROMDOTENV}-tail``
+    ships the ``.env``'s value), so those names have to be in scope — but
+    ADR-026 §5 keeps the ``.env`` read narrowed to what a run needs, and reading
+    it wholesale to serve this would quietly retire that guarantee. Scanning the
+    env file first costs one extra pass and keeps both promises intact.
+
+    Nothing is resolved here, so no value is assembled.
+    """
+    entries, _ = _scan(text, raw=raw)
+    found: set[str] = set()
+    for entry in entries:
+        if entry.expands:
+            found |= _references(entry.raw)
+    return found
