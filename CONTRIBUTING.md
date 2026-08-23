@@ -3,6 +3,18 @@
 Thanks for wanting to help. This is a small, focused project, so the bar for
 contributions is clarity and authoritative grounding rather than breadth.
 
+## This project is unpaid
+
+compose-lint is volunteer-maintained. There is no budget, no bounty program,
+and nobody is paid to work on it — the maintainer included. Contributions are
+donated under the project's MIT license and the
+[DCO](#developer-certificate-of-origin).
+
+So offers to implement an issue for a fee are declined, and issues labelled
+`good first issue` or `help wanted` are invitations to contribute, not work
+put out for quote. Wanting to be paid for open-source work is an entirely
+reasonable thing to want — it just isn't something this project can offer.
+
 ## Before you start
 
 - **Bug reports and feature requests**: open an issue using one of the templates.
