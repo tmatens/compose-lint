@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-08-23
+
 ### Added
 
 - **CL-0020 and CL-0021 now read the `env_file:` targets a service names**, and
@@ -2650,7 +2652,8 @@ First public release.
   inputs through `env:` rather than direct `${{ }}` interpolation to prevent
   shell injection.
 
-[Unreleased]: https://github.com/tmatens/compose-lint/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/tmatens/compose-lint/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/tmatens/compose-lint/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/tmatens/compose-lint/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/tmatens/compose-lint/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/tmatens/compose-lint/compare/v0.19.0...v0.20.0
