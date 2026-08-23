@@ -109,10 +109,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged, and v1-shaped or own-config overlays keep their current
   behavior until their separate error path lands (#673).
 
+  Thanks [@krishna3554](https://github.com/krishna3554) ([#675](https://github.com/tmatens/compose-lint/pull/675)).
+
 - A parse error in an automatically merged `compose.override.yml` is now
   reported against the file that actually failed in text, JSON, and SARIF. It
   previously named the base file at a line number that did not exist there
   ([#666](https://github.com/tmatens/compose-lint/issues/666)).
+
+  Thanks [@nightcityblade](https://github.com/nightcityblade) ([#670](https://github.com/tmatens/compose-lint/pull/670)).
 
 - Every Compose substitution operator now resolves against a sibling `.env`,
   not just `${VAR:-default}` and `${VAR-default}`. `${VAR:?err}`, `${VAR?err}`,
@@ -132,6 +136,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CL-0020 now exempts additional credential-shaped quantity knobs, including
   work factors, retry counters, lengths, strength values, and cost knobs when
   their values are bare quantities ([#681](https://github.com/tmatens/compose-lint/issues/681)).
+
+  Thanks [@AdhravRai](https://github.com/AdhravRai) ([#685](https://github.com/tmatens/compose-lint/pull/685)).
 
 ## [0.22.0] - 2026-08-22
 
@@ -1331,6 +1337,8 @@ The diff catches the moved-waiver case, which no warning can reach.
   dotless `compose-lint.yml` that `init -o` can write — with either extension.
   **Note** environment specific files, e.g. `compose-dev.yml`, still match, but
   files with prefixes, e.g. `dev-compose.yml`, no longer do.
+
+  Thanks [@jhomer-hscl](https://github.com/jhomer-hscl) ([#495](https://github.com/tmatens/compose-lint/pull/495)).
 
 ### Changed
 

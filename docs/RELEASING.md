@@ -164,6 +164,21 @@ version number.
       Changelog — the three shapes that have reached a release candidate.
       **That checks shape, not completeness:** it cannot know a PR went
       undocumented, so the cross-check above is still yours to do.
+- [ ] **Every entry authored by someone other than a maintainer credits
+      them.** Append `Thanks [@handle](https://github.com/handle)
+      ([#NNN](https://github.com/tmatens/compose-lint/pull/NNN)).` as its own
+      indented paragraph at the end of the entry. The GitHub Release body is
+      generated verbatim from this section, and it is the only announcement
+      channel this repo has, so an uncredited entry is a contribution that
+      never gets publicly acknowledged. The same `gh pr list --search
+      "merged:>..."` cross-check above surfaces the authors — anyone who is
+      not a maintainer gets a line. Bots (`renovate[bot]`,
+      `dependabot[bot]`, `github-actions[bot]`) never do, and neither do
+      maintainers' own PRs: the credit marks *someone else did this*, which
+      is what makes it worth reading. (0.23.0 shipped three outside
+      contributions with no attribution and had to be corrected after the
+      fact — release bodies are editable, so fix it there too if this is
+      caught late.)
 - [ ] `.vex/compose-lint.openvex.json` is current: any new pip (or other
       stripped-component) CVE that a scanner now reports against the image
       is either covered by an existing `not_affected` statement with

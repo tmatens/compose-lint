@@ -293,6 +293,10 @@ check fails on a commit you did not write.
 
 - **Keep PRs small.** Easier to review, easier to revert, easier to bisect.
   A PR that touches 5 files is almost always better than one that touches 30.
+- **You get credited.** When a merged PR produces a user-visible change, its
+  `CHANGELOG.md` entry names you and links your PR, and that text becomes the
+  GitHub Release body verbatim. You do not need to add the line yourself —
+  the releaser does it. Tell us if you'd rather not be named.
 - **Don't mix refactors with behavior changes.** Land the refactor first, then
   the behavior change, in separate PRs.
 - **Update tests.** New rules need positive and negative tests. Bug fixes need
