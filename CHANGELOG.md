@@ -127,6 +127,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operator was and remains unresolved. The 5,417-file corpus produces a byte-
   identical result set.
 
+- CL-0020 now exempts additional credential-shaped quantity knobs, including
+  work factors, retry counters, lengths, strength values, and cost knobs when
+  their values are bare quantities ([#681](https://github.com/tmatens/compose-lint/issues/681)).
+
 ## [0.22.0] - 2026-08-22
 
 ### Upgrading

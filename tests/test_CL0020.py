@@ -225,8 +225,38 @@ class TestCredentialEnvKeysRule:
     )
     def test_exempt_quantity_knob_keys(self, key: str) -> None:
         # A lifetime/size/policy knob is not the credential it is named after.
-        # Every key here is a real corpus false positive from issue #561.
+        # These are real corpus false positives from issue #561.
         assert self._check_key(key, "30") == []
+
+    # ---- Exemptions: additional quantity knobs (issue #681) ----
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "PASSWORD_ROUNDS",
+            "PASSWORD_ITERATIONS",
+            "PASSWORD_HISTORY",
+            "PASSWORD_ATTEMPTS",
+            "PASSWORD_RETRIES",
+            "TOKEN_LENGTH",
+            "SECRET_LENGTH",
+            "PASSWORD_STRENGTH",
+            "SALT_ROUNDS",
+            "BCRYPT_ROUNDS",
+            "ARGON2_ITERATIONS",
+            "BCRYPT_COST",
+            "PASSWORD_COST",
+        ],
+    )
+    def test_exempt_additional_quantity_knob_keys(self, key: str) -> None:
+        # These quantity knobs were added from issue #681 rather than
+        # corpus false positives from issue #561.
+        assert self._check_key(key, "30") == []
+
+    def test_cost_exemption_is_suffix_anchored(self) -> None:
+        # COST is suffix-anchored so unrelated names such as API_COST_TOKEN
+        # remain credential findings.
+        assert len(self._check_key("API_COST_TOKEN", "12345")) == 1
 
     @pytest.mark.parametrize(
         "value", ["30", "1.5", "900s", "500ms", "30m", "24h", "7d"]

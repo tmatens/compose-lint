@@ -117,10 +117,17 @@ _QUANTITY_KEY_FRAGMENTS = (
     # Plural TOKENS counts an LLM's units of text, not credentials
     # (OPENAI_MAX_TOKENS, SUMMARY_MAX_TOKENS).
     "TOKENS",
+    "ROUNDS",
+    "ITERATIONS",
+    "_HISTORY",
+    "_ATTEMPTS",
+    "_RETRIES",
+    "_LENGTH",
+    "_STRENGTH",
 )
 
 # Suffix-anchored so PASSPORT_SECRET is not read as a port number.
-_QUANTITY_KEY_SUFFIXES = ("_PORT",)
+_QUANTITY_KEY_SUFFIXES = ("_PORT", "_COST")
 
 # A bare number, optionally carrying a time unit (`30`, `1.5`, `900s`, `30m`,
 # `500ms`). Anything else — a placeholder, a filename, a rate like `5/hour` —
