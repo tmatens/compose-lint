@@ -25,6 +25,13 @@ reasonable thing to want — it just isn't something this project can offer.
   not accepted.
 - **Larger changes**: open an issue to discuss first so you don't sink time into
   a change that doesn't fit the project's scope.
+- **Claiming an issue**: comment on it saying you're taking it, and check for an
+  existing claim before you start. Issues here are not formally assigned, so that
+  comment thread is the only record — it is what keeps two people from writing the
+  same patch. If a claim has gone quiet for a couple of weeks, say so on the issue
+  and go ahead. Issues labelled
+  [`good first issue`](https://github.com/tmatens/compose-lint/labels/good%20first%20issue)
+  are scoped to be self-contained and are the best place to start.
 
 See [AGENTS.md](AGENTS.md) for the full design philosophy — especially the
 sections on rule grounding, severity assignment, and what's explicitly out of
