@@ -313,6 +313,11 @@ def _cl0022_dev_inert() -> tuple[bool, str]:
     same outcome — which is why flagging ``dev`` would be a finding on a config
     that changes nothing. A ``:dev`` leg that reads the device (or fails any
     other way) refutes the premise and must fail this check.
+
+    Measured on cgroup v2. Cgroup v1 applies the same default device allow-list
+    through the ``devices`` controller rather than an eBPF program, so the same
+    refusal is expected but is not proven here — this check reaches its verdict
+    on whatever mode the host provides, and fails if the expectation is wrong.
     """
     cmd = ["sh", "-c", "mknod /d/blk b 8 0 && head -c 1 /d/blk >/dev/null"]
     rc_nodev, err_nodev = _run_err(["--tmpfs", "/d"], cmd)
