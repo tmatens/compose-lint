@@ -36,6 +36,7 @@ Closes #
 ## Checklist
 
 - [ ] Commits are signed (GitHub shows **Verified**)
+- [ ] Commits carry a `Signed-off-by:` trailer (`git commit -s`) — separate from signing
 - [ ] One logical change per commit; no unrelated changes bundled in
 - [ ] `ruff check`, `ruff format --check`, `mypy src/`, and `pytest` all pass locally
 - [ ] New/changed behavior has tests (positive **and** negative cases for rules)

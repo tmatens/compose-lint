@@ -218,17 +218,21 @@ This is the [Developer Certificate of Origin](https://developercertificate.org).
 It is independent of [commit signing](#commit-signing) above: cryptographic
 signing proves *who committed*, DCO asserts *right to contribute*.
 
-Add the trailer automatically with `-s`:
+Add the trailer with `-s`:
 
 ```bash
 git commit -s -m "Your change"
 ```
 
-Or enable it once per-clone so every commit gets signed off:
+There is no git setting that adds it to every commit. `format.signOff` looks
+like one and is not — it only enables `-s` for `git format-patch`, never for
+`git commit`. Git states the reason in its own documentation: adding the
+trailer "should be a conscious act and means that you certify you have the
+rights to submit this work under the same open source license".
 
-```bash
-git config format.signOff true
-```
+What catches a commit that is missing it is the repo's `pre-push` hook, which
+refuses the push before a PR ever exists — provided you ran the
+`git config core.hooksPath .githooks` from [Development setup](#development-setup).
 
 The `Signed-off-by` name and email must match your commit author identity. CI
 will block the PR if any commit is missing a matching trailer. Fix existing

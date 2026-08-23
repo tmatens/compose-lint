@@ -19,4 +19,19 @@ while read local_ref local_sha remote_ref remote_sha; do
       exit 1
     fi
   done < <(git log --format="%H %G?" "${base}..${local_sha}")
+
+  # DCO. Separate from the signature above: signing proves who committed, the
+  # trailer asserts the right to contribute. No git config adds it to every
+  # commit (format.signOff only affects format-patch), so without this check a
+  # missing trailer surfaces in CI — and on a first-time contributor's fork PR,
+  # not until a maintainer approves the run.
+  while IFS=$'\t' read -r sha author_name author_email; do
+    expected="Signed-off-by: ${author_name} <${author_email}>"
+    if ! git log -1 --format='%B' "${sha}" | grep -qiF "${expected}"; then
+      echo "error: commit ${sha} is missing '${expected}'"
+      echo "       add it with 'git commit --amend --signoff', or"
+      echo "       'git rebase --signoff ${base}' for a whole branch"
+      exit 1
+    fi
+  done < <(git log --format='%H%x09%an%x09%ae' "${base}..${local_sha}")
 done
