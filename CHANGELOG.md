@@ -26,6 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on `--fail-on`. 414 of the 5,417-file corpus (7.64%) name an `env_file:`, and
   496 of the 924 references name the sibling `.env` itself.
 
+  Measured by rebuilding real projects — fetching the targets their repositories
+  commit and running the rules with and without them — **55% of projects whose
+  env file could be read gained at least one finding**: 538 findings across 90 of
+  163 projects, 491 CL-0020 and 47 CL-0021. That is a floor on a biased sample:
+  only 44% of named targets are committed at all, and the gitignored remainder is
+  where credentials concentrate. If your compose file names an `env_file:` and
+  that file is present when compose-lint runs, expect roughly a coin-flip chance
+  of a new HIGH finding.
+
   **No credential value reaches any output surface.** `evidence` is the key
   name, as it always was, and the message names the key and the file. The text
   formatter no longer reads — let alone excerpts — a file that is not a Compose

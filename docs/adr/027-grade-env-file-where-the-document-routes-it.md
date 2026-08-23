@@ -250,11 +250,30 @@ says which file it read.
   including on a `.env` compose-lint already reads. The documented MINOR
   behaviour ([compatibility.md](../compatibility.md)), with the documented escape
   hatches: pin the version, or gate on `--fail-on`.
-- **The finding-count impact is unmeasurable on the corpus, and no amount of work
-  makes it measurable.** The corpus is filename-filtered
-  (`scripts/corpus/fetch.py:29`) so it holds no sibling files at all. What is
-  measured is the population that would newly have a file opened: 414 files, 867
-  services, 924 references, 496 of them a `.env` already being read.
+- **The corpus cannot measure this, but a reconstruction can, and did.** The
+  corpus is filename-filtered (`scripts/corpus/fetch.py:29`) so it holds no
+  sibling files: a corpus run reports every target absent and produces notes
+  rather than findings. What it can measure is the population that newly has a
+  file opened — 414 files, 867 services, 924 references, 496 of them a `.env`
+  already being read — and not the finding count.
+
+  That was measured by rebuilding the projects instead: fetching each named
+  target its repository actually commits, staging it beside the compose file,
+  and running the rules twice against the same parsed document, with and without
+  `env_files`. Of 163 projects whose env file could be read, **90 (55%) gained at
+  least one finding, 538 in total — 491 CL-0020 and 47 CL-0021** across 127
+  distinct key names. 83.6% of the values are opaque literals; most of the rest
+  are placeholders (`changeme`, `your_*_here`), which fire by design —
+  [#561](https://github.com/tmatens/compose-lint/issues/561) settled that
+  `AUTH_TOKENS: your_token_here` is a finding.
+
+  **The number is a floor on a biased sample.** Only 44% of named targets are
+  committed to their repository at all; the rest are gitignored, which is where
+  live credentials concentrate and where no measurement reaches. The placeholder
+  rate is itself evidence of that bias — a project that commits an env file is
+  likelier to be committing an example one. The reconstruction is a scratch
+  measurement and is deliberately not part of `scripts/corpus/`: a fetcher that
+  pulls credential-bearing files is not something this repository should ship.
 - ADR-026 line 224 is narrowed, not deleted. "There is a secret in your `.env`"
   remains out of scope. "There is a credential your document routes into a
   container's process environment" is in scope, and always was — only its
