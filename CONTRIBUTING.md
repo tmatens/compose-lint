@@ -285,9 +285,16 @@ too, so set those up before your first commit.
 `tests/corpus_snapshot.json.gz` locks compose-lint's output across a corpus
 of real-world Compose files so unintended rule drift is visible in PR diffs.
 
-- Generate a corpus locally with the helper scripts at
-  `~/.cache/compose-lint-corpus/scripts/` (out of tree by design — see
-  `LICENSE-corpus.md`). Set `COMPOSE_LINT_BIN` to your in-repo binary.
+- The corpus **data** is out of tree by design: compose files, lint runs and
+  the index are third-party content and live at `~/.cache/compose-lint-corpus/`
+  (see `LICENSE-corpus.md`). The **scripts** are in git at `scripts/corpus/` —
+  its README has the fetch pipeline.
+- Refresh a run before generating or verifying anything. `python
+  scripts/corpus/run.py` lints every corpus file into `runs/<timestamp>/`, and
+  `scripts/snapshot.py` reads the newest run it finds — so without this step
+  both commands below grade whatever was linted last, which may be a different
+  build of compose-lint entirely. It defaults to `.venv/bin/compose-lint`; set
+  `COMPOSE_LINT_BIN` to point at another build.
 - **Maintainers** regenerate it after a rule change, via
   `python scripts/snapshot.py generate`, and commit the updated
   `tests/corpus_snapshot.json.gz` separately from the change it checks.
