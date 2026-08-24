@@ -74,6 +74,34 @@ slot does the work that MAJOR does post-1.0.
   under the post-1.0 rules below. Don't bump to `1.0.0` casually — do
   it when you're ready to stand behind those guarantees.
 
+### Cutting 1.0.0
+
+The bump itself is a normal MINOR-shaped release mechanically; what makes it
+1.0.0 is the contract coming into force. Before dispatching release-prep with
+`1.0.0`, confirm each of these, in the PR that bumps the version:
+
+1. **Contract docs are final.** compatibility.md and this file say what you
+   are ready to stand behind: ADR-029 (scheduled interpreter drops),
+   ADR-030 (the policy is part of the contract — after this release,
+   loosening anything costs a MAJOR), the opaque `rule_id` declaration.
+   Anything you still want to relax ships *in or before* this release.
+2. **No severity move is pending.** Re-read ADR-028's watch items
+   (CL-0029's `IPC_LOCK` friction, CL-0013's `/dev` descendants, CL-0014's
+   judgment retention) and state in the PR description that none warrants a
+   change now — after this release an upgrade is a MAJOR (the sanctioned
+   alternative being the split pattern). This is the roadmap's last GA
+   criterion, recorded so "we checked" is verifiable rather than folklore.
+3. **Classifier bump** — `Development Status :: 4 - Beta` becomes
+   `5 - Production/Stable` in the same commit that sets `version = "1.0.0"`
+   (both `pyproject.toml` and `src/compose_lint/__init__.py`, as always).
+4. **The moving `v1` Action tag needs no manual step** — publish.yml's
+   `action-major-tag` job runs for the first time on this release (it skips
+   v0). After the pipeline finishes, verify `v1` exists and points at the
+   release commit, and that `uses: tmatens/compose-lint@v1` resolves in the
+   marketplace-smoke sense.
+5. **After the release**: the post-1.0 rules below are in force, including
+   the flipped tie-breaker — when in doubt, pick the higher bump.
+
 ### Post-1.0 (future)
 
 Once `1.0.0` ships, the contract tightens:
