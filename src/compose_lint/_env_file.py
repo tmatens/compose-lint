@@ -91,6 +91,7 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from compose_lint._limits import MAX_SUBSTITUTED_LEN
 from compose_lint._safe_read import UnsafeFileError, read_text_bounded
 from compose_lint.rules._interpolation import _default_of, _matching_brace
 
@@ -457,11 +458,15 @@ def _expand(value: str, defined: Mapping[str, str]) -> str | None:
     being linted.
     """
     out: list[str] = []
+    produced = 0
     index = 0
     while index < len(value):
+        if produced > MAX_SUBSTITUTED_LEN:
+            return None
         char = value[index]
         if char != "$" or index + 1 >= len(value):
             out.append(char)
+            produced += 1
             index += 1
             continue
         following = value[index + 1]
@@ -472,29 +477,36 @@ def _expand(value: str, defined: Mapping[str, str]) -> str | None:
             # `docker compose config`, which re-escapes a literal dollar on the
             # way out (it prints `a$$b`) so its own output round-trips.
             out.append("$")
+            produced += 1
             index += 2
             continue
         if following == "{":
             close = _matching_brace(value, index + 1)
             if close is None:
                 out.append(char)
+                produced += 1
                 index += 1
                 continue
             substituted = _substitute(value[index + 2 : close], defined)
             if substituted is None:
                 return None
             out.append(substituted)
+            produced += len(substituted)
             index = close + 1
             continue
         name = re.match(r"[A-Za-z_][A-Za-z0-9_]*", value[index + 1 :])
         if name is None:
             out.append(char)
+            produced += 1
             index += 1
             continue
         if name.group() not in defined:
             return None
         out.append(defined[name.group()])
+        produced += len(defined[name.group()])
         index += 1 + len(name.group())
+    if produced > MAX_SUBSTITUTED_LEN:
+        return None
     return "".join(out)
 
 

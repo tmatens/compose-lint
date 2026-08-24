@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from compose_lint._limits import MAX_SCAN_LEN
+from compose_lint._limits import MAX_SCAN_LEN, MAX_SUBSTITUTED_LEN
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -147,14 +147,18 @@ def _resolve_defaults(
         return None
     lookup: Mapping[str, str] = env or {}
     out: list[str] = []
+    produced = 0
     i = 0
     end = len(value)
     while i < end:
+        if produced > MAX_SUBSTITUTED_LEN:
+            return None
         char = value[i]
         if char == "$" and i + 1 < end:
             following = value[i + 1]
             if following == "$":  # escaped literal dollar, not a reference
                 out.append("$$")
+                produced += 2
                 i += 2
                 continue
             if following == "{":
@@ -164,6 +168,7 @@ def _resolve_defaults(
                     supplied = _supplied(interior, lookup)
                     if supplied is not None:
                         out.append(supplied)
+                        produced += len(supplied)
                         i = close + 1
                         continue
                     default = _default_of(interior)
@@ -172,18 +177,24 @@ def _resolve_defaults(
                         if resolved is None:
                             return None
                         out.append(resolved)
+                        produced += len(resolved)
                         i = close + 1
                         continue
                     out.append(value[i : close + 1])  # no default; as written
+                    produced += close + 1 - i
                     i = close + 1
                     continue
             name = _BARE_NAME_RE.match(value, i + 1)
             if name is not None and name.group() in lookup:
                 out.append(lookup[name.group()])
+                produced += len(lookup[name.group()])
                 i = name.end()
                 continue
         out.append(char)
+        produced += 1
         i += 1
+    if produced > MAX_SUBSTITUTED_LEN:
+        return None
     return "".join(out)
 
 

@@ -23,14 +23,16 @@ from pathlib import Path
 
 import pytest
 
+from compose_lint._limits import MAX_SUBSTITUTED_LEN
 from compose_lint._lines import split_lines
 from compose_lint._safe_read import MAX_FILE_BYTES, UnsafeFileError, read_text_bounded
 from compose_lint._scalar import as_scalar_text
-from compose_lint._yaml_edit import extends_targets
+from compose_lint._yaml_edit import extends_targets, normalize_security_opt
 from compose_lint.config import ConfigError, load_config
 from compose_lint.engine import run_rules
 from compose_lint.formatters.sarif import MAX_SARIF_RESULTS
 from compose_lint.parser import ComposeError, loads
+from compose_lint.rules._interpolation import _resolve_defaults
 from tests._cli_env import cli_env
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -290,3 +292,85 @@ def test_an_ordinary_run_is_not_truncated(tmp_path: Path) -> None:
 def test_a_malformed_document_is_still_a_compose_error() -> None:
     with pytest.raises(ComposeError):
         loads("services:\n  web:\n    image: [\n")
+
+
+# --- Substitution is bounded on what it produces, not just what it scans ---
+#
+# `MAX_SCAN_LEN` bounds the *input* a pass will look at. It never fires here,
+# because no single value is ever large: `${A}${A}` is four characters whose
+# result is twice whatever `A` holds, so a ladder of definitions that each
+# reference the one below doubles per rung. Thirty rungs is a 489-byte `.env`
+# whose expansion is gigabytes.
+
+
+def _doubling_env(rungs: int = 30) -> str:
+    lines = ["K0=AAAA"]
+    lines += [f"K{i}=${{K{i - 1}}}${{K{i - 1}}}" for i in range(1, rungs + 1)]
+    return "\n".join(lines) + "\n"
+
+
+def test_a_tiny_env_cannot_buy_an_unbounded_expansion(tmp_path: Path) -> None:
+    """A 489-byte `.env` used to allocate until the runner died."""
+    env = tmp_path / ".env"
+    env.write_text(_doubling_env(), encoding="utf-8")
+    assert len(env.read_bytes()) < 1024, "the point is that the input is tiny"
+    (tmp_path / "docker-compose.yml").write_text(
+        "services:\n  web:\n    image: nginx:1.27\n    environment:\n      X: ${K30}\n",
+        encoding="utf-8",
+    )
+
+    start = time.monotonic()
+    proc = _run(["check", "docker-compose.yml"], tmp_path, timeout=60)
+    elapsed = time.monotonic() - start
+
+    # The run completes and reports a verdict rather than dying mid-write.
+    assert proc.returncode in (0, 1), proc.stderr
+    assert "MemoryError" not in proc.stderr
+    assert "Traceback" not in proc.stderr, proc.stderr
+    assert elapsed < 30, f"took {elapsed:.1f}s; expansion is unbounded again"
+
+
+def test_the_substitution_cap_returns_the_unknowable_answer() -> None:
+    """Over the cap the value is not knowable, which is already `None`."""
+    over = {"A": "x" * (MAX_SUBSTITUTED_LEN + 1)}
+    assert _resolve_defaults("${A}", env=over) is None
+    # Under it, resolution is unchanged.
+    assert _resolve_defaults("${A:-ok}") == "ok"
+
+
+# --- `str()` on an alias DAG, in the three predicates `_scalar` had missed ---
+
+
+def _alias_ladder(field: str, rungs: int = 26) -> str:
+    lines = ["services:", "  web:", "    image: nginx:1.27", "    x-l0: &l0 [a, b]"]
+    lines += [f"    x-l{i}: &l{i} [*l{i - 1}, *l{i - 1}]" for i in range(1, rungs + 1)]
+    lines.append(f"    {field}: *l{rungs}")
+    return "\n".join(lines) + "\n"
+
+
+@pytest.mark.parametrize("field", ["security_opt", "pid", "ipc", "network_mode"])
+def test_an_alias_dag_is_not_serialized_as_a_tree(tmp_path: Path, field: str) -> None:
+    """`security_opt: [*l26]` is 690 bytes on disk and 2^26 via `str()`.
+
+    `_caps.iter_cap_add` already refused this for `cap_add`; the CL-0003 /
+    CL-0009 normalizer and CL-0010's namespace comparison did not.
+    """
+    target = tmp_path / "docker-compose.yml"
+    target.write_text(_alias_ladder(field), encoding="utf-8")
+    assert len(target.read_bytes()) < 2048, "the point is that the input is tiny"
+
+    start = time.monotonic()
+    proc = _run(["check", "docker-compose.yml"], tmp_path, timeout=60)
+    elapsed = time.monotonic() - start
+
+    assert proc.returncode in (0, 1), proc.stderr
+    assert "Traceback" not in proc.stderr, proc.stderr
+    assert elapsed < 20, f"took {elapsed:.1f}s; the DAG is being expanded again"
+
+
+def test_a_non_scalar_security_opt_normalizes_to_nothing() -> None:
+    """A list is not a directive Docker accepts, so it matches nothing."""
+    assert normalize_security_opt(["seccomp:unconfined"]) == ""
+    assert normalize_security_opt({"a": "b"}) == ""
+    # Scalars are untouched.
+    assert normalize_security_opt("seccomp=unconfined") == "seccomp:unconfined"

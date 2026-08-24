@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 
@@ -81,7 +82,15 @@ class HostNamespaceRule(BaseRule):
         lines: dict[str, int],
     ) -> Iterator[Finding]:
         for key, value, cis_ref, desc in _NAMESPACE_CHECKS:
-            if str(service_config.get(key, "")).lower() == value:
+            # `str()` on an alias-expanded nested list serializes the DAG as a
+            # tree, so a few hundred bytes of YAML allocates 2^depth characters
+            # here. A list is also not a value `pid:`/`ipc:`/`network_mode:`
+            # can hold, so there is nothing to compare — skip it, as
+            # `_caps.iter_cap_add` already does for `cap_add`.
+            raw = as_scalar_text(service_config.get(key, ""))
+            if raw is None:
+                continue
+            if raw.lower() == value:
                 yield Finding(
                     rule_id="CL-0010",
                     severity=Severity.HIGH,

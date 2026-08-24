@@ -22,6 +22,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   therefore a red merge gate. Writes now report
   `Error: could not write output: <reason>` and exit 2, which is what that code
   already means: compose-lint could not complete the run.
+- **A tiny Compose file can no longer buy an unbounded amount of work.** Two
+  vectors, both reachable from a pull request in the CI merge gate the tool
+  ships as. `MAX_SCAN_LEN` bounds what a pass *scans*; nothing bounded what
+  substitution *produces* — `${A}${A}` is four characters whose result is twice
+  whatever `A` holds, so a ladder of definitions each referencing the one below
+  doubles per rung, and thirty rungs is a **489-byte** `.env` whose expansion
+  exhausts memory. The new `MAX_SUBSTITUTED_LEN` bounds the result as it is
+  built, returning the same "unknowable" answer both call sites already return
+  for a name they cannot resolve. Separately, `str()` on an alias-expanded
+  nested list serializes the DAG as a tree: `security_opt: [*l26]` is **690
+  bytes** on disk and took 35s. `compose_lint._scalar` exists to refuse exactly
+  that and `_caps.iter_cap_add` already applied it to `cap_add`; the CL-0003 /
+  CL-0009 `security_opt` normalizer and CL-0010's namespace comparison now do
+  too — 35.85s to 90ms. A list is not a value any of those fields can hold, so
+  the entry is skipped rather than compared.
 
 ## [0.24.0] - 2026-08-24
 

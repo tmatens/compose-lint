@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from compose_lint._scalar import as_scalar_text
 from compose_lint.models import TextEdit
 
 # security_opt directives that disable a default platform profile — CL-0009's
@@ -38,8 +39,20 @@ def normalize_security_opt(opt: Any) -> str:
     (issue #277 F3) and CL-0003 fires on an already-hardened ``=``-form
     ``no-new-privileges`` (#277 P1). Lower-cases and rewrites only the first
     ``=`` (the key/value separator), leaving any ``=`` inside a value untouched.
+
+    A non-scalar entry normalizes to ``""``. ``str()`` on an alias-expanded
+    nested list serializes the DAG as a tree — ``security_opt: [*l26]`` is 690
+    bytes on disk and took 35s here — which is the allocation
+    :mod:`compose_lint._scalar` exists to refuse, already refused for
+    ``cap_add`` in :func:`_caps.iter_cap_add`. A list is also not a directive
+    Docker accepts, so there is nothing to compare it against; every caller
+    treats an unrecognized value as "not one of ours" and skips it, which is
+    what it would have done with the giant string anyway.
     """
-    return str(opt).strip().lower().replace("=", ":", 1)
+    text = as_scalar_text(opt)
+    if text is None:
+        return ""
+    return text.strip().lower().replace("=", ":", 1)
 
 
 # One entry is enough: a run processes one document at a time, and the fix

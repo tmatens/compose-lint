@@ -19,3 +19,17 @@ from __future__ import annotations
 # input written to be pathological. Below it, even a quadratic pattern is
 # bounded at a few milliseconds.
 MAX_SCAN_LEN = 8192
+
+# The cap above bounds what is *scanned*; this one bounds what substitution
+# *produces*. They are different quantities: `${A}${A}` is four characters of
+# input whose result is twice whatever `A` holds, so a chain of definitions
+# that each reference the one below doubles per level. Thirty levels of that
+# is a 489-byte `.env` whose expansion is gigabytes — the input cap never
+# fires, because no single value is ever large.
+#
+# Sixteen times MAX_SCAN_LEN: far above any real interpolated value (a scalar
+# larger than MAX_SCAN_LEN is not scanned by the rules anyway), and small
+# enough that reaching it costs nothing. Above it the caller returns the same
+# conservative "unknowable" answer it already returns for a name it cannot
+# resolve.
+MAX_SUBSTITUTED_LEN = MAX_SCAN_LEN * 16
