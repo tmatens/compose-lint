@@ -27,6 +27,7 @@ Most of this checklist is now wired into CI. At a glance:
 | PyPI + Docker Hub publish              | `publish.yml`                                      |
 | GitHub Release created from CHANGELOG  | `publish.yml` → `create-release` job               |
 | Marketplace-smoke pin bump PR          | `publish.yml` → `bump-marketplace-smoke-pin` job   |
+| Moving `v1` Action tag (1.0+ releases) | `publish.yml` → `action-major-tag` job (lightweight, unsigned by design — see the job comment) |
 | Merge pin bump PR, re-run smoke        | **Manual**                                         |
 
 Tag creation stays manual on purpose. Tags created by `GITHUB_TOKEN`

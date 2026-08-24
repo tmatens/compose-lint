@@ -92,7 +92,7 @@ v1.0 is the **stability commitment**: the CLI surface, exit codes, configuration
 - **Grounding + severity audit complete** — _done for severity._ Every rule cites OWASP/CIS/Docker and derives its severity from the documented model (Milestone 3.5). What remains before the freeze is confirming no further severity change is pending that would alter a CI gate.
 - **Documented upgrade/deprecation policy** — the SemVer stability promise (rule additions, severity changes, config and output-shape changes) and the deprecation lifecycle, in [compatibility.md](compatibility.md).
 
-**At GA:** bump the PyPI classifier from `4 - Beta` to `5 - Production/Stable` in the version→1.0.0 commit, and publish a moving `v1` Action tag so users can pin `uses: tmatens/compose-lint@v1`.
+**At GA:** bump the PyPI classifier from `4 - Beta` to `5 - Production/Stable` in the version→1.0.0 commit. The moving `v1` Action tag needs no separate step: publish.yml's `action-major-tag` job force-moves the major tag on every non-v0 release (lightweight and unsigned by design — the signed claim is the release tag; README documents the trade).
 
 ---
 

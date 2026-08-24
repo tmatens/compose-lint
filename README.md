@@ -438,6 +438,15 @@ jobs:
           sarif-file: results.sarif
 ```
 
+The `uses:` line pins a commit SHA with the version in a trailing comment —
+the supply-chain-rigorous form (it is what OpenSSF Scorecard grades for, and
+Renovate/Dependabot keep the pin fresh). From 1.0 a floating major tag also
+exists — `uses: tmatens/compose-lint@v1` — for setups that prefer automatic
+updates: it is a mutable pointer moved by the release pipeline, deliberately
+*not* part of the signed-tag guarantee that release tags carry, which is the
+same trade this linter itself prices in CL-0004/CL-0019. Pick the form that
+matches your threat model; the SHA pin is the recommended default.
+
 The `permissions:` blocks are part of the recipe, not decoration. Without them the
 job inherits the repository default, which on many repositories is still
 read-write for every scope — so a linting job that needs only `contents: read`

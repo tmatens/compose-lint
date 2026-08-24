@@ -3,7 +3,11 @@ name: Publish
 on:
   push:
     tags:
-      - "v*"
+      # Full release tags only (annotated, signed, verified below). The
+      # moving major tag (v1, v2, ...) that action-major-tag force-pushes
+      # after a release must NOT re-trigger this pipeline — it is a
+      # lightweight convenience pointer, not a release.
+      - "v[0-9]+.[0-9]+.[0-9]+"
 
 # Deny-all at the workflow level; every job declares the scopes it needs.
 permissions: {}
@@ -931,3 +935,39 @@ jobs:
             --head "${branch}" \
             --title "Bump marketplace-smoke pin to ${TAG}" \
             --body-file /tmp/pr-body.md
+
+  # Move the floating Action major tag (uses: tmatens/compose-lint@v1) to
+  # this release once everything above has published and verified. Only for
+  # 1.0.0 and later — v0 releases publish no major tag, mirroring the Docker
+  # metadata rule above (`enable=!v0.`).
+  #
+  # Deliberately a LIGHTWEIGHT tag pushed with the workflow token, not a
+  # signed annotated tag: the SSH release-signing key stays offline with the
+  # maintainer (verify-tag exists to catch tags a stolen credential could
+  # mint, so CI must never hold that key). The signed, immutable claim is
+  # the release tag; the major tag is a mutable convenience pointer and is
+  # documented as such (docs/hardening.md) — consumers who want integrity
+  # pin the SHA or the exact version, exactly as this repo's own workflows
+  # do. Trigger filter above excludes "v1" so this push cannot re-enter the
+  # pipeline. If GitHub's immutable-releases setting is ever enabled, keep
+  # this tag detached from any Release object or the force-push is refused.
+  action-major-tag:
+    needs: verify-release-signatures
+    if: ${{ !startsWith(github.ref_name, 'v0.') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: true
+      - name: Force-move the major tag to this release
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          major="${TAG%%.*}"   # v1.2.3 -> v1
+          git tag -f "${major}" "${GITHUB_SHA}"
+          git push -f origin "refs/tags/${major}"
+          echo "Moved ${major} -> ${TAG} (${GITHUB_SHA})"
