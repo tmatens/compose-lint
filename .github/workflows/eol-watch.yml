@@ -1,0 +1,102 @@
+name: Platform end-of-life radar
+
+# Watches the calendar the way vuln-report.yml watches advisories: the
+# Python floor, the Docker base image's Debian release, and the CI runner
+# image all have upstream EOL dates that everyone can see coming — and the
+# Python 3.10 drop (#643) showed they still arrive "suddenly" without a
+# watcher. Post-1.0 the cost of being surprised is a forced MAJOR or an
+# EOL interpreter inside the stability contract, so the radar's window
+# (180 days, in scripts/eol_watch.py) is sized to fit the whole
+# deprecation lifecycle of docs/compatibility.md in front of the date.
+#
+# Also flags a newly released CPython minor missing from ci.yml's matrix,
+# which the ROADMAP commits to adding within ~3 months of release.
+#
+# One rolling issue, same pattern as vuln-report.yml: opened when
+# something is due, updated in place while it stays due, closed by the
+# first clean run. Script exit codes: 0 nothing due, 1 due (report on
+# stdout), 2 the script could not produce a trustworthy answer (network,
+# parse, stale declaration) — 2 fails the run and is reported as its own
+# issue below, because a radar that silently stops sweeping reads as
+# "all clear".
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Monthly is enough: dates move on quarters, and the window is 180 days.
+    - cron: "0 7 3 * *"
+
+permissions: {}
+
+jobs:
+  radar:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # No setup-python: the script is stdlib-only (tomllib needs >=3.11)
+      # and the runner's own interpreter satisfies that. Nothing to install
+      # keeps this job off the lockfile/hash-pinning surface entirely.
+      - name: Sweep
+        id: sweep
+        run: |
+          set -euo pipefail
+          rc=0
+          python3 scripts/eol_watch.py > report.md || rc=$?
+          if [ "${rc}" -gt 1 ]; then
+            echo "::error::eol_watch.py exit ${rc} — no trustworthy answer"
+            exit "${rc}"
+          fi
+          echo "due=${rc}" >> "${GITHUB_OUTPUT}"
+
+      - name: Open, update, or close the rolling issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DUE: ${{ steps.sweep.outputs.due }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="Platform EOL radar: action due"
+          existing=$(gh issue list --state open --search "\"${title}\" in:title" \
+            --json number --jq '.[0].number // empty')
+          if [ "${DUE}" = "1" ]; then
+            printf '\nRun: %s\n' "${RUN_URL}" >> report.md
+            if [ -n "${existing}" ]; then
+              echo "Updating #${existing}"
+              gh issue comment "${existing}" --body-file report.md
+            else
+              echo "Opening new issue"
+              gh issue create --title "${title}" --body-file report.md
+            fi
+          elif [ -n "${existing}" ]; then
+            echo "Nothing due; closing #${existing}"
+            gh issue close "${existing}" --reason completed --comment \
+              "Nothing due within the window any more. Verified by ${RUN_URL}."
+          else
+            echo "Nothing due and no open issue."
+          fi
+
+      - name: Report scheduled failure as issue
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          WORKFLOW: ${{ github.workflow }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="Scheduled run failed: ${WORKFLOW}"
+          body=$(printf -- '- Workflow: **%s**\n- Run: %s\n- Commit: %s\n\nThe EOL radar did not complete, so the calendar is unwatched until this is fixed.' \
+            "${WORKFLOW}" "${RUN_URL}" "${GITHUB_SHA}")
+          existing=$(gh issue list --state open --search "\"${title}\" in:title" \
+            --json number --jq '.[0].number // empty')
+          if [ -n "${existing}" ]; then
+            gh issue comment "${existing}" --body "${body}"
+          else
+            gh issue create --title "${title}" --body "${body}"
+          fi
