@@ -17,7 +17,12 @@ SemVer rules below:
 - **Config schema** — the `.compose-lint.yml` keys and their semantics
   ([ADR-010](adr/010-per-service-rule-overrides.md)).
 - **Machine output** — the JSON envelope and the SARIF 2.1.0 log shapes
-  ([ADR-015](adr/015-machine-readable-output-contract.md)).
+  ([ADR-015](adr/015-machine-readable-output-contract.md)). Within them,
+  `rule_id` (JSON) / `ruleId` (SARIF) is an **opaque string**: match exact
+  values, never the `CL-\d{4}` pattern. Every value today happens to match
+  it, but the format is not promised — a future rule source (e.g. the
+  shellcheck integration of [ADR-007](adr/007-shellcheck-integration.md))
+  may emit ids of a different shape as an additive, MINOR change.
 
 ## What is explicitly NOT covered
 

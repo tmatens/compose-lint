@@ -70,3 +70,13 @@ the auto-fix work in [ADR-014](014-fix-remediation.md).
   envelope makes it a safe additive change whenever one does. Freezing its
   exact shape (count semantics, severity keys) at 1.0 with no demand is
   unnecessary surface.
+
+**Amendment (pre-1.0 freeze):** `rule_id` / `ruleId` is declared an opaque
+string in [compatibility.md](../compatibility.md#the-10-commitment): consumers
+match exact values, not the `CL-` prefix or the four-digit shape. Declared
+before the 1.0 freeze because afterwards it would be a contract loosening —
+a MAJOR under [ADR-030](030-the-policy-is-part-of-the-contract.md) — while
+today it is a clarification of surface no consumer was promised. It keeps a
+future rule source with foreign ids (shellcheck's `SC####`,
+[ADR-007](007-shellcheck-integration.md)) an additive MINOR rather than a
+breaking-change argument.

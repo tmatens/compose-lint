@@ -61,6 +61,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retired ID keeps working, `--strict-config` included (a precondition the
   config layer gains before the first such retirement). "Noisy" remains a
   non-reason (ADR-028).
+- **`rule_id` / `ruleId` in machine output is declared opaque.** Every value
+  today matches `CL-\d{4}`, but the pattern was never promised and is now
+  explicitly excluded from the 1.0 contract: match exact ids, not the
+  prefix. Declared before the freeze, while it is still a clarification
+  rather than a contract change; it keeps a future rule source with
+  differently-shaped ids (e.g. shellcheck's `SC` codes, ADR-007) additive.
 
 ### Removed
 
