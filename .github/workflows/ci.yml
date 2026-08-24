@@ -88,7 +88,13 @@ jobs:
             dockerfile=true
           fi
           # pyproject.toml is the compile source; the locks are its outputs.
-          if match '^(pyproject\.toml$|requirements[.-].*lock$)'; then
+          # ci.yml is in the locks group because the drift gate's uv
+          # version is pinned *in this file* — a bump of that pin (Renovate
+          # does this) must re-prove the committed locks reproduce
+          # byte-for-byte under the new uv, which is exactly this job. The
+          # 0.12.3->0.12.5 bump (#700) sailed past the gate because this
+          # pattern didn't include it and had to be verified by hand.
+          if match '^(pyproject\.toml$|requirements[.-].*lock$|\.github/workflows/ci\.yml$)'; then
             locks=true
           fi
           {
