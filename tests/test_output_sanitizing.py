@@ -17,6 +17,7 @@ enforces that.
 from __future__ import annotations
 
 import ast
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -24,6 +25,9 @@ from pathlib import Path
 import pytest
 
 from compose_lint._output import sanitize, sanitize_line
+from compose_lint._selection import _resolve_entry
+from compose_lint._service_env import Unread, _classify, env_file_refs
+from compose_lint.parser import ComposeError, loads
 from tests._cli_env import cli_env
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -192,3 +196,77 @@ def test_diff_content_is_escaped_but_structure_survives(
     assert diff.startswith("---")
     assert "\n" in diff
     assert "+++" in diff
+
+
+# --- A symlink is invisible to a lexical containment test ------------------
+#
+# The guards in `_selection` and `_service_env` are deliberately lexical: what
+# a path *says* is a fact about the document, identical on every platform
+# (ADR-023 section 1). A committed symlink says nothing -- `probe.env` passes
+# every lexical test while pointing at `/home/runner/.aws/credentials`, the
+# scenario ADR-027 section 7 names and promises to refuse. So a second gate
+# asks the filesystem, at the moment of resolution.
+
+
+@pytest.mark.skipif(os.name != "posix", reason="needs POSIX symlinks")
+def test_an_env_file_symlink_out_of_the_project_is_refused(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secrets.env").write_text("DB_PASSWORD=hunter2\n", encoding="utf-8")
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "leaked.env").symlink_to(outside / "secrets.env")
+    (project / "compose.yml").write_text(
+        "services:\n  web:\n    image: nginx:1.27\n    env_file: leaked.env\n",
+        encoding="utf-8",
+    )
+
+    refs = env_file_refs("leaked.env")
+    path, refusal = _classify(refs[0], project)
+    assert path is None
+    assert refusal is Unread.OUTSIDE_PROJECT
+
+
+@pytest.mark.skipif(os.name != "posix", reason="needs POSIX symlinks")
+def test_an_in_project_symlink_is_still_read(tmp_path: Path) -> None:
+    """The gate refuses escapes, not symlinks."""
+    project = tmp_path / "project"
+    (project / "shared").mkdir(parents=True)
+    (project / "shared" / "real.env").write_text("A=b\n", encoding="utf-8")
+    (project / "app.env").symlink_to(project / "shared" / "real.env")
+
+    path, refusal = _classify(env_file_refs("app.env")[0], project)
+    assert refusal is None
+    assert path is not None
+
+
+@pytest.mark.skipif(os.name != "posix", reason="needs POSIX symlinks")
+def test_a_compose_file_entry_symlink_out_of_the_project_is_refused(
+    tmp_path: Path,
+) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "evil.yml").write_text(
+        "services:\n  x:\n    image: nginx:1.27\n", encoding="utf-8"
+    )
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "linked.yml").symlink_to(outside / "evil.yml")
+
+    assert _resolve_entry(project, "linked.yml") is None
+
+
+# --- A parse error must not quote the line it failed on --------------------
+
+
+def test_a_parse_error_does_not_reproduce_the_line_it_failed_on() -> None:
+    """PyYAML renders a snippet under a caret; that snippet is the document."""
+    with pytest.raises(ComposeError) as excinfo:
+        loads("services:\n  db:\n\tPOSTGRES_PASSWORD: s3cr3t-do-not-leak\n")
+
+    message = str(excinfo.value)
+    assert "s3cr3t-do-not-leak" not in message
+    # The diagnosis and the position survive -- only the quoted bytes go.
+    assert "cannot start any token" in message
+    assert "line 3" in message

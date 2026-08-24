@@ -44,7 +44,11 @@ from compose_lint._env_file import (
     parse_env_file,
     read_env,
 )
-from compose_lint._safe_read import UnsafeFileError, read_text_bounded
+from compose_lint._safe_read import (
+    UnsafeFileError,
+    escapes_project,
+    read_text_bounded,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -205,7 +209,17 @@ def _classify(ref: EnvFileRef, base_dir: Path) -> tuple[Path | None, Unread | No
     segments = _project_relative(ref.path)
     if segments is None:
         return None, Unread.OUTSIDE_PROJECT
-    return base_dir.joinpath(*segments), None
+    candidate = base_dir.joinpath(*segments)
+    # Second gate, and a different question. The segment math above rules on
+    # what the *document* says, identically on every platform (ADR-023 §1); a
+    # symlink says nothing. `probe.env` is spelled like a project-relative
+    # file and passes every lexical test while the committed link beside it
+    # points at `/home/runner/.aws/credentials` — the scenario ADR-027 §7
+    # names and promises to refuse. Asked here, at the moment of resolution,
+    # about this filesystem.
+    if escapes_project(candidate, base_dir):
+        return None, Unread.OUTSIDE_PROJECT
+    return candidate, None
 
 
 def resolve_env_files(

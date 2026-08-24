@@ -42,6 +42,35 @@ class _LinesKey:
 _LINES = _LinesKey()
 
 
+def _describe_yaml_error(exc: yaml.YAMLError) -> str:
+    """PyYAML's diagnosis, without the source line it quotes.
+
+    ``MarkedYAMLError.__str__`` renders a snippet of the document under a
+    caret. That is genuinely the most useful part of the message for a human
+    fixing their own file, and it is also a verbatim line of a file the run
+    was pointed at — which reaches ``errors[].message`` in JSON, the SARIF
+    ``toolExecutionNotifications`` uploaded to Code Scanning, and the job log.
+    Two shapes make that a disclosure rather than a nicety: a syntax error on a
+    line carrying a credential reproduces the credential, and an ``env_file:``
+    or ``COMPOSE_FILE`` naming a file the document chose makes it a line of
+    *that* file.
+
+    So the diagnosis and the position are kept — they say what is wrong and
+    exactly where — and only the quoted bytes are dropped. The user still has
+    the file open in front of them; a reader of the report does not.
+    """
+    problem = getattr(exc, "problem", None)
+    if problem is None:
+        return str(exc)
+    context = getattr(exc, "context", None)
+    parts = [context, problem] if context else [problem]
+    mark = getattr(exc, "problem_mark", None)
+    if mark is not None:
+        # Marks are 0-indexed; every other line number compose-lint prints is 1-indexed.
+        parts.append(f"at line {mark.line + 1}, column {mark.column + 1}")
+    return ", ".join(parts)
+
+
 class ComposeError(Exception):
     """Raised when a file is not a valid Docker Compose file."""
 
@@ -1249,7 +1278,7 @@ def _loads_full(
         raw_resets = loader._resets
         raw_overrides = loader._overrides
     except yaml.YAMLError as e:
-        raise ComposeError(f"Invalid YAML: {e}") from e
+        raise ComposeError(f"Invalid YAML: {_describe_yaml_error(e)}") from e
     except RecursionError as e:
         # PyYAML's composer is recursive (compose_node -> compose_sequence_node
         # -> compose_node) with no built-in depth limit, so deeply-nested input

@@ -33,11 +33,40 @@ class UnsafeFileError(OSError):
     """Raised when a path is not a regular file, or is larger than the cap."""
 
 
+class OutsideProjectError(UnsafeFileError):
+    """Raised when a path resolves outside the project it was named from."""
+
+
+def escapes_project(path: Path, project: Path) -> bool:
+    """Whether ``path`` resolves outside ``project`` on *this* filesystem.
+
+    The lexical guards in :mod:`compose_lint._selection` and
+    :mod:`compose_lint._service_env` answer a different question, and
+    deliberately so: whether a path *says* it leaves the project is a fact
+    about the document, identical on every platform (ADR-023 §1). A symlink is
+    not visible in what the path says. ``probe.env`` is spelled like a
+    project-relative file and passes every lexical test, while the committed
+    link beside it points at ``/home/runner/.aws/credentials`` — the scenario
+    ADR-027 §7 names and promises to refuse.
+
+    So this is a *second* gate rather than a replacement: asked at the moment
+    of reading, about this filesystem, after the lexical test has already
+    ruled on the document. Both have to pass.
+    """
+    try:
+        resolved = path.resolve()
+        root = project.resolve()
+    except OSError:  # pragma: no cover - resolution failed; treat as escaping
+        return True
+    return not resolved.is_relative_to(root)
+
+
 def read_text_bounded(
     path: Path,
     *,
     max_bytes: int = MAX_FILE_BYTES,
     newline: str | None = None,
+    within: Path | None = None,
 ) -> str:
     """Read ``path`` as UTF-8, refusing anything that is not a bounded regular file.
 
@@ -65,7 +94,19 @@ def read_text_bounded(
     file read on Windows in 0.18.0. ``O_BINARY`` exists only on Windows, where
     omitting it makes the CRT translate newlines *under* the text layer below,
     silently breaking the ``newline=""`` real-bytes contract.
+
+    ``within`` adds the physical containment gate: the path must *resolve*
+    inside that directory. Symlinks are still followed for the shape check —
+    a symlink to a real Compose file is ordinary — but a link whose target
+    leaves the project is refused with :class:`OutsideProjectError` when the
+    caller names a project. Callers that were pointed at a file by the user
+    (an argv path, ``--config``) pass nothing and are unaffected; callers
+    opening a path *the document named* pass the project directory.
     """
+    if within is not None and escapes_project(path, within):
+        raise OutsideProjectError(
+            f"{path} resolves outside the project directory (refused rather than read)"
+        )
     flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
     fd = os.open(path, flags)
     try:

@@ -36,6 +36,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from compose_lint._env_file import ENV_FILENAME, read_env
+from compose_lint._safe_read import escapes_project
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -330,5 +331,13 @@ def _resolve_entry(directory: Path, entry: str) -> str | None:
         return None
     candidate = directory.joinpath(*parts)
     if not candidate.is_file():
+        return None
+    # Second gate, on this filesystem rather than on the spelling. The climb
+    # test above is deliberately lexical (ADR-023 §1), and a symlink is
+    # invisible to it: a committed link named like a project-relative document
+    # passes every test above while pointing anywhere on the runner. Selecting
+    # one would let the artifact choose a file outside itself, which is the
+    # traversal ADR-026 §4 requires this function to refuse.
+    if escapes_project(candidate, directory):
         return None
     return str(candidate)

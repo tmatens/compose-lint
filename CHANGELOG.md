@@ -53,6 +53,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   quote consumes the rest of the file exactly as Compose does. This is the same
   failure `_split_env_lines` already closed for `\r`, by the route left open
   for `\n`.
+- **A committed symlink no longer walks through the project-containment
+  guard.** The guards in `_selection` and `_service_env` are deliberately
+  lexical — whether a path *says* it leaves the project is a fact about the
+  document, identical on every platform
+  ([ADR-023](docs/adr/023-deploy-host-independent-claims.md) §1) — and a
+  symlink says nothing. `probe.env` is spelled like a project-relative file
+  and passes every lexical test while the link beside it points at
+  `/home/runner/.aws/credentials`: exactly the scenario
+  [ADR-027](docs/adr/027-grade-env-file-where-the-document-routes-it.md) §7
+  names and `README.md` promises to refuse. In a pull request that put
+  out-of-project env-key names into CL-0020/CL-0021 findings, and a line of an
+  arbitrary host file into the SARIF uploaded to Code Scanning. A second gate
+  now asks the *filesystem* — after the lexical test, at the moment of
+  resolution — for both `env_file:` targets and `COMPOSE_FILE` entries.
+  Symlinks themselves are still followed; only ones resolving outside the
+  project are refused, with the existing `outside-project` note.
+
+- **A parse error no longer reproduces the line it failed on.** PyYAML renders
+  a snippet of the document under a caret, which reached `errors[].message`,
+  the SARIF `toolExecutionNotifications` uploaded to Code Scanning, and the job
+  log. A syntax error on a line carrying a credential therefore republished the
+  credential. The diagnosis and the line/column position are kept — they say
+  what is wrong and exactly where — and only the quoted bytes are dropped.
 
 ## [0.24.0] - 2026-08-24
 
