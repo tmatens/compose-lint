@@ -509,17 +509,87 @@ def _utf8_stdio() -> None:
             stream.reconfigure(encoding="utf-8")
 
 
-def main(argv: list[str] | None = None) -> NoReturn:
-    """Main entry point for the CLI."""
-    _utf8_stdio()
-    parser = _build_parser()
-    raw = sys.argv[1:] if argv is None else argv
-    args = parser.parse_args(_normalize_argv(raw))
+def _discard_stdout() -> None:
+    """Point stdout at the null device so no further write can fail.
+
+    The interpreter flushes ``sys.stdout`` one last time after ``main``
+    returns, outside any handler this module can install. If the earlier write
+    failed, that flush raises again and CPython reports the unraisable error
+    and exits **120** — overriding whatever code we chose. Replacing the
+    underlying file descriptor is what makes the chosen exit code stick.
+    """
+    with contextlib.suppress(AttributeError, OSError, ValueError):
+        null = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(null, sys.stdout.fileno())
+        os.close(null)
+
+
+def _abort_on_write_failure(exc: OSError) -> NoReturn:
+    """Report a failed stdout write as exit 2 (ADR-006).
+
+    A run whose verdict never reached stdout did not complete, which is
+    exactly what exit 2 means — "compose-lint itself couldn't run" — and is
+    the reason this is not left to the shell convention of dying quietly on
+    ``EPIPE``. Exit 1 is worse than either: it means "findings at or above
+    the threshold", so ``compose-lint check clean.yml | head`` would report a
+    clean file as a failing gate.
+    """
+    _discard_stdout()
+    emit(f"Error: could not write output: {exc.strerror or exc}")
+    sys.exit(2)
+
+
+def _stdout_print(*args: object, **kwargs: Any) -> None:
+    """``print`` to stdout, turning a failed write into the documented exit 2.
+
+    Wrapping the writes themselves — rather than catching ``OSError`` around
+    the whole run — is what keeps the diagnostic honest: only an error raised
+    by writing the report becomes "could not write output". An ``OSError``
+    from anywhere else still surfaces as itself.
+    """
+    try:
+        print(*args, **kwargs)
+    except OSError as exc:
+        _abort_on_write_failure(exc)
+
+
+def _dispatch(args: argparse.Namespace) -> NoReturn:
+    """Route to the subcommand handler; every branch exits."""
     if args.command == "fix":
         _run_fix(args)
     if args.command == "init":
         _run_init(args)
     _run_check(args)
+
+
+def main(argv: list[str] | None = None) -> NoReturn:
+    """Main entry point for the CLI."""
+    _utf8_stdio()
+    if sys.stdout is None:
+        # Started with file descriptor 1 already closed (`compose-lint … >&-`).
+        # CPython leaves `sys.stdout` as None rather than a stream that fails
+        # on write, so this never reaches the handlers below — it surfaces as
+        # an AttributeError from whichever formatter touches stdout first.
+        emit("Error: could not write output: stdout is closed")
+        sys.exit(2)
+    raw = sys.argv[1:] if argv is None else argv
+    try:
+        parser = _build_parser()
+        args = parser.parse_args(_normalize_argv(raw))
+        _dispatch(args)
+    except BrokenPipeError as exc:
+        # Raised by a `print` when the reader closed early (`| head`).
+        _abort_on_write_failure(exc)
+    except SystemExit:
+        # Buffered stdout is not written until it is flushed, so a write
+        # failure surfaces here rather than at the `print` that caused it.
+        # Flush while the exit is in flight so the error can still be turned
+        # into the documented code instead of escaping as an exit 120.
+        try:
+            sys.stdout.flush()
+        except OSError as exc:
+            _abort_on_write_failure(exc)
+        raise
 
 
 def _report_coverage_gaps(
@@ -564,7 +634,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             )
             sys.exit(2)
         try:
-            print(load_rule_doc(args.explain))
+            _stdout_print(load_rule_doc(args.explain))
         except UnknownRuleError:
             emit(f"Error: unknown rule id '{args.explain}' (expected format: CL-XXXX)")
             sys.exit(2)
@@ -604,7 +674,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     # (and on the per-file text prints below) keeps block-buffered stdout from
     # landing after unbuffered stderr when both are captured together (2>&1).
     if args.output_format == "text":
-        print(
+        _stdout_print(
             format_header(
                 args.files,
                 str(config_path) if config_path else None,
@@ -716,8 +786,8 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                 findings, filepath, verbose=args.verbose, quiet=args.quiet
             )
             if output:
-                print(output, flush=True)
-            print(format_summary(findings, filepath), flush=True)
+                _stdout_print(output, flush=True)
+            _stdout_print(format_summary(findings, filepath), flush=True)
             all_file_findings.append((findings, filepath))
         elif args.output_format == "sarif":
             # Structured SARIF fixes (ADR-014, promoted in 0.11.0): every
@@ -777,13 +847,13 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
 
     if args.output_format == "text":
         if len(args.files) > 1:
-            print()
-            print(
+            _stdout_print()
+            _stdout_print(
                 format_aggregate_summary(
                     all_file_findings, len(parse_errors), len(coverage_errors)
                 )
             )
-        print(
+        _stdout_print(
             format_verdict(
                 all_file_findings,
                 args.fail_on,
@@ -797,7 +867,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         # reject. The formatter already coerces `service` to str, so this guards
         # any future numeric field; the same applies to the SARIF dump below.
         json_log = build_json_log(all_json, run_errors)
-        print(json.dumps(json_log, indent=2, allow_nan=False))
+        _stdout_print(json.dumps(json_log, indent=2, allow_nan=False))
     elif args.output_format == "sarif":
         if len(all_sarif) > MAX_SARIF_RESULTS:
             # The document below reports the truncation itself; record it here
@@ -814,7 +884,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         sarif_log = build_sarif_log(
             all_sarif, run_errors, severity_overrides=severity_overrides
         )
-        print(json.dumps(sarif_log, indent=2, allow_nan=False))
+        _stdout_print(json.dumps(sarif_log, indent=2, allow_nan=False))
 
     # A failing run with no config loaded is the shape of a config that was
     # never found. This is the moment the user asks "why is this failing?",
@@ -1132,7 +1202,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             )
             touched = True
         else:
-            print(
+            _stdout_print(
                 render_file_diff(filepath, text, patched, result.caveats),
                 end="",
                 flush=True,

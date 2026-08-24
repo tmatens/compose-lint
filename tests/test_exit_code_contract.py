@@ -16,6 +16,7 @@ import contextlib
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -205,3 +206,105 @@ def test_init_to_a_directory_is_a_clean_error(tmp_path: Path) -> None:
     assert "not a regular file" in proc.stderr
     assert "hard link" not in proc.stderr
     assert os.path.isdir(out)
+
+
+# --- Writing the report can fail too -------------------------------------
+#
+# Every path above hardened a *computation* that could raise. The channel all
+# of them write through was not: a full disk, a reader that closed early
+# (`| head`), or a closed descriptor let the error escape `main`. CPython
+# reports an unraisable error from its final implicit flush and exits **120**,
+# a code ADR-006 does not define and `docs/compatibility.md` says costs a MAJOR
+# to add -- or, when the write failed before that flush, exit **1**, which
+# reads as "I linted it and it failed" on a file that is clean.
+
+_CLEAN = (
+    "services:\n"
+    "  web:\n"
+    "    image: nginx:1.27\n"
+    "    read_only: true\n"
+    "    security_opt: ['no-new-privileges:true']\n"
+)
+
+
+@pytest.mark.skipif(
+    not os.path.exists("/dev/full"),
+    reason="/dev/full is how a write failure is provoked without filling a disk",
+)
+@pytest.mark.parametrize("fmt", ["text", "json", "sarif"])
+def test_a_full_disk_is_exit_2_not_120(tmp_path: Path, fmt: str) -> None:
+    """The report could not be written, so the run did not complete."""
+    (tmp_path / "docker-compose.yml").write_text(_CLEAN, encoding="utf-8")
+
+    with open("/dev/full", "w", encoding="utf-8") as full:
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "compose_lint",
+                "check",
+                "--format",
+                fmt,
+                "docker-compose.yml",
+            ],
+            cwd=tmp_path,
+            stdout=full,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            env=cli_env(PYTHONPATH=str(REPO_ROOT / "src"), NO_COLOR="1"),
+            timeout=180,
+        )
+
+    assert proc.returncode == 2, proc.stderr
+    _assert_no_traceback(proc)
+    assert "could not write output" in proc.stderr
+
+
+@pytest.mark.skipif(os.name != "posix", reason="needs a POSIX pipe reader")
+def test_a_reader_that_closes_early_is_exit_2_not_a_failed_gate() -> None:
+    """`compose-lint check clean.yml | head` must not look like findings.
+
+    Exit 1 means "findings at or above the threshold". Reporting it because
+    the *reader* went away turns every clean file piped into `head` into a red
+    merge gate.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        Path(tmp, "docker-compose.yml").write_text(_CLEAN, encoding="utf-8")
+        proc = subprocess.run(
+            "set -o pipefail; "
+            f"{sys.executable} -m compose_lint check docker-compose.yml "
+            "| head -1 >/dev/null",
+            cwd=tmp,
+            shell=True,
+            executable="/bin/bash",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=cli_env(PYTHONPATH=str(REPO_ROOT / "src"), NO_COLOR="1"),
+            timeout=180,
+        )
+
+    assert proc.returncode == 2, proc.stderr
+    _assert_no_traceback(proc)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="needs `>&-` descriptor closing")
+def test_a_closed_stdout_is_a_clean_error() -> None:
+    """With fd 1 closed at startup CPython leaves `sys.stdout` as None."""
+    with tempfile.TemporaryDirectory() as tmp:
+        Path(tmp, "docker-compose.yml").write_text(_CLEAN, encoding="utf-8")
+        proc = subprocess.run(
+            f"{sys.executable} -m compose_lint check docker-compose.yml >&-",
+            cwd=tmp,
+            shell=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=cli_env(PYTHONPATH=str(REPO_ROOT / "src"), NO_COLOR="1"),
+            timeout=180,
+        )
+
+    assert proc.returncode == 2, proc.stderr
+    _assert_no_traceback(proc)
+    assert "stdout is closed" in proc.stderr

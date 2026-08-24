@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A failed stdout write is now exit 2, not an undocumented exit 120 or a
+  false exit 1.** Every path that could raise mid-run had been hardened to the
+  0/1/2 contract; the channel all of them write through had not. A full disk
+  (`> /dev/full`), a reader that closed early (`compose-lint check f.yml |
+  head`) or a descriptor closed at startup (`>&-`) let the error escape
+  `main()`: CPython reported an unraisable error from its own final flush and
+  exited **120** — a code [ADR-006](docs/adr/006-exit-codes.md) does not define
+  and which `docs/compatibility.md` prices at a MAJOR to add — or, when the
+  write failed earlier, exited **1**, which reads as "findings at or above the
+  threshold" on a file that is clean. Piping a clean run into `head` was
+  therefore a red merge gate. Writes now report
+  `Error: could not write output: <reason>` and exit 2, which is what that code
+  already means: compose-lint could not complete the run.
+
 ## [0.24.0] - 2026-08-24
 
 ### Changed
