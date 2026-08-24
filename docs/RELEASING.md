@@ -102,8 +102,9 @@ Once `1.0.0` ships, the contract tightens:
 - **MAJOR** (`1.2.3 → 2.0.0`) — anything that breaks a pinned,
   working setup:
   - Removing or renaming a CLI flag, subcommand, or config key.
-  - Removing or retiring a rule ID (note: rule IDs are never reused;
-    see `AGENTS.md`).
+  - Retiring a rule *without* the evidence bar and lifecycle of ADR-032
+    (an evidence-refuted retirement through the lifecycle is MINOR; rule
+    IDs are never reused either way — see `AGENTS.md`).
   - Changing the exit-code contract (e.g., adding a new non-zero
     exit code, changing the default `--fail-on` threshold).
   - Restructuring JSON/SARIF output in a way that removes or renames
@@ -125,7 +126,8 @@ Once `1.0.0` ships, the contract tightens:
 | Upgrade a rule's severity (LOW → HIGH)       | MINOR   | MINOR, announced one release ahead (ADR-031) |
 | Tighten an existing rule (new true positive) | MINOR   | MINOR    |
 | Remove or rename a CLI flag                  | MINOR   | MAJOR    |
-| Retire a rule ID                             | MINOR   | MAJOR    |
+| Retire a rule ID (refuted, via lifecycle)    | MINOR   | MINOR (ADR-032) |
+| Retire a rule ID off-lifecycle               | MINOR   | MAJOR    |
 | Change the default `--fail-on` threshold     | MINOR   | MAJOR    |
 | Drop a Python version on schedule (ADR-029)  | MINOR   | MINOR    |
 | Drop a Python version off-schedule           | MINOR   | MAJOR    |

@@ -51,6 +51,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a 2.0. Deliberately the watch-and-see position: under ADR-030, tightening
   to MAJOR later is cheap, and the reverse would not have been.
 
+- **Retiring a refuted rule is a MINOR post-1.0, through the deprecation
+  lifecycle** ([ADR-032](docs/adr/032-rule-retirement-is-minor-with-lifecycle.md)).
+  A rule leaves the registry only when live evidence refutes its premise —
+  the bar that removed CL-0012/0015/0023 pre-1.0 — and pricing that removal
+  at a 2.0 would force the tool to keep emitting findings it knows are
+  false. Announce, one MINOR of grace, then remove; the ID stays fallow
+  forever, the doc page stays as a tombstone, and a config referencing the
+  retired ID keeps working, `--strict-config` included (a precondition the
+  config layer gains before the first such retirement). "Noisy" remains a
+  non-reason (ADR-028).
+
 ### Removed
 
 - **The Python 3.10 deprecation warning** added in 0.22.0. It existed to reach

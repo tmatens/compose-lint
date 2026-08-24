@@ -69,15 +69,22 @@ field, rule, or supported Python version is slated for removal:
 3. **Grace period** — the deprecated surface keeps working for **at least one
    MINOR release** after the announcement.
 4. **Remove** — removal happens only in a **MAJOR** release, listed under
-   `Removed` in `CHANGELOG.md`. One carve-out: a *scheduled* Python
-   interpreter drop ships as a MINOR under the conditions of
-   [ADR-029](adr/029-scheduled-python-drops-are-minor.md).
+   `Removed` in `CHANGELOG.md`. Two carve-outs, both gated on calendar or
+   evidence rather than discretion: a *scheduled* Python interpreter drop
+   ([ADR-029](adr/029-scheduled-python-drops-are-minor.md)) and an
+   evidence-refuted rule retirement
+   ([ADR-032](adr/032-rule-retirement-is-minor-with-lifecycle.md)) ship as
+   MINOR.
 
 Two things are never reused or quietly repurposed:
 
 - **Rule IDs** — `CL-XXXX` IDs are permanent; a retired rule's ID is never
-  reassigned ([ADR-005](adr/005-rule-id-scheme.md)). Retiring a rule is a MAJOR
-  change.
+  reassigned ([ADR-005](adr/005-rule-id-scheme.md)). Retiring a rule is a
+  MINOR, but only through the full deprecation lifecycle and only on
+  evidence that refutes the rule's premise
+  ([ADR-032](adr/032-rule-retirement-is-minor-with-lifecycle.md)) — never
+  on noise or preference. A config referencing a retired ID keeps working,
+  `--strict-config` included.
 - **Exit-code meanings** — `0` / `1` / `2` keep their meanings; adding a new
   non-zero code is a MAJOR change.
 
