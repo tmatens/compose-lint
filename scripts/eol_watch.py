@@ -15,10 +15,20 @@ What it watches, against https://endoflife.date:
 - **python**, new stable minors missing from ci.yml's test matrix — the
   ROADMAP commits to adding one within ~3 months of each October release.
 - **debian**, the Docker runtime base (distroless on Debian, ADR-009).
-- **ubuntu**, the CI runner image.
+- **github-actions-runner-images**, the exact runner labels CI stands on
+  (ubuntu-24.04, and os-smoke's macos-15/windows-2025) — the image
+  calendar, not the OS calendar, because GitHub retires images first.
+- **docker-engine**, the major the rule premises are grounded on: its EOL
+  is the signal to re-ground validate_rule_premises.py on the current
+  engine.
 
-The debian/ubuntu cycles are declared here rather than parsed, because they
-live in a Dockerfile comment and a dozen `runs-on:` lines respectively; each
+PyYAML and the dev dependencies are deliberately absent: they publish no
+support lifecycle (not on endoflife.date), so their risks are watched by
+the tools that fit them — vuln-report.yml for vulnerabilities, Renovate
+for staleness, the CI matrix for new-interpreter compatibility.
+
+Cycles other than the Python floor are declared here rather than parsed,
+because they live in comments, ADR prose, and `runs-on:` lines; each
 declaration carries a grep-able anchor and the script FAILS (exit 2) if the
 anchor no longer appears where it claims to — a stale watch is worse than no
 watch, because it reads as "covered" (the capability-drop-harness lesson:
@@ -201,10 +211,15 @@ def fetch(product: str) -> list[dict]:
         return json.load(resp)
 
 
-def main() -> int:
-    floor = python_floor((REPO / "pyproject.toml").read_text())
-    matrix = ci_matrix((REPO / ".github/workflows/ci.yml").read_text())
-    watches = [
+def build_watches(floor: str) -> list[Watch]:
+    """Every (product, cycle) the project rides on.
+
+    Runner labels are watched as `github-actions-runner-images` cycles, not
+    OS cycles: GitHub retires an image on its own schedule (the ubuntu-20.04
+    runner went 2025-04-15, before the OS did), so the OS calendar is the
+    wrong clock for a `runs-on:` line.
+    """
+    return [
         Watch("python", floor, "requires-python floor (pyproject.toml)"),
         Watch(
             "debian",
@@ -214,13 +229,42 @@ def main() -> int:
             anchor_pattern=r"Debian 13|trixie",
         ),
         Watch(
-            "ubuntu",
-            "24.04",
-            "GitHub Actions CI runner image",
+            "github-actions-runner-images",
+            "ubuntu-24.04",
+            "CI runner image (ci.yml and siblings)",
             anchor_file=".github/workflows/ci.yml",
             anchor_pattern=r"ubuntu-24\.04",
         ),
+        Watch(
+            "github-actions-runner-images",
+            "macos-15",
+            "os-smoke runner image (macOS leg)",
+            anchor_file=".github/workflows/os-smoke.yml",
+            anchor_pattern=r"macos-15",
+        ),
+        Watch(
+            "github-actions-runner-images",
+            "windows-2025",
+            "os-smoke runner image (Windows leg)",
+            anchor_file=".github/workflows/os-smoke.yml",
+            anchor_pattern=r"windows-2025",
+        ),
+        Watch(
+            "docker-engine",
+            "29",
+            "Docker Engine major the rule premises are grounded on (ADR-028); "
+            "when it EOLs, re-ground scripts/validate_rule_premises.py on the "
+            "current engine and update the recorded posture",
+            anchor_file="docs/adr/028-pre-1.0-rule-id-sweep.md",
+            anchor_pattern=r"Docker Engine 29",
+        ),
     ]
+
+
+def main() -> int:
+    floor = python_floor((REPO / "pyproject.toml").read_text())
+    matrix = ci_matrix((REPO / ".github/workflows/ci.yml").read_text())
+    watches = build_watches(floor)
     today = dt.date.today()
     findings: list[Finding] = []
     payloads: dict[str, list[dict]] = {}

@@ -157,17 +157,14 @@ class TestAgainstTheRealRepo:
         assert floor in matrix
 
     def test_declared_anchors_hold(self) -> None:
-        for watch in [
-            eol_watch.Watch("debian", "13", "base", "Dockerfile", r"Debian 13|trixie"),
-            eol_watch.Watch(
-                "ubuntu",
-                "24.04",
-                "runner",
-                ".github/workflows/ci.yml",
-                r"ubuntu-24\.04",
-            ),
-        ]:
-            assert watch.anchor_file is not None
+        """Every anchored Watch in the real declaration list still matches.
+
+        Iterates build_watches() itself rather than a copy, so adding a
+        watch with a bad anchor fails here before the monthly run does."""
+        floor = eol_watch.python_floor((eol_watch.REPO / "pyproject.toml").read_text())
+        anchored = [w for w in eol_watch.build_watches(floor) if w.anchor_file]
+        assert anchored, "expected at least one anchored watch"
+        for watch in anchored:
             eol_watch.check_anchor(
                 watch, (eol_watch.REPO / watch.anchor_file).read_text()
             )
