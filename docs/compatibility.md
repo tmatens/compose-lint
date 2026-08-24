@@ -75,6 +75,21 @@ Two things are never reused or quietly repurposed:
 - **Exit-code meanings** — `0` / `1` / `2` keep their meanings; adding a new
   non-zero code is a MAJOR change.
 
+## Changing this policy
+
+This policy is itself part of the 1.0 surface: users choose version ranges
+based on what it promises, so the promise cannot be quietly rewritten by a
+"docs-only" release. Amendments require an ADR
+([ADR-030](adr/030-the-policy-is-part-of-the-contract.md)), and the bump an
+amendment requires depends on its direction:
+
+- **Clarifications** — same obligations, better words — may ship in any
+  release.
+- **Tightenings** — promising more than before — are a MINOR.
+- **Loosenings** — promising less than before — are a **MAJOR**, and are
+  never retroactive: a change already shipped is judged under the policy in
+  force when it shipped.
+
 ## Operating systems
 
 Linux is the fully gated platform: every PR runs the complete suite there

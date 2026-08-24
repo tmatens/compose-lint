@@ -79,9 +79,11 @@ slot does the work that MAJOR does post-1.0.
 Once `1.0.0` ships, the contract tightens:
 
 - **PATCH** (`1.2.3 → 1.2.4`) — bug fixes that don't change which
-  findings are emitted for a given input. If the set of findings a
-  user sees on an unchanged Compose file could change, it's not a
-  patch.
+  *correct* findings are emitted for a given input. Removing findings
+  the old behavior emitted in error — a false positive, a crash — is a
+  fix (the cheat sheet below says so too); if the set of correct
+  findings a user sees on an unchanged Compose file could change, it's
+  not a patch.
 - **MINOR** (`1.2.3 → 1.3.0`) — additive or backward-compatible
   changes. New rules, new CLI flags, new config keys, severity
   *downgrades*, new formatters, additive fields in JSON/SARIF output.
@@ -98,7 +100,12 @@ Once `1.0.0` ships, the contract tightens:
   - Changing the exit-code contract (e.g., adding a new non-zero
     exit code, changing the default `--fail-on` threshold).
   - Severity *upgrades* on existing rules (`LOW → HIGH` can newly
-    fail CI for pinned users).
+    fail CI for pinned users). The sanctioned MINOR alternative is the
+    split pattern (CL-0011 → CL-0024, CL-0013 → CL-0025): move the
+    higher-tier subset into a *new* rule ID, which is a rule addition —
+    and existing suppressions of the old ID never silently cover the
+    new, more dangerous rule (ADR-028 records why that direction is the
+    safe one).
   - Restructuring JSON/SARIF output in a way that removes or renames
     existing fields.
   - Dropping support for a Python version *off-schedule* — before its

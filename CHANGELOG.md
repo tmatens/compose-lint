@@ -32,6 +32,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outrun, permanently: 3.11's October 2027 EOL will be a routine MINOR,
   not a forced 2.0.
 
+- **The compatibility policy is now part of the contract**
+  ([ADR-030](docs/adr/030-the-policy-is-part-of-the-contract.md)). Amending
+  it requires an ADR; clarifications ship in any release, tightenings are a
+  MINOR, and loosenings are a MAJOR and never retroactive — the promise can
+  no longer be weakened by a docs-only patch. Alongside it, the PATCH
+  definition is clarified (a false-positive fix removes *incorrect* findings
+  and stays a PATCH) and the severity-upgrade rule records its sanctioned
+  MINOR alternative, the ADR-028 split pattern.
+
 ### Removed
 
 - **The Python 3.10 deprecation warning** added in 0.22.0. It existed to reach
