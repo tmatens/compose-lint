@@ -48,10 +48,15 @@ deprecation lifecycle, under these conditions:
    config referencing a retired ID warns ("retired in vX.Y, override has
    no effect") but does **not** error under `--strict-config`, which keeps
    meaning "typo or unknown key", not "you once suppressed a rule that
-   later died". This is a precondition, not machinery built today — no
-   retirement is pending, and the fallow pre-1.0 IDs deliberately stay
-   strict errors (they were reclaimed before any 1.0 config could have
-   named them).
+   later died". Strict mode polices mistakes the config author made, not
+   history the tool made: an error on the author's typo is the feature,
+   an error that arrives because the user upgraded is a contract
+   violation dressed as rigor. This is a precondition, not machinery
+   built today — no retirement is pending. The fallow pre-1.0 IDs
+   (CL-0012, CL-0015, CL-0023) deliberately stay strict *errors* — no
+   contract protected 0.x configs — but when the registry is built they
+   join it with a distinct message ("reclaimed pre-1.0, refuted premise,
+   see the changelog; remove this entry") instead of reading as typos.
 
 **Consequences:**
 
