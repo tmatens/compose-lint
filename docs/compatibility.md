@@ -63,7 +63,9 @@ field, rule, or supported Python version is slated for removal:
 3. **Grace period** — the deprecated surface keeps working for **at least one
    MINOR release** after the announcement.
 4. **Remove** — removal happens only in a **MAJOR** release, listed under
-   `Removed` in `CHANGELOG.md`.
+   `Removed` in `CHANGELOG.md`. One carve-out: a *scheduled* Python
+   interpreter drop ships as a MINOR under the conditions of
+   [ADR-029](adr/029-scheduled-python-drops-are-minor.md).
 
 Two things are never reused or quietly repurposed:
 
@@ -91,9 +93,15 @@ construction.
 
 Supported CPython versions track upstream: a version is added to the matrix
 within ~3 months of its October release (additive), and dropped at upstream
-end-of-life. Dropping a version is a MAJOR change post-1.0. The authoritative
-list is `requires-python` in `pyproject.toml`; see the
-[roadmap](ROADMAP.md#python-version-support) for the schedule.
+end-of-life. A *scheduled* drop — announced and warning at runtime for at
+least 180 days and one MINOR release, shipping no earlier than the upstream
+EOL date — is a **MINOR** change, post-1.0 included
+([ADR-029](adr/029-scheduled-python-drops-are-minor.md)): the date is
+published by CPython years ahead, and the change cannot break a pinned or
+even an unpinned environment (see below). An *unscheduled* drop remains
+MAJOR post-1.0. The authoritative list is `requires-python` in
+`pyproject.toml`; see the [roadmap](ROADMAP.md#python-version-support) for
+the schedule.
 
 A drop follows the [deprecation lifecycle](#deprecation-lifecycle) above: the
 release that announces it warns on stderr when run on that interpreter, and the

@@ -101,7 +101,9 @@ Once `1.0.0` ships, the contract tightens:
     fail CI for pinned users).
   - Restructuring JSON/SARIF output in a way that removes or renames
     existing fields.
-  - Dropping support for a Python version listed in `pyproject.toml`.
+  - Dropping support for a Python version *off-schedule* — before its
+    upstream EOL, or without ADR-029's announcement runway. A *scheduled*
+    drop is MINOR (see the cheat sheet).
 
 ### Judgment-call cheat sheet
 
@@ -118,7 +120,8 @@ Once `1.0.0` ships, the contract tightens:
 | Remove or rename a CLI flag                  | MINOR   | MAJOR    |
 | Retire a rule ID                             | MINOR   | MAJOR    |
 | Change the default `--fail-on` threshold     | MINOR   | MAJOR    |
-| Drop a Python version                        | MINOR   | MAJOR    |
+| Drop a Python version on schedule (ADR-029)  | MINOR   | MINOR    |
+| Drop a Python version off-schedule           | MINOR   | MAJOR    |
 | Add a field to JSON/SARIF output             | MINOR   | MINOR    |
 | Remove or rename a JSON/SARIF field          | MINOR   | MAJOR    |
 | Remove or rename a config key                | MINOR   | MAJOR    |

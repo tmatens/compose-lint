@@ -21,6 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now 3.11–3.14, and the lockfiles are regenerated at the new floor (the only
   change is that 3.10-only backport dependencies drop out; no version moves).
 
+- **A scheduled Python-EOL drop is now MINOR, post-1.0 included**
+  ([ADR-029](docs/adr/029-scheduled-python-drops-are-minor.md)). MAJOR
+  signals surprise; a drop whose date CPython published years ahead, that
+  warned on stderr for at least 180 days and one MINOR of grace, and that
+  ships no earlier than upstream EOL, surprises nobody — and
+  `requires-python` cannot break an existing environment (pip resolves an
+  affected interpreter to the last release that allowed it). An
+  off-schedule drop stays MAJOR. This closes the trap #643 had to
+  outrun, permanently: 3.11's October 2027 EOL will be a routine MINOR,
+  not a forced 2.0.
+
 ### Removed
 
 - **The Python 3.10 deprecation warning** added in 0.22.0. It existed to reach

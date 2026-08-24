@@ -122,7 +122,7 @@ Pursue based on user demand after v1.0.
 
 ## Python version support
 
-Track current CPython: add new minor versions to the CI matrix within ~3 months of each October release, drop versions at upstream end-of-life. Adding a version is additive (PATCH per `docs/RELEASING.md`); dropping a version is a MINOR pre-1.0 and a MAJOR post-1.0.
+Track current CPython: add new minor versions to the CI matrix within ~3 months of each October release, drop versions at upstream end-of-life. Adding a version is additive (PATCH per `docs/RELEASING.md`); a scheduled drop — announced ≥180 days ahead with the runtime warning, shipping no earlier than upstream EOL — is a MINOR at any point ([ADR-029](adr/029-scheduled-python-drops-are-minor.md)). The eol-watch workflow files the announcement issue when a floor enters its final 180 days.
 
 | Version | Released  | EOL       | In matrix as of |
 |---------|-----------|-----------|-----------------|
