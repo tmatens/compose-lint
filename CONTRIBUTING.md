@@ -87,9 +87,8 @@ TMPDIR=$HOME/.pytest-tmp pytest --basetemp=$HOME/.pytest-tmp/bt
 
 ## Code standards
 
-- **Python 3.10+** required. Don't use syntax or stdlib features added after
-  3.10 (e.g., no `type` aliases from 3.12, no `ExceptionGroup` from 3.11
-  without checking availability).
+- **Python 3.11+** required. Don't use syntax or stdlib features added after
+  3.11 (e.g., no `type` aliases from 3.12).
 - **Type annotations** on all public functions (`mypy --strict` is enforced).
 - **PyYAML is the only runtime dependency.** Do not add others without
   discussion. Dev tooling goes in the `[dev]` extras.

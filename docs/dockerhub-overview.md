@@ -21,7 +21,7 @@ docker run --rm -v "$(pwd):/src" composelint/compose-lint fix        # preview a
 docker run --rm -v "$(pwd):/src" composelint/compose-lint --explain CL-0001
 ```
 
-Auto-detects `compose.yml` / `docker-compose.yml` variants; pass filenames to lint specific files. `fix --apply` writes the mechanically unambiguous fixes in place (atomic, re-parsed and re-linted before writing); context-dependent findings are reported for manual review, never auto-edited. Unambiguous is not harmless — the guarantee is about the edit, not the outcome, so edits that change runtime behavior (e.g. `read_only: true`) are labelled `⚠ behavior-changing` in the diff. Read those before `--apply`. Also on PyPI: `pip install compose-lint` (Python 3.10+).
+Auto-detects `compose.yml` / `docker-compose.yml` variants; pass filenames to lint specific files. `fix --apply` writes the mechanically unambiguous fixes in place (atomic, re-parsed and re-linted before writing); context-dependent findings are reported for manual review, never auto-edited. Unambiguous is not harmless — the guarantee is about the edit, not the outcome, so edits that change runtime behavior (e.g. `read_only: true`) are labelled `⚠ behavior-changing` in the diff. Read those before `--apply`. Also on PyPI: `pip install compose-lint` (Python 3.11+).
 
 ## Exit codes
 

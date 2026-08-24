@@ -98,7 +98,7 @@ docker run --rm -v "$(pwd):/src" composelint/compose-lint docker-compose.prod.ym
 
 compose-lint targets the [Compose Specification](https://github.com/compose-spec/compose-spec) used by Compose v2 and v3. Compose v1 files (services declared at the top level) are skipped with a stderr note rather than failing the run — Docker [retired Compose v1 in 2023](https://www.docker.com/blog/new-docker-compose-v2-and-v1-deprecation/). Structural fragments (files containing only `volumes:` / `networks:` / `configs:` / `secrets:` / `x-*` keys, typically merged via `-f overlay.yml`) are skipped for the same reason, as is compose-lint's own `.compose-lint.yml` config if a glob happens to sweep it in. Genuinely unrecognised shapes still exit 2.
 
-Python 3.10+ is required for the pip install path; the Docker image is self-contained.
+Python 3.11+ is required for the pip install path; the Docker image is self-contained.
 
 ## Example Output
 

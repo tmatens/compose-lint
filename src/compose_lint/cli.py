@@ -509,64 +509,9 @@ def _utf8_stdio() -> None:
             stream.reconfigure(encoding="utf-8")
 
 
-# The Python version the floor moves to when the current one ages out. Kept as
-# a constant so retiring an interpreter is a one-line edit here plus deleting
-# the warning, rather than a search for version literals in prose.
-_NEXT_PYTHON_FLOOR = (3, 11)
-
-# When the interpreter below the floor reaches upstream end-of-life. Stated as a
-# date rather than a compose-lint release, because that date is fixed by CPython
-# and the release that drops support is not chosen yet — and a version number
-# written into a user-facing string goes stale the moment the schedule moves
-# (docs/ROADMAP.md promised "0.4.x or later" and was still saying it at 0.21.0).
-_PYTHON_EOL = "October 2026"
-
-
-def _dotted(version: tuple[int, ...]) -> str:
-    """Render a version tuple as ``3.10.14``, at whatever length it is."""
-    return ".".join(str(part) for part in version)
-
-
-def _warn_deprecated_python(version: tuple[int, ...] | None = None) -> None:
-    """Warn once when running on an interpreter that is about to be dropped.
-
-    This has to be said by the *last* release that supports the interpreter,
-    because the release after it cannot say anything at all. ``requires-python``
-    does not fail an install on an unsupported version — pip backtracks and
-    resolves to the last release that allowed it. So a 3.10 user who runs
-    ``pip install -U compose-lint`` after the floor moves keeps a frozen linter
-    and a green pipeline, with nothing printed in either direction, and no
-    channel is left through which to tell them. A stderr line here is the only
-    one aimed at exactly the population that is losing support.
-
-    Per ``docs/compatibility.md``'s deprecation lifecycle the warning goes to
-    stderr, names the replacement, and touches neither stdout nor the exit code,
-    so a JSON or SARIF consumer parsing stdout is unaffected.
-
-    ``version`` is injectable so the message can be tested from any interpreter;
-    it defaults to the running one. It is kept as a tuple and sliced rather than
-    unpacked into names, because the arity of ``sys.version_info[:3]`` is not
-    provable to a static analyser — CodeQL's ``py/mismatched-multiple-assignment``
-    reads the slice as a possible 2-tuple and calls the three-name unpacking an
-    error. Indexing is equally readable and true for any length.
-    """
-    running = tuple(sys.version_info[:3]) if version is None else version
-    if running[:2] >= _NEXT_PYTHON_FLOOR:
-        return
-    floor = _dotted(_NEXT_PYTHON_FLOOR)
-    emit(
-        f"warning: Python {_dotted(running[:2])} reaches end-of-life in "
-        f"{_PYTHON_EOL}, and compose-lint will require {floor}+ before its "
-        f"1.0 release. You are on Python {_dotted(running)}.\n"
-        f"Upgrade to {floor}+, or pin compose-lint=={__version__} to stay on "
-        "this line."
-    )
-
-
 def main(argv: list[str] | None = None) -> NoReturn:
     """Main entry point for the CLI."""
     _utf8_stdio()
-    _warn_deprecated_python()
     parser = _build_parser()
     raw = sys.argv[1:] if argv is None else argv
     args = parser.parse_args(_normalize_argv(raw))

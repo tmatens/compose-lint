@@ -1,6 +1,6 @@
 # compose-lint
 
-Security-focused linter for Docker Compose files. Python >=3.10, PyYAML only runtime dep, MIT license.
+Security-focused linter for Docker Compose files. Python >=3.11, PyYAML only runtime dep, MIT license.
 
 ## Architecture
 
@@ -31,7 +31,7 @@ Disables still produce suppressed findings. `reason` flows to `suppression_reaso
 
 ## Quality checks
 
-`ruff check src/ tests/`, `ruff format --check src/ tests/`, `mypy src/` (strict), `pytest`. All four must pass, scoped exactly as written — CI lints only `src/` and `tests/`, and a bare `ruff check` also sweeps `scripts/`, which has known, accepted violations. CI test matrix: Python 3.10–3.14 on ubuntu-24.04.
+`ruff check src/ tests/`, `ruff format --check src/ tests/`, `mypy src/` (strict), `pytest`. All four must pass, scoped exactly as written — CI lints only `src/` and `tests/`, and a bare `ruff check` also sweeps `scripts/`, which has known, accepted violations. CI test matrix: Python 3.11–3.14 on ubuntu-24.04.
 
 Running a branch's tests from a `git worktree` needs `PYTHONPATH` pointed at that worktree's `src/`. The dev install is editable and resolves `compose_lint` to the **main checkout's** `src/`, so a bare `pytest` in a worktree grades the branch's tests against `main`'s source and fails in exactly the way a genuinely broken change would. Confirm with `python -c 'import compose_lint; print(compose_lint.__file__)'` before believing a red run.
 
@@ -78,20 +78,20 @@ Pin everything to an immutable ref. Renovate bumps the pins.
 
 ```bash
 uv pip compile pyproject.toml \
-  --universal --python-version=3.10 \
+  --universal --python-version=3.11 \
   --generate-hashes --output-file=requirements.lock
 
 uv pip compile pyproject.toml \
   --extra=dev --extra=lint --extra=security --extra=publish \
-  --universal --python-version=3.10 \
+  --universal --python-version=3.11 \
   --generate-hashes --output-file=requirements-dev.lock
 
 uv pip compile pyproject.toml --extra=container \
-  --universal --python-version=3.10 \
+  --universal --python-version=3.11 \
   --generate-hashes --output-file=requirements-build.lock
 ```
 
-`--python-version=3.10` matches `requires-python` so backport deps for older matrix legs are included. Commit lockfiles and `pyproject.toml` together.
+`--python-version=3.11` matches `requires-python` so backport deps for older matrix legs are included. Commit lockfiles and `pyproject.toml` together.
 
 Use the `=`/`--output-file=` flag form (not `--extra dev` / `-o`). Renovate's
 `pip-compile` manager parses the `uv` command recorded in each lock's header to

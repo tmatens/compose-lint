@@ -100,7 +100,7 @@ This is **descriptive sampling for prevalence estimation**, not random sampling 
 
 - `gh` CLI authenticated (`gh auth status` shows a valid token)
 - A built compose-lint in the repo `.venv/` (or set `COMPOSE_LINT_BIN`)
-- Python 3.10+
+- Python 3.11+
 
 ## Output layout
 

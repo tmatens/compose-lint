@@ -107,7 +107,7 @@ Every claim above is enforced by automation that runs without human
 prompting:
 
 - **CI gate (every PR + push)**: `ruff`, `ruff format --check`,
-  `mypy src/`, `pytest` matrix on Python 3.10–3.14, `bandit`,
+  `mypy src/`, `pytest` matrix on Python 3.11–3.14, `bandit`,
   `actionlint`, `dependency-review`, `dockerfile-digests`
   manifest-list check, `docker-smoke` (clean fixture exits 0, insecure
   fixture exits 1, SARIF is valid JSON), `action-smoke`, DCO trailer

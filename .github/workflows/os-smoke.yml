@@ -53,14 +53,14 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-    # 3.10 is the `requires-python` floor and, until #613, was tested only
+    # 3.11 is the `requires-python` floor and, until #613, the floor was tested only
     # on Linux — while the OS legs ran only 3.13. That left the realistic
     # worst case uncovered: an old Python on Windows. It is also the leg
     # most likely to differ, because what varies across these platforms is
     # `pathlib`/`os` behavior and that is exactly where the floor is
     # furthest from the version the ubuntu matrix's other legs pin.
     #
-    # Deliberately the floor and the ceiling, not the full 3.10-3.14 range
+    # Deliberately the floor and the ceiling, not the full 3.11-3.14 range
     # the ubuntu matrix runs: the versions in between differ from their
     # neighbours far less than either end differs from the other, so they
     # would buy little for 6 more jobs on two of the slowest runners.
@@ -68,7 +68,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-15, windows-2025]
-        python-version: ["3.10", "3.13"]
+        python-version: ["3.11", "3.13"]
     defaults:
       run:
         shell: bash

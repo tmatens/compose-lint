@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Python 3.11 is now the minimum supported version** (issue #643). Python
+  3.10 reaches upstream end-of-life in October 2026, and dropping a version is
+  a MINOR pre-1.0 but a MAJOR after — so the drop lands before the 1.0 freeze
+  rather than letting a routine EOL force a 2.0. The deprecation was announced
+  in 0.22.0, which also added the stderr warning, because the drop itself is
+  silent: `requires-python` does not fail an install — pip resolves a 3.10
+  interpreter to the last release that allowed it, so `pip install -U
+  compose-lint` on 3.10 now stays on 0.23.0 with nothing printed. Pin
+  `compose-lint==0.23.0` to be explicit about staying there. The CI matrix is
+  now 3.11–3.14, and the lockfiles are regenerated at the new floor (the only
+  change is that 3.10-only backport dependencies drop out; no version moves).
+
+### Removed
+
+- **The Python 3.10 deprecation warning** added in 0.22.0. It existed to reach
+  3.10 users while a release could still reach them; from this release pip no
+  longer installs compose-lint on 3.10, so there is no interpreter left for the
+  warning to run on.
+
 - **CL-0022 no longer flags the `dev` tmpfs option.** The pre-1.0 rule-ID sweep
   ([#645](https://github.com/tmatens/compose-lint/issues/645),
   [ADR-028](docs/adr/028-pre-1.0-rule-id-sweep.md)) measured each of the rule's

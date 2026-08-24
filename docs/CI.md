@@ -20,7 +20,7 @@ per-channel publish contract see [`DISTRIBUTION.md`](DISTRIBUTION.md).
 | `publish-channel.yml`     | Manual (`workflow_dispatch`, maintainer)   | Emergency single-channel publish                       |
 | `marketplace-smoke.yml`   | Push to `main` touching the file + manual + weekly cron | Verifies the published action, pre-commit hook, and the `uvx`/`pipx run` one-shot forms end-to-end |
 | `forgejo-smoke.yml`       | Push to `main` touching the harness + manual + weekly cron | Runs README's Forgejo snippet on a live containerized Forgejo |
-| `os-smoke.yml`            | Called by `ci.yml` on PRs touching code + push to `main` + manual + weekly cron | pytest (3.10 and 3.13) + pre-commit hook on macOS and Windows — **gates via `ci-ok`** |
+| `os-smoke.yml`            | Called by `ci.yml` on PRs touching code + push to `main` + manual + weekly cron | pytest (3.11 and 3.13) + pre-commit hook on macOS and Windows — **gates via `ci-ok`** |
 | `sarif-ingestion.yml`     | Push to `main` touching SARIF inputs + manual + weekly cron | Uploads a probe SARIF to Code Scanning and asserts GitHub ingested it — then deletes its own alerts |
 
 
@@ -57,7 +57,7 @@ cancels in-progress runs when you push new commits to the same PR.
 | ------------------------- | ----------------------------------------------------------------------------------------- |
 | `lint`                    | `ruff check` + `ruff format --check` on `src/` and `tests/`                               |
 | `type-check`              | `mypy src/` in strict mode                                                                |
-| `test`                    | `pytest` across the Python matrix — 3.10, 3.11, 3.12, 3.13, 3.14                          |
+| `test`                    | `pytest` across the Python matrix — 3.11, 3.12, 3.13, 3.14                          |
 | `coverage`                | `pytest --cov` with `--cov-fail-under=80` — fails below 80% statement coverage             |
 | `security`                | `bandit -r src/ -ll` (blocking) + `pip-audit` for dep CVEs (informational on PRs — see note) |
 | `dependency-review`       | Blocks PRs adding deps with known high-severity CVEs or disallowed licenses               |

@@ -126,7 +126,7 @@ pipeline, this is the page to read.
 
 - **Run the test suite.** `pytest` exercises every rule and the parser
   on positive, negative, and hardened-but-unusual fixtures. CI runs the
-  same on Python 3.10–3.14 on every PR.
+  same on Python 3.11–3.14 on every PR.
 - **Run the corpus snapshot.** See
   [CONTRIBUTING.md](../CONTRIBUTING.md) §"Corpus snapshot" for the
   out-of-tree corpus. Findings against ~1,500 real Compose files are
