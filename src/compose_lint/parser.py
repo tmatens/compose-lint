@@ -413,7 +413,7 @@ def _install_scalar_resolvers() -> None:
     re-tabled; the global ``yaml.SafeLoader`` is untouched.
     """
     LineLoader.yaml_implicit_resolvers = {}
-    LineLoader.add_implicit_resolver(  # type: ignore[no-untyped-call]
+    LineLoader.add_implicit_resolver(
         "tag:yaml.org,2002:bool",
         re.compile(
             r"""^(?:yes|Yes|YES|no|No|NO
@@ -423,7 +423,7 @@ def _install_scalar_resolvers() -> None:
         ),
         list("yYnNtTfFoO"),
     )
-    LineLoader.add_implicit_resolver(  # type: ignore[no-untyped-call]
+    LineLoader.add_implicit_resolver(
         "tag:yaml.org,2002:float",
         re.compile(
             r"""^(?:[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+][0-9]+)?
@@ -434,7 +434,7 @@ def _install_scalar_resolvers() -> None:
         ),
         list("-+0123456789."),
     )
-    LineLoader.add_implicit_resolver(  # type: ignore[no-untyped-call]
+    LineLoader.add_implicit_resolver(
         "tag:yaml.org,2002:int",
         re.compile(
             r"""^(?:[-+]?0b[0-1_]+
@@ -445,12 +445,12 @@ def _install_scalar_resolvers() -> None:
         ),
         list("-+0123456789"),
     )
-    LineLoader.add_implicit_resolver(  # type: ignore[no-untyped-call]
+    LineLoader.add_implicit_resolver(
         "tag:yaml.org,2002:merge",
         re.compile(r"^(?:<<)$"),
         ["<"],
     )
-    LineLoader.add_implicit_resolver(  # type: ignore[no-untyped-call]
+    LineLoader.add_implicit_resolver(
         "tag:yaml.org,2002:null",
         re.compile(
             r"""^(?: ~
@@ -460,7 +460,7 @@ def _install_scalar_resolvers() -> None:
         ),
         ["~", "n", "N", ""],
     )
-    LineLoader.add_implicit_resolver(  # type: ignore[no-untyped-call]
+    LineLoader.add_implicit_resolver(
         "tag:yaml.org,2002:value",
         re.compile(r"^(?:=)$"),
         ["="],
@@ -1260,7 +1260,7 @@ def _loads_full(
         raise ComposeError("Invalid YAML: input is too deeply nested") from e
     finally:
         if loader is not None:
-            loader.dispose()  # type: ignore[no-untyped-call]
+            loader.dispose()
 
     if raw is None:
         raise ComposeError("Not a valid Compose file: file is empty")
