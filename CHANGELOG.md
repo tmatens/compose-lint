@@ -41,6 +41,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and stays a PATCH) and the severity-upgrade rule records its sanctioned
   MINOR alternative, the ADR-028 split pattern.
 
+- **A post-1.0 severity upgrade is a MINOR with a one-release runway, not a
+  MAJOR** ([ADR-031](docs/adr/031-severity-upgrades-are-minor-with-runway.md)).
+  The release before the move announces it; the next MINOR applies it; the
+  two-axis derivation model must produce the new number either way. A new
+  HIGH rule already fails a threshold-gated pipeline as a MINOR, so
+  upgrades-as-MAJOR guarded a door the contract holds open elsewhere —
+  while making it impossible to correct an under-graded risk signal without
+  a 2.0. Deliberately the watch-and-see position: under ADR-030, tightening
+  to MAJOR later is cheap, and the reverse would not have been.
+
 ### Removed
 
 - **The Python 3.10 deprecation warning** added in 0.22.0. It existed to reach

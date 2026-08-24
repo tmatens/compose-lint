@@ -46,8 +46,14 @@ Two escape hatches keep a pipeline deterministic:
   findings surface without failing the build.
 
 A rule's **severity** is part of the contract: post-1.0, *downgrading* a
-severity is a MINOR, but *upgrading* one (which can newly fail a pinned user's
-CI) is a MAJOR.
+severity is a MINOR, and *upgrading* one is a **MINOR with a one-release
+runway** ([ADR-031](adr/031-severity-upgrades-are-minor-with-runway.md)): the
+release before the move announces it under `Changed`, and the next MINOR
+applies it. A pinned user is untouched either way; a threshold-gated
+`--fail-on` user gets a full release of warning instead of a surprise red
+build. Every upgrade must still be *derived* — the two-axis model has to
+produce the new number (an axis correction or a declared override), so a
+severity never moves on judgment alone.
 
 ## Deprecation lifecycle
 

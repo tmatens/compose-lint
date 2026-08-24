@@ -87,6 +87,13 @@ Once `1.0.0` ships, the contract tightens:
 - **MINOR** (`1.2.3 → 1.3.0`) — additive or backward-compatible
   changes. New rules, new CLI flags, new config keys, severity
   *downgrades*, new formatters, additive fields in JSON/SARIF output.
+  Severity *upgrades* too, with ADR-031's one-release runway: announce
+  in release N under `Changed`, apply in N+1 — and only when the
+  derivation model produces the new number. Where only a *subset* of a
+  rule's matches deserves the higher tier, prefer the split pattern
+  (CL-0011 → CL-0024): the subset becomes a new rule ID, and existing
+  suppressions of the old ID never silently cover the more dangerous
+  rule (ADR-028).
   **New rules are intentionally MINOR, not MAJOR**, following the
   Hadolint / ShellCheck / ruff convention. Users who need
   deterministic results across upgrades should pin the version; the
@@ -99,13 +106,6 @@ Once `1.0.0` ships, the contract tightens:
     see `AGENTS.md`).
   - Changing the exit-code contract (e.g., adding a new non-zero
     exit code, changing the default `--fail-on` threshold).
-  - Severity *upgrades* on existing rules (`LOW → HIGH` can newly
-    fail CI for pinned users). The sanctioned MINOR alternative is the
-    split pattern (CL-0011 → CL-0024, CL-0013 → CL-0025): move the
-    higher-tier subset into a *new* rule ID, which is a rule addition —
-    and existing suppressions of the old ID never silently cover the
-    new, more dangerous rule (ADR-028 records why that direction is the
-    safe one).
   - Restructuring JSON/SARIF output in a way that removes or renames
     existing fields.
   - Dropping support for a Python version *off-schedule* — before its
@@ -122,7 +122,7 @@ Once `1.0.0` ships, the contract tightens:
 | Add a new rule                               | MINOR   | MINOR    |
 | Add a new CLI flag                           | MINOR   | MINOR    |
 | Downgrade a rule's severity (HIGH → MEDIUM)  | MINOR   | MINOR    |
-| Upgrade a rule's severity (LOW → HIGH)       | MINOR   | MAJOR    |
+| Upgrade a rule's severity (LOW → HIGH)       | MINOR   | MINOR, announced one release ahead (ADR-031) |
 | Tighten an existing rule (new true positive) | MINOR   | MINOR    |
 | Remove or rename a CLI flag                  | MINOR   | MAJOR    |
 | Retire a rule ID                             | MINOR   | MAJOR    |
