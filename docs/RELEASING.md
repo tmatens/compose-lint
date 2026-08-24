@@ -88,8 +88,10 @@ The bump itself is a normal MINOR-shaped release mechanically; what makes it
 2. **No severity move is pending.** Re-read ADR-028's watch items
    (CL-0029's `IPC_LOCK` friction, CL-0013's `/dev` descendants, CL-0014's
    judgment retention) and state in the PR description that none warrants a
-   change now — after this release an upgrade is a MAJOR (the sanctioned
-   alternative being the split pattern). This is the roadmap's last GA
+   change now — after this release a severity change follows its post-1.0
+   class (downgrade MINOR; upgrade MINOR with ADR-031's one-release
+   runway), so a move you already know about belongs in this release, not
+   announced immediately after it. This is the roadmap's last GA
    criterion, recorded so "we checked" is verifiable rather than folklore.
 3. **Classifier bump** — `Development Status :: 4 - Beta` becomes
    `5 - Production/Stable` in the same commit that sets `version = "1.0.0"`
