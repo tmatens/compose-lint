@@ -51,7 +51,7 @@ dependencies = [
 # "Development dependencies" — and Dependabot's weekly pass bumps
 # them.
 lint = [
-    "ruff==0.16.2",
+    "ruff==0.16.4",
 ]
 security = [
     "bandit==1.9.4",
@@ -91,7 +91,7 @@ dev = [
     "compose-lint[lint]",
     "check-jsonschema==0.38.0",
     "mutmut==3.7.0",
-    "mypy==2.3.0",
+    "mypy==2.3.1",
     # Drives the `precommit-smoke` job: `pre-commit try-repo` runs
     # .pre-commit-hooks.yaml from the working tree, so a broken `entry` or
     # `language` is caught here rather than by a user (issue #465).
@@ -100,7 +100,7 @@ dev = [
     # Statement coverage gate (>=80%) is enforced by the `coverage` CI job.
     # Threshold lives in [tool.coverage.report] below.
     "pytest-cov==7.1.0",
-    "types-pyyaml==6.0.12.20260724",
+    "types-pyyaml==6.0.12.20260815",
 ]
 
 [project.scripts]
