@@ -22,9 +22,9 @@ Per-service rule overrides shipped in v0.4.0 (issue #5, [ADR-010](adr/010-per-se
 
 ---
 
-## Milestone 2.5 — Trust Surface + Install Polish (v0.4.x)
+## Milestone 2.5 — Trust Surface + Install Polish (v0.4.x) [complete]
 
-The leftover Milestone 2 items, plus the new real-world examples ask. All additive over 0.4.0; no breaking changes.
+The leftover Milestone 2 items, plus the new real-world examples ask. All additive over 0.4.0; no breaking changes. CL-0006 capability guidance shipped (issue #4 closed); the examples library shipped both tiers under `docs/examples/` (issue #111 closed). The Homebrew tap moved to Milestone 5: like the `.deb`/`.rpm` packages deferred below, it has no demand signal yet, and the roadmap's own rule — distribution beyond the shipped channels waits for demand — applies to it too.
 
 **CL-0006 capability guidance** _(issue #4)_
 - Make the generic `<SPECIFIC_CAP>` placeholder actionable by teaching users how to *determine* the capabilities an image needs, rather than shipping a per-image answer.
@@ -38,11 +38,7 @@ The leftover Milestone 2 items, plus the new real-world examples ask. All additi
 - Teaching surface for ADR-010 suppression semantics, and for *which* remediation a given finding actually allows — both only get interesting against real files.
 - Point-in-time by design: deployed files are sanitized before landing, re-linted locally after sanitizing (scrubbing paths and addresses can move CL-0005/CL-0013 findings), and stamped "last verified against `<version>`". Refreshes are manual; no drift-check automation.
 
-**Homebrew tap**
-- `brew install tmatens/tap/compose-lint` — works on macOS (Intel + Apple Silicon) and Linux via Homebrew-on-Linux.
-- Closes the "not everyone has pip" gap with working `brew upgrade` UX (which GitHub-Releases-hosted `.deb`/`.rpm` could not match).
-- Formula lives in a separate `homebrew-tap` repo; release workflow uses `brew bump-formula-pr` to keep versions in sync with low manual overhead.
-
+_Deferred:_ Homebrew tap — moved to Milestone 5 (design notes preserved in the table there).
 _Deferred:_ `.deb`/`.rpm` Linux packages (see [ADR-008](adr/008-linux-packages.md) — no user demand, no upgrade path without hosted repo infrastructure).
 
 ---
@@ -109,6 +105,7 @@ Pursue based on user demand after v1.0.
 | Custom rule plugins | `entry_points` hook (`compose_lint.rules` group) for third-party rules |
 | LSP server | Language Server Protocol support — follows VS Code extension post-v1.0 |
 | Linux packages (`.deb`/`.rpm`) | Revisit [ADR-008](adr/008-linux-packages.md) on first concrete user request |
+| Homebrew tap | `brew install tmatens/tap/compose-lint` (macOS Intel/ARM + Homebrew-on-Linux). Closes the "not everyone has pip" gap with working `brew upgrade` UX. Formula in a separate `homebrew-tap` repo; release workflow syncs via `brew bump-formula-pr`. Pursue on demand signal, like the row above |
 
 ---
 
@@ -141,7 +138,7 @@ Python 3.10 was dropped ahead of its October 2026 upstream EOL (issue #643): bec
 |-----------|---------|--------|
 | Rule Coverage (19 rules) | v0.3 | complete |
 | Per-service rule overrides | v0.4 | complete |
-| CL-0006 capability guidance + real-world examples + Homebrew tap | v0.4.x | in progress |
+| CL-0006 capability guidance + real-world examples | v0.4.x | complete (Homebrew tap moved to v1.x) |
 | Remediation (`--explain`, `fix`, SARIF fixes, shellcheck) | v0.5–0.11 | `fix` GA in 0.11.0; shellcheck pending |
 | Severity grounding — derived severities, capability + host-path splits | v0.16 | complete |
 | GA / 1.0 — stable contract + `fix` + upgrade policy | v1.0 | next |
