@@ -155,8 +155,8 @@ JSON output is a versioned envelope (see [ADR-015](adr/015-machine-readable-outp
 
 ```json
 {
-  "version": "1",
-  "tool": { "name": "compose-lint", "version": "0.8.0" },
+  "version": "2",
+  "tool": { "name": "compose-lint", "version": "0.24.0" },
   "findings": [
     {
       "file": "docker-compose.yml",
@@ -177,8 +177,13 @@ JSON output is a versioned envelope (see [ADR-015](adr/015-machine-readable-outp
 ```
 
 - `version` is the envelope schema version. New top-level fields are added without bumping it; a bump signals a breaking change.
-- `findings[]` carries one object per finding; `suppression_reason` is present only on suppressed findings.
+- `findings[]` carries one object per finding. `file` names the document the evidence is written in and `line` is a line **within that document** — the two always agree. `severity` is one of `critical`, `high`, `medium`, `low`. `rule_id` is an **opaque string**: match exact values, never the `CL-XXXX` pattern ([compatibility.md](compatibility.md)).
+- Four keys are conditional, present only on the branch that produces them: `suppression_reason` (a suppressed finding whose config gave a reason), `severity_overridden_from` (the config regraded it), `graded_file` (a merged or `env_file:` run, where the graded document differs from `file`), and `source_file` (a deprecated alias of `file`, kept for consumers written against schema 1).
 - `errors[]` lists files that failed to parse (exit 2). Files skipped as not-applicable (Compose v1 / fragments / a compose-lint config, [ADR-013](adr/013-missing-services-key.md)) are not errors and do not appear here.
+
+!!! note "Schema 2 changed what `file` means"
+
+    In schema 1, `file` always named the document being *graded* while `line` indexed wherever the evidence came from — so on a merged run or one reading an `env_file:`, both default behaviour, the pair named a real line of the wrong file. `file` now names the evidence's document, and the graded one moved to `graded_file`. If you consumed `source_file` to work around this, `file` answers it directly.
 
 ### SARIF
 

@@ -35,7 +35,7 @@ class TestIntegration:
         result = run_cli("--format", "json", str(FIXTURES / "mixed.yml"))
         assert result.returncode == 1
         data = json.loads(result.stdout)
-        assert data["version"] == "1"
+        assert data["version"] == "2"
         assert isinstance(data["findings"], list)
         assert len(data["findings"]) > 5
 

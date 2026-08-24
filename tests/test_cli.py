@@ -259,7 +259,7 @@ class TestCLI:
         result = run_cli("--format", "json", str(FIXTURES / "valid_basic.yml"))
         assert result.returncode == 0
         data = json.loads(result.stdout)
-        assert data["version"] == "1"
+        assert data["version"] == "2"
         assert data["tool"]["name"] == "compose-lint"
         assert isinstance(data["findings"], list)
 
@@ -454,7 +454,7 @@ class TestCLI:
         )
         assert result.returncode == 0
         data = json.loads(result.stdout)
-        assert data["version"] == "1"
+        assert data["version"] == "2"
         assert data["tool"]["name"] == "compose-lint"
         assert data["tool"]["version"]
         assert data["findings"] == []

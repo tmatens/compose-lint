@@ -26,8 +26,8 @@ was invisible in JSON, with exit code 2 the only signal.
 
 ```json
 {
-  "version": "1",
-  "tool": { "name": "compose-lint", "version": "0.8.0" },
+  "version": "2",
+  "tool": { "name": "compose-lint", "version": "0.24.0" },
   "findings": [ "..." ],
   "errors": [ { "file": "...", "message": "..." } ]
 }
@@ -37,9 +37,39 @@ was invisible in JSON, with exit code 2 the only signal.
   a breaking change to the shape. Adding a new top-level field (e.g. a future
   `summary`) is additive and does **not** bump it — that is the point of the
   envelope.
-- `findings[]` keeps the exact per-finding fields from 0.x: `file`, `line`,
-  `rule_id`, `severity`, `service`, `message`, `fix`, `references`,
-  `suppressed`, and `suppression_reason` (only when suppressed).
+- `findings[]` carries these fields on **every** finding:
+
+  | field | type | meaning |
+  |-------|------|---------|
+  | `file` | string | the document the evidence is written in |
+  | `line` | integer | 1-indexed line **within `file`** |
+  | `rule_id` | string | **opaque** — match exact values, never the `CL-\d{4}` shape (see [compatibility.md](../compatibility.md)) |
+  | `severity` | string | one of `critical`, `high`, `medium`, `low` — a closed set |
+  | `service` | string | the Compose service the finding is about |
+  | `message` | string | what is wrong |
+  | `fix` | string | how to fix it |
+  | `references` | array of string | authoritative sources |
+  | `suppressed` | boolean | whether config suppressed it |
+
+  And these **only** on the branch that produces them. Each is conditional, so
+  a consumer that does not know the key sees the document it always did:
+
+  | field | present when |
+  |-------|--------------|
+  | `suppression_reason` | `suppressed` is true and the config gave a reason |
+  | `severity_overridden_from` | the config regraded the finding; carries the original severity |
+  | `graded_file` | `file` differs from the document being graded — a merged or `env_file:` run |
+  | `source_file` | *deprecated alias* of `file`, emitted alongside `graded_file`; schema-1 consumers used it to learn where `line` pointed |
+
+  **Schema 2 changed what `file` means.** In schema 1 it always named the
+  document being *graded*, while `line` indexed wherever the evidence actually
+  came from — so on a merged run (default since [ADR-025](025-lint-the-merged-configuration.md))
+  or an `env_file:` run (default since [ADR-027](027-grade-env-file-where-the-document-routes-it.md))
+  the pair named a real line of the wrong file. SARIF had already been
+  corrected the same way, after the mismatch made Code Scanning annotate an
+  unrelated line of the base file. Correcting JSON is a breaking change to a
+  required field, which is why it ships **before** the 1.0 freeze rather than
+  after it.
 - `errors[]` lists files that could not be parsed (the exit-2 cases),
   mirroring SARIF's `toolExecutionNotifications`. ADR-013 "not applicable"
   skips (Compose v1 / fragments, exit 0) are deliberately excluded — they are

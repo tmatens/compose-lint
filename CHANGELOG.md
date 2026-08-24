@@ -7,8 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
 
+### Changed
+- **JSON `file` and `line` now name the same document, and the envelope is
+  schema `"2"`.** `file` had always named the document being *graded* while
+  `line` indexed wherever the evidence actually came from, so on a merged run
+  (default since [ADR-025](docs/adr/025-lint-the-merged-configuration.md)) or
+  one reading an `env_file:` (default since
+  [ADR-027](docs/adr/027-grade-env-file-where-the-document-routes-it.md)) the
+  pair named a real line of the *wrong file* — an overlay's CL-0002 was
+  reported at the base file's line 3, which is its `image:` key. SARIF was
+  already corrected this way after the same mismatch made Code Scanning
+  annotate an unrelated line of the base file; JSON was the last format
+  emitting an incoherent pair. `file` now names the document the evidence is
+  in, the graded document moved to the new conditional `graded_file`, and
+  `source_file` stays as a deprecated alias for consumers written against
+  schema 1. **This is a breaking change to a required field**, which is why it
+  ships before the 1.0 freeze — after the tag the same correction would be a
+  MAJOR. ADR-015 and `docs/configuration.md` now document the complete emitted
+  field list, including `severity_overridden_from` and the closed `severity`
+  set, neither of which the frozen contract had named.
+
+
+### Fixed
 - **A failed stdout write is now exit 2, not an undocumented exit 120 or a
   false exit 1.** Every path that could raise mid-run had been hardened to the
   0/1/2 contract; the channel all of them write through had not. A full disk

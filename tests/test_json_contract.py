@@ -61,6 +61,7 @@ CONDITIONAL_FINDING_KEYS = {
     "suppression_reason",
     "severity_overridden_from",
     "source_file",
+    "graded_file",
 }
 
 _RULE = (
@@ -131,7 +132,7 @@ def test_schema_version_is_pinned_to_its_literal_value() -> None:
     `version` is told the shape moved, so it belongs with a CHANGELOG `Changed`
     entry and a documented migration, not with a refactor.
     """
-    assert SCHEMA_VERSION == "1", (
+    assert SCHEMA_VERSION == "2", (
         "SCHEMA_VERSION changed. That is a breaking change to the JSON "
         "envelope, not a version bump of the tool.\n" + _RULE
     )
@@ -234,9 +235,27 @@ def test_source_file_appears_only_on_a_merged_run() -> None:
     (merged,) = format_json([_from_overlay()], "compose.yml")
     (plain,) = format_json([_plain()], "compose.yml")
 
-    assert set(merged) == FINDING_KEYS | {"source_file"}, _RULE
+    assert set(merged) == FINDING_KEYS | {"source_file", "graded_file"}, _RULE
     assert merged["source_file"] == "compose.override.yml"
     assert "source_file" not in plain, _RULE
+    assert "graded_file" not in plain, _RULE
+
+
+def test_file_and_line_name_the_same_document() -> None:
+    """Schema 2. `line` indexes `file`, on every run shape.
+
+    They had disagreed: `file` was always the graded document while `line`
+    indexed wherever the evidence came from, so a merged or `env_file:` run —
+    both default behaviour — pointed at a real line of the wrong file. SARIF
+    had already been corrected the same way after the mismatch made Code
+    Scanning annotate an unrelated line of the base file.
+    """
+    (merged,) = format_json([_from_overlay()], "compose.yml")
+    assert merged["file"] == "compose.override.yml"
+    assert merged["graded_file"] == "compose.yml"
+
+    (plain,) = format_json([_plain()], "compose.yml")
+    assert plain["file"] == "compose.yml"
 
 
 def test_every_conditional_key_is_accounted_for() -> None:

@@ -11,15 +11,37 @@ if TYPE_CHECKING:
 
 # Envelope schema version (ADR-015). Bumped only on a breaking change to the
 # output shape; additive top-level fields do not bump it.
-SCHEMA_VERSION = "1"
+#
+# 2: `file` now names the document the evidence is *in*, and the document that
+# was graded moved to `graded_file`. Before 1.0 that costs a version bump; the
+# same correction after the freeze would be a MAJOR, because `file` and `line`
+# are the required fields ADR-015 froze. See `format_findings`.
+SCHEMA_VERSION = "2"
 
 
 def format_findings(findings: list[Finding], filepath: str) -> list[dict[str, object]]:
-    """Format findings as JSON-serializable dicts."""
+    """Format findings as JSON-serializable dicts.
+
+    ``file`` and ``line`` name the same place: the document the evidence is
+    written in, and a line within *that* document. A merged run grades more
+    than one document, so those had disagreed — ``file`` was always the graded
+    document while ``line`` indexed wherever the evidence actually came from,
+    which on any overlay or ``env_file:`` run pointed at a real line of the
+    wrong file. Both are default behaviour (ADR-025, ADR-027), so that was the
+    common path, and both are required fields ADR-015 froze.
+
+    SARIF already resolved this the same way — ``result_path = f.source_file or
+    filepath`` — after the mismatch made Code Scanning annotate an unrelated
+    line of the base file. The graded document is still reported, as
+    ``graded_file``, because "which project did this come from" is a real
+    question a merged run has to answer; it is emitted only when it differs
+    from ``file``.
+    """
     results: list[dict[str, object]] = []
     for f in findings:
+        evidence_file = f.source_file or filepath
         entry: dict[str, object] = {
-            "file": filepath,
+            "file": evidence_file,
             "line": f.line,
             "rule_id": f.rule_id,
             "severity": f.severity.value,
@@ -38,12 +60,14 @@ def format_findings(findings: list[Finding], filepath: str) -> list[dict[str, ob
             entry["suppression_reason"] = f.suppression_reason
         if f.severity_overridden_from is not None:
             entry["severity_overridden_from"] = f.severity_overridden_from.value
-        if f.source_file is not None:
-            # Present only when a run merged documents and this finding's
-            # evidence is in one other than `file` — `line` is a line in
-            # *this* file, not in `file`. Additive and conditional, so the
-            # envelope shape is unchanged for every single-file run and
-            # SCHEMA_VERSION does not move.
+        if evidence_file != filepath:
+            # The project this finding was graded under, when that is not the
+            # document the evidence sits in. Emitted only for a merged or
+            # `env_file:` run, so a single-file run's shape is unchanged.
+            entry["graded_file"] = filepath
+            # Retained as an alias of `file` for consumers written against
+            # schema 1, where it was the only way to learn where `line`
+            # actually pointed. Deprecated; `file` now answers it directly.
             entry["source_file"] = f.source_file
         results.append(entry)
     return results
