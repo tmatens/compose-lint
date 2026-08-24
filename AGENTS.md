@@ -89,6 +89,10 @@ uv pip compile pyproject.toml \
 uv pip compile pyproject.toml --extra=container \
   --universal --python-version=3.11 \
   --generate-hashes --output-file=requirements-build.lock
+
+uv pip compile pyproject.toml --extra=docs \
+  --universal --python-version=3.11 \
+  --generate-hashes --output-file=requirements-docs.lock
 ```
 
 `--python-version=3.11` matches `requires-python` so backport deps for older matrix legs are included. Commit lockfiles and `pyproject.toml` together.
