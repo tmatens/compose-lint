@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as the only remedy.
 
 ### Changed
+
+- **A rule admitted on judgment may be withdrawn on judgment**
+  ([ADR-032](docs/adr/032-rule-retirement-is-minor-with-lifecycle.md)
+  condition 1, widened). ADR-032 made retirement MINOR only where evidence
+  refutes the rule's premise. CL-0014's premise *holds* — `docker logs` under
+  `driver: none` really does fail — so that bar could never be met for it, and
+  the thin part is its grounding, which is a different defect. The effect was
+  that a rule the project itself declines to ground was *harder* to remove than
+  one that is grounded and later refuted, which is backwards; dropping it would
+  have cost a MAJOR. The exception reaches only rules
+  [ADR-028](docs/adr/028-pre-1.0-rule-id-sweep.md) records as admitted on
+  judgment — a set closed at the 1.0 sweep, currently `{CL-0014}` — so "evidence,
+  not preference" is unchanged for every rule admitted on evidence. Withdrawal
+  still needs its own ADR and still runs the full deprecation lifecycle. Landed
+  before the tag because the direction only goes one way: admitting this ground
+  later is a loosening and costs a MAJOR, while removing it later is a
+  tightening and costs a MINOR.
+
 - **JSON `file` and `line` now name the same document, and the envelope is
   schema `"2"`.** `file` had always named the document being *graded* while
   `line` indexed wherever the evidence actually came from, so on a merged run

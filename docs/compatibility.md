@@ -88,7 +88,12 @@ Two things are never reused or quietly repurposed:
   MINOR, but only through the full deprecation lifecycle and only on
   evidence that refutes the rule's premise
   ([ADR-032](adr/032-rule-retirement-is-minor-with-lifecycle.md)) — never
-  on noise or preference. A config referencing a retired ID still loads:
+  on noise or preference. One narrow exception: a rule that
+  [ADR-028](adr/028-pre-1.0-rule-id-sweep.md) records as admitted on
+  *judgment* rather than on the grounding bar may be withdrawn on judgment,
+  through the same lifecycle and with its own ADR. That set was closed at
+  the 1.0 sweep and is currently `{CL-0014}`; every rule admitted on
+  evidence still needs refutation. A config referencing a retired ID still loads:
   the override simply has no rule to apply. It is reported the same way a
   typo'd ID is — `warning: config: unknown rule id 'CL-XXXX'` — which
   `--strict-config` promotes to an error, so a strict CI pipeline does

@@ -33,6 +33,30 @@ deprecation lifecycle, under these conditions:
    the ADR-016 bar, recorded in an ADR. "Noisy" is not a retirement reason
    ([ADR-028](028-pre-1.0-rule-id-sweep.md)); prevalence pricing stays out
    of the registry.
+
+   **One narrow exception: a rule admitted on judgment may leave on
+   judgment.** [ADR-028](028-pre-1.0-rule-id-sweep.md) records exactly one
+   such rule — CL-0014, "the one rule in the set retained on judgment rather
+   than on the grounding bar", kept over a pre-1.0 audit's recommendation to
+   drop it. Its premise *holds*, so the evidence bar above can never be met;
+   what is thin is its grounding, which is a different defect and one the
+   evidence bar does not speak to. Without this clause a rule the project
+   itself declines to ground is harder to remove than one that is grounded
+   and later refuted, which is backwards.
+
+   The exception is deliberately not a general escape hatch. It reaches only
+   a rule whose ADR-028 row records it as retained on judgment — a closed
+   set, fixed at the 1.0 sweep, currently `{CL-0014}`. A grounded rule still
+   needs refutation, so "evidence, not preference" is unchanged for every
+   rule that was admitted on evidence. Withdrawal on this ground still needs
+   an ADR stating why the judgment changed, and still runs the full
+   lifecycle below.
+
+   Included **before** 1.0 because the direction only goes one way:
+   admitting this ground later is a loosening and costs a MAJOR, while
+   removing it later — deciding judgment is not enough after all — is a
+   tightening and costs a MINOR. The same asymmetry the Context above
+   applies to retirement itself.
 2. **Announce** — `CHANGELOG.md` under `Deprecated` plus a deprecation
    banner on the rule's doc page, in the release that announces it. The
    rule keeps firing through the grace period (its findings are real until
