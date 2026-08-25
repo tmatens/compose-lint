@@ -10,6 +10,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **CL-0025 now grades a writable bind of the host's executable tree**
+  ([#737](https://github.com/tmatens/compose-lint/issues/737)). `/usr/bin`,
+  `/usr/sbin`, `/usr/local/bin`, `/usr/local/sbin`, `/bin` and `/sbin` are
+  matched by descent — `/usr/bin/docker:/usr/bin/docker`, the corpus idiom for
+  driving the host's CLI, counts — and bare `/usr` is matched exactly, the
+  `/var/lib` mechanism: it is root-equivalent for what it *contains*, and by
+  descent it would also have priced `/usr/src`, `/usr/share/zoneinfo` and
+  site-packages as host root (6 of the 27 writable `/usr`-family binds in the
+  corpus, 22%). Both spellings are listed because matching is lexical on what
+  the document wrote, while Docker resolves the merged-`/usr` symlink at mount
+  time. Measured on two hosts at Docker defaults, unprivileged: each member
+  accepted a write through an rw bind and refused it through an ro bind, and a
+  root-owned `755` file planted through `-v /usr` into `/usr/local/bin` — ahead
+  of `/usr/bin` on root's `PATH`, so nothing need be overwritten — was on the
+  host afterwards. New premise check `_cl0025_exec_tree` plants, observes from
+  a second container, and removes it. Same cell as `/etc`: Direct × Host,
+  CRITICAL, no override. On the corpus this is 20 new CRITICAL findings.
+
+  Two boundaries recorded rather than guessed: a **read-only** bind of the
+  executable tree is exempt from CL-0013 as well — every file in it is
+  world-readable by design, so `:ro` discloses nothing (the timezone-file shape,
+  one tier up); and the **library tree** (`/usr/lib`, `/lib/modules`) is
+  deferred to an ADR, because by descent it would sweep `/usr/lib/python3` and
+  the standard `/lib/modules` bind of every VPN workload, and the corpus holds
+  nothing else to shape a narrower match on.
+
 - **Three bump classes the judgment-call cheat sheet did not price**
   ([docs/RELEASING.md](docs/RELEASING.md#judgment-call-cheat-sheet)). The
   sharpest is a rule's **evidence** derivation: it never appears in text output

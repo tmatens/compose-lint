@@ -334,3 +334,36 @@ class TestTildeShapeClaims:
         # See the parser's ~user note: Compose never resolves another
         # account's home, so no claim can be honest.
         assert self._check("~someone/.ssh:/keys") == []
+
+
+class TestExecTreeReadOnly:
+    """A read-only bind of the executable tree is not a disclosure.
+
+    Every file under /usr/bin is world-readable by design, so ``:ro`` grants
+    nothing to read that the image could not ship -- the grant is write-only
+    and CL-0025's. Same shape as the timezone exemption, one tier up: routing
+    it here would report "discloses host configuration and credentials" about
+    a directory holding neither.
+    """
+
+    def setup_method(self) -> None:
+        self.rule = SensitiveMountRule()
+
+    def _findings(self, mount: str) -> list:
+        data, lines = loads(
+            f"services:\n  svc:\n    image: x\n    volumes:\n      - {mount}\n"
+        )
+        return list(self.rule.check("svc", data["services"]["svc"], data, lines))
+
+    def test_read_only_exec_tree_is_exempt(self) -> None:
+        for path in ("/usr", "/usr/bin", "/usr/local/bin", "/bin", "/sbin"):
+            assert self._findings(f"{path}:/x:ro") == [], path
+        assert self._findings("/usr/bin/docker:/usr/bin/docker:ro") == []
+
+    def test_writable_exec_tree_is_cl0025s_not_this_rule(self) -> None:
+        assert self._findings("/usr/bin:/x") == []
+
+    def test_read_only_etc_still_discloses(self) -> None:
+        # The exemption is the exec tree only; the other members keep their
+        # read-only disclosure finding here.
+        assert len(self._findings("/etc:/x:ro")) == 1

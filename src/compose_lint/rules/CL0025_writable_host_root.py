@@ -64,6 +64,29 @@ REFERENCES = [OWASP_REF, CIS_REF]
 # Either way /var/lib/docker keeps its grant; /var/lib/containerd is the part
 # that had no owner.
 #
+# The executable tree (#737). Root's PATH on every mainstream distro is some
+# ordering of /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin, so a
+# file planted in any of these runs as root the next time root -- cron, a login
+# shell, a systemd unit -- calls that name. No existing binary need be
+# overwritten: a name planted in /usr/local/bin shadows the same name in
+# /usr/bin. Measured on two hosts (Docker 29.1.3 with AppArmor; 29.7.2 without),
+# unprivileged, default capabilities: a writable bind of each member accepted a
+# write and a read-only bind refused it, and a 755 root-owned file planted
+# through `-v /usr` was visible to a second container and on the host.
+#
+# Both the /usr/... and the bare /bin, /sbin spellings are listed. On a
+# merged-usr host they are the same directories, but Docker resolves the symlink
+# at mount time while this rule matches what the *document* wrote, so a prefix
+# on one spelling cannot cover the other.
+#
+# The library tree is deliberately *not* here. /usr/lib and /lib/modules carry a
+# comparable grant (systemd units, ld.so libraries, loadable modules), but by
+# descent they would also sweep /usr/lib/python3, /usr/lib/node_modules and
+# every VPN workload's standard /lib/modules bind -- the /var/lib containment
+# failure again -- and the corpus holds no bind of /usr/lib other than modules
+# to shape a narrower match on. Recorded here as deferred, pending an ADR, so
+# it is a disposition rather than an omission.
+#
 ROOT_EQUIVALENT_PATHS: tuple[str, ...] = (
     "/etc",
     "/root",
@@ -71,6 +94,28 @@ ROOT_EQUIVALENT_PATHS: tuple[str, ...] = (
     "/var/lib/docker",
     "/var/lib/containerd",
     "/proc",
+    "/usr/bin",
+    "/usr/sbin",
+    "/usr/local/bin",
+    "/usr/local/sbin",
+    "/bin",
+    "/sbin",
+)
+
+# The executable tree is root-equivalent *only* writable. Read-only it discloses
+# nothing -- every file in it is world-readable by design -- so unlike the
+# other members a `:ro` mount of one of these is not CL-0013's disclosure
+# finding either. Same shape as the timezone exemption, one tier up.
+EXEC_TREE_PATHS: frozenset[str] = frozenset(
+    {
+        "/usr",
+        "/usr/bin",
+        "/usr/sbin",
+        "/usr/local/bin",
+        "/usr/local/sbin",
+        "/bin",
+        "/sbin",
+    }
 )
 
 # "/var/lib" is root-equivalent because of what it *contains* — /var/lib/docker
@@ -86,7 +131,12 @@ ROOT_EQUIVALENT_PATHS: tuple[str, ...] = (
 # The general fix is an ancestor-aware matcher, which also has to re-settle the
 # CL-0001 boundary ("/" and "/var" contain the control socket) and is therefore
 # a larger change than this member warrants.
-ROOT_EQUIVALENT_EXACT_PATHS: tuple[str, ...] = ("/var/lib",)
+#
+# "/usr" is the same shape: root-equivalent because it *contains* the exec
+# directories above, while by descent it would also claim /usr/src, /usr/share
+# and the Python site-packages -- measured over the corpus, 6 of the 27 writable
+# /usr-family binds (22%) were that kind of application data.
+ROOT_EQUIVALENT_EXACT_PATHS: tuple[str, ...] = ("/var/lib", "/usr")
 
 
 def match_root_equivalent(host_path: str) -> str | None:
@@ -111,6 +161,13 @@ _GRANTS: dict[str, str] = {
     "only this mount read and modified a neighbour's files",
     "/proc": "core_pattern — the host's core-dump handler runs a program of the "
     "attacker's choosing, as root, on the next crash",
+    **dict.fromkeys(
+        ("/usr/bin", "/usr/sbin", "/usr/local/bin", "/usr/local/sbin", "/bin", "/sbin"),
+        "root's PATH — a planted or replaced binary runs as root on the next "
+        "cron job, login or unit start",
+    ),
+    "/usr": "the executable tree inside it (/usr/bin, /usr/sbin, /usr/local/bin) "
+    "— a planted binary runs as root on the next cron job, login or unit start",
 }
 
 
@@ -125,10 +182,12 @@ class WritableHostRootMountRule(BaseRule):
             name="Root-equivalent host path mounted writable",
             description=(
                 "A writable bind mount of /etc, /root, /boot, /proc, the "
-                "container store (/var/lib/docker, /var/lib/containerd) or "
-                "/var/lib itself gives a container host root through ordinary "
-                "file writes — no exploit and no technique required. (A "
-                "whole-root mount is CL-0001's, which owns it in either mode.)"
+                "container store (/var/lib/docker, /var/lib/containerd), "
+                "/var/lib itself, or the executable tree (/usr, /usr/bin, "
+                "/usr/local/bin, /bin, /sbin) gives a container host root "
+                "through ordinary file writes — no exploit and no technique "
+                "required. (A whole-root mount is CL-0001's, which owns it in "
+                "either mode.)"
             ),
             severity=Severity.CRITICAL,
             references=REFERENCES,

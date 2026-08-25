@@ -592,6 +592,7 @@ def _t_ipc_lock() -> tuple[bool, str]:
 # from the scheduler and the lease-break path not being namespaced, and is
 # recorded as reasoned in the rule's Evidence line.
 
+
 def _cl0029_sys_nice() -> tuple[bool, str]:
     """SCHED_FIFO — real-time priority on the host's CPUs — needs SYS_NICE.
 
@@ -976,6 +977,46 @@ def _cl0025_core_pattern() -> tuple[bool, str]:
     return ok, f"rw /proc bind={bound!r}, container's own /proc={default!r}"
 
 
+def _cl0025_exec_tree() -> tuple[bool, str]:
+    """An rw ``/usr`` bind lets a container plant a root-owned executable on
+    root's PATH; the ro bind of the same path refuses the write.
+
+    The planted file is observed from a *second* container through its own
+    bind of ``/usr/local/bin`` -- host state, not the writer's view of it --
+    and removed by the writer afterwards, so the host is left as found. The
+    name is unique to this check; a leftover from an aborted run is removed
+    before the write so it cannot fake the observation.
+    """
+    probe = "cl0025-exec-tree-probe"
+    plant = (
+        f"rm -f /hostusr/local/bin/{probe}; "
+        f'printf "#!/bin/sh\\necho probe\\n" > /hostusr/local/bin/{probe} '
+        f"2>/dev/null && chmod 755 /hostusr/local/bin/{probe} && echo WROTE "
+        "|| echo REFUSED"
+    )
+    _, rw = _run(["-v", "/usr:/hostusr"], ["sh", "-c", plant])
+    _, seen = _run(
+        ["-v", "/usr/local/bin:/y:ro"],
+        ["sh", "-c", f"test -x /y/{probe} && stat -c %U /y/{probe} || echo ABSENT"],
+    )
+    _run(["-v", "/usr:/hostusr"], ["rm", "-f", f"/hostusr/local/bin/{probe}"])
+    _, ro = _run(
+        ["-v", "/usr:/hostusr:ro"],
+        [
+            "sh",
+            "-c",
+            f"echo x > /hostusr/local/bin/{probe} 2>/dev/null "
+            "&& echo WROTE || echo REFUSED",
+        ],
+    )
+    ok = rw == "WROTE" and seen == "root" and ro == "REFUSED"
+    return (
+        ok,
+        f"rw /usr bind={rw!r}, owner seen by a second container={seen!r}, "
+        f"ro bind={ro!r}",
+    )
+
+
 def _cl0026() -> tuple[bool, str]:
     """Memory and CPU are both unbounded by default; a limit bounds them.
 
@@ -1036,9 +1077,13 @@ def _t_dac_read_search() -> tuple[bool, str]:
     what the capability grants is this: reading a file the workload uid is
     otherwise refused.
     """
-    probe = "echo secret > /tmp/s; chmod 000 /tmp/s; chown 65534:65534 /tmp/s; cat /tmp/s"
+    probe = (
+        "echo secret > /tmp/s; chmod 000 /tmp/s; chown 65534:65534 /tmp/s; cat /tmp/s"
+    )
     _, denied = _run(["--cap-drop", "ALL"], ["sh", "-c", probe])
-    _, allowed = _run(["--cap-drop", "ALL", "--cap-add", "DAC_READ_SEARCH"], ["sh", "-c", probe])
+    _, allowed = _run(
+        ["--cap-drop", "ALL", "--cap-add", "DAC_READ_SEARCH"], ["sh", "-c", probe]
+    )
     ok = "secret" not in denied and allowed.strip() == "secret"
     return ok, f"without={denied!r}; with={allowed!r}"
 
@@ -1047,8 +1092,8 @@ _PERF_PROBE = (
     "import ctypes,struct,os,sys\n"
     "libc=ctypes.CDLL('libc.so.6',use_errno=True)\n"
     "b=bytearray(128)\n"
-    "struct.pack_into('<I',b,0,1)\n"      # PERF_TYPE_SOFTWARE
-    "struct.pack_into('<I',b,4,128)\n"    # attr size
+    "struct.pack_into('<I',b,0,1)\n"  # PERF_TYPE_SOFTWARE
+    "struct.pack_into('<I',b,4,128)\n"  # attr size
     "a=(ctypes.c_char*128).from_buffer(b)\n"
     "ctypes.set_errno(0)\n"
     # pid=-1, cpu=0 -> system-wide, kernel samples included
@@ -1201,6 +1246,11 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool | None, str]]]] = [
         "CL-0025",
         "premise: rw /proc bind makes core_pattern writable",
         _cl0025_core_pattern,
+    ),
+    (
+        "CL-0025",
+        "premise: rw /usr bind plants a root-owned executable on root's PATH",
+        _cl0025_exec_tree,
     ),
     ("CL-0026", "premise: memory and cpu are unbounded by default", _cl0026),
     ("CL-0027", "premise: SYS_PTRACE traces a different-uid process", _t_sys_ptrace),

@@ -194,3 +194,65 @@ class TestVarLibAncestor:
     def test_a_sibling_of_the_store_is_not_claimed(self) -> None:
         # /var/log is not under /var/lib; the entry must not widen to /var.
         assert self._findings("/var/log:/x") == []
+
+
+class TestExecTree:
+    """A writable bind of the executable tree is host root (#737).
+
+    Measured on two hosts (Docker 29.1.3 with AppArmor, 29.7.2 without),
+    unprivileged and at default capabilities: every member accepted a write
+    through an rw bind and refused it through an ro bind, and a 755 root-owned
+    file planted through ``-v /usr`` was on the host afterwards. Root's PATH
+    puts /usr/local/bin ahead of /usr/bin, so nothing need be overwritten.
+    """
+
+    def setup_method(self) -> None:
+        self.rule = WritableHostRootMountRule()
+
+    def _findings(self, mount: str) -> list:
+        data, lines = loads(
+            f"services:\n  svc:\n    image: x\n    volumes:\n      - {mount}\n"
+        )
+        return list(self.rule.check("svc", data["services"]["svc"], data, lines))
+
+    def test_each_exec_dir_writable_is_critical(self) -> None:
+        for path in (
+            "/usr/bin",
+            "/usr/sbin",
+            "/usr/local/bin",
+            "/usr/local/sbin",
+            "/bin",
+            "/sbin",
+        ):
+            findings = self._findings(f"{path}:/x")
+            assert len(findings) == 1, path
+            assert findings[0].severity is Severity.CRITICAL
+            assert "PATH" in findings[0].message
+
+    def test_a_single_binary_is_covered_by_descent(self) -> None:
+        # The corpus idiom: /usr/bin/docker or /usr/bin/rclone bound rw so a
+        # container can call the host's binary. Writable, it can replace it.
+        assert len(self._findings("/usr/bin/docker:/usr/bin/docker")) == 1
+
+    def test_bare_usr_is_critical_and_names_the_exec_tree(self) -> None:
+        findings = self._findings("/usr:/hostusr")
+        assert len(findings) == 1
+        assert "/usr/local/bin" in findings[0].message
+
+    def test_usr_application_data_is_not_claimed(self) -> None:
+        # Bare /usr is an exact match, so what lies below it outside the exec
+        # directories -- kernel headers, zoneinfo, an app's own share dir --
+        # is not priced as host root.
+        for path in ("/usr/src", "/usr/share/kubearmor", "/usr/share/zoneinfo"):
+            assert self._findings(f"{path}:/x") == [], path
+
+    def test_read_only_is_not_this_rule(self) -> None:
+        for path in ("/usr", "/usr/bin", "/bin"):
+            assert self._findings(f"{path}:/x:ro") == [], path
+
+    def test_library_tree_is_deferred_not_claimed(self) -> None:
+        # /usr/lib and /lib/modules carry a comparable grant but would sweep
+        # site-packages and every VPN workload's modules bind; deferred to an
+        # ADR rather than added by descent.
+        assert self._findings("/usr/lib:/x") == []
+        assert self._findings("/lib/modules:/lib/modules") == []

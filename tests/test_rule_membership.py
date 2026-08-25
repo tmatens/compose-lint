@@ -142,6 +142,15 @@ class TestMountOwnership:
             "/var/lib/docker",
             "/var/lib/containerd",
             "/proc",
+            # The executable tree (#737): a file planted on root's PATH runs
+            # as root. Both spellings, because matching is on what the
+            # document wrote, not on what the merged-usr symlink resolves to.
+            "/usr/bin",
+            "/usr/sbin",
+            "/usr/local/bin",
+            "/usr/local/sbin",
+            "/bin",
+            "/sbin",
         }
 
     def test_var_lib_is_matched_exactly_not_by_descent(self) -> None:
@@ -150,8 +159,9 @@ class TestMountOwnership:
         # different sets: /var/lib/mysql contains neither /var/lib/docker nor
         # /var/lib/containerd. Matching it by descent priced every stateful
         # service's own data directory as host root (24 of 25 corpus hits).
-        assert set(ROOT_EQUIVALENT_EXACT_PATHS) == {"/var/lib"}
+        assert set(ROOT_EQUIVALENT_EXACT_PATHS) == {"/var/lib", "/usr"}
         assert "/var/lib" not in ROOT_EQUIVALENT_PATHS
+        assert "/usr" not in ROOT_EQUIVALENT_PATHS
 
         # The behaviour the split exists to produce.
         assert match_root_equivalent("/var/lib") == "/var/lib"
@@ -163,6 +173,28 @@ class TestMountOwnership:
             "/var/lib/postgresql/data",
             "/var/lib/grafana",
             "/var/lib/redis",
+        ):
+            assert match_root_equivalent(benign) is None, benign
+
+    def test_usr_is_matched_exactly_not_by_descent(self) -> None:
+        # Same containment shape as /var/lib: /usr is root-equivalent because
+        # it holds the exec directories, but by descent it would also claim
+        # /usr/src, /usr/share and site-packages -- 6 of the 27 writable
+        # /usr-family binds in the corpus (22%), none on root's PATH.
+        assert match_root_equivalent("/usr") == "/usr"
+        for exec_dir in ("/usr/bin", "/usr/sbin", "/usr/local/bin", "/bin", "/sbin"):
+            assert match_root_equivalent(exec_dir) == exec_dir
+            assert match_root_equivalent(exec_dir + "/docker") == exec_dir
+        for benign in (
+            "/usr/src",
+            "/usr/src/app",
+            "/usr/share/zoneinfo",
+            "/usr/share/kubearmor",
+            "/usr/local/lib/python3.9/dist-packages",
+            # The library tree is deferred, not claimed -- see the rule's
+            # ROOT_EQUIVALENT_PATHS comment and the CL-0025 page.
+            "/usr/lib",
+            "/lib/modules",
         ):
             assert match_root_equivalent(benign) is None, benign
 
