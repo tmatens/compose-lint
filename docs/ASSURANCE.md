@@ -16,8 +16,14 @@ For the vulnerability-reporting process, see [SECURITY.md](../.github/SECURITY.m
 compose-lint is a local static analyzer for Docker Compose files. A user
 runs `compose-lint docker-compose.yml`; the tool reads the file, applies
 a fixed set of rules, prints findings to stdout (text, JSON, or SARIF),
-and exits 0 / 1 / 2. It does not connect to a network, does not modify
-its inputs, and does not run as a daemon.
+and exits 0 / 1 / 2. It does not connect to a network and does not run as
+a daemon.
+
+`check`, `--explain` and `init -o` never modify a Compose file. The one
+subcommand that writes to an input is `fix --apply`, which rewrites the
+file in place via an atomic swap — dry-run is the default, and every apply
+is guarded by a re-parse and a verify-apply pass ([ADR-014](adr/014-fix-remediation.md)).
+`init` also writes, but to `.compose-lint.yml` rather than to an input.
 
 ## Trust boundaries
 
@@ -94,7 +100,7 @@ Common Python-level weakness classes and their mitigations:
 |------------------------------------------------------|------------------------------------------------------------------------------|
 | Unsafe deserialization (CWE-502)                     | `yaml.SafeLoader` everywhere; custom loader asserts subclass at import time. |
 | Command injection / shell-out (CWE-78, CWE-77)       | Product code calls no subprocess, no `os.system`. Bandit enforces.           |
-| Path traversal on input (CWE-22)                     | All file paths are user-supplied targets; the tool only *reads* them. No path is constructed from untrusted YAML content. |
+| Path traversal on input (CWE-22)                     | Two classes of path. **User-supplied targets** (argv, `--config`) are read as given, and written only by `fix --apply` / `init`. **Document-supplied paths** — `env_file:` targets and `COMPOSE_FILE` entries ([ADR-026](adr/026-read-the-sibling-env-file.md), [ADR-027](adr/027-grade-env-file-where-the-document-routes-it.md)) — *are* constructed from untrusted content, and are gated twice: a lexical containment test on what the path says, then a containment test on what it resolves to, so a symlink cannot escape the project. Both are read-only. |
 | Resource exhaustion (CWE-400)                        | Iterative parser traversals; ClusterFuzzLite runs as a continuous gate.     |
 | Type confusion in rule predicates                    | `mypy --strict` on every commit; rules receive plain types only (AGENTS.md). |
 | Logic bug in a rule (false negative or positive)     | Per-rule positive + negative + hardened-but-unusual fixtures; corpus snapshot regression gate; mutation testing on rule predicates via `mutmut`. |

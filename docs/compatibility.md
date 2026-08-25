@@ -88,8 +88,13 @@ Two things are never reused or quietly repurposed:
   MINOR, but only through the full deprecation lifecycle and only on
   evidence that refutes the rule's premise
   ([ADR-032](adr/032-rule-retirement-is-minor-with-lifecycle.md)) — never
-  on noise or preference. A config referencing a retired ID keeps working,
-  `--strict-config` included.
+  on noise or preference. A config referencing a retired ID still loads:
+  the override simply has no rule to apply. It is reported the same way a
+  typo'd ID is — `warning: config: unknown rule id 'CL-XXXX'` — which
+  `--strict-config` promotes to an error, so a strict CI pipeline does
+  fail on one. Distinguishing "retired" from "mistyped" needs the retired
+  set to be known to the tool rather than only to its tests; until it is,
+  drop the stale entry or stop passing `--strict-config`.
 - **Exit-code meanings** — `0` / `1` / `2` keep their meanings; adding a new
   non-zero code is a MAJOR change.
 

@@ -30,6 +30,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ### Fixed
+
+- **Four published claims corrected to match what the tool does.** Under
+  [ADR-030](docs/adr/030-the-policy-is-part-of-the-contract.md) the policy is
+  part of the frozen contract, so a claim that is wrong at the tag is expensive
+  to walk back later. `docs/ASSURANCE.md` said compose-lint "does not modify
+  its inputs" — `fix --apply` has rewritten files in place since 0.11.0 — and
+  its CWE-22 row said "the tool only *reads* them" and "No path is constructed
+  from untrusted YAML content", when `env_file:` targets and `COMPOSE_FILE`
+  entries are exactly that (ADR-026, ADR-027); the row now describes both path
+  classes and the two containment gates that guard the document-supplied one.
+  `docs/compatibility.md` promised a config naming a retired rule ID "keeps
+  working, `--strict-config` included"; it loads, but the override is reported
+  as an unknown ID and `--strict-config` promotes that to an error, which the
+  page now says. `docs/configuration.md` told users to pass a `--pattern` flag
+  that does not exist — globbing is the GitHub Action's `pattern:` input, not a
+  CLI flag.
+
 - **A failed stdout write is now exit 2, not an undocumented exit 120 or a
   false exit 1.** Every path that could raise mid-run had been hardened to the
   0/1/2 contract; the channel all of them write through had not. A full disk

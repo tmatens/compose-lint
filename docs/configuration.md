@@ -14,7 +14,7 @@ compose-lint reads `.compose-lint.yml` from the current working directory by def
 
 ## Which files get linted
 
-Given explicit paths or a `--pattern`, compose-lint lints exactly those. With no arguments it looks in the **current directory only**, for exactly four names:
+Given explicit paths, compose-lint lints exactly those. With no arguments it looks in the **current directory only**, for exactly four names:
 
 ```
 compose.yml   compose.yaml   docker-compose.yml   docker-compose.yaml
@@ -33,7 +33,7 @@ Finding none is an error (exit 2), not a pass — a gate reporting success over 
 
 The asymmetry is intentional. pre-commit hands the hook a filename-filtered list of files you actually changed, so matching broadly is useful and safe. A bare `compose-lint` has no such list and must not guess which of a repository's YAML files are Compose files.
 
-**What this means for you:** if your Compose files are not among the four default names, pass them explicitly (`compose-lint compose.prod.yml`) or use `--pattern`, and configure the GitHub Action's `files:` or `pattern:` input the same way. Otherwise a repository that passes pre-commit can report "no Compose files found" in CI.
+**What this means for you:** if your Compose files are not among the four default names, pass them explicitly (`compose-lint compose.prod.yml`) — the CLI has no glob flag, so expand one in your shell (`compose-lint compose.*.yml`) or let your runner do it. The GitHub Action does take a glob, via its `pattern:` input (`files:` for explicit paths). Otherwise a repository that passes pre-commit can report "no Compose files found" in CI.
 
 `tests/test_discovery_parity.py` holds all three surfaces to this table, so the hook can never become *narrower* than the CLI and the Action's list cannot drift from it.
 
