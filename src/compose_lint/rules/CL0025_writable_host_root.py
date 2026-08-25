@@ -84,8 +84,8 @@ REFERENCES = [OWASP_REF, CIS_REF]
 # descent they would also sweep /usr/lib/python3, /usr/lib/node_modules and
 # every VPN workload's standard /lib/modules bind -- the /var/lib containment
 # failure again -- and the corpus holds no bind of /usr/lib other than modules
-# to shape a narrower match on. Recorded here as deferred, pending an ADR, so
-# it is a disposition rather than an omission.
+# to shape a narrower match on. The disposition is ADR-033 (proposed): modules
+# by descent, the library roots exactly. Recorded so it is not an omission.
 #
 ROOT_EQUIVALENT_PATHS: tuple[str, ...] = (
     "/etc",
