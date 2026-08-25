@@ -28,15 +28,17 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from typing import TYPE_CHECKING
+from pathlib import Path
+
+import pytest
 
 from compose_lint import __version__
 from compose_lint.formatters.json import SCHEMA_VERSION, build_json_log
 from compose_lint.formatters.json import format_findings as format_json
 from compose_lint.models import Finding, Severity
+from tests._cli_env import cli_env
 
-if TYPE_CHECKING:
-    from pathlib import Path
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # The frozen surface. Editing either of these constants is the deliberate act
 # the contract exists to require.
@@ -384,3 +386,46 @@ def test_sarif_result_key_set_is_exact(tmp_path: Path) -> None:
     assert any("fixes" in r for r in results), (
         "no result carried `fixes`, so the conditional branch is unpinned"
     )
+
+
+# --- Every exit-2 shape emits the envelope, not just some of them ----------
+
+
+@pytest.mark.parametrize("fmt", ["json", "sarif"])
+@pytest.mark.parametrize("case", ["no-files", "config-missing"])
+def test_a_pre_scan_failure_still_emits_a_machine_document(
+    tmp_path: Path, fmt: str, case: str
+) -> None:
+    """These two exited before any formatter ran, so stdout was empty.
+
+    Every *other* exit-2 shape — a missing file, a parse error, a directory
+    argument — produced a full envelope, so a `jq` pipeline broke or not
+    depending on which kind of exit 2 it hit. Both of these are the commonest
+    CI misconfigurations: the wrong working directory, and a typo'd `--config`.
+    """
+    args = ["check", "--format", fmt]
+    if case == "config-missing":
+        (tmp_path / "docker-compose.yml").write_text(
+            "services:\n  w:\n    image: n:1\n", encoding="utf-8"
+        )
+        args += ["docker-compose.yml", "--config", str(tmp_path / "nope.yml")]
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "compose_lint", *args],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=cli_env(PYTHONPATH=str(REPO_ROOT / "src"), NO_COLOR="1"),
+        timeout=180,
+    )
+
+    assert proc.returncode == 2, proc.stderr
+    assert proc.stdout, f"{case}/{fmt} produced no machine output"
+    doc = json.loads(proc.stdout)
+    if fmt == "json":
+        assert doc["version"] == SCHEMA_VERSION
+        assert doc["errors"], "the reason must reach errors[]"
+    else:
+        invocation = doc["runs"][0]["invocations"][0]
+        assert invocation["executionSuccessful"] is False

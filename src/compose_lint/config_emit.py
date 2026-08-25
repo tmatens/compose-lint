@@ -41,6 +41,32 @@ _SEVERITY_RANK = {
 _PLAIN_SCALAR = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 
 
+def _round_trips_as_itself(value: str) -> bool:
+    """Whether ``value`` unquoted reloads as the same *string*.
+
+    The pattern above says the characters are safe; it does not say the
+    *token* is. YAML 1.1 resolves a set of bare words and numerals to
+    non-strings, and every one of them matches an identifier-ish pattern:
+    ``no``/``yes``/``on``/``off``/``true``/``false`` become booleans,
+    ``123`` an int, ``1.5`` a float, ``null`` None. Compose service names
+    are unrestricted, so all of these are legal names.
+
+    Emitted unquoted, such a name reloads as a bool or an int, and
+    ``config.py`` requires ``exclude_services`` keys to be strings — so
+    ``init`` wrote a config that ``check`` then refused, exit 2, breaking
+    that directory until someone edited the file by hand. That is the exact
+    failure this module's docstring says it exists to prevent, arriving
+    through the token rather than through the characters.
+
+    Asking PyYAML to reload it is the check that cannot drift: the resolver
+    that decides the type is the same one that will read the file back.
+    """
+    try:
+        return bool(yaml.safe_load(value) == value)
+    except yaml.YAMLError:  # pragma: no cover - the pattern excludes these
+        return False
+
+
 def _scalar(value: str) -> str:
     """Render a string as a YAML scalar, quoting only when necessary.
 
@@ -54,7 +80,7 @@ def _scalar(value: str) -> str:
     Escaping is the kind of thing that is nearly right until it meets the next
     character class; the emitter that owns the format should decide.
     """
-    if _PLAIN_SCALAR.match(value):
+    if _PLAIN_SCALAR.match(value) and _round_trips_as_itself(value):
         return value
     # `default_style='"'` forces the double-quoted form, which is what this
     # emitter wants and which yields a single line with no document markers.

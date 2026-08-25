@@ -619,6 +619,26 @@ def _report_coverage_gaps(
     return [(filepath, gap) for gap in gaps] if fatal else []
 
 
+def _exit_2_with_envelope(args: argparse.Namespace, message: str) -> NoReturn:
+    """Report a pre-scan failure on the machine channel too, then exit 2.
+
+    These two branches exit before any formatter runs, so `--format json`
+    produced **zero bytes** on stdout for them while every other exit-2 shape
+    — a missing file, a parse error, a directory argument — produced a full
+    envelope. A `jq` pipeline therefore broke or not depending on which kind
+    of exit 2 it hit, and both of these are the commonest CI
+    misconfigurations: the wrong working directory, and a typo'd `--config`.
+    Run-level metadata a consumer can read is what the envelope exists for
+    (ADR-015).
+    """
+    emit(f"Error: {message}")
+    if args.output_format == "json":
+        _stdout_print(json.dumps(build_json_log([], [("", message)]), indent=2))
+    elif args.output_format == "sarif":
+        _stdout_print(json.dumps(build_sarif_log([], [("", message)]), indent=2))
+    sys.exit(2)
+
+
 def _run_check(args: argparse.Namespace) -> NoReturn:
     """Run the `check` operation: lint files and exit with the verdict code."""
     if args.explain is not None:
@@ -648,17 +668,16 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             args.config, strict=args.strict_config
         )
     except ConfigError as e:
-        emit(f"Error: {e}")
-        sys.exit(2)
+        _exit_2_with_envelope(args, str(e))
 
     selection = _plan(args)
     if not selection.groups:
-        emit(
-            "Error: no Compose files found. Searched for: "
+        _exit_2_with_envelope(
+            args,
+            "no Compose files found. Searched for: "
             "compose.yml, compose.yaml, "
-            "docker-compose.yml, docker-compose.yaml"
+            "docker-compose.yml, docker-compose.yaml",
         )
-        sys.exit(2)
     args.files = [group.primary for group in selection.groups]
     overlay_of = {
         group.primary: list(group.overlays)
@@ -1068,17 +1087,16 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             args.config, strict=args.strict_config
         )
     except ConfigError as e:
-        emit(f"Error: {e}")
-        sys.exit(2)
+        _exit_2_with_envelope(args, str(e))
 
     selection = _plan(args)
     if not selection.groups:
-        emit(
-            "Error: no Compose files found. Searched for: "
+        _exit_2_with_envelope(
+            args,
+            "no Compose files found. Searched for: "
             "compose.yml, compose.yaml, "
-            "docker-compose.yml, docker-compose.yaml"
+            "docker-compose.yml, docker-compose.yaml",
         )
-        sys.exit(2)
     args.files = [group.primary for group in selection.groups]
     fix_overlay_of = {
         group.primary: list(group.overlays)

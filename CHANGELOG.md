@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `scripts/` or the workflows. PyPI metadata is immutable per version, so a
   missed flip would have published 1.0.0 permanently labelled Beta with 1.0.1
   as the only remedy.
+- **`x-` prefixed top-level keys are accepted in `.compose-lint.yml`.** Compose's
+  extension-field convention, already honoured in the documents compose-lint
+  lints. It is the other half of merge-key support — a `<<:` needs an anchor to
+  merge *from*, and the idiomatic place to hold one is a top-level `x-` block,
+  which previously warned and, under `--strict-config`, failed the run. Because
+  `x-` is a deliberate marker it costs no typo detection: a mistyped `rulez:`
+  still warns.
 
 ### Changed
 
@@ -74,6 +81,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only this case reported success, so the documented Docker recipe
   (`docker run -v "$(pwd):/src" … fix --apply`, where the image runs as UID
   65532) wrote nothing and told a gate it had succeeded.
+- **`compose-lint init` no longer writes a config `check` then refuses.** A
+  service named `no`, `yes`, `on`, `123`, `1.5` or `null` was emitted unquoted:
+  the plain-scalar pattern said the *characters* were safe, but YAML 1.1
+  resolves those *tokens* to booleans, ints and None, and `config.py` requires
+  `exclude_services` keys to be strings. `init` reported success and the next
+  `check` in that directory exited 2 until someone hand-edited the file — the
+  exact failure the emitter's own docstring says it exists to prevent, arriving
+  through the token rather than the characters. A candidate is now emitted
+  unquoted only if PyYAML reloads it as the same string.
+
+- **A `<<:` merge key in `.compose-lint.yml` no longer aborts the run.** The
+  config loader called `construct_object` on every key node and PyYAML has no
+  constructor for the merge tag, so a config using YAML's own merge syntax died
+  with `could not determine a constructor for the tag 'tag:yaml.org,2002:merge'`
+  and named no fix. `parser.py` already skipped the tag for Compose documents,
+  so `<<:` was legal in the file being linted and fatal in the config beside it.
+
+- **`--format json` and `--format sarif` now emit a document for every exit-2
+  path.** "No Compose files found" and a missing `--config` exited before any
+  formatter ran, producing **zero bytes** on stdout — while a missing file, a
+  parse error and a directory argument all produced a full envelope. A `jq`
+  pipeline therefore broke or not depending on which kind of exit 2 it hit, and
+  both silent cases are the commonest CI misconfigurations: the wrong working
+  directory and a typo'd config path.
 
 
 - **Four published claims corrected to match what the tool does.** Under

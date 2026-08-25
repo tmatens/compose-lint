@@ -346,3 +346,64 @@ def test_every_documented_per_rule_key_is_accepted(key: str, tmp_path: Path) -> 
     config = tmp_path / ".compose-lint.yml"
     config.write_text(f"rules:\n  CL-0003:\n    {key}: {values[key]}\n")
     load_config(config)  # must not raise, and must not be an unknown key
+
+
+# --- The config file is YAML, and `<<:` is YAML ----------------------------
+
+
+def test_a_merge_key_is_not_a_data_key(tmp_path: Path) -> None:
+    """`parser.py` already skips the merge tag for Compose documents.
+
+    The config loader called `construct_object` on every key node, and PyYAML
+    has no constructor for the merge tag — so a `<<:` aborted the whole run
+    with `could not determine a constructor for the tag
+    'tag:yaml.org,2002:merge'`, exit 2, naming no fix. A `<<:` was therefore
+    legal in the file being linted and fatal in the config beside it.
+    """
+    config = tmp_path / ".compose-lint.yml"
+    config.write_text(
+        "x-off: &off\n"
+        "  enabled: false\n"
+        "  reason: shared justification\n"
+        "rules:\n"
+        "  CL-0002:\n"
+        "    <<: *off\n",
+        encoding="utf-8",
+    )
+    disabled, _severities, _excluded = load_config(config)
+    assert disabled["CL-0002"] == "shared justification"
+
+
+def test_duplicate_keys_are_still_rejected(tmp_path: Path) -> None:
+    """Guard the guard: skipping the merge tag must not skip the dup check."""
+    config = tmp_path / ".compose-lint.yml"
+    config.write_text(
+        "rules:\n  CL-0002:\n    enabled: false\n  CL-0002:\n    enabled: true\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="duplicate key"):
+        load_config(config)
+
+
+def test_an_x_prefixed_top_level_key_is_tolerated(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The other half of `<<:` support: an anchor needs somewhere to live.
+
+    Compose's extension-field convention, already honoured in the documents
+    this tool lints. Warning on it — and erroring under `--strict-config` —
+    would make the anchor idiom unusable in exactly the pipelines that opted
+    into rigor.
+    """
+    config = tmp_path / ".compose-lint.yml"
+    config.write_text("x-shared: {a: b}\nrules: {}\n", encoding="utf-8")
+    load_config(config, strict=True)  # must not raise
+    assert "unknown top-level key" not in capsys.readouterr().err
+
+
+def test_a_bare_unknown_top_level_key_still_warns(tmp_path: Path) -> None:
+    """`x-` is a deliberate marker, so tolerating it costs no typo detection."""
+    config = tmp_path / ".compose-lint.yml"
+    config.write_text("rulez: {}\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="unknown top-level key"):
+        load_config(config, strict=True)

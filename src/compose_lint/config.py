@@ -85,6 +85,15 @@ def _reject_duplicate_config_keys(
 ) -> dict[Any, Any]:
     seen: set[Any] = set()
     for key_node, _value_node in node.value:
+        if key_node.tag == "tag:yaml.org,2002:merge":
+            # The `<<` merge directive, not a data key. `construct_object` has
+            # no constructor for the merge tag, so calling it aborted the whole
+            # run with PyYAML internals — `could not determine a constructor
+            # for the tag 'tag:yaml.org,2002:merge'`, exit 2, naming no fix.
+            # `parser.py` already skips it the same way for Compose documents,
+            # so a `<<:` was legal in the file being linted and fatal in the
+            # config beside it.
+            continue
         key = loader.construct_object(key_node, deep=True)
         try:
             duplicate = key in seen
@@ -129,7 +138,21 @@ def load_config(
         return {}, {}, {}
 
     for key in data:
-        if str(key) not in KNOWN_TOP_LEVEL_KEYS:
+        name = str(key)
+        if name.startswith("x-"):
+            # Compose's extension-field convention, which this project already
+            # honours in the documents it lints (`parser.py`). Tolerated here
+            # because it is the other half of `<<:` support: a merge key needs
+            # an anchor to merge *from*, and the idiomatic place to hold one is
+            # a top-level `x-` block. Warning on that — and erroring under
+            # `--strict-config`, which the docs recommend for CI — would make
+            # the anchor idiom unusable in exactly the pipelines that opted
+            # into rigor.
+            #
+            # It costs no typo detection: `x-` is a deliberate marker, so a
+            # mistyped `rulez:` is still caught. A bare unknown key still warns.
+            continue
+        if name not in KNOWN_TOP_LEVEL_KEYS:
             _warn(
                 f"config: unknown top-level key '{key}' (recognized: "
                 f"{', '.join(sorted(KNOWN_TOP_LEVEL_KEYS))}); it has no effect",
