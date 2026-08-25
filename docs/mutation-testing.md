@@ -29,6 +29,34 @@ The first run takes ~15s on a recent laptop. Re-runs are incremental.
 `mutants/` is a working directory mutmut creates beside the repo root —
 it is gitignored.
 
+### Hand-mutating a surface mutmut does not cover
+
+`paths_to_mutate` is `rules/` and `_image.py`, so the config loader, the
+formatters, the engine and the CLI cannot be reached by the tool. The way
+to ask the same question of those is to edit the source, run `pytest`, and
+revert — which works, with one trap worth knowing.
+
+**Clear bytecode after reverting, or run with `PYTHONDONTWRITEBYTECODE=1`:**
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 pytest -q          # or, after reverting:
+find src tests -name __pycache__ -type d -exec rm -rf {} +
+```
+
+Python invalidates a cached `.pyc` on the source file's `(mtime, size)`.
+A **same-length** edit — `"7.5"` → `"3.0"`, `>` → `<`, swapping two
+identically-sized constants — that is then restored with `git checkout`
+can leave a `.pyc` that still satisfies both checks, so the *mutated*
+module keeps being imported from cache. The failure is silent and reads
+as a real result in either direction: a survivor that was actually
+killed, or a kill you never actually tested.
+
+`mutmut` itself is immune — it copies sources into `mutants/` rather than
+editing in place. This applies only to hand-mutation, which is exactly
+what the surfaces above require. It is the same class of trap as the
+worktree `PYTHONPATH` warning in `CLAUDE.md`, with the difference that
+here a *green* run can be the wrong one.
+
 ## Baseline
 
 At the time mutation testing was first introduced (compose-lint 0.6.0):
