@@ -60,6 +60,27 @@ build. Every upgrade must still be *derived* — the two-axis model has to
 produce the new number (an axis correction or a declared override), so a
 severity never moves on judgment alone.
 
+### Alert identity
+
+SARIF results carry `partialFingerprints`, which is what GitHub Code Scanning
+uses to decide whether an alert it already has is *this* alert. The digest is
+derived from a finding's `evidence` — the specific construct that tripped the
+rule ([ADR-024](adr/024-finding-identity-is-not-prose.md)) — deliberately, so
+that rewording a message never re-keys an alert and cosmetic edits to a Compose
+file never split one.
+
+The consequence is worth stating plainly, because nothing in the output makes
+it visible: **changing how a rule derives its evidence changes that rule's alert
+identities.** Every existing alert closes as "fixed" and the same findings
+reopen as new. No field is renamed and no shape moves, so a consumer parsing
+JSON or SARIF sees nothing unusual — the churn appears only in the alert list.
+
+That is a **MINOR**, announced under `Changed` in `CHANGELOG.md`. A pinned user
+is untouched; an unpinned one sees the churn once and, because it was
+announced, knows why. `tests/test_finding_identity.py` pins each rule's
+derivation so the change has to be deliberate rather than a side effect of
+tidying a predicate.
+
 ## Deprecation lifecycle
 
 Nothing stable is removed without warning. When a flag, config key, output

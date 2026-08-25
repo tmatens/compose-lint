@@ -158,18 +158,54 @@ Once `1.0.0` ships, the contract tightens:
 | Tighten an existing rule (new true positive) | MINOR   | MINOR    |
 | Remove or rename a CLI flag                  | MINOR   | MAJOR    |
 | Retire a rule ID (refuted, via lifecycle)    | MINOR   | MINOR (ADR-032) |
+| Retire a rule admitted on *judgment* (ADR-028 records it as such), via lifecycle | MINOR | MINOR (ADR-032 cond. 1) |
 | Retire a rule ID off-lifecycle               | MINOR   | MAJOR    |
 | Change the default `--fail-on` threshold     | MINOR   | MAJOR    |
 | Drop a Python version on schedule (ADR-029)  | MINOR   | MINOR    |
 | Drop a Python version off-schedule           | MINOR   | MAJOR    |
 | Add a field to JSON/SARIF output             | MINOR   | MINOR    |
 | Remove or rename a JSON/SARIF field          | MINOR   | MAJOR    |
+| Change a rule's **evidence** derivation      | MINOR   | MINOR, announced under `Changed` |
 | Remove or rename a config key                | MINOR   | MAJOR    |
 | Deprecate a flag/key (keep it working)       | PATCH   | MINOR    |
+| Amend this policy — *clarification*          | any     | any      |
+| Amend this policy — *tightening* (promise more) | MINOR | MINOR   |
+| Amend this policy — *loosening* (promise less)  | MINOR | MAJOR   |
 
 When in doubt pre-1.0, pick MINOR. When in doubt post-1.0, pick the
 higher bump — MAJOR costs the maintainer some release ceremony, but a
 too-low bump breaks users who trusted the version contract.
+
+Three rows need a word of explanation, because each was a real gap rather
+than an omission for brevity.
+
+**Evidence.** A rule's `evidence` never appears in text output, so it reads
+like an implementation detail. It is not: it is the input to the SARIF
+`partialFingerprints` digest, which is the *identity* of a Code Scanning
+alert ([ADR-024](adr/024-finding-identity-is-not-prose.md)). Change a
+derivation and every existing alert for that rule closes as "fixed" while
+the same findings reopen as new — a consumer-visible event with no output
+field changed and no test necessarily failing (`tests/test_finding_identity.py`
+pins the derivations for exactly this reason). It is MINOR rather than MAJOR
+because no *shape* changes and nothing breaks: a pinned user is untouched,
+and an unpinned one sees alert churn once. It must be announced under
+`Changed` so that churn is expected rather than mysterious.
+
+**Retire-on-judgment.** The row above it covers a rule whose premise
+evidence *refutes*. A rule [ADR-028](adr/028-pre-1.0-rule-id-sweep.md)
+records as admitted on judgment — a closed set, currently `{CL-0014}` —
+can never meet that bar, because its premise holds and what is thin is its
+grounding. Without its own row such a rule would be *harder* to remove than
+a grounded one, which is backwards.
+
+**Amending this policy.** The ladder comes from
+[ADR-030](adr/030-the-policy-is-part-of-the-contract.md) and governs every
+other row in this table, so leaving it out of the table meant the one rule
+that prices changes to the rules was the one you had to go elsewhere to
+find. Note the asymmetry it creates, which is the reason several 1.0
+decisions were taken early: a loosening is only affordable *before* the
+tag, while the tightening that reverses it stays cheap forever.
+
 
 ### Deprecations
 

@@ -10,6 +10,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Three bump classes the judgment-call cheat sheet did not price**
+  ([docs/RELEASING.md](docs/RELEASING.md#judgment-call-cheat-sheet)). The
+  sharpest is a rule's **evidence** derivation: it never appears in text output
+  so it reads as an implementation detail, but it is the input to the SARIF
+  `partialFingerprints` digest — the *identity* of a Code Scanning alert
+  ([ADR-024](docs/adr/024-finding-identity-is-not-prose.md)). Change one and
+  every existing alert for that rule closes as "fixed" while the same findings
+  reopen as new, with no field renamed and no shape moved. No document assigned
+  it a bump class; it is a MINOR, announced under `Changed`, and
+  `docs/compatibility.md` gains an *Alert identity* section saying so in
+  user-facing terms. The other two: retiring a rule admitted on *judgment*
+  (new in this release, and previously harder to remove than a grounded rule),
+  and amending the policy itself — ADR-030's
+  clarification/tightening/loosening ladder governs every other row in the
+  table but was only findable in prose elsewhere.
+
+
 - **A test gates the `Development Status` classifier against the major
   version.** `docs/RELEASING.md` says to flip `4 - Beta` to
   `5 - Production/Stable` in the same commit that sets `version = "1.0.0"`, but
