@@ -268,7 +268,18 @@ def test_a_reader_that_closes_early_is_exit_2_not_a_failed_gate() -> None:
 
     Exit 1 means "findings at or above the threshold". Reporting it because
     the *reader* went away turns every clean file piped into `head` into a red
-    merge gate.
+    merge gate. That is the invariant, and it is what this asserts.
+
+    Deliberately **not** asserting exit 2. Whether the writer ever sees
+    ``EPIPE`` is a race: a clean file's report is small, so if the whole of it
+    reaches the pipe buffer before ``head`` exits, every write succeeds and the
+    run ends 0 — which is correct, not a failure. An earlier version of this
+    test pinned 2 and passed on Linux while failing on macOS for exactly that
+    reason. Both 0 and 2 are honest answers; only 1 is a lie, and only 1 turns
+    a clean file into a red gate.
+
+    `/dev/full` above covers the write-failure-becomes-2 path deterministically,
+    which is the half a timing-dependent pipe cannot pin down.
     """
     with tempfile.TemporaryDirectory() as tmp:
         Path(tmp, "docker-compose.yml").write_text(_CLEAN, encoding="utf-8")
@@ -286,7 +297,11 @@ def test_a_reader_that_closes_early_is_exit_2_not_a_failed_gate() -> None:
             timeout=180,
         )
 
-    assert proc.returncode == 2, proc.stderr
+    assert proc.returncode != 1, (
+        "a clean file reported findings because the reader closed early; "
+        f"stderr: {proc.stderr}"
+    )
+    assert proc.returncode in (0, 2), proc.stderr
     _assert_no_traceback(proc)
 
 
