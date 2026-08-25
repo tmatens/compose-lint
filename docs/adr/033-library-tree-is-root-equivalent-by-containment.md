@@ -1,6 +1,6 @@
 # ADR-033: The Library Tree Is Root-Equivalent, Graded by Containment
 
-**Status:** Proposed
+**Status:** Accepted
 
 **Context:** [#737](https://github.com/tmatens/compose-lint/issues/737) added
 the host's executable tree to CL-0025 and deliberately left the **library
@@ -69,7 +69,7 @@ fix is a finding users argue with, not a false positive.
    host loads, so the `read-only` qualifier sends the same mount to nothing:
    modules are world-readable by design and a `:ro` bind discloses nothing.
    Exempt from CL-0013 as well, joining the executable tree in
-   `EXEC_TREE_PATHS` (renamed to say what it now is, e.g. `WRITE_ONLY_GRANTS`).
+   `EXEC_TREE_PATHS`, renamed `WRITE_ONLY_GRANT_PATHS` to say what it now is.
 2. **Add to CL-0025, matched exactly:** `/usr/lib`, `/lib`, `/lib64` — the
    `/var/lib` and `/usr` mechanism. `-v /usr/lib` reaches `systemd/system` and
    `ld.so`; `-v /usr/lib/python3` reaches an interpreter's site-packages and

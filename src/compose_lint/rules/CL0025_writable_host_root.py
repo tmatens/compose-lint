@@ -79,13 +79,14 @@ REFERENCES = [OWASP_REF, CIS_REF]
 # at mount time while this rule matches what the *document* wrote, so a prefix
 # on one spelling cannot cover the other.
 #
-# The library tree is deliberately *not* here. /usr/lib and /lib/modules carry a
-# comparable grant (systemd units, ld.so libraries, loadable modules), but by
-# descent they would also sweep /usr/lib/python3, /usr/lib/node_modules and
-# every VPN workload's standard /lib/modules bind -- the /var/lib containment
-# failure again -- and the corpus holds no bind of /usr/lib other than modules
-# to shape a narrower match on. The disposition is ADR-033 (proposed): modules
-# by descent, the library roots exactly. Recorded so it is not an omission.
+# The module tree (ADR-033). Everything below /lib/modules is a file the host
+# kernel loads by name, as root, on demand -- udev, a protocol coming up, the
+# next boot -- so descent is the right match and CAP_SYS_MODULE is not needed:
+# the container writes a file, the host does the loading. Measured on Docker
+# 29.7.2 at defaults: rw bind WROTE, ro bind REFUSED, and module lookup works
+# through :ro, which is why the seven writable corpus binds (all VPN workloads)
+# are true positives with a one-token fix. The rest of the library tree is
+# matched exactly, below.
 #
 ROOT_EQUIVALENT_PATHS: tuple[str, ...] = (
     "/etc",
@@ -100,13 +101,15 @@ ROOT_EQUIVALENT_PATHS: tuple[str, ...] = (
     "/usr/local/sbin",
     "/bin",
     "/sbin",
+    "/lib/modules",
+    "/usr/lib/modules",
 )
 
-# The executable tree is root-equivalent *only* writable. Read-only it discloses
-# nothing -- every file in it is world-readable by design -- so unlike the
-# other members a `:ro` mount of one of these is not CL-0013's disclosure
+# Members whose grant is *write-only*. Read-only they disclose nothing -- every
+# file in the executable and library trees is world-readable by design -- so
+# unlike /etc or /root a `:ro` mount of one of these is not CL-0013's disclosure
 # finding either. Same shape as the timezone exemption, one tier up.
-EXEC_TREE_PATHS: frozenset[str] = frozenset(
+WRITE_ONLY_GRANT_PATHS: frozenset[str] = frozenset(
     {
         "/usr",
         "/usr/bin",
@@ -115,6 +118,11 @@ EXEC_TREE_PATHS: frozenset[str] = frozenset(
         "/usr/local/sbin",
         "/bin",
         "/sbin",
+        "/lib/modules",
+        "/usr/lib/modules",
+        "/usr/lib",
+        "/lib",
+        "/lib64",
     }
 )
 
@@ -136,7 +144,19 @@ EXEC_TREE_PATHS: frozenset[str] = frozenset(
 # directories above, while by descent it would also claim /usr/src, /usr/share
 # and the Python site-packages -- measured over the corpus, 6 of the 27 writable
 # /usr-family binds (22%) were that kind of application data.
-ROOT_EQUIVALENT_EXACT_PATHS: tuple[str, ...] = ("/var/lib", "/usr")
+#
+# The library roots (ADR-033) likewise: /usr/lib holds systemd/system and the
+# ld.so libraries every root process links against, but by descent it would
+# also claim /usr/lib/python3, node_modules and jvm. /lib and /lib64 are the
+# same directory on a merged-usr host and a distinct one elsewhere; both
+# spellings, as for the executable tree. Zero corpus incidence in any shape.
+ROOT_EQUIVALENT_EXACT_PATHS: tuple[str, ...] = (
+    "/var/lib",
+    "/usr",
+    "/usr/lib",
+    "/lib",
+    "/lib64",
+)
 
 
 def match_root_equivalent(host_path: str) -> str | None:
@@ -168,7 +188,21 @@ _GRANTS: dict[str, str] = {
     ),
     "/usr": "the executable tree inside it (/usr/bin, /usr/sbin, /usr/local/bin) "
     "— a planted binary runs as root on the next cron job, login or unit start",
+    **dict.fromkeys(
+        ("/lib/modules", "/usr/lib/modules"),
+        "the kernel modules the host loads by name, as root, on demand — a "
+        "replaced module is kernel-mode code on the host, no capability needed",
+    ),
+    **dict.fromkeys(
+        ("/usr/lib", "/lib", "/lib64"),
+        "systemd's vendor unit directory and the libraries every root process "
+        "links against — a unit on the next boot, a library on the next exec",
+    ),
 }
+
+# Members where the workload only ever *reads*, so `:ro` is the whole fix and
+# leads the guidance; "remove the mount" would break the VPN it serves.
+_READ_IS_ENOUGH: frozenset[str] = frozenset({"/lib/modules", "/usr/lib/modules"})
 
 
 @register_rule
@@ -183,8 +217,9 @@ class WritableHostRootMountRule(BaseRule):
             description=(
                 "A writable bind mount of /etc, /root, /boot, /proc, the "
                 "container store (/var/lib/docker, /var/lib/containerd), "
-                "/var/lib itself, or the executable tree (/usr, /usr/bin, "
-                "/usr/local/bin, /bin, /sbin) gives a container host root "
+                "/var/lib itself, the executable tree (/usr, /usr/bin, "
+                "/usr/local/bin, /bin, /sbin) or the library and module tree "
+                "(/lib/modules, /usr/lib, /lib) gives a container host root "
                 "through ordinary file writes — no exploit and no technique "
                 "required. (A whole-root mount is CL-0001's, which owns it in "
                 "either mode.)"
@@ -222,9 +257,20 @@ class WritableHostRootMountRule(BaseRule):
                 ),
                 line=mount.line,
                 fix=(
-                    f"Remove the bind mount for {mount.host_path}, or make it "
-                    "read-only (:ro) if the container only needs to read — that "
-                    "is still a disclosure finding but not a host takeover.\n"
+                    (
+                        f"Make the bind mount for {mount.host_path} read-only "
+                        "(:ro) — the container only reads module files, and "
+                        "read-only it is not a finding at all.\n"
+                    )
+                    if matched in _READ_IS_ENOUGH
+                    else (
+                        f"Remove the bind mount for {mount.host_path}, or make "
+                        "it read-only (:ro) if the container only needs to read "
+                        "— that is still a disclosure finding but not a host "
+                        "takeover.\n"
+                    )
+                )
+                + (
                     "Where specific files are needed, copy them into the image "
                     "at build time or use a named volume holding only those.\n"
                     "Full guide: compose-lint --explain CL-0025"

@@ -1071,6 +1071,42 @@ def _cl0025_exec_tree() -> tuple[bool, str]:
     )
 
 
+def _cl0025_module_tree() -> tuple[bool, str]:
+    """An rw ``/lib/modules`` bind lets a container plant a file where the
+    host kernel loads modules by name; the ro bind refuses (ADR-033).
+
+    Same plant-observe-remove shape as ``_cl0025_exec_tree``, into the
+    *running* kernel's module directory (``uname -r`` inside the container is
+    the host's). The file is not a module and the kernel is never asked to
+    load it; the writer removes it afterwards.
+    """
+    probe = "cl0025-module-tree-probe"
+    plant = (
+        f"d=/hostmod/$(uname -r); rm -f $d/{probe}; "
+        f"echo probe > $d/{probe} 2>/dev/null && echo WROTE || echo REFUSED"
+    )
+    _, rw = _run(["-v", "/lib/modules:/hostmod"], ["sh", "-c", plant])
+    _, seen = _run(
+        ["-v", "/lib/modules:/y:ro"],
+        ["sh", "-c", f"test -f /y/$(uname -r)/{probe} && echo PRESENT || echo ABSENT"],
+    )
+    _run(
+        ["-v", "/lib/modules:/hostmod"],
+        ["sh", "-c", f"rm -f /hostmod/$(uname -r)/{probe}"],
+    )
+    _, ro = _run(
+        ["-v", "/lib/modules:/hostmod:ro"],
+        [
+            "sh",
+            "-c",
+            f"echo x > /hostmod/$(uname -r)/{probe} 2>/dev/null "
+            "&& echo WROTE || echo REFUSED",
+        ],
+    )
+    ok = rw == "WROTE" and seen == "PRESENT" and ro == "REFUSED"
+    return ok, f"rw /lib/modules bind={rw!r}, seen ro={seen!r}, ro bind={ro!r}"
+
+
 def _cl0026() -> tuple[bool, str]:
     """Memory and CPU are both unbounded by default; a limit bounds them.
 
@@ -1305,6 +1341,11 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool | None, str]]]] = [
         "CL-0025",
         "premise: rw /usr bind plants a root-owned executable on root's PATH",
         _cl0025_exec_tree,
+    ),
+    (
+        "CL-0025",
+        "premise: rw /lib/modules bind plants a file where the host loads modules",
+        _cl0025_module_tree,
     ),
     (
         "CL-0001",

@@ -151,6 +151,10 @@ class TestMountOwnership:
             "/usr/local/sbin",
             "/bin",
             "/sbin",
+            # The module tree (ADR-033): everything below it is a file the host
+            # kernel loads by name, as root, so descent is the right match.
+            "/lib/modules",
+            "/usr/lib/modules",
         }
 
     def test_var_lib_is_matched_exactly_not_by_descent(self) -> None:
@@ -159,9 +163,17 @@ class TestMountOwnership:
         # different sets: /var/lib/mysql contains neither /var/lib/docker nor
         # /var/lib/containerd. Matching it by descent priced every stateful
         # service's own data directory as host root (24 of 25 corpus hits).
-        assert set(ROOT_EQUIVALENT_EXACT_PATHS) == {"/var/lib", "/usr"}
-        assert "/var/lib" not in ROOT_EQUIVALENT_PATHS
-        assert "/usr" not in ROOT_EQUIVALENT_PATHS
+        assert set(ROOT_EQUIVALENT_EXACT_PATHS) == {
+            "/var/lib",
+            "/usr",
+            # The library roots (ADR-033): systemd/system and ld.so live below,
+            # but so do python3, node_modules and jvm.
+            "/usr/lib",
+            "/lib",
+            "/lib64",
+        }
+        for exact in ROOT_EQUIVALENT_EXACT_PATHS:
+            assert exact not in ROOT_EQUIVALENT_PATHS
 
         # The behaviour the split exists to produce.
         assert match_root_equivalent("/var/lib") == "/var/lib"
@@ -191,10 +203,27 @@ class TestMountOwnership:
             "/usr/share/zoneinfo",
             "/usr/share/kubearmor",
             "/usr/local/lib/python3.9/dist-packages",
-            # The library tree is deferred, not claimed -- see the rule's
-            # ROOT_EQUIVALENT_PATHS comment and the CL-0025 page.
-            "/usr/lib",
-            "/lib/modules",
+        ):
+            assert match_root_equivalent(benign) is None, benign
+
+    def test_library_tree_per_adr_033(self) -> None:
+        # Modules by descent; the library roots exactly. A descent member that
+        # sits *under* an exact one (/usr/lib/modules under /usr/lib) resolves
+        # to itself, and the exact parent stays unreachable by descent.
+        assert match_root_equivalent("/lib/modules") == "/lib/modules"
+        assert match_root_equivalent("/lib/modules/6.1.0/kernel") == "/lib/modules"
+        assert match_root_equivalent("/usr/lib/modules") == "/usr/lib/modules"
+        assert match_root_equivalent("/usr/lib/modules/6.1.0") == "/usr/lib/modules"
+        for root in ("/usr/lib", "/lib", "/lib64"):
+            assert match_root_equivalent(root) == root
+        for benign in (
+            "/usr/lib/python3",
+            "/usr/lib/node_modules",
+            "/usr/lib/jvm",
+            "/lib/x86_64-linux-gnu",
+            # Real grants, zero corpus incidence; not added by descent yet.
+            "/usr/lib/systemd",
+            "/lib/systemd",
         ):
             assert match_root_equivalent(benign) is None, benign
 

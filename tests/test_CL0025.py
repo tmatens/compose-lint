@@ -250,12 +250,54 @@ class TestExecTree:
         for path in ("/usr", "/usr/bin", "/bin"):
             assert self._findings(f"{path}:/x:ro") == [], path
 
-    def test_library_tree_is_deferred_not_claimed(self) -> None:
-        # /usr/lib and /lib/modules carry a comparable grant but would sweep
-        # site-packages and every VPN workload's modules bind; deferred to an
-        # ADR rather than added by descent.
-        assert self._findings("/usr/lib:/x") == []
-        assert self._findings("/lib/modules:/lib/modules") == []
+    def test_library_subtrees_are_not_swept(self) -> None:
+        # The library roots are exact (ADR-033), so an interpreter's own tree
+        # below them is not host root.
+        assert self._findings("/usr/lib/python3:/x") == []
+        assert self._findings("/usr/lib/node_modules:/x") == []
+
+
+class TestLibraryTree:
+    """ADR-033: modules by descent, library roots exactly, ro exempt.
+
+    Measured on Docker 29.7.2 at defaults: /lib/modules, /usr/lib, /lib and
+    /lib64 each accepted a write through an rw bind and refused it through an
+    ro bind; module lookup works through ``:ro``, which is why the fix for the
+    module tree leads with ``:ro`` rather than "remove the mount".
+    """
+
+    def setup_method(self) -> None:
+        self.rule = WritableHostRootMountRule()
+
+    def _findings(self, mount: str) -> list:
+        data, lines = loads(
+            f"services:\n  svc:\n    image: x\n    volumes:\n      - {mount}\n"
+        )
+        return list(self.rule.check("svc", data["services"]["svc"], data, lines))
+
+    def test_writable_module_tree_is_critical(self) -> None:
+        # The linuxserver/wireguard idiom, written without :ro.
+        for path in ("/lib/modules", "/usr/lib/modules", "/lib/modules/6.1.0"):
+            findings = self._findings(f"{path}:/lib/modules")
+            assert len(findings) == 1, path
+            assert findings[0].severity is Severity.CRITICAL
+            assert "kernel" in findings[0].message
+
+    def test_module_tree_fix_leads_with_read_only(self) -> None:
+        fix = self._findings("/lib/modules:/lib/modules")[0].fix
+        assert fix is not None
+        assert fix.startswith("Make the bind mount")
+        assert ":ro" in fix
+
+    def test_library_roots_are_critical_exactly(self) -> None:
+        for root in ("/usr/lib", "/lib", "/lib64"):
+            findings = self._findings(f"{root}:/x")
+            assert len(findings) == 1, root
+            assert "systemd" in findings[0].message
+
+    def test_read_only_is_not_this_rule(self) -> None:
+        for path in ("/lib/modules", "/usr/lib", "/lib"):
+            assert self._findings(f"{path}:/x:ro") == [], path
 
 
 class TestFileBackedSecretsAndConfigs:

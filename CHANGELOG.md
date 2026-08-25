@@ -10,6 +10,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **CL-0025 now grades a writable bind of the host's module and library tree**
+  ([ADR-033](docs/adr/033-library-tree-is-root-equivalent-by-containment.md),
+  the disposition #737 deferred). `/lib/modules` and `/usr/lib/modules` are
+  matched by descent — everything below is a file the host kernel loads by
+  name, as root, on demand, so a replaced module is kernel-mode code on the
+  host with no capability needed. `/usr/lib`, `/lib` and `/lib64` are matched
+  exactly, the `/var/lib` mechanism: `systemd/system` and `ld.so` sit below
+  them, but so do `python3`, `node_modules` and `jvm`. Measured on Docker
+  29.7.2 at defaults, unprivileged: every path accepted a write through an rw
+  bind and refused it through an ro bind, and module lookup works through
+  `:ro`. New premise check `_cl0025_module_tree` plants a file in the running
+  kernel's module directory, observes it from a second container and removes
+  it; the kernel is never asked to load it. Same cell as `/etc`: Direct × Host,
+  CRITICAL, no override.
+
+  On the corpus this is **7 new CRITICAL findings, all WireGuard / strongSwan
+  services** binding `/lib/modules` without `:ro`. They are true positives
+  with a one-token fix — the container only reads module files — so the
+  finding's fix text leads with `:ro` rather than "remove the mount", and the
+  read-only form `/lib/modules:/lib/modules:ro` is clean under every rule (the
+  tree is world-readable by design, so it is exempt from CL-0013 too, as the
+  executable tree is). `/usr/lib/systemd` and the multiarch library
+  directories are recorded as real grants with no corpus incidence, not
+  matched by descent yet.
+
 - **CL-0025 now grades a writable bind of the host's executable tree**
   ([#737](https://github.com/tmatens/compose-lint/issues/737)). `/usr/bin`,
   `/usr/sbin`, `/usr/local/bin`, `/usr/local/sbin`, `/bin` and `/sbin` are

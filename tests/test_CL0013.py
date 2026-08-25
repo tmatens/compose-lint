@@ -360,6 +360,12 @@ class TestExecTreeReadOnly:
             assert self._findings(f"{path}:/x:ro") == [], path
         assert self._findings("/usr/bin/docker:/usr/bin/docker:ro") == []
 
+    def test_read_only_library_tree_is_exempt(self) -> None:
+        # ADR-033: the VPN idiom's correct form, `/lib/modules:/lib/modules:ro`,
+        # is clean -- modules are world-readable, so nothing is disclosed.
+        for path in ("/lib/modules", "/usr/lib/modules", "/usr/lib", "/lib", "/lib64"):
+            assert self._findings(f"{path}:/x:ro") == [], path
+
     def test_writable_exec_tree_is_cl0025s_not_this_rule(self) -> None:
         assert self._findings("/usr/bin:/x") == []
 

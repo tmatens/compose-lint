@@ -14,7 +14,7 @@ from compose_lint.rules._mounts import (
 )
 from compose_lint.rules.CL0001_docker_socket import claims_host_path
 from compose_lint.rules.CL0025_writable_host_root import (
-    EXEC_TREE_PATHS,
+    WRITE_ONLY_GRANT_PATHS,
     match_root_equivalent,
 )
 
@@ -241,11 +241,11 @@ class SensitiveMountRule(BaseRule):
                         "timezone configuration"
                     )
                 elif mount.read_only:
-                    if matched in EXEC_TREE_PATHS:
-                        # The executable tree is world-readable by design, so a
-                        # read-only bind of it discloses nothing; its grant is
-                        # write-only and CL-0025's. Same shape as the timezone
-                        # exemption above.
+                    if matched in WRITE_ONLY_GRANT_PATHS:
+                        # The executable and library trees are world-readable
+                        # by design, so a read-only bind discloses nothing; the
+                        # grant is write-only and CL-0025's. Same shape as the
+                        # timezone exemption above.
                         continue
                     # A read-only mount of a root-equivalent path is disclosure
                     # rather than takeover, so it lands here instead of CL-0025.
