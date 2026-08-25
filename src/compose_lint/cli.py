@@ -54,6 +54,7 @@ from compose_lint.parser import (
     merge_patched,
     unresolved_mount_sources,
 )
+from compose_lint.rules import get_registered_rules
 
 
 def _severity_type(value: str) -> Severity:
@@ -1018,6 +1019,41 @@ def _merged_reparser(
     return reparse
 
 
+def _validated_only(raw: list[str] | None, *, strict: bool) -> set[str] | None:
+    """Normalize ``--only`` ids and say so when one names no rule.
+
+    ``--only`` took any string. ``--only cl-0014`` — the right id, lower-cased
+    — matched nothing, printed "nothing to fix" and exited 0, which is
+    indistinguishable from a clean repo; so did ``CL-9999`` and ``banana``. A
+    CI remediation step pinned to a typo therefore goes green forever, which
+    is the failure a gate must not have.
+
+    Case is normalized because ``--explain`` already does it, and answering
+    the same input two different ways on one CLI is the inconsistency that
+    gets frozen at 1.0. An id that matches no rule is a diagnostic rather
+    than a hard error, matching how an unknown rule id in the config file is
+    treated — and ``--strict-config`` promotes it the same way.
+    """
+    if not raw:
+        return None
+    known = {cls().metadata.id for cls in get_registered_rules()}
+    resolved: set[str] = set()
+    for value in raw:
+        candidate = value.strip().upper()
+        if candidate in known:
+            resolved.add(candidate)
+            continue
+        message = (
+            f"--only {value!r} names no rule, so it selects nothing "
+            "(check for a typo or a retired rule)"
+        )
+        if strict:
+            emit(f"Error: {message}")
+            sys.exit(2)
+        emit(f"Warning: {message}")
+    return resolved
+
+
 def _run_fix(args: argparse.Namespace) -> NoReturn:
     """Run the `fix` operation (ADR-014).
 
@@ -1050,7 +1086,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
         if group.overlays
     }
 
-    only = set(args.only) if args.only else None
+    only = _validated_only(args.only, strict=args.strict_config)
     had_error = False
     # Whether any file had a fix applied or offered — see the note below.
     touched = False
@@ -1186,10 +1222,19 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
 
         if args.apply:
             if _refuses_write(Path(filepath)):
+                # Exit 2, matching the three sibling write refusals — a symlink
+                # target, a hard link, and an unwritable directory all report
+                # the same way, and `init --force` on this same predicate does
+                # too. Reporting exit 0 here meant the documented Docker recipe
+                # (`docker run -v "$(pwd):/src" ... fix --apply`, where the
+                # image runs as UID 65532) wrote nothing and told a gate it had
+                # succeeded.
                 emit(
-                    f"Warning: {filepath}: file is not writable; skipping "
-                    "(make it writable to allow `fix --apply` to modify it)"
+                    f"Error: {filepath}: file is not writable; no changes "
+                    "written (make it writable to allow `fix --apply` to "
+                    "modify it)"
                 )
+                had_error = True
                 continue
             try:
                 _atomic_write(Path(filepath), patched)

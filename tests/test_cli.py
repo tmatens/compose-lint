@@ -607,15 +607,21 @@ class TestFixSubcommand:
         assert b"\r\n" in raw  # endings preserved
         assert b"\n" not in raw.replace(b"\r\n", b"")  # no lone LF introduced
 
-    def test_apply_skips_read_only_file_with_warning(self, tmp_path: Path) -> None:
+    def test_apply_refuses_read_only_file_with_exit_2(self, tmp_path: Path) -> None:
         # Regression (#515): a chmod 444 file is an explicit "do not modify"
         # signal; os.replace would still swap it in via the writable directory.
+        #
+        # Exit 2, matching the three sibling write refusals — symlink, hard
+        # link, unwritable directory — and `init --force` on the same
+        # predicate. This case reported exit 0, so the documented Docker
+        # recipe (image runs as UID 65532 against a bind-mounted tree) wrote
+        # nothing and told a gate it had succeeded.
         f = tmp_path / "docker-compose.yml"
         f.write_text(_BARE_SERVICE)
         f.chmod(0o444)
         try:
             result = run_cli("fix", "--apply", "--only", "CL-0007", str(f))
-            assert result.returncode == 0
+            assert result.returncode == 2
             assert "not writable" in result.stderr
             assert f.read_text() == _BARE_SERVICE  # unchanged
         finally:
@@ -936,3 +942,49 @@ class TestRuleCrashExitCode:
         err = capsys.readouterr().err
         assert "CL-CRASH" in err
         assert "RuntimeError" in err
+
+
+_FIXABLE_LOGGING = "services:\n  w:\n    image: n:1\n    logging:\n      driver: none\n"
+
+
+class TestFixOnlyValidation:
+    """`--only` took any string, and a wrong one was indistinguishable from clean.
+
+    `--only cl-0014` — the right id, lower-cased — matched nothing, printed
+    "nothing to fix" and exited 0. So did `CL-9999` and `banana`. A CI
+    remediation step pinned to a typo went green forever.
+    """
+
+    def test_a_lowercase_rule_id_is_accepted(self, tmp_path: Path) -> None:
+        """`--explain` already normalizes case; one CLI must not answer twice."""
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(
+            "services:\n  w:\n    image: n:1\n    logging:\n      driver: none\n"
+        )
+        lower = run_cli("fix", "--only", "cl-0014", str(f))
+        upper = run_cli("fix", "--only", "CL-0014", str(f))
+        assert lower.returncode == upper.returncode == 0
+        assert "fix(es) available" in lower.stderr
+        assert "names no rule" not in lower.stderr
+
+    @pytest.mark.parametrize("bad", ["CL-9999", "banana", "CL-00003"])
+    def test_an_id_that_names_no_rule_is_reported(
+        self, tmp_path: Path, bad: str
+    ) -> None:
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(
+            "services:\n  w:\n    image: n:1\n    logging:\n      driver: none\n"
+        )
+        result = run_cli("fix", "--only", bad, str(f))
+        assert "names no rule" in result.stderr
+        assert bad in result.stderr
+
+    def test_strict_config_promotes_it_to_an_error(self, tmp_path: Path) -> None:
+        """Mirrors how an unknown rule id in the config file is treated."""
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(
+            "services:\n  w:\n    image: n:1\n    logging:\n      driver: none\n"
+        )
+        result = run_cli("fix", "--only", "banana", "--strict-config", str(f))
+        assert result.returncode == 2
+        assert "names no rule" in result.stderr

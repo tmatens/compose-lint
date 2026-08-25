@@ -404,3 +404,37 @@ def test_the_shared_docker_smoke_runs_the_documented_hardened_flags() -> None:
             f"across {docker_runs} `docker run` invocations — every smoke step "
             "runs the fully-hardened flag set documented in README.md"
         )
+
+
+# --- The 1.0 classifier bump has no second chance --------------------------
+
+
+def test_the_development_status_classifier_matches_the_major_version() -> None:
+    """PyPI metadata is immutable per version, so a miss is permanent.
+
+    `docs/RELEASING.md` says to flip `4 - Beta` to `5 - Production/Stable` in
+    the same commit that sets `version = "1.0.0"`. That was prose with nothing
+    enforcing it: nothing in `tests/`, `scripts/` or `.github/workflows/`
+    referenced the classifier, so 1.0.0 could publish permanently labelled
+    Beta and the only remedy would be 1.0.1.
+    """
+    text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    version = re.search(r'^version = "([^"]+)"', text, re.M)
+    assert version, "could not read version from pyproject.toml"
+    major = int(version.group(1).split(".")[0])
+
+    classifiers = re.findall(r'"(Development Status :: [^"]+)"', text)
+    assert len(classifiers) == 1, f"expected one status classifier, got {classifiers}"
+    status = classifiers[0]
+
+    if major >= 1:
+        assert status == "Development Status :: 5 - Production/Stable", (
+            f"version is {version.group(1)} but the classifier is {status!r}. "
+            "PyPI metadata is immutable per version — flip this in the same "
+            "commit that sets the version (docs/RELEASING.md)."
+        )
+    else:
+        assert status == "Development Status :: 4 - Beta", (
+            f"version is {version.group(1)}, so the classifier should still be "
+            f"'4 - Beta', not {status!r}."
+        )

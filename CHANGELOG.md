@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+### Added
+
+- **A test gates the `Development Status` classifier against the major
+  version.** `docs/RELEASING.md` says to flip `4 - Beta` to
+  `5 - Production/Stable` in the same commit that sets `version = "1.0.0"`, but
+  nothing enforced it — the classifier was referenced nowhere in `tests/`,
+  `scripts/` or the workflows. PyPI metadata is immutable per version, so a
+  missed flip would have published 1.0.0 permanently labelled Beta with 1.0.1
+  as the only remedy.
+
 ### Changed
 - **JSON `file` and `line` now name the same document, and the envelope is
   schema `"2"`.** `file` had always named the document being *graded* while
@@ -30,6 +40,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ### Fixed
+
+- **`fix --only` now normalizes case and reports an id that names no rule.**
+  `--only cl-0014` — the correct id, lower-cased — matched nothing, printed
+  "nothing to fix" and exited 0, which is indistinguishable from a clean repo;
+  so did `--only CL-9999` and `--only banana`. A CI remediation step pinned to a
+  typo therefore went green forever. `--explain` already normalized case, so one
+  CLI was answering the same input two different ways. An id that matches no
+  rule is now a `Warning:` naming it, promoted to an error by `--strict-config`
+  — the same treatment an unknown rule id in `.compose-lint.yml` already gets.
+
+- **`fix --apply` on a read-only file is now exit 2, not exit 0.** The three
+  sibling write refusals — a symlink target, a hard link, an unwritable
+  directory — all report exit 2, as does `init --force` on the same predicate.
+  Only this case reported success, so the documented Docker recipe
+  (`docker run -v "$(pwd):/src" … fix --apply`, where the image runs as UID
+  65532) wrote nothing and told a gate it had succeeded.
+
 
 - **Four published claims corrected to match what the tool does.** Under
   [ADR-030](docs/adr/030-the-policy-is-part-of-the-contract.md) the policy is
