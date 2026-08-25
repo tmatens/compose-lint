@@ -1305,6 +1305,8 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool | None, str]]]] = [
         "CL-0025",
         "premise: rw /usr bind plants a root-owned executable on root's PATH",
         _cl0025_exec_tree,
+    ),
+    (
         "CL-0001",
         "premise: a secrets: file: socket is a live read-only bind",
         _cl0001_secret_socket,
