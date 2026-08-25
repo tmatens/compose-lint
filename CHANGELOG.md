@@ -57,6 +57,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for this rule is fixed", so a crash closed the alerts instead of reporting
   itself. Crashed rules now ride the same structured channel as parse errors and
   coverage gaps.
+- **Contract tests for three frozen surfaces that no test pinned.** Found by
+  mutation: each change below left the entire suite green before this release.
+  Halving `_KNOWN_RULE_KEYS` to `{enabled, reason}` passed — `severity:` and
+  `exclude_services:` would have started warning as unknown keys, and *erroring*
+  under `--strict-config`. Regrading SARIF `security-severity` for HIGH
+  (`7.5`→`3.0`) and MEDIUM (`5.5`→`0.5`) passed, and both drop a full tier in
+  GitHub's bands — the formatter's own comment records that Code Scanning
+  derives an alert's severity column from that number alone. And changing the
+  evidence derivation in CL-0017, CL-0020, CL-0021, CL-0025, CL-0028 or CL-0030
+  passed *whenever the values stayed distinct*: evidence is the SARIF
+  fingerprint, so that silently re-keys every alert, and the existing collision
+  test only catches the degenerate case where values collapse together. Each is
+  now pinned, with a guard-the-guard companion. Separately, `ci.yml`'s path
+  filter now includes `docs/`, `README.md` and `mkdocs.yml`, which are asserted
+  against by tests and could previously break on a docs-only PR that merged
+  green.
 
 - **A failed stdout write is now exit 2, not an undocumented exit 120 or a
   false exit 1.** Every path that could raise mid-run had been hardened to the

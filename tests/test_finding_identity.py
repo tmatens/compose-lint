@@ -232,6 +232,17 @@ EVIDENCE_CONTRACT = {
     "CL-0024": {"SYS_ADMIN"},
     "CL-0027": {"SYS_PTRACE"},
     "CL-0029": {"SYS_NICE"},
+    # Added after a mutation pass showed these six derived evidence that no
+    # test pinned: changing a derivation while keeping values *distinct* left
+    # the whole suite green, and evidence is the SARIF fingerprint — so every
+    # alert for these rules could be silently re-keyed. The collision test
+    # below catches only the degenerate case where values collapse together.
+    "CL-0017": {"/srv/data:/data:shared"},
+    "CL-0020": {"POSTGRES_PASSWORD"},
+    "CL-0021": {"DATABASE_URL"},
+    "CL-0025": {"/etc"},
+    "CL-0028": {"SYS_TIME"},
+    "CL-0030": {"SYSLOG"},
 }
 
 _CONTRACT_DOC = """
@@ -261,6 +272,18 @@ services:
     security_opt: ["apparmor:unconfined", "seccomp:unconfined"]
     pid: host
     ipc: host
+  # A second service so the six rules added below are exercised without
+  # perturbing anything pinned above: `sink` mounts /etc read-only for
+  # CL-0013, and CL-0025 needs the writable spelling of the same path.
+  sink2:
+    image: x:1
+    environment:
+      POSTGRES_PASSWORD: hunter2
+      DATABASE_URL: "postgres://u:p@db:5432/x"
+    volumes:
+      - /etc:/host-etc-rw
+      - /srv/data:/data:shared
+    cap_add: [SYS_TIME, SYSLOG]
 """
 
 

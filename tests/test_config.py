@@ -9,7 +9,12 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
-from compose_lint.config import ConfigError, load_config
+from compose_lint.config import (
+    _KNOWN_RULE_KEYS,
+    KNOWN_TOP_LEVEL_KEYS,
+    ConfigError,
+    load_config,
+)
 from compose_lint.models import Severity
 
 
@@ -294,3 +299,50 @@ class TestExcludeServices:
         config.write_text("rules:\n  CL-0003:\n    exclude_services:\n      - 42\n")
         with pytest.raises(ConfigError, match="service name strings"):
             load_config(config)
+
+
+# --- The config schema is frozen at 1.0, so its key sets are a contract ------
+#
+# Added after a mutation pass: halving `_KNOWN_RULE_KEYS` to
+# `{enabled, reason}` left the entire suite green. `severity:` and
+# `exclude_services:` would have started warning as unknown keys — and
+# *erroring* under `--strict-config`, which docs/configuration.md recommends
+# for CI — with nothing to catch it. `docs/compatibility.md` freezes
+# ".compose-lint.yml keys and their semantics" at 1.0, so the sets belong
+# under a contract test rather than being implied by the tests that use them.
+
+
+def test_the_top_level_key_set_is_exact() -> None:
+    """Adding a key is a deliberate, documented act (RELEASING.md: MINOR)."""
+    assert frozenset({"rules"}) == KNOWN_TOP_LEVEL_KEYS, (
+        "the .compose-lint.yml top-level key set changed. That is a config "
+        "schema change frozen at 1.0 — document it and update this test."
+    )
+
+
+def test_the_per_rule_key_set_is_exact() -> None:
+    assert (
+        frozenset({"enabled", "reason", "severity", "exclude_services"})
+        == _KNOWN_RULE_KEYS
+    ), (
+        "the per-rule key set changed. Dropping one makes a valid config warn "
+        "as an unknown key, and error under --strict-config."
+    )
+
+
+@pytest.mark.parametrize("key", ["enabled", "reason", "severity", "exclude_services"])
+def test_every_documented_per_rule_key_is_accepted(key: str, tmp_path: Path) -> None:
+    """Guard the guard: the set above must match what the loader really takes.
+
+    A key could be listed as known and still be rejected downstream, which is
+    what the set existing does not by itself prove.
+    """
+    values = {
+        "enabled": "false",
+        "reason": "'because'",
+        "severity": "low",
+        "exclude_services": "{web: 'because'}",
+    }
+    config = tmp_path / ".compose-lint.yml"
+    config.write_text(f"rules:\n  CL-0003:\n    {key}: {values[key]}\n")
+    load_config(config)  # must not raise, and must not be an unknown key

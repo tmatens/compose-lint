@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from compose_lint.formatters.sarif import (
+    _SECURITY_SEVERITY,
     build_sarif_log,
     format_findings,
 )
@@ -624,3 +625,51 @@ class TestArtifactUri:
         notif = log["runs"][0]["invocations"][0]["toolExecutionNotifications"][0]
         notif_art = notif["locations"][0]["physicalLocation"]["artifactLocation"]
         assert notif_art == {"uri": "stack/compose.yml", "uriBaseId": "SRCROOT"}
+
+
+# --- security-severity is the only severity GitHub reads --------------------
+#
+# Added after a mutation pass: regrading HIGH 7.5 -> 3.0 and MEDIUM 5.5 -> 0.5
+# left the whole suite green, and both drop a full tier in GitHub's bands
+# (>=9.0 critical, 7.0-8.9 high, 4.0-6.9 medium, 0.1-3.9 low). The formatter's
+# own comment records that Code Scanning derives an alert's severity column
+# from *this* number, citing issue #279 S-b where an override showed the wrong
+# severity — that bug was found and fixed, and the numbers were never pinned.
+
+
+def test_security_severity_numbers_are_pinned() -> None:
+    """Each tier sits in its documented GitHub band."""
+    assert _SECURITY_SEVERITY == {
+        Severity.CRITICAL: "9.5",
+        Severity.HIGH: "7.5",
+        Severity.MEDIUM: "5.5",
+        Severity.LOW: "2.0",
+    }, (
+        "security-severity changed. GitHub Code Scanning derives the alert's "
+        "severity column from this number alone, so a change here silently "
+        "regrades every existing alert."
+    )
+
+
+@pytest.mark.parametrize(
+    ("severity", "low", "high"),
+    [
+        (Severity.CRITICAL, 9.0, 10.0),
+        (Severity.HIGH, 7.0, 8.9),
+        (Severity.MEDIUM, 4.0, 6.9),
+        (Severity.LOW, 0.1, 3.9),
+    ],
+)
+def test_each_tier_lands_in_its_github_band(
+    severity: Severity, low: float, high: float
+) -> None:
+    """Guard the guard: pinning the literals says nothing about the bands.
+
+    A future edit could keep all four values distinct and still move HIGH into
+    the medium band, which is the failure mode that matters to a consumer.
+    """
+    value = float(_SECURITY_SEVERITY[severity])
+    assert low <= value <= high, (
+        f"{severity.value} maps to {value}, outside GitHub's "
+        f"{low}-{high} band for that tier"
+    )

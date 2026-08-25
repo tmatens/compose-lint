@@ -75,7 +75,12 @@ jobs:
           # contract, and `precommit-smoke` (gated on this filter) is what
           # guards it. Leaving it out meant a manifest-only edit — exactly
           # the shape of issue #465 — skipped its own smoke test.
-          if match '^(src/|tests/|scripts/|pyproject\.toml$|requirements[.-].*lock$|action\.yml$|\.pre-commit-hooks\.yaml$)'; then
+          # `docs/` is in here because docs are load-bearing, not prose: tests
+          # assert against docs/severity.md's table, docs/rules/*.md front
+          # matter and headings, and the rule-count claims on the README and
+          # mkdocs nav. A docs-only edit could break those and merge green,
+          # reddening main after the gate had passed.
+          if match '^(src/|tests/|scripts/|docs/|README\.md$|mkdocs\.yml$|pyproject\.toml$|requirements[.-].*lock$|action\.yml$|\.pre-commit-hooks\.yaml$)'; then
             code=true
           fi
           if match '^(Dockerfile$|\.dockerignore$|requirements\.lock$|requirements-build\.lock$|pyproject\.toml$|src/)'; then
