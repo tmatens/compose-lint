@@ -35,6 +35,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deferred to an ADR, because by descent it would sweep `/usr/lib/python3` and
   the standard `/lib/modules` bind of every VPN workload, and the corpus holds
   nothing else to shape a narrower match on.
+- **A host file handed over through `secrets:` or `configs:` `file:` is now a
+  bind mount to every mount rule**
+  ([#736](https://github.com/tmatens/compose-lint/issues/736)). Outside swarm,
+  `secrets: dsock: file: /var/run/docker.sock` is a read-only bind of that host
+  file at `/run/secrets/dsock` — measured on Docker 29.7.2 / Compose 5.4.0: the
+  container saw the host inode, the daemon answered through the secret, and the
+  write stayed refused even with `mode: 0666`. Neither channel was read by any
+  mount rule, so a service could hand itself the Docker socket and pass
+  CL-0001 clean. `iter_bind_mounts` now yields each referenced `file:` entry
+  as a read-only bind (`BindMount.origin` names the channel), so the existing
+  partition grades it without a new rule: a socket or socket directory is
+  CL-0001 CRITICAL, a root-equivalent or credential path is CL-0013's read-only
+  disclosure at HIGH, and CL-0025 never applies because the channel cannot be
+  writable. A project-relative `file: ./secrets/…` — the CL-0020 remediation —
+  is not a host path and is not graded, matching the line `volumes:` draws;
+  `external: true` and `environment:`-sourced entries have no host path. New
+  premise check `_cl0001_secret_socket` drives `docker compose` and asserts
+  both `ro` and a live daemon through the secret. Corpus: 73 `file:` entries,
+  none absolute, so no existing finding changes.
 
 - **Three bump classes the judgment-call cheat sheet did not price**
   ([docs/RELEASING.md](docs/RELEASING.md#judgment-call-cheat-sheet)). The

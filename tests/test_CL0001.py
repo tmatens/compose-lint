@@ -371,3 +371,89 @@ class TestBindBackedNamedVolumes:
             "    volumes:\n"
             "      - plainvol:/var/run/docker.sock\n"
         )
+
+
+class TestFileBackedSecretsAndConfigs:
+    """A host file handed over through ``secrets:``/``configs:`` ``file:``.
+
+    Measured on Docker 29.7.2 / Compose 5.4.0: a non-swarm ``file:`` secret is
+    a read-only bind of the host inode at ``/run/secrets/<name>``, a socket
+    handed over that way is live (the daemon answered through it), and the
+    write stays refused even with ``mode: 0666``. Neither channel was read by
+    any mount rule (#736).
+    """
+
+    def setup_method(self) -> None:
+        self.rule = DockerSocketRule()
+
+    def _findings(self, doc: str) -> list:
+        data, lines = loads(doc)
+        return list(self.rule.check("a", data["services"]["a"], data, lines))
+
+    def test_socket_as_secret_is_critical(self) -> None:
+        findings = self._findings(
+            "services:\n  a:\n    image: x\n    secrets: [dsock]\n"
+            "secrets:\n  dsock:\n    file: /var/run/docker.sock\n"
+        )
+        assert len(findings) == 1
+        assert findings[0].severity is Severity.CRITICAL
+        assert "secrets file: /var/run/docker.sock" in findings[0].message
+        assert findings[0].line == 4
+
+    def test_socket_as_config_long_syntax_is_critical(self) -> None:
+        findings = self._findings(
+            "services:\n  a:\n    image: x\n    configs:\n"
+            "      - source: sock\n        target: /sock\n"
+            "configs:\n  sock:\n    file: /run/containerd/containerd.sock\n"
+        )
+        assert len(findings) == 1
+        assert "containerd" in findings[0].message
+
+    def test_socket_directory_as_secret_is_critical(self) -> None:
+        # The parent-directory case works through this channel too.
+        findings = self._findings(
+            "services:\n  a:\n    image: x\n    secrets: [run]\n"
+            "secrets:\n  run:\n    file: /var/run\n"
+        )
+        assert len(findings) == 1
+        assert "control sockets" in findings[0].message
+
+    def test_project_relative_file_is_not_a_host_path(self) -> None:
+        # The CL-0020 remediation; a relative path is not graded, as for a
+        # relative short-syntax bind.
+        assert (
+            self._findings(
+                "services:\n  a:\n    image: x\n    secrets: [s]\n"
+                "secrets:\n  s:\n    file: ./docker.sock\n"
+            )
+            == []
+        )
+
+    def test_external_and_environment_secrets_have_no_host_path(self) -> None:
+        assert (
+            self._findings(
+                "services:\n  a:\n    image: x\n    secrets: [e, v]\n"
+                "secrets:\n  e:\n    external: true\n"
+                "  v:\n    environment: DOCKER_SOCK\n"
+            )
+            == []
+        )
+
+    def test_unreferenced_top_level_secret_is_not_mounted(self) -> None:
+        # Declared but not listed on the service: nothing reaches the container.
+        assert (
+            self._findings(
+                "services:\n  a:\n    image: x\n"
+                "secrets:\n  dsock:\n    file: /var/run/docker.sock\n"
+            )
+            == []
+        )
+
+    def test_volumes_finding_and_secret_finding_are_both_reported(self) -> None:
+        findings = self._findings(
+            "services:\n  a:\n    image: x\n"
+            "    volumes: [/var/run/docker.sock:/var/run/docker.sock]\n"
+            "    secrets: [dsock]\n"
+            "secrets:\n  dsock:\n    file: /var/run/docker.sock\n"
+        )
+        assert len(findings) == 2

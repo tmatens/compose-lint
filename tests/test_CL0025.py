@@ -256,3 +256,33 @@ class TestExecTree:
         # ADR rather than added by descent.
         assert self._findings("/usr/lib:/x") == []
         assert self._findings("/lib/modules:/lib/modules") == []
+
+
+class TestFileBackedSecretsAndConfigs:
+    """A host file handed over through ``secrets:``/``configs:`` ``file:``.
+
+    Measured on Docker 29.7.2 / Compose 5.4.0: a non-swarm ``file:`` secret is
+    a read-only bind of the host inode at ``/run/secrets/<name>``, a socket
+    handed over that way is live (the daemon answered through it), and the
+    write stays refused even with ``mode: 0666``. Neither channel was read by
+    any mount rule (#736).
+    """
+
+    def setup_method(self) -> None:
+        self.rule = WritableHostRootMountRule()
+
+    def _findings(self, doc: str) -> list:
+        data, lines = loads(doc)
+        return list(self.rule.check("a", data["services"]["a"], data, lines))
+
+    def test_channel_is_always_read_only_so_never_this_rule(self) -> None:
+        # Even `mode: 0666` only sets permission bits; the bind stays ro
+        # (measured). Disclosure is CL-0013's; takeover never arises here.
+        for doc in (
+            "services:\n  a:\n    image: x\n    secrets: [etc]\n"
+            "secrets:\n  etc:\n    file: /etc\n",
+            "services:\n  a:\n    image: x\n    configs:\n"
+            "      - source: etc\n        target: /x\n        mode: 0666\n"
+            "configs:\n  etc:\n    file: /etc\n",
+        ):
+            assert self._findings(doc) == []

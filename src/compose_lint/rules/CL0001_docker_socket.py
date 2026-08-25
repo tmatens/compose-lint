@@ -139,25 +139,24 @@ class DockerSocketRule(BaseRule):
     ) -> Iterator[Finding]:
         volumes = service_config.get("volumes", [])
         if not isinstance(volumes, list):
-            return
+            volumes = []
 
-        # Host path per index, so the socket-name match and the
-        # parent-directory match can share one pass. Keyed on the entry's real
-        # position in volumes:, because the iterator skips named volumes and
-        # enumerating it instead would be off-by-N.
-        host_paths = {
-            mount.position: mount.host_path
-            for mount in iter_bind_mounts(
-                service_name, service_config, lines, global_config
-            )
-        }
-
-        for i, volume in enumerate(volumes):
-            # Only for the message; the match below uses the resolved host path.
-            # Long syntax is a mapping, and `str()` on it serialized whatever it
-            # contained — which YAML aliases make exponential. The host path is
-            # what the message is about, so it is the better fallback anyway.
-            volume_str = as_scalar_text(volume) or host_paths.get(i, "")
+        for mount in iter_bind_mounts(
+            service_name, service_config, lines, global_config
+        ):
+            host_path = mount.host_path
+            if mount.origin == "volumes":
+                # Only for the message; the match below uses the resolved host
+                # path. Long syntax is a mapping, and `str()` on it serialized
+                # whatever it contained — which YAML aliases make exponential.
+                # The host path is what the message is about, so it is the
+                # better fallback anyway. Indexed by the entry's real position
+                # in volumes:, because the iterator skips named volumes.
+                volume_str = as_scalar_text(volumes[mount.position]) or host_path
+            else:
+                # A host file handed over through secrets:/configs: — a
+                # read-only bind of the file, so a socket arrives live.
+                volume_str = f"{mount.origin} file: {host_path}"
             # Match the *host* side only. Matching the whole entry reported
             # `- /tmp/fake:/var/run/docker.sock` as a socket mount, which is
             # false: the container path is where the socket lands, not where it
@@ -166,7 +165,6 @@ class DockerSocketRule(BaseRule):
             # grants nothing, so it was never a risk. A host socket is always
             # the host side in short syntax and `source:` in long syntax, so
             # nothing real is missed.
-            host_path = host_paths.get(i, "")
             runtime = next(
                 (
                     name
@@ -199,8 +197,7 @@ class DockerSocketRule(BaseRule):
                 service=service_name,
                 evidence=host_path,
                 message=message,
-                line=lines.get(f"services.{service_name}.volumes[{i}]")
-                or lines.get(f"services.{service_name}.volumes"),
+                line=mount.line,
                 fix=(
                     "Don't mount the runtime socket or a directory holding "
                     "one. If a service genuinely needs Docker API access, put "

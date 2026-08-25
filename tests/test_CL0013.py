@@ -367,3 +367,56 @@ class TestExecTreeReadOnly:
         # The exemption is the exec tree only; the other members keep their
         # read-only disclosure finding here.
         assert len(self._findings("/etc:/x:ro")) == 1
+
+
+class TestFileBackedSecretsAndConfigs:
+    """A host file handed over through ``secrets:``/``configs:`` ``file:``.
+
+    Measured on Docker 29.7.2 / Compose 5.4.0: a non-swarm ``file:`` secret is
+    a read-only bind of the host inode at ``/run/secrets/<name>``, a socket
+    handed over that way is live (the daemon answered through it), and the
+    write stays refused even with ``mode: 0666``. Neither channel was read by
+    any mount rule (#736).
+    """
+
+    def setup_method(self) -> None:
+        self.rule = SensitiveMountRule()
+
+    def _findings(self, doc: str) -> list:
+        data, lines = loads(doc)
+        return list(self.rule.check("a", data["services"]["a"], data, lines))
+
+    def test_shadow_as_config_is_read_only_disclosure(self) -> None:
+        findings = self._findings(
+            "services:\n  a:\n    image: x\n    configs: [shadow]\n"
+            "configs:\n  shadow:\n    file: /etc/shadow\n"
+        )
+        assert len(findings) == 1
+        assert findings[0].severity is Severity.HIGH
+        assert "read-only" in findings[0].message
+        assert findings[0].line == 4
+
+    def test_home_credential_as_secret_is_flagged(self) -> None:
+        findings = self._findings(
+            "services:\n  a:\n    image: x\n    secrets: [key]\n"
+            "secrets:\n  key:\n    file: /home/alice/.ssh/id_rsa\n"
+        )
+        assert len(findings) == 1
+
+    def test_project_relative_secret_is_not_flagged(self) -> None:
+        assert (
+            self._findings(
+                "services:\n  a:\n    image: x\n    secrets: [s]\n"
+                "secrets:\n  s:\n    file: ./secrets/db_password\n"
+            )
+            == []
+        )
+
+    def test_socket_as_secret_is_cl0001s_not_this_rule(self) -> None:
+        assert (
+            self._findings(
+                "services:\n  a:\n    image: x\n    secrets: [s]\n"
+                "secrets:\n  s:\n    file: /var/run/docker.sock\n"
+            )
+            == []
+        )

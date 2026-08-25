@@ -40,6 +40,8 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tempfile
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -879,6 +881,58 @@ def _t3_drop_unaffected() -> tuple[bool, str]:
     return ok, f"root->nobody drop under nnp rc={rc} uid={out!r}"
 
 
+def _cl0001_secret_socket() -> tuple[bool | None, str]:
+    """A ``secrets: file:`` socket arrives as a live, read-only bind (#736).
+
+    Compose (not the daemon) translates a non-swarm ``file:`` secret, so this
+    check drives ``docker compose`` rather than ``docker run``. The daemon
+    answering through ``/run/secrets/<name>`` is the CL-0001 grant; ``ro`` in
+    the container's mountinfo is why CL-0025 never sees this channel. Skipped,
+    not failed, where the compose plugin is absent.
+    """
+    if subprocess.run(
+        ["docker", "compose", "version"], capture_output=True, timeout=30
+    ).returncode:
+        return None, "docker compose plugin not available"
+    probe = (
+        "grep ' /run/secrets/dsock ' /proc/self/mountinfo | grep -q ' ro,' "
+        "&& echo RO || echo RW; "
+        "docker -H unix:///run/secrets/dsock version --format "
+        "'{{.Server.Version}}' >/dev/null 2>&1 && echo LIVE || echo DEAD"
+    )
+    compose = (
+        "services:\n  probe:\n    image: docker:cli\n    secrets: [dsock]\n"
+        f"    command: ['sh', '-c', {probe!r}]\n"
+        "secrets:\n  dsock:\n    file: /var/run/docker.sock\n"
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        Path(tmp, "compose.yml").write_text(compose)
+        proc = subprocess.run(
+            ["docker", "compose", "-f", f"{tmp}/compose.yml", "run", "--rm", "probe"],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        subprocess.run(
+            [
+                "docker",
+                "compose",
+                "-f",
+                f"{tmp}/compose.yml",
+                "down",
+                "--remove-orphans",
+            ],
+            capture_output=True,
+            timeout=60,
+        )
+    out = proc.stdout.split()
+    ok = out[-2:] == ["RO", "LIVE"]
+    return (
+        ok,
+        f"secret socket bind: {' '.join(out[-2:]) or proc.stderr.strip()[:120]!r}",
+    )
+
+
 def _cl0001_ro_socket() -> tuple[bool, str]:
     """``:ro`` does not neuter the socket — the API answers through it.
 
@@ -1251,6 +1305,9 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool | None, str]]]] = [
         "CL-0025",
         "premise: rw /usr bind plants a root-owned executable on root's PATH",
         _cl0025_exec_tree,
+        "CL-0001",
+        "premise: a secrets: file: socket is a live read-only bind",
+        _cl0001_secret_socket,
     ),
     ("CL-0026", "premise: memory and cpu are unbounded by default", _cl0026),
     ("CL-0027", "premise: SYS_PTRACE traces a different-uid process", _t_sys_ptrace),

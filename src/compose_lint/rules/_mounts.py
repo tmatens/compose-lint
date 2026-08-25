@@ -41,17 +41,28 @@ TIMEZONE_FILES = frozenset({"/etc/localtime", "/etc/timezone"})
 
 
 class BindMount(NamedTuple):
-    """One bind mount as written, with its position in ``volumes:``.
+    """One bind mount as written, with its position in the list it came from.
 
     ``position`` is the entry's index in the original list, not a count of the
     binds yielded — non-bind entries (named volumes) are skipped, so the two
     diverge and a caller correlating back to ``volumes[i]`` needs the real one.
+
+    ``origin`` names that list: ``volumes`` (the default), or ``secrets`` /
+    ``configs`` for a host file handed over through those channels (see
+    :func:`file_backed_entries`). A caller that reads the entry back for a
+    message must index the list ``origin`` names, not ``volumes:``.
     """
 
     position: int
     host_path: str
     read_only: bool
     line: int | None
+    origin: str = "volumes"
+
+
+# The two Compose channels that bind a host *file* into a container without
+# going through ``volumes:``.
+FILE_CHANNELS: tuple[str, ...] = ("secrets", "configs")
 
 
 def _extract_short(volume: str) -> tuple[str, bool] | None:
@@ -132,6 +143,40 @@ def bind_backed_volumes(global_config: dict[str, Any]) -> dict[str, tuple[str, b
     return found
 
 
+def file_backed_entries(global_config: dict[str, Any], channel: str) -> dict[str, str]:
+    """Top-level ``secrets:`` or ``configs:`` entries that bind a host file.
+
+    A non-swarm ``secrets: name: file: <path>`` (and the same for ``configs:``)
+    is a **bind mount** of that host file, read-only, at ``/run/secrets/<name>``
+    (or ``/<name>`` for a config). Measured on Docker 29.7.2 / Compose 5.4.0:
+    the container saw the host inode, `mountinfo` showed the host path with
+    ``ro``, a write was refused even with ``mode: 0666``, and a socket handed
+    over this way was live — ``docker -H unix:///run/secrets/<name> version``
+    answered. So ``file: /var/run/docker.sock`` is the socket mount CL-0001
+    exists to catch, and ``file: /etc/shadow`` is CL-0013's read-only
+    disclosure — yet neither channel was read by any mount rule (#736).
+
+    Only an absolute or ``~`` path is returned. A project-relative ``file:``
+    (``./secrets/db_password``) is the pattern CL-0020 recommends, and it is
+    not a host path any rule grades — the same line ``volumes:`` draws for a
+    relative short-syntax bind. ``external: true`` entries have no path in this
+    file, and ``environment:``-sourced ones are not files at all.
+
+    Returns ``{entry name: host path}``.
+    """
+    found: dict[str, str] = {}
+    block = global_config.get(channel)
+    if not isinstance(block, dict):
+        return found
+    for name, spec in block.items():
+        if not isinstance(spec, dict) or as_bool(spec.get("external")) is True:
+            continue
+        path = spec.get("file")
+        if isinstance(path, str) and path.startswith(("/", "~")):
+            found[str(name)] = path
+    return found
+
+
 def iter_bind_mounts(
     service_name: str,
     service_config: dict[str, Any],
@@ -187,6 +232,29 @@ def iter_bind_mounts(
             f"services.{service_name}.volumes"
         )
         yield BindMount(i, host_path, read_only, line)
+
+    # A host file handed over through secrets:/configs: is a read-only bind of
+    # that file, whatever mode: says -- see file_backed_entries.
+    for channel in FILE_CHANNELS:
+        refs = service_config.get(channel)
+        if not isinstance(refs, list):
+            continue
+        entries = file_backed_entries(global_config or {}, channel)
+        if not entries:
+            continue
+        for i, ref in enumerate(refs):
+            if isinstance(ref, str):
+                name = ref
+            elif isinstance(ref, dict) and isinstance(ref.get("source"), str):
+                name = ref["source"]
+            else:
+                continue
+            if name not in entries:
+                continue
+            line = lines.get(f"services.{service_name}.{channel}[{i}]") or lines.get(
+                f"services.{service_name}.{channel}"
+            )
+            yield BindMount(i, entries[name], True, line, channel)
 
 
 def normalize_host_path(host_path: str) -> str:
