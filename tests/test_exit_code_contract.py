@@ -13,6 +13,7 @@ unguarded. The Compose loader was wrapped; the config loader was not.
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import subprocess
 import sys
@@ -308,3 +309,68 @@ def test_a_closed_stdout_is_a_clean_error() -> None:
     assert proc.returncode == 2, proc.stderr
     _assert_no_traceback(proc)
     assert "stdout is closed" in proc.stderr
+
+
+# --- A crashed rule must say so in the machine output, not only on stderr ---
+#
+# A rule that raises is isolated rather than aborting the run (ADR-006), and it
+# already set exit 2 and printed to stderr. It was absent from both machine
+# channels: JSON reported `errors: []` and SARIF reported
+# `executionSuccessful: true` while that rule's findings were silently missing.
+# For Code Scanning that is worse than an omission -- a declared rule with zero
+# results reads as "every alert for this rule is fixed", so a crash closed the
+# alerts instead of reporting itself.
+
+_CRASH_HARNESS = """
+import sys
+sys.path.insert(0, {src!r})
+from compose_lint.rules import CL0002_privileged_mode as m
+m.PrivilegedModeRule.check = lambda self, *a, **k: (_ for _ in ()).throw(
+    RuntimeError("simulated predicate bug")
+)
+from compose_lint import cli
+sys.argv = ["compose-lint", "check", "--format", {fmt!r}, {target!r}]
+cli.main()
+"""
+
+
+def _run_with_crashing_rule(
+    tmp_path: Path, fmt: str
+) -> subprocess.CompletedProcess[str]:
+    target = tmp_path / "docker-compose.yml"
+    target.write_text(_PRIVILEGED, encoding="utf-8")
+    harness = tmp_path / "harness.py"
+    harness.write_text(
+        _CRASH_HARNESS.format(src=str(REPO_ROOT / "src"), fmt=fmt, target=str(target)),
+        encoding="utf-8",
+    )
+    return subprocess.run(
+        [sys.executable, str(harness)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=cli_env(PYTHONPATH=str(REPO_ROOT / "src"), NO_COLOR="1"),
+        timeout=180,
+    )
+
+
+def test_a_crashed_rule_reaches_the_json_errors_array(tmp_path: Path) -> None:
+    proc = _run_with_crashing_rule(tmp_path, "json")
+    assert proc.returncode == 2, proc.stderr
+    doc = json.loads(proc.stdout)
+    assert doc["errors"], "a crashed rule must not leave errors[] empty"
+    assert any("CL-0002" in e["message"] for e in doc["errors"])
+
+
+def test_a_crashed_rule_makes_sarif_declare_the_run_unsuccessful(
+    tmp_path: Path,
+) -> None:
+    proc = _run_with_crashing_rule(tmp_path, "sarif")
+    assert proc.returncode == 2, proc.stderr
+    invocation = json.loads(proc.stdout)["runs"][0]["invocations"][0]
+    assert invocation["executionSuccessful"] is False, (
+        "SARIF claimed success while a rule's findings were missing"
+    )
+    notifications = invocation.get("toolExecutionNotifications") or []
+    assert any("CL-0002" in n["message"]["text"] for n in notifications)

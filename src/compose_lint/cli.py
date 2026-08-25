@@ -843,7 +843,17 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     # `errors[]`, SARIF `toolExecutionNotifications`, exit 2 — but are counted
     # separately in the text verdict, because "could not be parsed" is not what
     # happened and the tool must not report a state that is not true.
-    run_errors = parse_errors + coverage_errors
+    #
+    # A crashed rule rides it too. It already sets exit 2 (below) and prints to
+    # stderr, but it was absent from both machine channels: JSON reported
+    # `errors: []` and SARIF reported `executionSuccessful: true` while that
+    # rule's findings were silently missing from a document a gate uploads.
+    # For Code Scanning that is worse than an omission — a declared rule with
+    # zero results reads as "every alert for this rule is fixed", so a crash
+    # closed the alerts instead of reporting itself. ADR-015 exists so a run
+    # that could not complete says so in the machine output, not only on a
+    # channel a gate does not read.
+    run_errors = parse_errors + coverage_errors + rule_errors
 
     if args.output_format == "text":
         if len(args.files) > 1:
@@ -892,7 +902,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     if has_errors and config_path is None:
         _note_no_config_in_effect()
 
-    if run_errors or rule_errors:
+    if run_errors:  # parse errors, coverage gaps, and crashed rules
         sys.exit(2)
     sys.exit(1 if has_errors else 0)
 

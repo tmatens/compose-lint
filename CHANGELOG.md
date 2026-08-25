@@ -46,6 +46,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   page now says. `docs/configuration.md` told users to pass a `--pattern` flag
   that does not exist — globbing is the GitHub Action's `pattern:` input, not a
   CLI flag.
+- **A crashed rule now reports itself in JSON and SARIF, not only on stderr.**
+  A rule that raises is isolated rather than aborting the run
+  ([ADR-006](docs/adr/006-exit-codes.md)), and it already set exit 2 and printed
+  to stderr — but `run_errors` omitted `rule_errors`, so the machine output said
+  nothing. JSON reported `errors: []` and SARIF reported
+  `executionSuccessful: true` while that rule's findings were silently absent
+  from a document the GitHub Action uploads. For Code Scanning that is worse
+  than an omission: a *declared* rule with zero results reads as "every alert
+  for this rule is fixed", so a crash closed the alerts instead of reporting
+  itself. Crashed rules now ride the same structured channel as parse errors and
+  coverage gaps.
 
 - **A failed stdout write is now exit 2, not an undocumented exit 120 or a
   false exit 1.** Every path that could raise mid-run had been hardened to the
