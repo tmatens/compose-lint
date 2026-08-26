@@ -958,9 +958,7 @@ class TestFixOnlyValidation:
     def test_a_lowercase_rule_id_is_accepted(self, tmp_path: Path) -> None:
         """`--explain` already normalizes case; one CLI must not answer twice."""
         f = tmp_path / "docker-compose.yml"
-        f.write_text(
-            "services:\n  w:\n    image: n:1\n    logging:\n      driver: none\n"
-        )
+        f.write_text(_FIXABLE_LOGGING)
         lower = run_cli("fix", "--only", "cl-0014", str(f))
         upper = run_cli("fix", "--only", "CL-0014", str(f))
         assert lower.returncode == upper.returncode == 0
@@ -972,9 +970,7 @@ class TestFixOnlyValidation:
         self, tmp_path: Path, bad: str
     ) -> None:
         f = tmp_path / "docker-compose.yml"
-        f.write_text(
-            "services:\n  w:\n    image: n:1\n    logging:\n      driver: none\n"
-        )
+        f.write_text(_FIXABLE_LOGGING)
         result = run_cli("fix", "--only", bad, str(f))
         assert "names no rule" in result.stderr
         assert bad in result.stderr
@@ -982,9 +978,7 @@ class TestFixOnlyValidation:
     def test_strict_config_promotes_it_to_an_error(self, tmp_path: Path) -> None:
         """Mirrors how an unknown rule id in the config file is treated."""
         f = tmp_path / "docker-compose.yml"
-        f.write_text(
-            "services:\n  w:\n    image: n:1\n    logging:\n      driver: none\n"
-        )
+        f.write_text(_FIXABLE_LOGGING)
         result = run_cli("fix", "--only", "banana", "--strict-config", str(f))
         assert result.returncode == 2
         assert "names no rule" in result.stderr
