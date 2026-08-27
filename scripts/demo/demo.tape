@@ -11,7 +11,7 @@ Require compose-lint
 # off line wrapping so compose-lint's long finding and reference lines clip at
 # the right edge instead of wrapping raggedly — the structured left side
 # (severity, rule id, message, underline, fix/ref) stays clean. Height gives
-# 32 rows at this font, exactly what the lint step needs on 0.25.0 (command +
+# 32 rows at this font, exactly what the lint step needs on 0.26.0 (command +
 # 30 output lines + prompt — the no-config Note line took the spare row), so
 # the banner stays on screen. The fixture has two services, so the cast also
 # shows the per-service grouping the report uses.
@@ -49,15 +49,15 @@ Sleep 1900ms
 Enter
 Sleep 8s
 
-# 2. Drill into the socket finding with the offline rule docs, read through a
-#    pager so the doc arrives top-down: page one is the title, the severity
-#    derivation, and the references; a page-down shows the doc continuing.
-#    The explicit `| less -S` is a bridge: 0.25.0 predates ADR-034, which
-#    makes a bare `--explain` page itself on a TTY. When this cast is
-#    re-rendered on >= 0.26.0, drop the pipe — the choreography stays the
-#    same, and the toolchain image's PAGER/LESSCHARSET env (see Dockerfile)
-#    keeps the rendering identical.
-Type "compose-lint --explain CL-0001 | less -S"
+# 2. Drill into the socket finding with the offline rule docs. On >= 0.26.0
+#    (ADR-034) a bare `--explain` pages itself on a TTY, so the doc arrives
+#    top-down: page one is the title, the severity derivation, and the
+#    references, with the status line naming the controls
+#    (`CL-0001 · Space next · b back · q quit`); a page-down shows the doc
+#    continuing, prompt still in place. The toolchain image keeps PAGER unset
+#    so that labeled prompt appears, and supplies the -S chop via $LESS
+#    instead (see Dockerfile).
+Type "compose-lint --explain CL-0001"
 Sleep 1900ms
 Enter
 Sleep 5500ms
