@@ -100,6 +100,30 @@ compose-lint targets the [Compose Specification](https://github.com/compose-spec
 
 Python 3.11+ is required for the pip install path; the Docker image is self-contained.
 
+## Adopting on an existing repo
+
+Most established stacks don't start clean — in the [State of Compose
+scan](https://tmatens.github.io/compose-lint/state-of-compose/), 91% of public
+Compose files that parse had at least one finding. You don't have to fix
+everything before the gate goes in: `compose-lint init` turns a file's current
+findings into a `.compose-lint.yml` baseline you then triage, so the gate can
+go in today without hand-authoring suppressions from the schema:
+
+```bash
+compose-lint init docker-compose.yml          # writes ./.compose-lint.yml
+compose-lint init docker-compose.yml -o ci.yml # write somewhere else
+compose-lint init docker-compose.yml --force   # overwrite an existing config
+```
+
+Each finding becomes a per-service `exclude_services` entry with a placeholder
+reason — never a global `enabled: false`, so a service you add later still trips
+the rule instead of being silently uncovered. It refuses to overwrite an
+existing config without `--force`, writes nothing for a clean file, and sends
+status to stderr. Replace each `TODO` reason with a real justification or delete
+the entry and fix the issue. See
+[docs/configuration.md](https://github.com/tmatens/compose-lint/blob/main/docs/configuration.md#generating-a-starter-config)
+for the full behavior.
+
 ## Example Output
 
 Given this `docker-compose.yml`:
@@ -176,6 +200,12 @@ docker-compose.yml: 1 high, 1 medium  ·  1 suppressed (not counted)
 ```
 
 Exit code is `1` (one finding at or above the default `--fail-on high` threshold). Suppressed findings are shown for auditability but do not count toward the threshold. Findings are grouped by service and ordered highest-severity first within each service; the fix block and reference URL print only once per rule id per file — pass `-v` / `--verbose` to repeat them on every finding, or `-q` / `--quiet` for one compact line per finding.
+
+That file is synthetic. For worked remediations of real stacks — the same
+CRITICAL socket mount resolved four different ways (delete the service,
+re-architect it away, constrain it, or suppress it with the risk written
+down), two rules in genuine tension, and a stack that lints clean — see the
+[examples gallery](https://tmatens.github.io/compose-lint/examples/).
 
 ## How it compares
 
@@ -352,29 +382,12 @@ Structured fixes also ride in SARIF output: `compose-lint check --format sarif`
 populates `fixes[].artifactChanges`, which GitHub Code Scanning renders as an
 inline suggested change on the pull request.
 
-## Generating a starter config
-
-`compose-lint init` turns a file's current findings into a `.compose-lint.yml`
-you then triage, so you don't have to hand-author suppressions from the schema:
-
-```bash
-compose-lint init docker-compose.yml          # writes ./.compose-lint.yml
-compose-lint init docker-compose.yml -o ci.yml # write somewhere else
-compose-lint init docker-compose.yml --force   # overwrite an existing config
-```
-
-Each finding becomes a per-service `exclude_services` entry with a placeholder
-reason — never a global `enabled: false`, so a service you add later still trips
-the rule instead of being silently uncovered. It refuses to overwrite an
-existing config without `--force`, writes nothing for a clean file, and sends
-status to stderr. Replace each `TODO` reason with a real justification or delete
-the entry and fix the issue. See
-[docs/configuration.md](https://github.com/tmatens/compose-lint/blob/main/docs/configuration.md#generating-a-starter-config)
-for the full behavior.
-
 ## Versioning & stability
 
 compose-lint follows [Semantic Versioning](https://semver.org/). From 1.0, the CLI, exit codes, config schema, and JSON/SARIF output are stable. New and tightened rules ship in MINOR releases, so pin a version or use `--fail-on` if you need deterministic CI. See [docs/compatibility.md](https://github.com/tmatens/compose-lint/blob/main/docs/compatibility.md) for the full stability promise and deprecation policy.
+Release-by-release changes are in
+[CHANGELOG.md](https://github.com/tmatens/compose-lint/blob/main/CHANGELOG.md);
+planned work is on the [roadmap](https://tmatens.github.io/compose-lint/ROADMAP/).
 
 Color is on when stdout is a terminal. Set `NO_COLOR` to disable it (even on a
 terminal) or `FORCE_COLOR` to force it through a pipe — e.g. into `less -R` or a
