@@ -132,23 +132,34 @@ file you name: the sibling `compose.override.yml` is merged, the sibling
 `.env` is resolved, `env_file:` targets are graded — and a part of the stack
 it *cannot* see is an error, never a silent pass.
 
-**Overlays are merged.** `docker compose up` loads a `compose.override.yml` sitting beside the base file and merges it, with no flag and no opt-in, so the merged pair is what actually runs. compose-lint grades that pair: the run header names both documents, findings report the file their evidence is written in, and the exit code is unaffected because merging is coverage achieved, not a gap ([ADR-025](docs/adr/025-lint-the-merged-configuration.md)). `--no-merge-overrides` grades the base alone. `fix` edits only findings written in the file it is fixing; anything from the overlay is left for manual review.
+**Overlays are merged.** `docker compose up` merges a `compose.override.yml`
+sitting beside the base file, with no flag and no opt-in, so compose-lint
+grades the merged pair: the run header names both documents, and each finding
+reports the file its evidence is written in
+([ADR-025](docs/adr/025-lint-the-merged-configuration.md)).
+`--no-merge-overrides` grades the base alone; `fix` only ever edits the file
+it is fixing.
 
-**A sibling `.env` is read, because Compose reads it.** `docker compose` loads a `.env` from the Compose file's own directory and uses it for two things, and compose-lint follows both ([ADR-026](docs/adr/026-read-the-sibling-env-file.md)):
+**A sibling `.env` is read, because Compose reads it**
+([ADR-026](docs/adr/026-read-the-sibling-env-file.md)). Its `COMPOSE_FILE`
+chooses the documents, exactly as it does for Compose, and `${VAR}`
+references resolve to what it supplies — `volumes: ["${MOUNT}:/data"]` with
+`MOUNT=/var/run/docker.sock` is graded as the control-socket mount it
+deploys. Two deliberate limits: values under `environment:` are never
+resolved from a `.env` (that is where secrets live), and the ambient shell
+environment is never read, so the same checkout lints the same on every
+machine. `--no-env` ignores env files entirely.
 
-- **`COMPOSE_FILE` chooses the documents.** It replaces discovery *and* suppresses the automatic override merge, so a project configured that way is graded as the file set Compose actually loads. For a file you name on the command line, a `.env` can only *add* documents, never drop the one you asked for.
-- **`${VAR}` resolves to what the `.env` supplies.** `volumes: ["${MOUNT}:/data"]` with `MOUNT=/var/run/docker.sock` is a control-socket mount, and is now graded as one. A supplied value beats a written default, matching Compose; a name the `.env` does not define stays unresolved rather than guessed.
-
-Two deliberate limits. Values under `environment:` are **never** resolved from a `.env` — that is where secrets live, the only rules reading them grade sensitivity rather than deployment, and resolving there would make CL-0021 flag the very pattern its own fix text recommends. And references *inside* the `.env` are not expanded from your shell, so nothing about the machine running the lint reaches a finding.
-
-**An `env_file:` is read too, and its keys are graded.** A service naming `env_file: secrets.env` has that file merged into its container's process environment by Compose, so a credential written there reaches every surface CL-0020 describes while never appearing in the document. Moving one line out of `environment:` used to silence CL-0020 and CL-0021 without changing what deploys; it no longer does ([ADR-027](docs/adr/027-grade-env-file-where-the-document-routes-it.md)). All three spellings are read — a bare string, a list, and the `path:`/`required:`/`format:` mapping — relative to the Compose file's own directory, with `environment:` still winning over any key the file also sets.
-
-Only those two rules read them, and **no value is ever printed**: a finding names the key and the file, never the credential, and the text formatter does not so much as open a file that is not a Compose document. A path resolving outside the project directory is refused rather than read, because an `env_file:` naming a lint-host path in a pull request would put that host's key names into a report. When a target contributes nothing — absent, unreadable, refused, or a path still carrying an unresolved `${VAR}` — the run says which one and why, without touching the exit code. A *required* target that is absent means Compose would refuse to start the project at all.
-
-The run header names the `.env` it read, so two machines that read different ones produce a visible difference rather than a mystery. `--no-env` ignores both kinds of env file entirely. The ambient shell environment is out of scope: a `COMPOSE_FILE` exported in a session and never written down would make the same checkout lint differently depending on who ran the command.
+**An `env_file:` is read too, and its keys are graded**
+([ADR-027](docs/adr/027-grade-env-file-where-the-document-routes-it.md)).
+Compose merges those files into the container's process environment, so a
+credential written there reaches every surface CL-0020 describes — moving a
+line out of `environment:` no longer silences CL-0020/CL-0021 without
+changing what deploys. Only those two rules read env files; a finding names
+the key and the file, **never the value**, and a path resolving outside the
+project directory is refused rather than read.
 
 **Coverage gaps.** Beyond that overlay, compose-lint follows no references out of a file, so `include:` and cross-file `extends: {file: ...}` leave part of the stack unlinted. Reporting a pass over a partial view is the one failure mode a merge gate cannot have, so a gap is an error: exit 2, a JSON `errors[]` entry, and a SARIF `toolExecutionNotifications` record. Lint the merged output (`docker compose config`) to cover everything, or pass `--allow-partial-coverage` to accept the gap and grade what is visible.
-
 ## How it compares
 
 | Tool | Compose security rules | Auto-fix | Scope | Zero config |
