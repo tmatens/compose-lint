@@ -35,23 +35,37 @@ def run_cli(
     )
 
 
-def run_cli_tty(*args: str, env_extra: dict[str, str]) -> tuple[int, str]:
+def run_cli_tty(
+    *args: str, env_extra: dict[str, str], send_keys: bytes | None = None
+) -> tuple[int, str]:
     """Run the CLI with stdout attached to a pseudo-terminal (POSIX only).
 
     This is what lets the pager tests exercise the real ``isatty()`` branch:
     every other test in this module runs with stdout on a pipe, which is
     exactly the non-TTY path the pager must never engage on.
     """
+    import fcntl
     import pty
+    import termios
 
     master, slave = pty.openpty()
+
+    def make_controlling_tty() -> None:
+        # A real pager reads its keystrokes from /dev/tty, which resolves to
+        # the *controlling* terminal — inheriting the slave as stdio is not
+        # enough. New session + TIOCSCTTY on the inherited slave (fd 0) is
+        # the same dance pty.fork() does.
+        os.setsid()
+        fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+
     try:
         proc = subprocess.Popen(
             [sys.executable, "-m", "compose_lint", *args],
-            stdin=subprocess.DEVNULL,
+            stdin=slave,
             stdout=slave,
             stderr=subprocess.DEVNULL,
             env={**os.environ, **env_extra},
+            preexec_fn=make_controlling_tty,
         )
         os.close(slave)
         chunks = []
@@ -63,6 +77,11 @@ def run_cli_tty(*args: str, env_extra: dict[str, str]) -> tuple[int, str]:
             if not data:
                 break
             chunks.append(data)
+            if send_keys is not None:
+                # One-shot keystroke for an interactive pager (e.g. `q` to
+                # quit less), sent only after the first screen has drawn.
+                os.write(master, send_keys)
+                send_keys = None
         returncode = proc.wait()
     finally:
         os.close(master)
@@ -1033,36 +1052,42 @@ class TestPagerResolution:
     def test_not_a_tty_never_pages(self) -> None:
         from compose_lint.cli import _pager_argv
 
-        assert _pager_argv(tty=False) is None
+        assert _pager_argv(tty=False, rule_id="CL-0003") is None
 
     def test_tty_defaults_to_less(self) -> None:
         from compose_lint.cli import _pager_argv
 
-        assert _pager_argv(tty=True) == ["less", "-R", "-F", "-X"]
+        assert _pager_argv(tty=True, rule_id="CL-0003") == [
+            "less",
+            "-R",
+            "-F",
+            "-X",
+            "-PsCL-0003 · Space next · b back · q quit",
+        ]
 
     def test_no_pager_env_disables(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from compose_lint.cli import _pager_argv
 
         monkeypatch.setenv("NO_PAGER", "1")
-        assert _pager_argv(tty=True) is None
+        assert _pager_argv(tty=True, rule_id="CL-0003") is None
 
     def test_term_dumb_disables(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from compose_lint.cli import _pager_argv
 
         monkeypatch.setenv("TERM", "dumb")
-        assert _pager_argv(tty=True) is None
+        assert _pager_argv(tty=True, rule_id="CL-0003") is None
 
     def test_term_unset_disables(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from compose_lint.cli import _pager_argv
 
         monkeypatch.delenv("TERM")
-        assert _pager_argv(tty=True) is None
+        assert _pager_argv(tty=True, rule_id="CL-0003") is None
 
     def test_blank_pager_disables(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from compose_lint.cli import _pager_argv
 
         monkeypatch.setenv("PAGER", "   ")
-        assert _pager_argv(tty=True) is None
+        assert _pager_argv(tty=True, rule_id="CL-0003") is None
 
     def test_pager_env_overrides_and_splits(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1070,7 +1095,7 @@ class TestPagerResolution:
         from compose_lint.cli import _pager_argv
 
         monkeypatch.setenv("PAGER", "more -d")
-        assert _pager_argv(tty=True) == ["more", "-d"]
+        assert _pager_argv(tty=True, rule_id="CL-0003") == ["more", "-d"]
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="pty is POSIX-only")
@@ -1158,3 +1183,37 @@ class TestExplainPagerOnTTY:
         assert with_pager.returncode == 0
         assert not marker.exists()
         assert with_pager.stdout == plain.stdout
+
+    def test_failing_pager_falls_back_to_plain_dump(self, tmp_path: Path) -> None:
+        # The busybox shape: a pager binary that exists but rejects the
+        # default flags with a usage error (nonzero exit). The doc must
+        # still reach the reader via the plain dump.
+        script = tmp_path / "usage-error-pager.sh"
+        script.write_text("#!/bin/sh\ncat >/dev/null\nexit 1\n")
+        script.chmod(0o755)
+        code, out = run_cli_tty(
+            "--explain",
+            "CL-0003",
+            env_extra={"PAGER": str(script), "TERM": "xterm"},
+        )
+        assert code == 0
+        assert "CL-0003" in out
+        assert "no-new-privileges" in out
+
+    def test_default_less_shows_labeled_prompt(self) -> None:
+        # The real default pager end to end: bare --explain on a TTY with no
+        # PAGER set must open less with the labeled hint prompt, and `q`
+        # must return cleanly. Skipped where less isn't installed.
+        import shutil
+
+        if shutil.which("less") is None:
+            pytest.skip("less not installed")
+        code, out = run_cli_tty(
+            "--explain",
+            "CL-0003",
+            env_extra={"TERM": "xterm"},
+            send_keys=b"q",
+        )
+        assert code == 0
+        assert "CL-0003" in out
+        assert "Space next" in out and "q quit" in out

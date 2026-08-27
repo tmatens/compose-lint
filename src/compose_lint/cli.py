@@ -24,7 +24,7 @@ from compose_lint._service_env import describe_unread, resolve_env_files
 from compose_lint.config import ConfigError, load_config
 from compose_lint.config_emit import render_config
 from compose_lint.engine import filter_findings, run_rules
-from compose_lint.explain import UnknownRuleError, load_rule_doc
+from compose_lint.explain import UnknownRuleError, load_rule_doc, normalize_rule_id
 from compose_lint.fix import (
     LineOutOfRangeError,
     apply_edits,
@@ -572,8 +572,15 @@ def _stdout_print(*args: object, **kwargs: Any) -> None:
 # in a pager), -X skips the alternate screen so the tail stays in scrollback.
 _DEFAULT_PAGER = ("less", "-R", "-F", "-X")
 
+# Labels for less's otherwise-bare `:` prompt. The pager's controls are pure
+# convention, so the default pager names the ones a reader needs; a user's
+# own PAGER keeps whatever prompt they configured. The text must avoid the
+# characters less expands in prompt strings (`%`, `?`, `:`, `.`, `\`) —
+# rule ids (CL-NNNN) are safe by construction.
+_PAGER_HINTS = "Space next · b back · q quit"
 
-def _pager_argv(*, tty: bool) -> list[str] | None:
+
+def _pager_argv(*, tty: bool, rule_id: str) -> list[str] | None:
     """Resolve the pager command for ``--explain``, or None to print directly.
 
     Paging is presentation only and engages solely for a human at an
@@ -592,19 +599,24 @@ def _pager_argv(*, tty: bool) -> list[str] | None:
         return None
     pager = os.environ.get("PAGER")
     if pager is None:
-        return list(_DEFAULT_PAGER)
+        return [*_DEFAULT_PAGER, f"-Ps{rule_id} · {_PAGER_HINTS}"]
     return shlex.split(pager) or None
 
 
-def _page_rule_doc(text: str) -> bool:
+def _page_rule_doc(text: str, rule_id: str) -> bool:
     """Try to display rule prose through a pager; True when it displayed.
 
     A pager that cannot be spawned is a signal to fall back, not an error:
     the published image is distroless, so ``docker run -t`` yields a TTY
-    with no pager binary behind it. A viewer quitting before EOF (EPIPE)
-    still counts as displayed.
+    with no pager binary behind it. A pager that exits nonzero is treated
+    the same way — busybox's ``less`` rejects flags like ``-Ps`` with a
+    usage error, which would otherwise swallow the doc on Alpine. The cost
+    of that rescue is bounded: a pager that dies nonzero *after* showing
+    content leads to the doc printing twice, never to it printing not at
+    all. A viewer quitting before EOF (EPIPE, then ``q`` → exit 0) still
+    counts as displayed.
     """
-    argv = _pager_argv(tty=sys.stdout.isatty())
+    argv = _pager_argv(tty=sys.stdout.isatty(), rule_id=rule_id)
     if argv is None:
         return False
     try:
@@ -616,8 +628,7 @@ def _page_rule_doc(text: str) -> bool:
         with contextlib.suppress(BrokenPipeError, OSError):
             stdin.write((text + "\n").encode("utf-8"))
             stdin.close()
-    proc.wait()
-    return True
+    return proc.wait() == 0
 
 
 def _dispatch(args: argparse.Namespace) -> NoReturn:
@@ -721,11 +732,12 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             )
             sys.exit(2)
         try:
-            doc = load_rule_doc(args.explain)
+            canonical = normalize_rule_id(args.explain)
+            doc = load_rule_doc(canonical)
         except UnknownRuleError:
             emit(f"Error: unknown rule id '{args.explain}' (expected format: CL-XXXX)")
             sys.exit(2)
-        if args.no_pager or not _page_rule_doc(doc):
+        if args.no_pager or not _page_rule_doc(doc, canonical):
             _stdout_print(doc)
         sys.exit(0)
 

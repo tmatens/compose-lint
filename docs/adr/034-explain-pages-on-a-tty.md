@@ -27,12 +27,20 @@ byte-identical to before. The gate, in order:
 - `--no-pager` → plain dump;
 - `PAGER` set → that command (split with `shlex`; blank disables), else
   `less -RFX` (`-F` exits when the doc fits one screen, so short docs never
-  trap the reader; `-X` keeps the tail in scrollback).
+  trap the reader; `-X` keeps the tail in scrollback) plus a labeled status
+  prompt — `-Ps"CL-XXXX · Space next · b back · q quit"` — because the
+  pager's controls are pure convention and the bare `:` labels none of
+  them. The prompt rides only on the default pager; a user's own `PAGER`
+  keeps whatever prompt they configured.
 
 A pager that cannot be spawned falls back silently to the plain dump. That
 case is real, not defensive: the published image is distroless, so
 `docker run -t` produces a TTY with no pager binary behind it — the
-fallback is what keeps that invocation working unchanged.
+fallback is what keeps that invocation working unchanged. A pager that
+exits nonzero falls back the same way: busybox's `less` (Alpine) rejects
+`-Ps` with a usage error, and without the rescue that rejection would
+swallow the doc. The cost is bounded — a pager dying nonzero after showing
+content prints the doc twice, never zero times.
 
 **Consequences:** Non-TTY output is untouched, so the stdout-carries-data
 contract and every existing consumer are unaffected; the tests prove the

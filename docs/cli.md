@@ -54,7 +54,9 @@ CI log that renders ANSI.
 
 `--explain` pages its rule doc through `less -RFX` when stdout is a terminal
 ([ADR-034](adr/034-explain-pages-on-a-tty.md)) — `-F` means a doc that fits
-one screen prints and exits with no pager interaction. `PAGER` selects a
+one screen prints and exits with no pager interaction. The default pager
+labels its controls in the status line (`CL-XXXX · Space next · b back ·
+q quit`) instead of less's bare `:`; a custom `PAGER` keeps its own prompt. `PAGER` selects a
 different pager; `--no-pager`, a non-empty `NO_PAGER`, or `TERM=dumb`
 disables paging; a pager binary that isn't installed falls back to a plain
 dump. Piped or redirected output never pages and is byte-identical to the

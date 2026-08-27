@@ -17,7 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   disables it; a missing pager binary — e.g. the distroless image under
   `docker run -t` — falls back to the plain dump). Piped, redirected, and
   CI output is byte-identical to before: paging engages only when stdout
-  is a TTY.
+  is a TTY. The default pager labels its controls in the status line
+  (`CL-XXXX · Space next · b back · q quit`) instead of less's bare `:`,
+  and a pager that exits nonzero (busybox `less` rejecting the flags)
+  falls back to the plain dump rather than swallowing the doc.
 
 ## [0.25.0] - 2026-08-26
 
