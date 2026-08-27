@@ -312,43 +312,10 @@ See [docs/configuration.md](https://github.com/tmatens/compose-lint/blob/main/do
 
 ## CLI Reference
 
-```
-compose-lint [check] [OPTIONS] [FILE ...]   Lint files (default; bare invocation works)
-compose-lint fix [OPTIONS] [FILE ...]       Auto-remediate auto-fixable findings
-compose-lint init [OPTIONS] FILE            Generate a starter .compose-lint.yml
-
-check options:
-  --format {text,json,sarif}   Output format (default: text)
-  --fail-on {low,medium,high,critical}
-                               Minimum severity to trigger exit 1 (default: high)
-  -v, --verbose                Repeat the fix block and reference on every finding (text mode)
-  -q, --quiet                  One line per finding — no fix, reference, or excerpt (text mode)
-  --skip-suppressed            Hide suppressed findings from output
-  --allow-partial-coverage     Grade a file whose `include:` / cross-file `extends:`
-                               could not be resolved, instead of failing (exit 2)
-  --no-merge-overrides         Lint each file alone instead of merging the
-                               `compose.override.yml` Compose merges beside it
-  --no-env                     Ignore a `.env` sitting beside the Compose file,
-                               which Compose reads for COMPOSE_FILE and for
-                               `${VAR}` values
-  --config PATH                Path to config file (default: .compose-lint.yml)
-  --strict-config              Treat config diagnostics (unknown rule id or key) as errors, not warnings
-  --explain CL-XXXX            Print the full documentation for a single rule
-  --version                    Show version and exit
-
-fix options:
-  --apply                      Write fixes in place (default: print a dry-run diff)
-  --only CL-XXXX               Restrict fixes to the named rule(s); repeatable
-  --no-merge-overrides         Fix each file alone instead of merging the
-                               `compose.override.yml` Compose merges beside it
-  --no-env                     Ignore a `.env` sitting beside the Compose file
-  --config PATH                Path to config file (suppressions are honored)
-  --strict-config              Treat config diagnostics (unknown rule id or key) as errors, not warnings
-
-init options:
-  -o, --output PATH            Where to write the config (default: .compose-lint.yml)
-  --force                      Overwrite an existing config file
-```
+Three subcommands: `check` (the default — a bare `compose-lint` works), `fix`,
+and `init`. Every flag is described in `compose-lint --help` and the
+[CLI reference](https://tmatens.github.io/compose-lint/cli/), along with color
+control (`NO_COLOR` / `FORCE_COLOR`) and end-of-options semantics.
 
 ## Fixing findings
 
@@ -418,10 +385,6 @@ compose-lint follows [Semantic Versioning](https://semver.org/). From 1.0, the C
 Release-by-release changes are in
 [CHANGELOG.md](https://github.com/tmatens/compose-lint/blob/main/CHANGELOG.md);
 planned work is on the [roadmap](https://tmatens.github.io/compose-lint/ROADMAP/).
-
-Color is on when stdout is a terminal. Set `NO_COLOR` to disable it (even on a
-terminal) or `FORCE_COLOR` to force it through a pipe — e.g. into `less -R` or a
-CI log that renders ANSI.
 
 ## Exit Codes
 
