@@ -30,7 +30,14 @@ FILENAMES = ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compos
 ANCHORS = ["services:", "image:", "volumes:", "restart:", "ports:", "depends_on:"]
 SIZE_BUCKETS = ["<2", "2..5", "5..15", "15..50", ">50"]  # kilobytes
 
-PER_QUERY_LIMIT = 200            # gh search code page cap is ~1000; 200 keeps each call fast
+PER_QUERY_LIMIT = int(os.environ.get("PER_QUERY_LIMIT", "200"))
+# gh search code's page cap is ~1000; 200 keeps each call fast. The
+# Corpus 2.0 growth sweep (#759) runs with PER_QUERY_LIMIT=1000 to reach
+# past the head of each stratum — documented there, not a new default.
+QUERY_SLEEP = float(os.environ.get("QUERY_SLEEP", "7"))
+# Pause between searches. Code search allows ~10 requests/min; pacing at
+# one query per ~7s+latency stays politely under it instead of relying
+# on the rate-limit backoff below to absorb bursts.
 RATE_LIMIT_SLEEP = 70            # GH code search is 30 req/min; back off past one window
 PER_FILE_TIMEOUT = 20            # seconds for raw download
 MAX_FILE_BYTES = 256 * 1024      # skip giant files (>256 KB) — almost certainly not a real compose
@@ -141,6 +148,7 @@ def main() -> int:
             break
         print(f"[{qi+1}/{len(queries)}] search anchor={anchor!r} filename={fn} size={size}", file=sys.stderr)
         hits = gh_search(anchor, fn, size)
+        time.sleep(QUERY_SLEEP)
         added = 0
         for h in hits:
             if Path(h["path"]).name not in FILENAMES:
