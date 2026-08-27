@@ -15,6 +15,7 @@ python scripts/corpus/fetch_canonical.py    # canonical (curated upstream repos)
 python scripts/corpus/fetch_selfhosted.py   # selfhosted (curated app stores)
 python scripts/corpus/retier.py             # promote curated repos to correct tier
 python scripts/corpus/enrich_metadata.py    # backfill stars/pushed_at/topics
+python scripts/corpus/enrich_blob_dates.py  # backfill blob_authored_at (throttled GraphQL)
 python scripts/corpus/run.py                # lint everything → runs/<ts>/
 ```
 
@@ -86,15 +87,6 @@ mkdir -p ~/.docker/cli-plugins
 install -m 0755 "$asset" ~/.docker/cli-plugins/docker-compose
 docker compose version
 ```
-
-## Tiers
-
-- `canonical` — official upstream examples (what people copy from READMEs)
-- `popular` — high-star repos with compose files (production-adjacent code)
-- `selfhosted` — app-store / template-registry repos (home-lab threat model)
-- `longtail` — stratified GH code-search corpus (what the median wild file looks like)
-
-`retier.py` must run after fetches: the downloader keys on `blob_sha` first-write-wins, so a curated app-store template swept up earlier by `fetch_popular` would otherwise stay tagged `popular`.
 
 ## Longtail sampling methodology
 

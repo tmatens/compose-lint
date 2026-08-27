@@ -215,6 +215,36 @@ The exit-2 population above is not the whole not-really-Compose story: a further
 
 Longtail's parse-error tail isn't malformed YAML. It's people writing `services` as a string-valued mapping, the way a `package.json` `dependencies` block works. A reader skimming a Compose tutorial sees `nginx: image: nginx:1.25` and writes `nginx: nginx:1.25` instead. The parse error here is itself a security-relevant finding: a Compose file that doesn't parse with a real Compose engine isn't deployed by that engine, so these files are documentation, copy-paste fragments, or first-attempts — none of which are getting linted before they ship.
 
+## Is practice improving over time?
+
+No. That is the finding of the temporal breakdown, and it may be the most consequential sentence in this report.
+
+Each file's `blob_authored_at` records the last commit touching its path on the default branch at or before the snapshot date — roughly, when the captured content was written (coverage: 5,410 of 5,417 files; the 7 nulls are deleted or now-private repos). A continuously-maintained file counts as recent, which is the right semantics here: a recent touch is a recent authoring decision.
+
+The corpus is fresher than its reputation: 49% of linted prevalence files were authored within a year of the snapshot, and only 13% are five or more years old. Age mix per tier:
+
+| Tier | <1y | 1–3y | 3–5y | ≥5y |
+| --- | ---: | ---: | ---: | ---: |
+| `canonical` | 44.2% | 30.5% | 22.5% | 2.8% |
+| `selfhosted` | 72.1% | 27.9% | 0.0% | 0.0% |
+| `collections` | 43.3% | 19.1% | 21.5% | 16.1% |
+| `popular` | 65.1% | 23.4% | 7.8% | 3.7% |
+| `longtail` | 25.8% | 32.0% | 13.7% | 28.5% |
+
+And here is the point — findings per service, by file age, within each tier:
+
+| Tier | <1y | 1–3y | ≥3y |
+| --- | ---: | ---: | ---: |
+| `canonical` | 6.16 | 6.41 | 6.01 |
+| `selfhosted` | 6.24 | 6.17 | — |
+| `collections` | 5.72 | 6.28 | 6.39 |
+| `popular` | 5.89 | 5.93 | 5.78 |
+| `longtail` | 5.78 | 5.63 | 5.17 |
+
+**Flat, everywhere.** A compose file written in the twelve months before the snapshot misses hardening controls at the same per-service rate as one written three or five years earlier — in every tier. The hardening gap this report documents is not legacy debt waiting to age out; it is how Compose files are being written *now*. (The one hint of movement — curated `collections` looking slightly better in newer files, 5.72 vs 6.39 — is inside the noise by the difference rule below and is not claimed.) Socket-mount rates per service show the same non-trend.
+
+The age data also closes the loop on the vacuous-clean artifact: 61% of ≥5-year-old files are Compose v1 relics or fragments, against 1.2% of files under a year old. The v1 population — and with it the pinned run's illusory "clean" bucket — is fossil material, concentrated exactly where the age model says it should be.
+
 ## A statistician's reading of these numbers
 
 *This section is the report's own statistical review — the questions a methods referee would ask, asked of ourselves, with each answer stated first in plain terms and then precisely. Nothing here changes a measurement; it changes how much weight each number can carry. Numbers below come from the same pinned run as everything else.*
