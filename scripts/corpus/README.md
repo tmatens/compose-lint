@@ -36,6 +36,8 @@ If you only edited the curated lists, skip the fetches: `retier.py` then `make_t
 
 `lab` and `synthetic` outrank the curated tiers on purpose: a test fixture inside a canonical repo is still a test fixture. Examples, templates, and demos are **not** synthetic — they are the copy-paste material the canonical/selfhosted tiers exist to measure; only test *inputs* and lab targets are excluded. The exclusion set itself lives in `run.EXCLUDED_FROM_PREVALENCE` so `tier_summary.md`, `charts.py`, and the report cannot disagree about it.
 
+The attribution rules are **frozen for the next snapshot** (see the declaration in `retier.py`'s docstring): they were derived from outcome data on the current snapshot, so the next sweep runs them unchanged as a replication test.
+
 Why the split exists (measured on run `20260811T044906Z`): synthetic files showed 97.3% with-findings vs 90.6% for plain files, and docker/compose's fixtures alone moved the canonical tier's headline rate from 78.1% to 83.7%; the old blended `popular` tier was bimodal — collection repos at 9.02 findings/file and 6.4% CL-0001 vs ordinary projects at 19.43 and 15.0%; vulhub *diluted* popular (0.7% files-with-CRITICAL, 0% CL-0001) but is excluded on intent, not direction.
 
 ## Charts

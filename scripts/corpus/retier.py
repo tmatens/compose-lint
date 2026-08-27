@@ -46,6 +46,16 @@ shrink or threshold change doesn't silently reset a deliberate tag).
 Prevalence exclusion for ``lab`` and ``synthetic`` lives in
 ``run.EXCLUDED_FROM_PREVALENCE`` — this script only attributes.
 
+**FROZEN for the next snapshot (declared 2026-08-27, #759).** The
+attribution rules below — the segment set, the repo lists, and
+COLLECTION_MIN_FILES=20 — were chosen after seeing outcome data on the
+20260811 snapshot, which makes any gap they reveal on *that* snapshot
+vulnerable to the forking-paths critique. They are therefore frozen as-is
+for the next corpus sweep, so the popular-vs-collections separation is a
+replication test on unseen data rather than a rediscovery. Amending them
+before that sweep requires a written reason in #759; amending them after
+is ordinary maintenance.
+
 Idempotent: rerunning produces no changes.
 """
 from __future__ import annotations

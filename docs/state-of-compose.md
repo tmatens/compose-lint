@@ -306,18 +306,20 @@ cd compose-lint
 git checkout v0.16.0    # the tool version this report is pinned to
 python -m venv .venv && .venv/bin/pip install -e .
 
-# Restore the archived snapshot this edition is measured on.
-# sha256 d9be6bbc7a0971a37d0715b5d8ef8b9ef08b64ddd375fc6aebe4e708ffa5e0f5
+# Restore the archived snapshot this edition is measured on. The r2
+# archive carries the same 5,417 files with the seven-tier index of the
+# 2026-08-27 revisions baked in (blob_authored_at included).
+# sha256 1d25274a97d3029e708b6eced3ef4dbaf1a1843c60925f0f035fa9df0574f583
+# (r1, four-tier index, kept for provenance:
+#  sha256 d9be6bbc7a0971a37d0715b5d8ef8b9ef08b64ddd375fc6aebe4e708ffa5e0f5)
 mkdir -p ~/.cache/compose-lint-corpus
-tar -xzf compose-lint-corpus-5417-20260811.tar.gz -C ~/.cache/compose-lint-corpus
+tar -xzf compose-lint-corpus-5417-20260811-r2.tar.gz -C ~/.cache/compose-lint-corpus
 
-# The 2026-08-27 revision's tier attribution and prevalence exclusion
-# live in scripts/corpus/ on current main — the v0.16.0 checkout has the
-# old four-tier pipeline, and the archived snapshot's index predates the
-# re-cut. Lint with the pinned v0.16.0 binary, but run the corpus
-# scripts (retier.py, run.py, charts.py) from a main worktree:
+# The revisions' per-tier aggregation and prevalence exclusion live in
+# scripts/corpus/ on current main — the v0.16.0 checkout has the old
+# four-tier pipeline. Lint with the pinned v0.16.0 binary, but run the
+# corpus scripts (run.py, charts.py) from a main worktree:
 git worktree add ../cl-main main
-python ../cl-main/scripts/corpus/retier.py
 
 # Lint the corpus and write summary.md + tier_summary.md.
 COMPOSE_LINT_BIN=$PWD/.venv/bin/compose-lint python ../cl-main/scripts/corpus/run.py
