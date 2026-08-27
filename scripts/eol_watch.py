@@ -16,7 +16,7 @@ What it watches, against https://endoflife.date:
   ROADMAP commits to adding one within ~3 months of each October release.
 - **debian**, the Docker runtime base (distroless on Debian, ADR-009).
 - **github-actions-runner-images**, the exact runner labels CI stands on
-  (ubuntu-24.04, and os-smoke's macos-15/windows-2025) — the image
+  (ubuntu-24.04, and os-smoke's macos-26/windows-2025) — the image
   calendar, not the OS calendar, because GitHub retires images first.
 - **docker-engine**, the major the rule premises are grounded on: its EOL
   is the signal to re-ground validate_rule_premises.py on the current
@@ -237,10 +237,10 @@ def build_watches(floor: str) -> list[Watch]:
         ),
         Watch(
             "github-actions-runner-images",
-            "macos-15",
+            "macos-26",
             "os-smoke runner image (macOS leg)",
             anchor_file=".github/workflows/os-smoke.yml",
-            anchor_pattern=r"macos-15",
+            anchor_pattern=r"macos-26",
         ),
         Watch(
             "github-actions-runner-images",
