@@ -1,20 +1,23 @@
 # Throwaway Forgejo + act_runner stack for the forgejo-smoke workflow
-# (issue #573): scripts/forgejo_smoke.py boots it, executes README's
-# Forgejo Actions snippet against it verbatim, and tears it down. This is
+# (issue #573): scripts/forgejo_smoke.py boots it, executes the
+# docs/forgejo.md Actions snippet against it verbatim, and tears it down. This is
 # harness infrastructure, not a lint fixture — nothing in CI runs
 # compose-lint against this file (it would rightly object to the Docker
 # socket mount the runner needs to spawn job containers).
 #
-# The compose-* filename keeps both images under Renovate's
-# docker-compose manager, so digest bumps arrive automatically and a
-# Forgejo/runner version bump re-runs the harness when it merges (the
-# workflow triggers on pushes touching this file). The versions here are
-# what README's "Verified on ..." line claims: forgejo_smoke.py asserts
-# the claim against the *live* instance, so bumping an image without
-# updating the README fails the run.
+# Renovate does NOT track this file, despite the compose-* filename:
+# config:recommended's :ignoreModulesAndTests preset skips tests/**
+# entirely, so image bumps here are manual (#746). Codeberg deletes a
+# superseded Forgejo patch tag — pinned digest included — within days
+# of the next patch shipping, so bump promptly when a release lands. A
+# version bump re-runs the harness when it merges (the workflow
+# triggers on pushes touching this file). The versions here are what
+# docs/forgejo.md's "Verified on ..." line claims: forgejo_smoke.py
+# asserts the claim against the *live* instance, so bumping an image
+# without updating docs/forgejo.md fails the run.
 services:
   forgejo:
-    image: codeberg.org/forgejo/forgejo:16.0.2@sha256:2fdfe28b5c68f82f49580e227b84e2afb43af0250e0631a54a386ef3b1d9b759
+    image: codeberg.org/forgejo/forgejo:16.0.3@sha256:7c4e1db440be7b2ca685b49d0d7864cdd78e92431f531bf7893659def8200fc5
     environment:
       # Headless install: lock the installer and configure via env.
       FORGEJO__security__INSTALL_LOCK: "true"
