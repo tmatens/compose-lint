@@ -26,7 +26,7 @@ In a scan of 5,417 public Docker Compose files on GitHub, **91% of those that pa
 - Supply-chain — unpinned images, missing digest pins
 - Filesystem and credential leaks — Docker socket mounts, sensitive host paths, plaintext credentials in `environment:`
 
-Use it if you ship Compose to production, want defense in depth in a homelab, or want a fast pre-merge gate on infrastructure-as-code. Fits the same niche as [Hadolint, the Dockerfile linter](https://github.com/hadolint/hadolint) and [dclint, the Compose schema linter](https://github.com/zavoloklom/docker-compose-linter): zero-config, opinionated, fast, and grounded in the [OWASP Docker Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html) and [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker).
+Use it if you ship Compose to production, want defense in depth in a homelab, or want a fast pre-merge gate on infrastructure-as-code. Fast is measured, not vibes: per-file work is sub-millisecond, a run is dominated by interpreter startup, and start-to-verdict stays a fraction of a second whether you lint one Compose file or a hundred — pre-commit never waits on it. Fits the same niche as [Hadolint, the Dockerfile linter](https://github.com/hadolint/hadolint) and [dclint, the Compose schema linter](https://github.com/zavoloklom/docker-compose-linter): zero-config, opinionated, fast, and grounded in the [OWASP Docker Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html) and [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker).
 
 ## Installation
 
