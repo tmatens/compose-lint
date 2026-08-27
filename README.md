@@ -14,7 +14,7 @@
 
 Static-analysis checks for `docker-compose.yml` and `compose.yaml`, covering privileged containers, unpinned images, host-network sharing, sensitive bind mounts, hard-coded credentials, and more. Full rule documentation lives at **[tmatens.github.io/compose-lint](https://tmatens.github.io/compose-lint/)** (the same pages `--explain` prints offline).
 
-In a scan of 5,417 public Docker Compose files on GitHub, **90% of the real-world files that parse had at least one security finding** (test fixtures and deliberately-vulnerable lab environments counted separately). Nearly all skip basic capability restrictions, 48% run images without a pinned digest, and 66% bind ports to all interfaces — and popular projects' own compose files are the most exposed of all, at 99.6% with findings. compose-lint catches these in CI before they ship. **[Read the full *State of Docker Compose Security* report →](https://tmatens.github.io/compose-lint/state-of-compose/)**
+In a scan of 11,111 public Docker Compose files on GitHub, **99% of the real-world files that lint had at least one security finding** (test fixtures, vuln-lab environments, and files where nothing was linted counted separately). Nearly all skip basic capability restrictions, 50% run images without a pinned digest, 72% bind ports to all interfaces, and more than one in four carries a literal credential. compose-lint catches these in CI before they ship. **[Read the full *State of Docker Compose Security* report →](https://tmatens.github.io/compose-lint/state-of-compose/)**
 
 <!-- Demo GIF. Regenerate with scripts/demo/ — see scripts/demo/README.md. -->
 ![compose-lint scanning a docker-compose.yml with two services: under `service: watchtower`, a CRITICAL mounted Docker socket (CL-0001) with a box-drawing underline, fix block and reference URL, above a MEDIUM image pinned to a tag but not a digest (CL-0019); then under `service: db`, a HIGH plaintext credential (CL-0020) with `POSTGRES_PASSWORD: hunter2` underlined — then the FAIL verdict, and `compose-lint --explain CL-0001` reading the offline rule docs in its built-in pager: the title, severity derivation and references hold on the first page, the status line naming the controls — `CL-0001 · Space next · b back · q quit` — then a page-down continues into the doc, prompt still in place.](https://raw.githubusercontent.com/tmatens/compose-lint/main/docs/assets/demo.gif)
@@ -104,8 +104,8 @@ Python 3.11+ is required for the pip install path; the Docker image is self-cont
 ## Adopting on an existing repo
 
 Most established stacks don't start clean — in the [State of Compose
-scan](https://tmatens.github.io/compose-lint/state-of-compose/), 90% of
-real-world public Compose files that parse had at least one finding. You don't have to fix
+scan](https://tmatens.github.io/compose-lint/state-of-compose/), 99% of
+real-world public Compose files that lint had at least one finding. You don't have to fix
 everything before the gate goes in: `compose-lint init` turns a file's current
 findings into a `.compose-lint.yml` baseline you then triage, so the gate can
 go in today without hand-authoring suppressions from the schema:
