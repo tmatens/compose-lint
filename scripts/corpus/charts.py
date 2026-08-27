@@ -46,16 +46,24 @@ from matplotlib.patches import Patch  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).parent))
 from make_tier_summary import resolve_run  # noqa: E402
-from run import aggregate_tiers, get_cl_version, load_index  # noqa: E402
+from run import (  # noqa: E402
+    EXCLUDED_FROM_PREVALENCE,
+    aggregate_tiers,
+    get_cl_version,
+    load_index,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RULES_DIR = REPO_ROOT / "docs" / "rules"
 ASSETS = REPO_ROOT / "docs" / "assets"            # SVGs embedded in the report
 PNG_ASSETS = REPO_ROOT / "docs" / "publishing" / "assets"  # PNGs for blog upload
 
-# Tier order is the report's order (cleanest -> noisiest framing), not
-# alphabetical, so charts read the same way the prose does.
-TIER_ORDER = ("canonical", "popular", "selfhosted", "longtail")
+# Tier order is the report's order (curated head -> longtail), not
+# alphabetical, so charts read the same way the prose does. Excluded
+# (non-prevalence) tiers never reach the chart functions: main() filters
+# `by_tier` through run.EXCLUDED_FROM_PREVALENCE once, so every
+# aggregation and provenance line below is prevalence-bearing only.
+TIER_ORDER = ("canonical", "selfhosted", "collections", "popular", "longtail")
 SEVERITY_ORDER = ("critical", "high", "medium", "low")
 
 # Severity palette: a warm red->amber ramp plus neutral grey for LOW. Chosen
@@ -121,7 +129,8 @@ def _run_version(run_dir: Path) -> str:
 
 def _provenance(by_tier: dict[str, dict], run_dir: Path) -> str:
     parsed = sum(b["parsed"] for b in by_tier.values())
-    return f"compose-lint {_run_version(run_dir)}  ·  corpus {run_dir.name}  ·  n={parsed:,} parsed"
+    return (f"compose-lint {_run_version(run_dir)}  ·  corpus {run_dir.name}"
+            f"  ·  n={parsed:,} parsed, prevalence tiers")
 
 
 def _caption(fig: plt.Figure, text: str) -> None:
@@ -151,7 +160,7 @@ def chart_findings_by_tier(by_tier: dict[str, dict], run_dir: Path) -> tuple[plt
 
     ax.set_ylim(0, 108)
     ax.set_ylabel("Files with ≥1 finding (% of parsed)")
-    ax.set_title("Every tier ships findings — even the cleanest is 83%")
+    ax.set_title(f"Every tier ships findings — even the cleanest is {min(pct):.0f}%")
     ax.set_axisbelow(True)
     ax.yaxis.grid(True, color=GRID)
     ax.tick_params(length=0)
@@ -325,6 +334,9 @@ def main(argv: list[str]) -> int:
     _style()
     results = [json.loads(line) for line in results_path.open()]
     by_tier, rule_severity = aggregate_tiers(results, load_index())
+    # Prevalence claims only: synthetic test inputs and lab environments
+    # are corpus members but not real-world deployment intent (retier.py).
+    by_tier = {t: b for t, b in by_tier.items() if t not in EXCLUDED_FROM_PREVALENCE}
 
     if cover:
         # Blog cover banner only -> PNG in docs/publishing/assets/.

@@ -4,17 +4,20 @@
 >
 > Pinned to **compose-lint 0.16.0** and corpus run **`20260811T044906Z`** (5,417 files, 2026-08-11).
 >
+> **Revised 2026-08-27 — same measurement, re-cut attribution.** The snapshot, the lint run, and the tool version are unchanged; what changed is how files are attributed to tiers. A composition analysis split the corpus into seven tiers: test *inputs* to compose tooling (`synthetic`, 476 files — docker/compose e2e fixtures and the like) and deliberately-vulnerable lab environments (`lab`, 310 files — vulhub, CTF archives) are now excluded from every prevalence claim, and template-collection repos (`collections`, 1,485 files) are split out of `popular`. Every figure below is a re-partition of the same underlying results — unlike a new edition, the pre- and post-revision figures are mappable 1:1. The headline moved from 91% to 89.9%; the largest correction is to the `popular` tier, which previously blended two populations with a 2× security gap.
+>
 > **This edition is a new baseline, not a refresh of the previous one.** The 6,444-file corpus the 0.7.0 edition was pinned to no longer exists, and it cannot be rebuilt: its `longtail` tier was a stratified GitHub code-search sweep, and GitHub does not reproduce that sweep. The rule set changed underneath it as well. Two variables moved at once, so **no delta across the two editions is measurable, and none is presented here** — figures from the 0.7.0 edition are not repeated as like-for-like comparisons, because they were not measured the same way. The snapshot behind this edition is archived rather than left in a cache directory, so the discontinuity does not happen twice, and refreshes measured against it can carry a delta callout.
 
 The first published empirical study of security misconfigurations in real-world Docker Compose files at corpus scale.
 
 ## TL;DR
 
-- **91% of public Docker Compose files** that successfully parse ship with at least one security finding (4,816 of 5,279 parsed files, from a 5,417-file corpus).
-- **Even canonical vendor examples are not clean.** The canonical tier — the awesome-compose / bitnami / grafana / vaultwarden examples people copy-paste — averages 9.95 findings per file, and 83.7% of those files carry at least one.
-- **The same four rules lead every tier:** filesystem not read-only, no capability restrictions, no resource limits, privilege escalation not blocked. Each fires on 89–91% of parsed files, and their order barely changes between vendor examples and the longtail.
-- **9.1% of longtail files fail to parse as a v2/v3 Compose file at all** — almost entirely shape errors (someone wrote `services` as a string-valued mapping instead of a service-mapping), not malformed YAML. We treat the parse-error population as a finding, not a discard.
-- **Every one of the 25 rules fires on real files.** None is dead, and there were zero crashes and zero timeouts across 5,279 linted files.
+- **90% of real-world public Docker Compose files** that successfully parse ship with at least one security finding (4,044 of 4,499 parsed files across the five prevalence tiers of a 5,417-file corpus; test fixtures and lab environments are counted separately).
+- **Popular projects' own compose files are the worst population in the corpus.** With template collections, test fixtures, and vuln-lab repos split out, the `popular` tier — ordinary ≥50★ projects' own service definitions — runs **99.6% with findings at 19.8 findings per file**, roughly twice any template tier, and 16.4% of them mount a host control socket.
+- **Even canonical vendor examples are not clean.** The canonical tier — the awesome-compose / bitnami / grafana / vaultwarden examples people copy-paste — averages 10.4 findings per file, and 77.7% of those files carry at least one.
+- **The same four rules lead every tier:** filesystem not read-only, no capability restrictions, no resource limits, privilege escalation not blocked. Each fires on 88–89% of parsed files, and their order barely changes between vendor examples and the longtail.
+- **9.5% of longtail files fail to parse as a v2/v3 Compose file at all** — almost entirely shape errors (someone wrote `services` as a string-valued mapping instead of a service-mapping), not malformed YAML. We treat the parse-error population as a finding, not a discard.
+- **Every one of the 25 rules fires on real files.** None is dead — even with the synthetic and lab tiers excluded, all 25 fire in the prevalence tiers — and there were zero crashes and zero timeouts across all 5,279 linted files.
 
 The framing is descriptive, not inferential. Read [§ What this study does NOT claim](#what-this-study-does-not-claim) before citing any number from this report.
 
@@ -24,14 +27,19 @@ The framing is descriptive, not inferential. Read [§ What this study does NOT c
 
 The corpus lives outside the repo at `~/.cache/compose-lint-corpus/`. Each unique compose file is stored by content hash; an index file maps content hash → source repo, path, blob SHA, and tier. The fetch + lint pipeline is in [`scripts/corpus/`](https://github.com/tmatens/compose-lint/tree/main/scripts/corpus). All numbers in this report come from corpus run `20260811T044906Z` (2026-08-11).
 
-The corpus is divided into four tiers, each with a distinct threat-model framing:
+The corpus is divided into seven tiers, each with a distinct framing. Five carry prevalence claims; two are excluded from them (marked ✗) — they are corpus members and useful lint fuel, but not real-world deployment intent. The attribution rules and the measurements behind the split live in [`scripts/corpus/README.md`](https://github.com/tmatens/compose-lint/blob/main/scripts/corpus/README.md#tiers) and `scripts/corpus/retier.py`.
 
-| Tier | Files | What it represents |
-| --- | ---: | --- |
-| `canonical` | 345 | Official upstream examples (awesome-compose, bitnami, docker/compose, grafana, vaultwarden, …). *Do the examples people copy-paste ship insecure defaults?* |
-| `popular` | 3,351 | High-star (≥50) GitHub repos with a Compose file pushed in the last two years. *What does production-adjacent code look like?* |
-| `selfhosted` | 596 | Curated app-store / template-registry repos (CasaOS-AppStore, runtipi-appstore, Compose-Examples, dockge, …). Distinct threat model from `popular`: home-LAN deployments, not cloud. |
-| `longtail` | 1,125 | Stratified GitHub-code-search sweep across anchor terms × filenames × size buckets — the low-visibility mass of ordinary repos (a homelab, a tutorial follow-along, a half-finished side project), as opposed to the curated, high-attention head the other three tiers represent. The name is the "long tail" of GitHub *by repo attention*, not a distribution tail in the statistical sense. *What does the median compose file in the wild look like?* |
+| Tier | Files | Prevalence | What it represents |
+| --- | ---: | :---: | --- |
+| `canonical` | 249 | ✓ | Official upstream examples (awesome-compose, bitnami, grafana, vaultwarden, …). *Do the examples people copy-paste ship insecure defaults?* |
+| `selfhosted` | 596 | ✓ | Curated app-store / template-registry repos (CasaOS-AppStore, runtipi-appstore, Compose-Examples, dockge, …). Distinct threat model: home-LAN deployments, not cloud. |
+| `collections` | 1,485 | ✓ | Template/recipe collection repos (≥20 corpus entries from one repo — vimagick/dockerfiles, laradock, ScaleTail, …): curated example libraries that happened to clear the popular tier's star bar. |
+| `popular` | 1,231 | ✓ | Ordinary high-star (≥50) projects' **own** compose files, pushed in the last two years. *What does production-adjacent code look like?* |
+| `longtail` | 1,070 | ✓ | Stratified GitHub-code-search sweep across anchor terms × filenames × size buckets — the low-visibility mass of ordinary repos (a homelab, a tutorial follow-along, a half-finished side project), as opposed to the curated, high-attention head. The name is the "long tail" of GitHub *by repo attention*, not a distribution tail in the statistical sense. *What does the median compose file in the wild look like?* |
+| `synthetic` | 476 | ✗ | Test *inputs* to compose tooling: files under test/fixture/e2e path segments anywhere, plus whole tool repos (docker/compose, podman-compose, kompose). Minimal snippets that omit every hardening key by construction (98.3% with findings). |
+| `lab` | 310 | ✗ | Deliberately-vulnerable environments: vulhub CVE reproductions, CTF challenge archives. Measured, they *dilute* rather than inflate (0.7% of files carry a CRITICAL; none mounts a control socket) — excluded on intent, not direction. |
+
+Examples, templates, and demos are deliberately **not** synthetic: copy-paste material is exactly the population the `canonical`, `selfhosted`, and `collections` tiers exist to measure. Only test inputs and lab targets are excluded.
 
 Tier sizes are a property of the sweep that built this snapshot, not a designed allocation, and they differ from the previous edition's. The `longtail` tier in particular is whatever the code-search sweep returned on the day it ran — which is exactly why it does not reproduce.
 
@@ -49,35 +57,35 @@ For ranking rules by overall impact within a tier we use a doubled weighting: **
 
 ## Findings overview
 
-Across the 5,279 successfully-parsed files:
+Across the 4,499 successfully-parsed files in the five prevalence tiers:
 
 | Metric | Value |
 | --- | ---: |
-| Files with ≥1 finding | 4,816 (91.2%) |
-| Files clean | 463 (8.8%) |
-| Total findings | 61,735 |
-| Findings per file (mean) | 11.7 |
+| Files with ≥1 finding | 4,044 (89.9%) |
+| Files clean | 455 (10.1%) |
+| Total findings | 53,723 |
+| Findings per file (mean) | 11.9 |
 | Findings per file (median) | 7 |
 | Findings per file (max) | 323 |
 
-Severity distribution across the 61,735 findings:
+Severity distribution across the 53,723 findings:
 
 | Severity | Count | Share |
 | --- | ---: | ---: |
-| CRITICAL | 780 | 1.3% |
-| HIGH | 3,465 | 5.6% |
-| MEDIUM | 47,062 | 76.2% |
-| LOW | 10,428 | 16.9% |
+| CRITICAL | 687 | 1.3% |
+| HIGH | 3,051 | 5.7% |
+| MEDIUM | 40,943 | 76.2% |
+| LOW | 9,042 | 16.8% |
 
-![Stacked bar of findings by severity across all 61,735 findings: MEDIUM 76.2% (47,062), LOW 16.9% (10,428), HIGH 5.6% (3,465), CRITICAL 1.3% (780).](assets/severity-distribution.svg)
+![Stacked bar of findings by severity across all 53,723 findings: MEDIUM 76.2% (40,943), LOW 16.8% (9,042), HIGH 5.7% (3,051), CRITICAL 1.3% (687).](assets/severity-distribution.svg)
 
-The MEDIUM-heavy distribution is a property of compose-lint's rule design, not of the corpus: the hardening misses that fire on nearly every file — capability restrictions, no-new-privileges, resource limits — sit at MEDIUM, so a near-universal rule contributes tens of thousands of findings to one tier. CRITICAL findings are rarer, because they require something acutely dangerous like a mounted control socket, but they are not marginal: **10.5% of parsed files (554 of 5,279) carry at least one CRITICAL finding**, and 7.6% carry a mounted host control socket specifically.
+The MEDIUM-heavy distribution is a property of compose-lint's rule design, not of the corpus: the hardening misses that fire on nearly every file — capability restrictions, no-new-privileges, resource limits — sit at MEDIUM, so a near-universal rule contributes tens of thousands of findings to one tier. CRITICAL findings are rarer, because they require something acutely dangerous like a mounted control socket, but they are not marginal: **11.0% of parsed files (497 of 4,499) carry at least one CRITICAL finding**, and 8.2% carry a mounted host control socket specifically.
 
-Broadening to HIGH-or-above, **32.4% of parsed files (1,710) carry at least one finding rated HIGH or CRITICAL.** Roughly a third of public Compose files contain something the model rates as an active dangerous grant rather than a missing flag.
+Broadening to HIGH-or-above, **34.2% of parsed files (1,540) carry at least one finding rated HIGH or CRITICAL.** Roughly a third of public Compose files contain something the model rates as an active dangerous grant rather than a missing flag.
 
 If you remember a much larger HIGH-or-above share from the previous edition, that is a rule-model difference, not a change in what people write — the derived model moved several near-universal rules off HIGH, most consequentially the published-port rule. It cannot be quantified as a delta, because the corpus changed at the same time.
 
-**LOW is one rule.** The 10,428 LOW findings (16.9%) look like a substantial tier and are almost entirely a single rule: [CL-0007](rules/CL-0007.md) (filesystem not read-only) accounts for 10,405 of them, or 99.8%. The remaining 23 come from [CL-0014](rules/CL-0014.md) (logging driver disabled, 15), [CL-0022](rules/CL-0022.md) (tmpfs re-enables exec/suid/dev, 5), and [CL-0017](rules/CL-0017.md) (shared mount propagation, 3) — rules that fire only when a file *explicitly* opts out of a default, a deliberate and uncommon act rather than an omission. Read the LOW tier as "almost every file omits `read_only: true`", not as a broad population of small problems.
+**LOW is one rule.** The 9,042 LOW findings (16.8%) look like a substantial tier and are almost entirely a single rule: [CL-0007](rules/CL-0007.md) (filesystem not read-only) accounts for 9,020 of them, or 99.8%. The remaining 22 come from [CL-0014](rules/CL-0014.md) (logging driver disabled, 14), [CL-0022](rules/CL-0022.md) (tmpfs re-enables exec/suid/dev, 5), and [CL-0017](rules/CL-0017.md) (shared mount propagation, 3) — rules that fire only when a file *explicitly* opts out of a default, a deliberate and uncommon act rather than an omission. Read the LOW tier as "almost every file omits `read_only: true`", not as a broad population of small problems.
 
 ## Per-tier breakdown
 
@@ -87,46 +95,51 @@ Tier-level rates differ enough that aggregate "X% of compose files have finding 
 
 | Tier | Total | Parsed | With findings | Clean | Rate (of parsed) | Findings per parsed file |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `canonical` | 345 | 343 | 287 | 56 | 83.7% | 9.95 |
-| `popular` | 3,351 | 3,317 | 3,150 | 167 | 95.0% | 13.29 |
+| `canonical` | 249 | 247 | 192 | 55 | 77.7% | 10.43 |
 | `selfhosted` | 596 | 596 | 596 | 0 | **100.0%** | 9.32 |
-| `longtail` | 1,125 | 1,023 | 783 | 240 | 76.5% | 8.50 |
+| `collections` | 1,485 | 1,472 | 1,312 | 160 | 89.1% | 8.85 |
+| `popular` | 1,231 | 1,216 | 1,211 | 5 | **99.6%** | **19.83** |
+| `longtail` | 1,070 | 968 | 733 | 235 | 75.7% | 8.72 |
 
-![Bar chart of the share of parsed files with at least one finding, by tier: canonical 83.7%, popular 95.0%, selfhosted 100.0%, longtail 76.5%.](assets/findings-by-tier.svg)
+![Bar chart of the share of parsed files with at least one finding, by tier: canonical 77.7%, selfhosted 100.0%, collections 89.1%, popular 99.6%, longtail 75.7%.](assets/findings-by-tier.svg)
+
+The excluded tiers, for transparency: `synthetic` 470 parsed, 98.3% with findings, 11.20 per file (minimal fixtures omit every hardening key by construction — including them would inflate every rate above); `lab` 310 parsed, 100% with findings, 8.87 per file.
 
 Notable observations:
 
-- **Every `selfhosted` file has at least one finding.** The app-store templates ship with optimistic defaults — they target a home-LAN audience and frequently expose ports on `0.0.0.0`, run as root, mount large host paths, and skip the hardening flags. The fact that 100% of these files trigger compose-lint is the central finding of this tier.
-- **Popular repos are not noticeably better than the longtail.** With ≥50 stars and recent activity as the inclusion criteria, the `popular` tier averages *more* findings per file than the longtail — 13.29 against 8.50. Higher visibility doesn't translate to hardening discipline.
-- **Canonical is the cleanest tier and still 84% with findings.** The vendor examples that READMEs tell users to copy-paste are not hardening exemplars — they're configuration demos. That's the gap this report is documenting.
+- **Ordinary projects' own compose files are the worst population in the corpus — by a factor of two.** Only 5 of 1,216 parsed `popular` files are clean, and the tier averages 19.83 findings per file against 8.5–10.4 for every template tier. The pre-revision blend (95.0% at 13.29) understated this: three fifths of the old tier was template collections at 8.85 findings per file, and averaging the two populations described neither. When someone writes a compose file *for their own service* rather than as an example for others, hardening is essentially absent.
+- **Every `selfhosted` file has at least one finding.** The app-store templates ship with optimistic defaults — they target a home-LAN audience and frequently expose ports on `0.0.0.0`, run as root, mount large host paths, and skip the hardening flags. The fact that 100% of these files trigger compose-lint remains the central finding of this tier.
+- **Canonical is the cleanest curated tier and still 78% with findings.** The vendor examples that READMEs tell users to copy-paste are not hardening exemplars — they're configuration demos. That's the gap this report is documenting. (The pre-revision 83.7% was partly an artifact: 27% of the old tier was docker/compose's e2e fixtures, now attributed to `synthetic`.)
+- **Collections sit between the curated head and the longtail** — 89.1% at 8.85 findings per file: better-groomed than random files, no more hardened than app-store templates.
 
 ### Severity distribution per tier
 
 | Tier | CRITICAL | HIGH | MEDIUM | LOW |
 | --- | ---: | ---: | ---: | ---: |
-| `canonical` | 23 | 212 | 2,591 | 587 |
-| `popular` | 624 | 2,499 | 33,550 | 7,396 |
+| `canonical` | 23 | 212 | 1,925 | 417 |
 | `selfhosted` | 67 | 318 | 4,287 | 885 |
-| `longtail` | 66 | 436 | 6,634 | 1,560 |
+| `collections` | 192 | 794 | 9,887 | 2,158 |
+| `popular` | 339 | 1,295 | 18,410 | 4,075 |
+| `longtail` | 66 | 432 | 6,434 | 1,507 |
 
-CRITICAL findings are concentrated in `popular` (624 of 780, 80% of all CRITICAL findings in the corpus) — though `popular` is also the largest tier, so the concentration partly tracks tier size. Normalising to the share of each tier's parsed files carrying a mounted host control socket ([CL-0001](rules/CL-0001.md), the dominant CRITICAL rule) separates the two: `popular` 9.9%, `selfhosted` 5.2%, `canonical` 4.4%, `longtail` 2.3%. The production-adjacent tier really does mount the control socket most often, roughly four times as often as the longtail.
+CRITICAL findings concentrate in `popular` (339 of 687, 49% of all CRITICAL findings in the prevalence tiers, from 27% of the parsed files). Normalising to the share of each tier's parsed files carrying a mounted host control socket ([CL-0001](rules/CL-0001.md), the dominant CRITICAL rule) makes the gap starker: `popular` **16.4%**, `collections` 6.7%, `canonical` 6.1%, `selfhosted` 5.2%, `longtail` 2.5%. Ordinary projects mount the control socket six and a half times as often as the longtail and two and a half times as often as any template tier — the pre-revision blend reported 9.9% for this population.
 
 ## Top findings
 
 Ten rules account for 98% of all findings. They cluster into three groups: hardening defaults that nobody flips, supply-chain shortcuts, and acute privilege grants.
 
-![Horizontal bar chart of the ten most common rules by share of parsed files affected, coloured by severity: CL-0007 read_only 91% (LOW), CL-0006 cap_drop ALL 91% (MEDIUM), CL-0026 No resource limits 90% (MEDIUM), CL-0003 no-new-privileges 89% (MEDIUM), CL-0005 Ports published on 0.0.0.0 64% (MEDIUM), CL-0019 Image tags without digest pins 49% (MEDIUM), CL-0004 Unpinned image tags 46% (MEDIUM), CL-0020 Credential-shaped environment keys 20% (HIGH), CL-0001 Host control socket exposed 8% (CRITICAL), CL-0011 Strong host-adjacent capabilities 4% (HIGH).](assets/top-findings.svg)
+![Horizontal bar chart of the ten most common rules by share of parsed files affected, coloured by severity: CL-0007 read_only 89% (LOW), CL-0006 cap_drop ALL 89% (MEDIUM), CL-0026 No resource limits 88% (MEDIUM), CL-0003 no-new-privileges 88% (MEDIUM), CL-0005 Ports published on 0.0.0.0 66% (MEDIUM), CL-0019 Image tags without digest pins 48% (MEDIUM), CL-0004 Unpinned image tags 47% (MEDIUM), CL-0020 Credential-shaped environment keys 20% (HIGH), CL-0001 Host control socket exposed 8% (CRITICAL), CL-0011 Strong host-adjacent capabilities 4% (HIGH).](assets/top-findings.svg)
 
 ### Hardening defaults (the bulk of the findings)
 
-These four rules fire on roughly 90% of every parsed file in the corpus:
+These four rules fire on roughly 90% of every parsed file in the prevalence tiers:
 
 | Rule | Severity | Files affected | Share of parsed |
 | --- | --- | ---: | ---: |
-| [CL-0007](rules/CL-0007.md) Filesystem not read-only | LOW | 4,791 | 90.8% |
-| [CL-0006](rules/CL-0006.md) No capability restrictions | MEDIUM | 4,788 | 90.7% |
-| [CL-0026](rules/CL-0026.md) No resource limits | MEDIUM | 4,728 | 89.6% |
-| [CL-0003](rules/CL-0003.md) Privilege escalation not blocked | MEDIUM | 4,722 | 89.4% |
+| [CL-0007](rules/CL-0007.md) Filesystem not read-only | LOW | 4,023 | 89.4% |
+| [CL-0006](rules/CL-0006.md) No capability restrictions | MEDIUM | 4,017 | 89.3% |
+| [CL-0026](rules/CL-0026.md) No resource limits | MEDIUM | 3,959 | 88.0% |
+| [CL-0003](rules/CL-0003.md) Privilege escalation not blocked | MEDIUM | 3,951 | 87.8% |
 
 Each is a *missing hardening flag* rather than an active misuse — the file isn't doing something dangerous, it's failing to opt into a defense-in-depth control, which is why the derived model rates them MEDIUM or LOW rather than HIGH. The fact that each fires on ~90% of files is the central observation of the report: the Compose hardening set (`read_only: true`, `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, and a `deploy.resources.limits` block) is essentially never set.
 
@@ -136,59 +149,60 @@ The four move together. They are not four independent habits but one: a service 
 
 | Rule | Severity | Files affected | Share of parsed |
 | --- | --- | ---: | ---: |
-| [CL-0005](rules/CL-0005.md) Ports bound to all interfaces | MEDIUM | 3,396 | 64.3% |
-| [CL-0019](rules/CL-0019.md) Image tag without digest | MEDIUM | 2,595 | 49.2% |
-| [CL-0004](rules/CL-0004.md) Image not pinned to version | MEDIUM | 2,421 | 45.9% |
+| [CL-0005](rules/CL-0005.md) Ports bound to all interfaces | MEDIUM | 2,945 | 65.5% |
+| [CL-0019](rules/CL-0019.md) Image tag without digest | MEDIUM | 2,143 | 47.6% |
+| [CL-0004](rules/CL-0004.md) Image not pinned to version | MEDIUM | 2,105 | 46.8% |
 
-Nearly two thirds of all parsed files publish at least one port to `0.0.0.0`. The image-pinning pair (CL-0019 + CL-0004) shows that ~49% of files don't pin a digest and ~46% don't even pin a tag — `latest` is still the de facto default in published examples.
+Nearly two thirds of all parsed files publish at least one port to `0.0.0.0`. The image-pinning pair (CL-0019 + CL-0004) shows that ~48% of files don't pin a digest and ~47% don't even pin a tag — `latest` is still the de facto default in published examples.
 
 ### Acute privilege grants
 
 | Rule | Severity | Files affected | Share of parsed |
 | --- | --- | ---: | ---: |
-| [CL-0020](rules/CL-0020.md) Credential-shaped env key with literal value | HIGH | 1,042 | 19.7% |
-| [CL-0001](rules/CL-0001.md) Host control socket exposed | CRITICAL | 399 | 7.6% |
-| [CL-0011](rules/CL-0011.md) Strong host-adjacent capability added | HIGH | 194 | 3.7% |
-| [CL-0021](rules/CL-0021.md) Credential embedded in connection-string env value | HIGH | 152 | 2.9% |
-| [CL-0008](rules/CL-0008.md) Host network mode | HIGH | 137 | 2.6% |
-| [CL-0013](rules/CL-0013.md) Sensitive host path exposed | HIGH | 126 | 2.4% |
-| [CL-0002](rules/CL-0002.md) Privileged mode enabled | CRITICAL | 121 | 2.3% |
-| [CL-0024](rules/CL-0024.md) Host-code-execution capability added | CRITICAL | 66 | 1.3% |
-| [CL-0025](rules/CL-0025.md) Root-equivalent host path mounted writable | CRITICAL | 30 | 0.6% |
+| [CL-0020](rules/CL-0020.md) Credential-shaped env key with literal value | HIGH | 914 | 20.3% |
+| [CL-0001](rules/CL-0001.md) Host control socket exposed | CRITICAL | 368 | 8.2% |
+| [CL-0011](rules/CL-0011.md) Strong host-adjacent capability added | HIGH | 192 | 4.3% |
+| [CL-0021](rules/CL-0021.md) Credential embedded in connection-string env value | HIGH | 144 | 3.2% |
+| [CL-0008](rules/CL-0008.md) Host network mode | HIGH | 131 | 2.9% |
+| [CL-0013](rules/CL-0013.md) Sensitive host path exposed | HIGH | 108 | 2.4% |
+| [CL-0002](rules/CL-0002.md) Privileged mode enabled | CRITICAL | 108 | 2.4% |
+| [CL-0024](rules/CL-0024.md) Host-code-execution capability added | CRITICAL | 49 | 1.1% |
+| [CL-0025](rules/CL-0025.md) Root-equivalent host path mounted writable | CRITICAL | 30 | 0.7% |
 
 These are the rules where a finding indicates an *active* dangerous configuration, not a missing flag. Two observations:
 
-- **Plaintext credentials are the most common acute finding by a wide margin.** CL-0020 fires on 19.7% of parsed files — roughly one in five commits a literal value to an environment variable that looks like a credential (e.g. `DB_PASSWORD: hunter2`). Adding CL-0021's connection-string variant, better than one in five public Compose files carries a credential in cleartext.
-- **The container-escape rules are rare but not negligible.** A mounted host control socket (CL-0001, 7.6%) and `privileged: true` (CL-0002, 2.3%) each grant root-equivalent host access. Together with the capability and host-path rules, they are what lifts the CRITICAL-carrying share to 10.5% of parsed files.
+- **Plaintext credentials are the most common acute finding by a wide margin.** CL-0020 fires on 20.3% of parsed files — roughly one in five commits a literal value to an environment variable that looks like a credential (e.g. `DB_PASSWORD: hunter2`). Adding CL-0021's connection-string variant, better than one in five public Compose files carries a credential in cleartext.
+- **The container-escape rules are rare but not negligible.** A mounted host control socket (CL-0001, 8.2%) and `privileged: true` (CL-0002, 2.4%) each grant root-equivalent host access. Together with the capability and host-path rules, they are what lifts the CRITICAL-carrying share to 11.0% of parsed files.
 
-The remaining rules each fire on under 1.5% of files: [CL-0018](rules/CL-0018.md) explicit root user (1.3%), [CL-0009](rules/CL-0009.md) security profile disabled (1.1%), [CL-0010](rules/CL-0010.md) host namespace sharing (0.5%), [CL-0027](rules/CL-0027.md) bounded-grant capability (0.2%), [CL-0014](rules/CL-0014.md) logging driver disabled (0.2%), [CL-0016](rules/CL-0016.md) dangerous host device (0.1%), [CL-0022](rules/CL-0022.md) tmpfs re-enables exec/suid/dev (0.1%), [CL-0017](rules/CL-0017.md) shared mount propagation (0.1%), and [CL-0028](rules/CL-0028.md) host-reaching capability (one file). A rule at this rate is not dead — it is specific, and the corpus is large enough to find its handful of real instances.
+The remaining rules each fire on at most 1.5% of files: [CL-0018](rules/CL-0018.md) explicit root user (1.5%), [CL-0009](rules/CL-0009.md) security profile disabled (0.9%), [CL-0010](rules/CL-0010.md) host namespace sharing (0.5%), [CL-0027](rules/CL-0027.md) bounded-grant capability (0.3%), [CL-0014](rules/CL-0014.md) logging driver disabled (0.2%), [CL-0016](rules/CL-0016.md) dangerous host device (0.1%), [CL-0022](rules/CL-0022.md) tmpfs re-enables exec/suid/dev (0.1%), [CL-0017](rules/CL-0017.md) shared mount propagation (0.1%), and [CL-0028](rules/CL-0028.md) host-reaching capability (one file). A rule at this rate is not dead — it is specific, and the corpus is large enough to find its handful of real instances.
 
 ## Parse errors as a finding
 
-138 of 5,417 files (2.5%) did not lint as a v2 or v3 Compose file. The dominant class is shape errors — files that don't match the Compose schema's expected structure — not malformed YAML.
+132 of the 4,631 prevalence-tier files (2.9%) did not lint as a v2 or v3 Compose file (the excluded tiers add 6 more, all in `synthetic`). The dominant class is shape errors — files that don't match the Compose schema's expected structure — not malformed YAML.
 
 | Class | Count | Description |
 | --- | ---: | --- |
 | `services-not-mapping` | 55 | The top-level `services` key is something other than a mapping (commonly a list or a scalar) |
 | `service-not-mapping` | 32 | A specific service is a scalar instead of a mapping (e.g., `db: "postgres:14"`) |
-| `invalid-yaml` | 24 | YAML scanner / parser error |
+| `invalid-yaml` | 23 | YAML scanner / parser error |
 | `empty-file` | 8 | File parsed to nothing |
-| `top-level-not-mapping` | 7 | Root document is a list or scalar |
-| `other` | 7 | Not a parse failure — all seven are files using `include:`, which compose-lint declines to lint because it does not resolve included files (see below) |
+| `other` | 5 | Not a parse failure — all five are files using `include:`, which compose-lint declines to lint because it does not resolve included files (see below) |
 | `missing-services-key` | 5 | No `services:` at the top level (likely an `extends:`-only fragment or an old v1 file) |
+| `top-level-not-mapping` | 4 | Root document is a list or scalar |
 
-**Seven of the 138 are not errors.** They are `include:` files, which compose-lint deliberately refuses rather than lints: the services live in other files it does not resolve, so linting what is written would report a misleading clean result. They land in the same exit-2 population as genuine parse failures and are counted here for completeness; the real parse-failure count is 131 (2.4%).
+**Five of the 132 are not errors.** They are `include:` files, which compose-lint deliberately refuses rather than lints: the services live in other files it does not resolve, so linting what is written would report a misleading clean result. They land in the same exit-2 population as genuine parse failures and are counted here for completeness; the real parse-failure count is 127 (2.7%).
 
 The per-tier rate is the load-bearing number:
 
 | Tier | Parse-error rate | Dominant class |
 | --- | ---: | --- |
-| `canonical` | 0.6% | invalid-yaml |
-| `popular` | 1.0% | invalid-yaml |
+| `canonical` | 0.8% | invalid-yaml |
 | `selfhosted` | 0.0% | — |
-| `longtail` | **9.1%** | shape errors (53% + 30%) |
+| `collections` | 0.9% | invalid-yaml |
+| `popular` | 1.2% | invalid-yaml |
+| `longtail` | **9.5%** | shape errors (53% + 30%) |
 
-![Bar chart of parse-error rate by tier: canonical 0.6%, popular 1.0%, selfhosted 0.0%, longtail 9.1%.](assets/parse-error-rate.svg)
+![Bar chart of parse-error rate by tier: canonical 0.8%, selfhosted 0.0%, collections 0.9%, popular 1.2%, longtail 9.5%.](assets/parse-error-rate.svg)
 
 Longtail's parse-error tail isn't malformed YAML. It's people writing `services` as a string-valued mapping, the way a `package.json` `dependencies` block works. A reader skimming a Compose tutorial sees `nginx: image: nginx:1.25` and writes `nginx: nginx:1.25` instead. The parse error here is itself a security-relevant finding: a Compose file that doesn't parse with a real Compose engine isn't deployed by that engine, so these files are documentation, copy-paste fragments, or first-attempts — none of which are getting linted before they ship.
 
@@ -214,7 +228,8 @@ Read this section before citing any number from the report. The corpus is a desc
 
 - **GitHub-only.** No GitLab, Codeberg, Gitea, Bitbucket, Docker Hub README snippets, package-manager fragments, blog-post YAML blocks, or Stack Overflow answers. The longtail tier is a stratified sweep of GitHub's code search; see [`scripts/corpus/README.md`](https://github.com/tmatens/compose-lint/blob/main/scripts/corpus/README.md#longtail-sampling-methodology) for the exact query design and the four biases it inherits.
 - **Filename-pinned.** Files saved under non-standard names (`stack.yml`, `web.compose.yml`, etc.) are missed. The four canonical filenames cover the documented Compose Specification names but not every project's conventions.
-- **No statistical inference.** This is descriptive sampling for prevalence estimation. There are no hypothesis tests, no confidence intervals, no population estimates, and no claims about the "average" Compose file outside the four named tiers (`canonical`, `popular`, `selfhosted`, `longtail`). Tier counts are reported as observed; treat them as descriptive of the corpus, not extrapolated to all of GitHub.
+- **No statistical inference.** This is descriptive sampling for prevalence estimation. There are no hypothesis tests, no confidence intervals, no population estimates, and no claims about the "average" Compose file outside the five prevalence tiers (`canonical`, `selfhosted`, `collections`, `popular`, `longtail`). Tier counts are reported as observed; treat them as descriptive of the corpus, not extrapolated to all of GitHub.
+- **Exclusions are intent judgments.** The `synthetic` and `lab` tiers are excluded from prevalence claims by attribution rules (path segments, curated repo lists, a file-count threshold — see `scripts/corpus/retier.py`). The rules are deterministic and published, but the line they draw — "test input" vs "example", "lab" vs "demo" — is a judgment. Both excluded tiers' numbers are reported alongside the others so a reader who draws the line elsewhere can re-blend.
 - **Snapshot in time.** Each report version pins to a single corpus run and a single compose-lint version. The published numbers do not move when a new rule lands; a refresh ships a new version with its own run.
 - **Editions are not a time series.** This edition is a new baseline: the corpus behind the previous one is gone and unrebuildable, and the rule set changed at the same time, so the two cannot be differenced. Do not read successive editions of this report as a trend unless the edition explicitly states that it was measured against the same archived snapshot as its predecessor.
 
@@ -240,14 +255,20 @@ python -m venv .venv && .venv/bin/pip install -e .
 mkdir -p ~/.cache/compose-lint-corpus
 tar -xzf compose-lint-corpus-5417-20260811.tar.gz -C ~/.cache/compose-lint-corpus
 
+# The 2026-08-27 revision's tier attribution and prevalence exclusion
+# live in scripts/corpus/ on current main — the v0.16.0 checkout has the
+# old four-tier pipeline, and the archived snapshot's index predates the
+# re-cut. Lint with the pinned v0.16.0 binary, but run the corpus
+# scripts (retier.py, run.py, charts.py) from a main worktree:
+git worktree add ../cl-main main
+python ../cl-main/scripts/corpus/retier.py
+
 # Lint the corpus and write summary.md + tier_summary.md.
-# COMPOSE_LINT_BIN defaults to <repo>/.venv/bin/compose-lint; set it
-# explicitly if your interpreter lives anywhere else.
-COMPOSE_LINT_BIN=$PWD/.venv/bin/compose-lint python scripts/corpus/run.py
+COMPOSE_LINT_BIN=$PWD/.venv/bin/compose-lint python ../cl-main/scripts/corpus/run.py
 
 # Re-render the charts in this report (matplotlib is a maintainer-only extra)
 pip install -e '.[corpus]'
-python scripts/corpus/charts.py latest
+python ../cl-main/scripts/corpus/charts.py latest
 ```
 
 The snapshot archive is not committed to the repo — it is 5,417 third-party files, the same reason the corpus itself isn't committed. It is held by the maintainers and identified by the sha256 above; open an issue on the tracker if you want a copy to verify a number in this report against.
@@ -256,4 +277,4 @@ To build a *new* corpus from public GitHub instead — a different sample, not t
 
 The output lands in `~/.cache/compose-lint-corpus/runs/<UTC-timestamp>/`. The `summary.md` and `tier_summary.md` files there are the source artifacts every table in this report is built from; `charts.py` reads the same per-tier aggregation, so the figures in `docs/assets/` can never disagree with the tables. A run that reports thousands of *crashes* is almost always a `COMPOSE_LINT_BIN` that does not exist — the harness buckets a missing binary as a per-file crash rather than a startup failure. Check the first few results before letting a full run proceed.
 
-**Why re-fetching does not reproduce this corpus.** Three of the four tiers are enumerable from fixed sources and re-fetch closely. The `longtail` tier is not: it is a stratified GitHub code-search sweep, and GitHub's code search neither offers a random-document primitive nor returns a stable result set for the same queries over time. A re-fetch produces *a* longtail tier, not *this* one. That is why the 6,444-file corpus behind the 0.7.0 edition could not be rebuilt once its cache was lost, and why this edition's 5,417-file snapshot is archived as a file rather than trusted to a cache directory. Refreshes measured against the archived snapshot isolate rule-set changes from corpus drift and can legitimately carry a delta; a refresh against a fresh sweep cannot.
+**Why re-fetching does not reproduce this corpus.** The curated tiers are enumerable from fixed sources and re-fetch closely, and the tiers derived by re-attribution (`collections`, `synthetic`, `lab`) are deterministic given an index. The `longtail` tier is neither: it is a stratified GitHub code-search sweep, and GitHub's code search neither offers a random-document primitive nor returns a stable result set for the same queries over time. A re-fetch produces *a* longtail tier, not *this* one. That is why the 6,444-file corpus behind the 0.7.0 edition could not be rebuilt once its cache was lost, and why this edition's 5,417-file snapshot is archived as a file rather than trusted to a cache directory. Refreshes measured against the archived snapshot isolate rule-set changes from corpus drift and can legitimately carry a delta; a refresh against a fresh sweep cannot.
