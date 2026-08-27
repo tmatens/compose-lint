@@ -79,6 +79,7 @@ nav:
   - Guides:
       - Configuration: configuration.md
       - "CLI reference": cli.md
+      - "Fixing findings": fix.md
       - Severity levels: severity.md
       - Hardening walkthrough: hardening.md
       - Compatibility: compatibility.md
