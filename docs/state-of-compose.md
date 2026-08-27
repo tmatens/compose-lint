@@ -4,6 +4,8 @@
 >
 > Pinned to **compose-lint 0.16.0** and corpus run **`20260811T044906Z`** (5,417 files, 2026-08-11).
 >
+> **Second revision, 2026-08-27 — a statistical review of the numbers.** Same snapshot, same run, same tool again; this revision changes no measurement, but corrects how three of them are *interpreted*, after putting the report through the questions a statistician would ask. In plain terms: (1) popular projects' files carry twice the findings of template files because they contain twice the **services**, not worse services — the per-service miss rate is nearly identical across tiers; (2) almost every file the pinned tool counted as "clean" turns out to be a Compose v1 relic or fragment in which nothing was actually linted — genuinely clean modern files are 17 of 4,061 (0.4%); (3) some tiers rest on very few independent sources (`selfhosted` is four registries), so their rates describe those sources, not a broad population. The full reasoning, written for any reader, is in [§ A statistician's reading of these numbers](#a-statisticians-reading-of-these-numbers).
+>
 > **Revised 2026-08-27 — same measurement, re-cut attribution.** The snapshot, the lint run, and the tool version are unchanged; what changed is how files are attributed to tiers. A composition analysis split the corpus into seven tiers: test *inputs* to compose tooling (`synthetic`, 476 files — docker/compose e2e fixtures and the like) and deliberately-vulnerable lab environments (`lab`, 310 files — vulhub, CTF archives) are now excluded from every prevalence claim, and template-collection repos (`collections`, 1,485 files) are split out of `popular`. Every figure below is a re-partition of the same underlying results — unlike a new edition, the pre- and post-revision figures are mappable 1:1. The headline moved from 91% to 89.9%; the largest correction is to the `popular` tier, which previously blended two populations with a 2× security gap.
 >
 > **This edition is a new baseline, not a refresh of the previous one.** The 6,444-file corpus the 0.7.0 edition was pinned to no longer exists, and it cannot be rebuilt: its `longtail` tier was a stratified GitHub code-search sweep, and GitHub does not reproduce that sweep. The rule set changed underneath it as well. Two variables moved at once, so **no delta across the two editions is measurable, and none is presented here** — figures from the 0.7.0 edition are not repeated as like-for-like comparisons, because they were not measured the same way. The snapshot behind this edition is archived rather than left in a cache directory, so the discontinuity does not happen twice, and refreshes measured against it can carry a delta callout.
@@ -13,7 +15,8 @@ The first published empirical study of security misconfigurations in real-world 
 ## TL;DR
 
 - **90% of real-world public Docker Compose files** that successfully parse ship with at least one security finding (4,044 of 4,499 parsed files across the five prevalence tiers of a 5,417-file corpus; test fixtures and lab environments are counted separately).
-- **Popular projects' own compose files are the worst population in the corpus.** With template collections, test fixtures, and vuln-lab repos split out, the `popular` tier — ordinary ≥50★ projects' own service definitions — runs **99.6% with findings at 19.8 findings per file**, roughly twice any template tier, and 16.4% of them mount a host control socket.
+- **Popular projects' own compose files are the most exposed in the corpus — because they're bigger, not sloppier.** The `popular` tier — ordinary ≥50★ projects' own service definitions — runs **99.6% with findings at 19.8 findings per file**, twice any template tier. Per *service* the tiers are nearly identical (5.6–6.2 findings per service everywhere): real projects write ~3.4 services per file against the templates' ~1.5–2, so the same per-service miss rate lands twice the exposure per file. 16.4% of popular files (6.0% of their services) mount a host control socket.
+- **Genuinely clean files barely exist.** 438 of the 455 files the pinned tool scored as clean are Compose v1 relics or fragments in which *no services were actually linted*. Among files that are really v2/v3 Compose, **17 of 4,061 (0.4%) are clean** — see [the statistician's reading](#a-statisticians-reading-of-these-numbers).
 - **Even canonical vendor examples are not clean.** The canonical tier — the awesome-compose / bitnami / grafana / vaultwarden examples people copy-paste — averages 10.4 findings per file, and 77.7% of those files carry at least one.
 - **The same four rules lead every tier:** filesystem not read-only, no capability restrictions, no resource limits, privilege escalation not blocked. Each fires on 88–89% of parsed files, and their order barely changes between vendor examples and the longtail.
 - **9.5% of longtail files fail to parse as a v2/v3 Compose file at all** — almost entirely shape errors (someone wrote `services` as a string-valued mapping instead of a service-mapping), not malformed YAML. We treat the parse-error population as a finding, not a discard.
@@ -93,13 +96,15 @@ Tier-level rates differ enough that aggregate "X% of compose files have finding 
 
 ### Files with at least one finding
 
-| Tier | Total | Parsed | With findings | Clean | Rate (of parsed) | Findings per parsed file |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `canonical` | 249 | 247 | 192 | 55 | 77.7% | 10.43 |
-| `selfhosted` | 596 | 596 | 596 | 0 | **100.0%** | 9.32 |
-| `collections` | 1,485 | 1,472 | 1,312 | 160 | 89.1% | 8.85 |
-| `popular` | 1,231 | 1,216 | 1,211 | 5 | **99.6%** | **19.83** |
-| `longtail` | 1,070 | 968 | 733 | 235 | 75.7% | 8.72 |
+| Tier | Total | Parsed | With findings | Clean | Rate (of parsed) | Findings per parsed file | Source repos |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `canonical` | 249 | 247 | 192 | 55 | 77.7% | 10.43 | **8** |
+| `selfhosted` | 596 | 596 | 596 | 0 | **100.0%** | 9.32 | **4** |
+| `collections` | 1,485 | 1,472 | 1,312 | 160 | 89.1% | 8.85 | 16 |
+| `popular` | 1,231 | 1,216 | 1,211 | 5 | **99.6%** | **19.83** | 738 |
+| `longtail` | 1,070 | 968 | 733 | 235 | 75.7% | 8.72 | 951 |
+
+The "Source repos" column matters as much as the file counts: files from one repo share an author and a style, so a tier built on few repos describes *those repos*, however many files they contribute. [§ A statistician's reading](#a-statisticians-reading-of-these-numbers) quantifies this. Nearly all of the "Clean" files, meanwhile, are Compose v1 relics the pinned tool passed without linting anything — the same section takes that apart.
 
 ![Bar chart of the share of parsed files with at least one finding, by tier: canonical 77.7%, selfhosted 100.0%, collections 89.1%, popular 99.6%, longtail 75.7%.](assets/findings-by-tier.svg)
 
@@ -107,9 +112,9 @@ The excluded tiers, for transparency: `synthetic` 470 parsed, 98.3% with finding
 
 Notable observations:
 
-- **Ordinary projects' own compose files are the worst population in the corpus — by a factor of two.** Only 5 of 1,216 parsed `popular` files are clean, and the tier averages 19.83 findings per file against 8.5–10.4 for every template tier. The pre-revision blend (95.0% at 13.29) understated this: three fifths of the old tier was template collections at 8.85 findings per file, and averaging the two populations described neither. When someone writes a compose file *for their own service* rather than as an example for others, hardening is essentially absent.
-- **Every `selfhosted` file has at least one finding.** The app-store templates ship with optimistic defaults — they target a home-LAN audience and frequently expose ports on `0.0.0.0`, run as root, mount large host paths, and skip the hardening flags. The fact that 100% of these files trigger compose-lint remains the central finding of this tier.
-- **Canonical is the cleanest curated tier and still 78% with findings.** The vendor examples that READMEs tell users to copy-paste are not hardening exemplars — they're configuration demos. That's the gap this report is documenting. (The pre-revision 83.7% was partly an artifact: 27% of the old tier was docker/compose's e2e fixtures, now attributed to `synthetic`.)
+- **Ordinary projects' own compose files carry the most exposure — via size, not sloppiness.** Only 5 of 1,216 parsed `popular` files are clean (and even those 5 are v1/fragment artifacts — every real v2/v3 popular file has a finding). The tier averages 19.83 findings per file against 8.5–10.4 for every template tier — but per *service* the tiers are nearly flat (popular 5.89, collections 6.04, selfhosted 6.22, canonical 6.18, longtail 5.59). What differs is stack size: popular files average 3.38 services, templates ~1.5–2. The correct reading is not "project authors are twice as careless" — it is "the per-service miss rate is universal, so a real multi-service stack accumulates twice a template's findings." The pre-revision "worst by a factor of two" framing overstated this; the exposure difference is real, the diligence difference is not supported.
+- **Every `selfhosted` file has at least one finding — across all four registries sampled.** The app-store templates ship with optimistic defaults — they target a home-LAN audience and frequently expose ports on `0.0.0.0`, run as root, mount large host paths, and skip the hardening flags. Note the source count: this is a statement about four registries' 596 templates, not about self-hosting at large.
+- **Canonical is the cleanest curated tier and still 78% with findings — on eight repos.** The vendor examples that READMEs tell users to copy-paste are not hardening exemplars — they're configuration demos. With only 8 source repos the 77.7% figure is roster-sensitive (its repo-resampling interval spans 31–100%); the sturdier statement is that *no* canonical v2/v3 file is fully clean. (The pre-revision 83.7% was partly an artifact: 27% of the old tier was docker/compose's e2e fixtures, now attributed to `synthetic`.)
 - **Collections sit between the curated head and the longtail** — 89.1% at 8.85 findings per file: better-groomed than random files, no more hardened than app-store templates.
 
 ### Severity distribution per tier
@@ -122,7 +127,9 @@ Notable observations:
 | `popular` | 339 | 1,295 | 18,410 | 4,075 |
 | `longtail` | 66 | 432 | 6,434 | 1,507 |
 
-CRITICAL findings concentrate in `popular` (339 of 687, 49% of all CRITICAL findings in the prevalence tiers, from 27% of the parsed files). Normalising to the share of each tier's parsed files carrying a mounted host control socket ([CL-0001](rules/CL-0001.md), the dominant CRITICAL rule) makes the gap starker: `popular` **16.4%**, `collections` 6.7%, `canonical` 6.1%, `selfhosted` 5.2%, `longtail` 2.5%. Ordinary projects mount the control socket six and a half times as often as the longtail and two and a half times as often as any template tier — the pre-revision blend reported 9.9% for this population.
+CRITICAL findings concentrate in `popular` (339 of 687, 49% of all CRITICAL findings in the prevalence tiers, from 27% of the parsed files). The share of each tier's parsed files carrying a mounted host control socket ([CL-0001](rules/CL-0001.md), the dominant CRITICAL rule): `popular` **16.4%**, `collections` 6.7%, `canonical` 6.1%, `selfhosted` 5.2%, `longtail` 2.5% (the pre-revision blend reported 9.9% for this population).
+
+Per-file, that reads as popular mounting the socket six times as often as the longtail — but the service-count effect applies here too. Per *service*: `popular` 6.0%, `collections` 5.0%, `canonical` 4.6%, `selfhosted` 3.5%, `longtail` 1.9%. Two statements survive at per-service granularity: popular services mount the socket **~3× as often as longtail services** (repo-resampling intervals [4.7–7.5%] vs [1.2–2.7%], clearly separated), and every curated/popular tier sits well above the longtail. The popular-vs-collections difference (6.0% vs 5.0%, intervals [4.7–7.5%] vs [3.4–8.0%]) is **within the noise** and is not claimed.
 
 ## Top findings
 
@@ -204,7 +211,54 @@ The per-tier rate is the load-bearing number:
 
 ![Bar chart of parse-error rate by tier: canonical 0.8%, selfhosted 0.0%, collections 0.9%, popular 1.2%, longtail 9.5%.](assets/parse-error-rate.svg)
 
+The exit-2 population above is not the whole not-really-Compose story: a further 438 files *passed* the pinned tool with zero findings because nothing in them was linted — Compose v1 layouts and fragments the 0.16.0 parser accepted vacuously. They surface in [the statistician's reading](#the-clean-files-mostly-werent-linted), because where they land is a denominator question, not an exit-code one.
+
 Longtail's parse-error tail isn't malformed YAML. It's people writing `services` as a string-valued mapping, the way a `package.json` `dependencies` block works. A reader skimming a Compose tutorial sees `nginx: image: nginx:1.25` and writes `nginx: nginx:1.25` instead. The parse error here is itself a security-relevant finding: a Compose file that doesn't parse with a real Compose engine isn't deployed by that engine, so these files are documentation, copy-paste fragments, or first-attempts — none of which are getting linted before they ship.
+
+## A statistician's reading of these numbers
+
+*This section is the report's own statistical review — the questions a methods referee would ask, asked of ourselves, with each answer stated first in plain terms and then precisely. Nothing here changes a measurement; it changes how much weight each number can carry. Numbers below come from the same pinned run as everything else.*
+
+### What "n" really is: files cluster by repo
+
+**In plain terms:** two files from the same repo were usually written by the same person with the same habits. Counting them as two independent observations overstates how much evidence we have. A tier with 596 files from 4 repos is, evidentially, closer to a 4-observation claim than a 596-observation one.
+
+Precisely: the prevalence tiers span 1,717 repos for 4,631 files, but very unevenly — `selfhosted` is 596 files from **4** registries (the largest is 45% of the tier), `canonical` is 247 files from **8** repos (the largest is 56%). `popular` (738 repos, top share 1.6%) and `longtail` (951 repos) are genuinely diverse. To show how much repo clustering moves each rate, three views of "share of files with ≥1 finding":
+
+| Tier | File-level rate | Repo-resampling 95% interval | Repo-mean rate | One-file-per-repo rate |
+| --- | ---: | ---: | ---: | ---: |
+| `canonical` | 77.7% | 31–100% | 88.9% | 87.5% |
+| `selfhosted` | 100.0% | 100–100% | 100.0% | 100.0% |
+| `collections` | 89.1% | 77–100% | 95.9% | 100.0% |
+| `popular` | 99.6% | 99.2–99.9% | 99.5% | 99.5% |
+| `longtail` | 75.7% | 72.9–78.5% | 76.4% | 76.4% |
+| **All prevalence** | **89.9%** | **84.5–94.5%** | 86.6% | 86.7% |
+
+The intervals are cluster bootstrap: resample *repos* (not files) with replacement and recompute the rate — they describe how much the number depends on which repos happen to be in this sample, **not** a population estimate (the corpus is not a random sample; see the caveats section). Reading: the headline is robust to clustering (three views within ~3 points, interval ±5); `popular` and `longtail` rates are solid; `canonical`'s rate is roster-sensitive to the point of being decorative — the durable canonical fact is "0 fully-clean v2/v3 files", not "77.7%"; `selfhosted`'s 100% is unanimous across its four sources but is a four-source claim.
+
+### Per file or per service: which comparison is fair?
+
+**In plain terms:** a compose file with six services has six chances to miss a hardening flag; a one-service template has one. Comparing findings *per file* across tiers whose files differ in size partly measures file size. The per-service view is the fair one — and it changes the story.
+
+| Tier | Services per file | Findings per **service** | Services mounting the control socket |
+| --- | ---: | ---: | ---: |
+| `canonical` | 2.17 | 6.18 | 4.6% |
+| `selfhosted` | 1.50 | 6.22 | 3.5% |
+| `collections` | 1.64 | 6.04 | 5.0% |
+| `popular` | **3.38** | 5.89 | 6.0% |
+| `longtail` | 2.02 | 5.59 | 1.9% |
+
+Findings per service is nearly flat — 5.6 to 6.2, everywhere. The per-file gap that makes `popular` look twice as bad (19.8 vs ~9) is almost entirely stack size: real projects write 3.4 services per file, templates 1.5–2. The defensible conclusions: **the per-service miss rate is universal** (nobody's services are hardened, whoever writes them), and **a real project's file accumulates about twice a template's exposure** because it contains twice the services. "Project authors are twice as careless" — the reading the per-file numbers invite — is not supported. The socket-mount comparison under the same lens is in the [per-tier severity section](#severity-distribution-per-tier): popular services lead longtail services ~3× (clearly outside the noise); popular-vs-collections is inside it.
+
+### The "clean" files mostly weren't linted
+
+**In plain terms:** almost every file this run scored as "no findings" turns out to be a file in which the pinned tool found *nothing to lint* — an obsolete Compose v1 layout, or a fragment with no services — and passed silently. "Clean" mostly meant "empty of linted services", not "hardened".
+
+Precisely: of the 455 clean files, **423 are Compose v1 files and 15 are structural fragments** by the current parser's classification (spot-checked: a v1 file publishing a port, scored clean at 0.16.0). Genuinely clean v2/v3 files: **17 of 4,061, or 0.4%** — canonical 0, selfhosted 0, collections 1, popular 0, longtail 16. Two consequences. First, "longtail is the cleanest tier" (75.7%) is largely this artifact: among longtail files that are actually v2/v3 Compose, 97.9% carry a finding. Second, the 89.9% headline is a *conservative floor* — counting only files where services were actually linted, it is 99.6%. Both denominators are reported; cite whichever matches your question, but say which. (Classification caveat: the v1/fragment calls use the current parser's heuristics against the 0.16.0-pinned run; a future edition run on the current tool routes these files to the skip population automatically, and this artifact disappears.)
+
+### When we call a difference real
+
+Two rates in this report are treated as different only when their repo-resampling intervals separate. That rule is why the popular-vs-longtail socket gap (~3× per service) is claimed and the popular-vs-collections gap (6.0% vs 5.0%, overlapping intervals) is not, and why canonical's 77.7% is not compared against anything. Differences quoted without an interval check in earlier revisions (e.g. 77.7% vs the old 83.7%) should be read as bookkeeping, not findings.
 
 ## Related work
 
@@ -228,7 +282,9 @@ Read this section before citing any number from the report. The corpus is a desc
 
 - **GitHub-only.** No GitLab, Codeberg, Gitea, Bitbucket, Docker Hub README snippets, package-manager fragments, blog-post YAML blocks, or Stack Overflow answers. The longtail tier is a stratified sweep of GitHub's code search; see [`scripts/corpus/README.md`](https://github.com/tmatens/compose-lint/blob/main/scripts/corpus/README.md#longtail-sampling-methodology) for the exact query design and the four biases it inherits.
 - **Filename-pinned.** Files saved under non-standard names (`stack.yml`, `web.compose.yml`, etc.) are missed. The four canonical filenames cover the documented Compose Specification names but not every project's conventions.
-- **No statistical inference.** This is descriptive sampling for prevalence estimation. There are no hypothesis tests, no confidence intervals, no population estimates, and no claims about the "average" Compose file outside the five prevalence tiers (`canonical`, `selfhosted`, `collections`, `popular`, `longtail`). Tier counts are reported as observed; treat them as descriptive of the corpus, not extrapolated to all of GitHub.
+- **No statistical inference.** This is descriptive sampling for prevalence estimation. There are no hypothesis tests and no population estimates; no claims are made about the "average" Compose file outside the five prevalence tiers (`canonical`, `selfhosted`, `collections`, `popular`, `longtail`). The repo-resampling intervals in [the statistician's reading](#a-statisticians-reading-of-these-numbers) describe the stability of each rate under reshuffling of *this sample's* repos — they are not confidence intervals for GitHub at large, and they don't become one however many files the corpus grows.
+- **Size stratification distorts the size mix.** The longtail sweep spends equal query effort per size bucket, which over-samples large files relative to their natural frequency. Size correlates with service count, and service count with per-file findings — one more reason per-*service* rates are the fair cross-tier comparison. Direction of bias: per-file figures for the longtail are likely biased *upward*.
+- **Excluding unparseable files is itself a selection.** Prevalence rates are computed over files that linted, but parse failures concentrate among beginner-authored longtail files — plausibly the least-hardened slice. Direction of bias: longtail rates over parsed files are likely biased *toward* looking better than the tier's authors' actual practice.
 - **Exclusions are intent judgments.** The `synthetic` and `lab` tiers are excluded from prevalence claims by attribution rules (path segments, curated repo lists, a file-count threshold — see `scripts/corpus/retier.py`). The rules are deterministic and published, but the line they draw — "test input" vs "example", "lab" vs "demo" — is a judgment. Both excluded tiers' numbers are reported alongside the others so a reader who draws the line elsewhere can re-blend.
 - **Snapshot in time.** Each report version pins to a single corpus run and a single compose-lint version. The published numbers do not move when a new rule lands; a refresh ships a new version with its own run.
 - **Editions are not a time series.** This edition is a new baseline: the corpus behind the previous one is gone and unrebuildable, and the rule set changed at the same time, so the two cannot be differenced. Do not read successive editions of this report as a trend unless the edition explicitly states that it was measured against the same archived snapshot as its predecessor.
