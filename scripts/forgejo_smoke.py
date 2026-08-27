@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Execute README's Forgejo Actions snippet against a live Forgejo (#573).
+"""Execute the Forgejo guide's snippet against a live Forgejo (#573).
 
-README promises a working Forgejo integration and closes with a
+docs/forgejo.md promises a working Forgejo integration and closes with a
 "Verified on Forgejo X, runner Y" line. A documented snippet without a
 test is a promise we can't keep, so this script makes the claim
 empirical, end to end:
 
-1. Extract the snippet from README.md *verbatim* — the tested thing and
+1. Extract the snippet from docs/forgejo.md *verbatim* — the tested thing and
    the documented thing cannot drift, because they are one string.
 2. Boot a throwaway Forgejo + act_runner stack
    (tests/forgejo_smoke/compose-forgejo-smoke.yml), bootstrap an admin
@@ -16,7 +16,7 @@ empirical, end to end:
    require the run to succeed. The clean fixture passes at the
    snippet's `--fail-on high`, so a green run proves install + lint
    actually happened on the Forgejo side.
-4. Assert README's "Verified on ..." versions match the *live* instance
+4. Assert the guide's "Verified on ..." versions match the *live* instance
    and runner, so bumping the harness images without updating the claim
    fails loudly (and vice versa).
 
@@ -40,7 +40,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 COMPOSE_FILE = REPO_ROOT / "tests" / "forgejo_smoke" / "compose-forgejo-smoke.yml"
-README = REPO_ROOT / "README.md"
+SNIPPET_DOC = REPO_ROOT / "docs" / "forgejo.md"
 CLEAN_FIXTURE = REPO_ROOT / "tests" / "smoke" / "clean.yml"
 
 HOST_PORT = os.environ.get("FORGEJO_SMOKE_PORT", "3000")
@@ -111,22 +111,25 @@ def api(
 
 
 def extract_snippet() -> str:
-    text = README.read_text(encoding="utf-8")
+    text = SNIPPET_DOC.read_text(encoding="utf-8")
     blocks = re.findall(
         rf"```yaml\n({re.escape(SNIPPET_MARKER)}\n.*?)```", text, re.DOTALL
     )
     if len(blocks) != 1:
         fail(
-            f"expected exactly one README code fence starting with "
+            f"expected exactly one docs/forgejo.md code fence starting with "
             f"'{SNIPPET_MARKER}', found {len(blocks)}"
         )
     return blocks[0]
 
 
-def readme_verified_versions() -> tuple[str, str]:
-    matches = VERIFIED_RE.findall(README.read_text(encoding="utf-8"))
+def doc_verified_versions() -> tuple[str, str]:
+    matches = VERIFIED_RE.findall(SNIPPET_DOC.read_text(encoding="utf-8"))
     if len(matches) != 1:
-        fail("expected exactly one 'Verified on Forgejo X, runner Y' README line")
+        fail(
+            "expected exactly one 'Verified on Forgejo X, runner Y' line "
+            "in docs/forgejo.md"
+        )
     return matches[0]
 
 
@@ -143,8 +146,8 @@ def wait_for_api() -> str:
 
 def main() -> None:
     snippet = extract_snippet()
-    log(f"README snippet extracted ({len(snippet.splitlines())} lines).")
-    claimed_forgejo, claimed_runner = readme_verified_versions()
+    log(f"docs/forgejo.md snippet extracted ({len(snippet.splitlines())} lines).")
+    claimed_forgejo, claimed_runner = doc_verified_versions()
 
     password = secrets.token_urlsafe(18)
     exit_code = 0
@@ -246,7 +249,7 @@ def main() -> None:
         if outcome != "success":
             compose("logs", "--tail", "150", "runner")
             fail(
-                "the README snippet did not complete successfully on the live "
+                "the documented snippet did not complete successfully on the live "
                 f"Forgejo (outcome: {outcome or 'timeout'})"
             )
         log("Snippet workflow succeeded on the live Forgejo.")
@@ -260,14 +263,14 @@ def main() -> None:
         live_runner = m.group(1) if m else runner_version_out
         if (claimed_forgejo, claimed_runner) != (live_forgejo, live_runner):
             fail(
-                "README's verified-on line is stale: claims Forgejo "
+                "docs/forgejo.md's verified-on line is stale: claims Forgejo "
                 f"{claimed_forgejo} / runner {claimed_runner}, but this run "
                 f"used Forgejo {live_forgejo} / runner {live_runner}. Update "
-                "the README line (and the harness images if intended)."
+                "the docs/forgejo.md line (and the harness images if intended)."
             )
         log(
             f"Verified on Forgejo {live_forgejo}, runner {live_runner} — "
-            "README claim matches the live run."
+            "Guide claim matches the live run."
         )
     except subprocess.CalledProcessError as e:
         print(f"::error::command failed with exit {e.returncode}", flush=True)

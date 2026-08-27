@@ -1,18 +1,18 @@
 name: Forgejo smoke test
 
-# Executes README's Forgejo Actions snippet — extracted from README.md
+# Executes the Forgejo guide's snippet — extracted from docs/forgejo.md
 # verbatim at runtime — against a live, containerized Forgejo + act_runner
 # stack (issue #573). GitHub-hosted CI cannot *be* a Forgejo runner, but
 # it can host one: scripts/forgejo_smoke.py boots the stack in
 # tests/forgejo_smoke/, pushes a repo whose workflow is the snippet,
-# dispatches it, requires success, and asserts README's
+# dispatches it, requires success, and asserts the guide's
 # "Verified on Forgejo X, runner Y" claim against the live versions.
 #
 # Triggers: weekly (a Forgejo-side or PyPI-side breakage between releases
 # should be noticed before a user reports it), on pushes touching the
 # harness (including Renovate bumps of the Forgejo/runner images — a
-# version bump re-proves the snippet and forces the README claim to move
-# in the same PR), and manually. Deliberately NOT on README PRs: the
+# version bump re-proves the snippet and forces the guide's claim to move
+# in the same PR), and manually. Deliberately NOT on docs PRs: the
 # release-prep PR bumps the snippet's compose-lint pin to a version PyPI
 # does not have yet, which would fail here spuriously mid-release; the
 # post-release weekly run covers the new pin instead.
@@ -31,7 +31,7 @@ permissions: {}
 
 jobs:
   forgejo-smoke:
-    name: README Forgejo snippet runs on a live Forgejo
+    name: Forgejo guide snippet runs on a live Forgejo
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -40,5 +40,5 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Boot Forgejo, run the snippet, verify the README claim
+      - name: Boot Forgejo, run the snippet, verify the guide's claim
         run: python3 scripts/forgejo_smoke.py
