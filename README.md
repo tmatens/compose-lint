@@ -53,7 +53,7 @@ pip install --no-deps compose-lint==0.25.0          # the tool, version-pinned
 **Docker** — [composelint/compose-lint](https://hub.docker.com/r/composelint/compose-lint)
 
 ```bash
-docker run --rm -v "$(pwd):/src" composelint/compose-lint
+docker run --rm -v "$(pwd):/src" composelint/compose-lint:0.25.0
 ```
 
 The Docker image is distroless, multi-arch, and runs nonroot — see [Security posture](#security-posture) below for SLSA, Sigstore, and OpenVEX details.
@@ -92,7 +92,7 @@ compose-lint --explain CL-0005
 Docker equivalent:
 
 ```bash
-docker run --rm -v "$(pwd):/src" composelint/compose-lint docker-compose.prod.yml
+docker run --rm -v "$(pwd):/src" composelint/compose-lint:0.25.0 docker-compose.prod.yml
 ```
 
 ### Compose compatibility
