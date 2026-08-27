@@ -297,6 +297,12 @@ fix` applies for you, dry-run first — see [Fixing findings](#fixing-findings).
 Every other rule reports specific fix guidance for a change only you can
 choose, and is never auto-edited.
 
+The gaps in the numbering — CL-0012, CL-0015, CL-0023 — are retired ids kept
+fallow forever: reusing one would silently change the meaning of a suppression
+someone has already written
+([ADR-005](docs/adr/005-rule-id-scheme.md),
+[ADR-028](docs/adr/028-pre-1.0-rule-id-sweep.md)).
+
 ## Severity Levels
 
 Findings are rated **LOW**, **MEDIUM**, **HIGH**, or **CRITICAL**. Each rule's severity is derived from a two-axis matrix — the attacker precondition the misconfiguration creates, and the impact scope it reaches — under a stated attacker baseline and a stated Docker posture. See [docs/severity.md](https://github.com/tmatens/compose-lint/blob/main/docs/severity.md) for the full scoring matrix, the derivation of every rule, and the override mechanism.
