@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`--explain` now pages through a pager on an interactive terminal**
+  ([ADR-034](docs/adr/034-explain-pages-on-a-tty.md)). Rule docs have grown
+  past 100 lines, so a terminal dump scrolled the directive and rationale
+  out of view instantly. On a TTY the doc now goes through `less -RFX`
+  (`PAGER` overrides the command; `--no-pager`, `NO_PAGER`, or `TERM=dumb`
+  disables it; a missing pager binary — e.g. the distroless image under
+  `docker run -t` — falls back to the plain dump). Piped, redirected, and
+  CI output is byte-identical to before: paging engages only when stdout
+  is a TTY.
+
 ## [0.25.0] - 2026-08-26
 
 

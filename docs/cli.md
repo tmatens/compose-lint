@@ -26,6 +26,8 @@ check options:
   --config PATH                Path to config file (default: .compose-lint.yml)
   --strict-config              Treat config diagnostics (unknown rule id or key) as errors, not warnings
   --explain CL-XXXX            Print the full documentation for a single rule
+                               (through a pager on an interactive terminal)
+  --no-pager                   Print --explain output directly, bypassing the pager
   --version                    Show version and exit
 
 fix options:
@@ -47,6 +49,17 @@ init options:
 Color is on when stdout is a terminal. Set `NO_COLOR` to disable it (even on a
 terminal) or `FORCE_COLOR` to force it through a pipe — e.g. into `less -R` or a
 CI log that renders ANSI.
+
+## Pager
+
+`--explain` pages its rule doc through `less -RFX` when stdout is a terminal
+([ADR-034](adr/034-explain-pages-on-a-tty.md)) — `-F` means a doc that fits
+one screen prints and exits with no pager interaction. `PAGER` selects a
+different pager; `--no-pager`, a non-empty `NO_PAGER`, or `TERM=dumb`
+disables paging; a pager binary that isn't installed falls back to a plain
+dump. Piped or redirected output never pages and is byte-identical to the
+pre-pager behavior, so scripts and CI need no changes. The findings report
+itself never pages.
 
 ## End of options
 

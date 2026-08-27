@@ -7,7 +7,9 @@ import contextlib
 import io
 import json
 import os
+import shlex
 import stat
+import subprocess
 import sys
 import tempfile
 from dataclasses import replace
@@ -329,8 +331,19 @@ def _add_check_subparser(
         "--explain",
         metavar="CL-XXXX",
         help=(
-            "print the prose documentation for a single rule and exit. "
+            "print the prose documentation for a single rule and exit, "
+            "through a pager on an interactive terminal. "
             "Cannot be combined with FILE arguments."
+        ),
+    )
+    check.add_argument(
+        "--no-pager",
+        action="store_true",
+        default=False,
+        help=(
+            "print --explain output directly, bypassing the pager it uses "
+            "on interactive terminals. PAGER selects the pager (default: "
+            "less -RFX); NO_PAGER or TERM=dumb also disables it."
         ),
     )
 
@@ -554,6 +567,59 @@ def _stdout_print(*args: object, **kwargs: Any) -> None:
         _abort_on_write_failure(exc)
 
 
+# `less` flags mirror git's defaults: -R passes ANSI color through, -F exits
+# immediately when the doc fits one screen (short docs never trap the reader
+# in a pager), -X skips the alternate screen so the tail stays in scrollback.
+_DEFAULT_PAGER = ("less", "-R", "-F", "-X")
+
+
+def _pager_argv(*, tty: bool) -> list[str] | None:
+    """Resolve the pager command for ``--explain``, or None to print directly.
+
+    Paging is presentation only and engages solely for a human at an
+    interactive terminal, so machine consumers (pipes, redirects, CI) always
+    receive the byte-identical plain dump (ADR-034). ``NO_PAGER`` (any
+    non-empty value) disables it, mirroring ``NO_COLOR``'s contract for
+    color; ``TERM`` unset or ``dumb`` means no terminal worth paging on;
+    ``PAGER`` overrides the default command, and a blank ``PAGER`` disables
+    paging outright.
+    """
+    if not tty:
+        return None
+    if os.environ.get("NO_PAGER"):
+        return None
+    if os.environ.get("TERM", "") in ("", "dumb"):
+        return None
+    pager = os.environ.get("PAGER")
+    if pager is None:
+        return list(_DEFAULT_PAGER)
+    return shlex.split(pager) or None
+
+
+def _page_rule_doc(text: str) -> bool:
+    """Try to display rule prose through a pager; True when it displayed.
+
+    A pager that cannot be spawned is a signal to fall back, not an error:
+    the published image is distroless, so ``docker run -t`` yields a TTY
+    with no pager binary behind it. A viewer quitting before EOF (EPIPE)
+    still counts as displayed.
+    """
+    argv = _pager_argv(tty=sys.stdout.isatty())
+    if argv is None:
+        return False
+    try:
+        proc = subprocess.Popen(argv, stdin=subprocess.PIPE)
+    except OSError:
+        return False
+    stdin = proc.stdin
+    if stdin is not None:
+        with contextlib.suppress(BrokenPipeError, OSError):
+            stdin.write((text + "\n").encode("utf-8"))
+            stdin.close()
+    proc.wait()
+    return True
+
+
 def _dispatch(args: argparse.Namespace) -> NoReturn:
     """Route to the subcommand handler; every branch exits."""
     if args.command == "fix":
@@ -655,10 +721,12 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             )
             sys.exit(2)
         try:
-            _stdout_print(load_rule_doc(args.explain))
+            doc = load_rule_doc(args.explain)
         except UnknownRuleError:
             emit(f"Error: unknown rule id '{args.explain}' (expected format: CL-XXXX)")
             sys.exit(2)
+        if args.no_pager or not _page_rule_doc(doc):
+            _stdout_print(doc)
         sys.exit(0)
 
     config_path = _effective_config_path(args.config)

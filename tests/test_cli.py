@@ -20,7 +20,9 @@ if TYPE_CHECKING:
 FIXTURES = Path(__file__).parent / "compose_files"
 
 
-def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
+def run_cli(
+    *args: str, env_extra: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     """Run compose-lint CLI as a subprocess."""
     return subprocess.run(
         [sys.executable, "-m", "compose_lint", *args],
@@ -29,7 +31,42 @@ def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
         # The CLI guarantees UTF-8 output; decoding with the locale (cp1252 on
         # Windows) would mojibake the report's non-ASCII characters.
         encoding="utf-8",
+        env={**os.environ, **env_extra} if env_extra is not None else None,
     )
+
+
+def run_cli_tty(*args: str, env_extra: dict[str, str]) -> tuple[int, str]:
+    """Run the CLI with stdout attached to a pseudo-terminal (POSIX only).
+
+    This is what lets the pager tests exercise the real ``isatty()`` branch:
+    every other test in this module runs with stdout on a pipe, which is
+    exactly the non-TTY path the pager must never engage on.
+    """
+    import pty
+
+    master, slave = pty.openpty()
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "compose_lint", *args],
+            stdin=subprocess.DEVNULL,
+            stdout=slave,
+            stderr=subprocess.DEVNULL,
+            env={**os.environ, **env_extra},
+        )
+        os.close(slave)
+        chunks = []
+        while True:
+            try:
+                data = os.read(master, 4096)
+            except OSError:  # EIO once the slave side fully closes: EOF
+                break
+            if not data:
+                break
+            chunks.append(data)
+        returncode = proc.wait()
+    finally:
+        os.close(master)
+    return returncode, b"".join(chunks).decode("utf-8", errors="replace")
 
 
 class TestCLI:
@@ -982,3 +1019,142 @@ class TestFixOnlyValidation:
         result = run_cli("fix", "--only", "banana", "--strict-config", str(f))
         assert result.returncode == 2
         assert "names no rule" in result.stderr
+
+
+class TestPagerResolution:
+    """Unit tests for the --explain pager decision (ADR-034)."""
+
+    @pytest.fixture(autouse=True)
+    def _clean_pager_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("NO_PAGER", raising=False)
+        monkeypatch.delenv("PAGER", raising=False)
+        monkeypatch.setenv("TERM", "xterm-256color")
+
+    def test_not_a_tty_never_pages(self) -> None:
+        from compose_lint.cli import _pager_argv
+
+        assert _pager_argv(tty=False) is None
+
+    def test_tty_defaults_to_less(self) -> None:
+        from compose_lint.cli import _pager_argv
+
+        assert _pager_argv(tty=True) == ["less", "-R", "-F", "-X"]
+
+    def test_no_pager_env_disables(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from compose_lint.cli import _pager_argv
+
+        monkeypatch.setenv("NO_PAGER", "1")
+        assert _pager_argv(tty=True) is None
+
+    def test_term_dumb_disables(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from compose_lint.cli import _pager_argv
+
+        monkeypatch.setenv("TERM", "dumb")
+        assert _pager_argv(tty=True) is None
+
+    def test_term_unset_disables(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from compose_lint.cli import _pager_argv
+
+        monkeypatch.delenv("TERM")
+        assert _pager_argv(tty=True) is None
+
+    def test_blank_pager_disables(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from compose_lint.cli import _pager_argv
+
+        monkeypatch.setenv("PAGER", "   ")
+        assert _pager_argv(tty=True) is None
+
+    def test_pager_env_overrides_and_splits(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from compose_lint.cli import _pager_argv
+
+        monkeypatch.setenv("PAGER", "more -d")
+        assert _pager_argv(tty=True) == ["more", "-d"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="pty is POSIX-only")
+class TestExplainPagerOnTTY:
+    """End-to-end pager behavior on a real pseudo-terminal (ADR-034).
+
+    The fake pager leaves a marker file when it runs, so each test can
+    assert not just what reached the screen but whether a pager was in the
+    loop at all.
+    """
+
+    @pytest.fixture
+    def fake_pager(self, tmp_path: Path) -> tuple[str, Path]:
+        marker = tmp_path / "pager-ran"
+        script = tmp_path / "fake-pager.sh"
+        script.write_text(f"#!/bin/sh\ntouch {marker}\nexec cat\n")
+        script.chmod(0o755)
+        return str(script), marker
+
+    def test_pager_engages_on_tty(self, fake_pager: tuple[str, Path]) -> None:
+        script, marker = fake_pager
+        code, out = run_cli_tty(
+            "--explain", "CL-0003", env_extra={"PAGER": script, "TERM": "xterm"}
+        )
+        assert code == 0
+        assert marker.exists()
+        assert "CL-0003" in out
+        assert "no-new-privileges" in out
+
+    def test_missing_pager_falls_back_to_plain_dump(self) -> None:
+        # The distroless-image-under-`docker run -t` shape: a TTY with no
+        # pager binary behind it must degrade to today's raw dump, exit 0.
+        code, out = run_cli_tty(
+            "--explain",
+            "CL-0003",
+            env_extra={"PAGER": "compose-lint-no-such-pager", "TERM": "xterm"},
+        )
+        assert code == 0
+        assert "CL-0003" in out
+        assert "no-new-privileges" in out
+
+    def test_no_pager_flag_bypasses(self, fake_pager: tuple[str, Path]) -> None:
+        script, marker = fake_pager
+        code, out = run_cli_tty(
+            "--explain",
+            "CL-0003",
+            "--no-pager",
+            env_extra={"PAGER": script, "TERM": "xterm"},
+        )
+        assert code == 0
+        assert not marker.exists()
+        assert "CL-0003" in out
+
+    def test_no_pager_env_bypasses(self, fake_pager: tuple[str, Path]) -> None:
+        script, marker = fake_pager
+        code, out = run_cli_tty(
+            "--explain",
+            "CL-0003",
+            env_extra={"PAGER": script, "TERM": "xterm", "NO_PAGER": "1"},
+        )
+        assert code == 0
+        assert not marker.exists()
+        assert "CL-0003" in out
+
+    def test_term_dumb_bypasses(self, fake_pager: tuple[str, Path]) -> None:
+        script, marker = fake_pager
+        code, out = run_cli_tty(
+            "--explain", "CL-0003", env_extra={"PAGER": script, "TERM": "dumb"}
+        )
+        assert code == 0
+        assert not marker.exists()
+        assert "CL-0003" in out
+
+    def test_piped_output_is_byte_identical_and_unpaged(
+        self, fake_pager: tuple[str, Path]
+    ) -> None:
+        # The CI / pipeline contract: with stdout on a pipe, PAGER must be
+        # ignored entirely and the bytes must match a run with no pager
+        # configured at all.
+        script, marker = fake_pager
+        with_pager = run_cli(
+            "--explain", "CL-0003", env_extra={"PAGER": script, "TERM": "xterm"}
+        )
+        plain = run_cli("--explain", "CL-0003", env_extra={"NO_PAGER": "1"})
+        assert with_pager.returncode == 0
+        assert not marker.exists()
+        assert with_pager.stdout == plain.stdout
