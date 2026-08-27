@@ -15,7 +15,7 @@ docker run --rm \
   --cpus 0.5 \
   --pids-limit 256 \
   -v "$(pwd):/src:ro" \
-  composelint/compose-lint:0.25.0
+  composelint/compose-lint:0.26.0
 ```
 
 | Flag | Rule satisfied |
@@ -29,6 +29,6 @@ docker run --rm \
 
 `--network none` and `:ro` on the bind mount are extra hardening — compose-lint never reaches the network and only reads its inputs.
 
-For full supply-chain reproducibility (and to satisfy CL-0004 / CL-0019), replace the version tag with a digest pin: `composelint/compose-lint@sha256:<digest>`. Get the current digest from [Docker Hub](https://hub.docker.com/r/composelint/compose-lint/tags) or with `docker buildx imagetools inspect composelint/compose-lint:0.25.0 --format '{{json .Manifest}}' | jq -r '.digest'`.
+For full supply-chain reproducibility (and to satisfy CL-0004 / CL-0019), replace the version tag with a digest pin: `composelint/compose-lint@sha256:<digest>`. Get the current digest from [Docker Hub](https://hub.docker.com/r/composelint/compose-lint/tags) or with `docker buildx imagetools inspect composelint/compose-lint:0.26.0 --format '{{json .Manifest}}' | jq -r '.digest'`.
 
 A Compose-form equivalent that lints clean across every rule lives in [`tests/compose_files/safe_self_hosted.yml`](https://github.com/tmatens/compose-lint/blob/main/tests/compose_files/safe_self_hosted.yml).

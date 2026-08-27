@@ -45,15 +45,15 @@ uvx compose-lint docker-compose.yml        # or: pipx run compose-lint docker-co
 That resolves the newest release at install time. For a reproducible install (CI, production tooling), pin the version and install the dependency set from the repo's hash-pinned lockfile, which release automation keeps current:
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/tmatens/compose-lint/v0.25.0/requirements.lock
+curl -fsSLO https://raw.githubusercontent.com/tmatens/compose-lint/v0.26.0/requirements.lock
 pip install --require-hashes -r requirements.lock   # dependencies, hash-pinned
-pip install --no-deps compose-lint==0.25.0          # the tool, version-pinned
+pip install --no-deps compose-lint==0.26.0          # the tool, version-pinned
 ```
 
 **Docker** — [composelint/compose-lint](https://hub.docker.com/r/composelint/compose-lint)
 
 ```bash
-docker run --rm -v "$(pwd):/src" composelint/compose-lint:0.25.0
+docker run --rm -v "$(pwd):/src" composelint/compose-lint:0.26.0
 ```
 
 The Docker image is distroless, multi-arch, and runs nonroot — see [Security posture](#security-posture) below for SLSA, Sigstore, and OpenVEX details.
@@ -92,7 +92,7 @@ compose-lint --explain CL-0005
 Docker equivalent:
 
 ```bash
-docker run --rm -v "$(pwd):/src" composelint/compose-lint:0.25.0 docker-compose.prod.yml
+docker run --rm -v "$(pwd):/src" composelint/compose-lint:0.26.0 docker-compose.prod.yml
 ```
 
 ### Compose compatibility
@@ -481,7 +481,7 @@ compose-lint --format sarif docker-compose.yml > results.sarif
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/tmatens/compose-lint
-    rev: v0.25.0
+    rev: v0.26.0
     hooks:
       - id: compose-lint
 ```
