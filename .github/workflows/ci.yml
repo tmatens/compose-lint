@@ -442,6 +442,7 @@ jobs:
               re.compile(r"compose-lint==(\d+\.\d+\.\d+)"),
               re.compile(r"composelint/compose-lint:(\d+\.\d+\.\d+)"),
               re.compile(r"rev: v(\d+\.\d+\.\d+)"),
+              re.compile(r"compose-lint/v(\d+\.\d+\.\d+)(?=/requirements\.lock)"),
           ]
           exclude = ("docs/adr/", "docs/publishing/", "docs/state-of-compose.md")
           stale = []
