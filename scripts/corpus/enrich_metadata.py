@@ -21,6 +21,7 @@ the entry's tier and other fields stay intact.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -28,7 +29,7 @@ from pathlib import Path
 
 INDEX = Path.home() / ".cache" / "compose-lint-corpus" / "index.jsonl"
 META_FIELDS = ("stars", "pushed_at", "default_branch", "topics")
-WORKERS = 16
+WORKERS = int(os.environ.get("WORKERS", "16"))
 GH_API_TIMEOUT = 30
 
 
