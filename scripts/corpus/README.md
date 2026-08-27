@@ -13,6 +13,7 @@ python scripts/corpus/fetch.py              # longtail (random GH code search)
 python scripts/corpus/fetch_popular.py      # popular (>=50★, recent topics)
 python scripts/corpus/fetch_canonical.py    # canonical (curated upstream repos)
 python scripts/corpus/fetch_selfhosted.py   # selfhosted (curated app stores)
+python scripts/corpus/fetch_overlays.py     # overlay stratum (variant/override files)
 python scripts/corpus/retier.py             # promote curated repos to correct tier
 python scripts/corpus/enrich_metadata.py    # backfill stars/pushed_at/topics
 python scripts/corpus/enrich_blob_dates.py  # backfill blob_authored_at (throttled GraphQL)
@@ -23,12 +24,13 @@ If you only edited the curated lists, skip the fetches: `retier.py` then `make_t
 
 ## Tiers
 
-`retier.py` is the attribution authority. Seven tiers, in priority order (an entry is only ever promoted upward):
+`retier.py` is the attribution authority. Eight tiers, in priority order (an entry is only ever promoted upward):
 
 | Tier | What it is | In prevalence stats? |
 | --- | --- | --- |
 | `lab` | Deliberately-vulnerable environments: vulhub CVE reproductions, CTF challenge archives (curated list) | **No** |
 | `synthetic` | Test inputs to compose tooling: any file under a test/fixture/e2e path segment, plus whole tool repos (docker/compose, podman-compose, kompose) | **No** |
+| `overlay` | Merge fragments by design: `*.override.*` / `*.prod.*` / `*.dev.*` … variant files (fetch_overlays.py) — real deployment intent, but standalone lint rates aren't comparable to full files, so they get their own analysis lane | **No** (own lane) |
 | `canonical` | Curated vendor reference examples (awesome-compose, bitnami, …) | Yes |
 | `selfhosted` | Curated self-hosted app-store templates | Yes |
 | `collections` | Template/recipe collection repos split out of `popular` by size (>= 20 corpus entries from one repo) | Yes |

@@ -340,14 +340,17 @@ def summarize(run_dir: Path, results: list[dict], index: dict[str, dict], starte
     (run_dir / "summary.md").write_text("\n".join(lines))
 
 
-# Tiers whose files are not real-world deployment intent: `synthetic`
-# (test inputs to compose tooling) and `lab` (deliberately-vulnerable
-# environments — vulhub, CTF archives). aggregate_tiers still counts
-# them — they are corpus members and useful parser/fix-gate fuel — but
-# any prevalence claim ("X% of compose files …") must not include them.
-# See retier.py for the attribution rules and the measurements behind
-# them; tier_summary.md and the report's aggregates read this set.
-EXCLUDED_FROM_PREVALENCE = frozenset({"synthetic", "lab"})
+# Tiers kept out of the blended prevalence rates. Two are not
+# real-world deployment intent: `synthetic` (test inputs to compose
+# tooling) and `lab` (deliberately-vulnerable environments — vulhub,
+# CTF archives). `overlay` IS deployment intent but is a merge
+# *fragment*: linting one standalone is the partial view the
+# coverage-gap exit code warns about, so its rates get their own lane
+# rather than blending with full files. aggregate_tiers still counts
+# all three — corpus members, useful fuel — but any blended prevalence
+# claim ("X% of compose files …") must not include them. See retier.py
+# for attribution; tier_summary.md and the report read this set.
+EXCLUDED_FROM_PREVALENCE = frozenset({"synthetic", "lab", "overlay"})
 
 
 def aggregate_tiers(

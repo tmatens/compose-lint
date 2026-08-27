@@ -38,7 +38,8 @@ Two jobs, applied as one priority scheme:
      blended tier described neither population.
 
 Priority (highest wins):
-    lab > synthetic > canonical > selfhosted > collections > popular > longtail
+    lab > synthetic > overlay > canonical > selfhosted > collections
+    > popular > longtail
 
 Entries are only ever promoted, never demoted (so a future curated-list
 shrink or threshold change doesn't silently reset a deliberate tag).
@@ -73,14 +74,35 @@ INDEX = Path.home() / ".cache" / "compose-lint-corpus" / "index.jsonl"
 
 # Higher number = higher priority. Used to gate downgrades.
 PRIORITY = {
-    "lab": 7,
-    "synthetic": 6,
+    "lab": 8,
+    "synthetic": 7,
+    "overlay": 6,
     "canonical": 5,
     "selfhosted": 4,
     "collections": 3,
     "popular": 2,
     "longtail": 1,
     "unknown": 0,
+}
+
+# Overlay/variant basenames (Corpus 2.0 Phase 3, fetched by
+# fetch_overlays.py). Overlay-ness is a property of the file, not the
+# repo, so it outranks the repo-based curated tiers — an override file
+# in a canonical repo is still a merge fragment — while lab intent and
+# test paths still win above it. Kept in lockstep with
+# fetch_overlays.FILENAMES; a curated-tier sweep that picks one up is
+# reattributed here. This is an *addition* for the new stratum, not an
+# amendment of the frozen attribution rules for existing tiers (#759):
+# no previously-fetched file matches these basenames.
+OVERLAY_STEMS = ("docker-compose", "compose")
+OVERLAY_VARIANTS = (
+    "override", "prod", "production", "dev", "development", "staging", "local",
+)
+OVERLAY_BASENAMES = {
+    f"{stem}.{v}.{ext}"
+    for stem in OVERLAY_STEMS
+    for v in OVERLAY_VARIANTS
+    for ext in ("yml", "yaml")
 }
 
 # Deliberately-vulnerable environments: CVE reproduction stacks and CTF
@@ -145,6 +167,8 @@ def main() -> int:
             return "lab"
         if e["repo"] in SYNTHETIC_REPOS or synthetic_path(e["path"]):
             return "synthetic"
+        if PurePosixPath(e["path"]).name in OVERLAY_BASENAMES:
+            return "overlay"
         if e["repo"] in canonical_repos:
             return "canonical"
         if e["repo"] in selfhosted_repos:
