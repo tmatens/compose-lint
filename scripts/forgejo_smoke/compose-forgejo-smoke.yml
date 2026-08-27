@@ -5,11 +5,13 @@
 # compose-lint against this file (it would rightly object to the Docker
 # socket mount the runner needs to spawn job containers).
 #
-# Renovate does NOT track this file, despite the compose-* filename:
-# config:recommended's :ignoreModulesAndTests preset skips tests/**
-# entirely, so image bumps here are manual (#746). Codeberg deletes a
-# superseded Forgejo patch tag — pinned digest included — within days
-# of the next patch shipping, so bump promptly when a release lands. A
+# Renovate tracks this file (docker-compose manager) now that it lives
+# outside tests/ — config:recommended's :ignoreModulesAndTests preset
+# ignores tests/** wholesale, which is how the 16.0.2 pin went 404
+# unnoticed (#746, #748). Codeberg deletes a superseded Forgejo patch
+# tag — pinned digest included — within days of the next patch
+# shipping, so a renovate.json rule schedules bumps here "at any time"
+# instead of waiting for the weekly window; merge stays manual. A
 # version bump re-runs the harness when it merges (the workflow
 # triggers on pushes touching this file). The versions here are what
 # docs/forgejo.md's "Verified on ..." line claims: forgejo_smoke.py

@@ -4,7 +4,7 @@ name: Forgejo smoke test
 # verbatim at runtime — against a live, containerized Forgejo + act_runner
 # stack (issue #573). GitHub-hosted CI cannot *be* a Forgejo runner, but
 # it can host one: scripts/forgejo_smoke.py boots the stack in
-# tests/forgejo_smoke/, pushes a repo whose workflow is the snippet,
+# scripts/forgejo_smoke/, pushes a repo whose workflow is the snippet,
 # dispatches it, requires success, and asserts the guide's
 # "Verified on Forgejo X, runner Y" claim against the live versions.
 #
@@ -24,7 +24,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/forgejo-smoke.yml
-      - tests/forgejo_smoke/**
+      - scripts/forgejo_smoke/**
       - scripts/forgejo_smoke.py
 
 permissions: {}

@@ -381,7 +381,7 @@ Proves README's Forgejo Actions snippet — and its "Verified on Forgejo X,
 runner Y" claim — empirically (issue #573). GitHub-hosted CI cannot *be*
 a Forgejo runner, but it can host one: `scripts/forgejo_smoke.py` boots a
 throwaway Forgejo + act_runner stack
-(`tests/forgejo_smoke/compose-forgejo-smoke.yml`), extracts the snippet
+(`scripts/forgejo_smoke/compose-forgejo-smoke.yml`), extracts the snippet
 from `README.md` **verbatim** at runtime (documented and tested cannot
 drift — they are one string), pushes a repo whose workflow is that
 snippet with the shared clean fixture as its compose file, dispatches it,

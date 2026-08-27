@@ -9,7 +9,7 @@ empirical, end to end:
 1. Extract the snippet from docs/forgejo.md *verbatim* — the tested thing and
    the documented thing cannot drift, because they are one string.
 2. Boot a throwaway Forgejo + act_runner stack
-   (tests/forgejo_smoke/compose-forgejo-smoke.yml), bootstrap an admin
+   (scripts/forgejo_smoke/compose-forgejo-smoke.yml), bootstrap an admin
    user, an API token, and a runner registration over the Forgejo CLI.
 3. Push a repo whose workflow *is* the snippet and whose
    docker-compose.yml is the shared clean fixture, dispatch it, and
@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-COMPOSE_FILE = REPO_ROOT / "tests" / "forgejo_smoke" / "compose-forgejo-smoke.yml"
+COMPOSE_FILE = REPO_ROOT / "scripts" / "forgejo_smoke" / "compose-forgejo-smoke.yml"
 SNIPPET_DOC = REPO_ROOT / "docs" / "forgejo.md"
 CLEAN_FIXTURE = REPO_ROOT / "tests" / "smoke" / "clean.yml"
 
