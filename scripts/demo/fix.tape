@@ -12,9 +12,10 @@ Require compose-lint
 # behavior-changing caveat lines clip at the right edge instead of wrapping
 # and pushing the diff off screen.
 #
-# Height gives 30 rows, one more than the taller of the two screens needs:
-#   screen 1 — command + 27 lines of dry-run output + prompt       = 29 rows
-#   screen 2 — apply (command + 4) + check (command + 15) + prompt = 22 rows
+# Height gives 30 rows, exactly what the taller of the two screens needs on
+# 0.25.0 (its no-config Note line took the spare row):
+#   screen 1 — command + 28 lines of dry-run output + prompt       = 30 rows
+#   screen 2 — apply (command + 5) + check (command + 16) + prompt = 24 rows
 # A release that adds a line to either output overflows and scrolls, which
 # tests/test_demo_fixture.py is what catches (it pins the finding set the two
 # screens are sized around).
