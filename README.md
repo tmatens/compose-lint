@@ -533,6 +533,14 @@ See [CONTRIBUTING.md](https://github.com/tmatens/compose-lint/blob/main/CONTRIBU
 
 [MIT](https://github.com/tmatens/compose-lint/blob/main/LICENSE)
 
+---
+
+**Try it on your own stack right now** — no install, first findings in seconds:
+
+```bash
+uvx compose-lint
+```
+
 [owasp3]: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3-limit-capabilities-grant-only-specific-capabilities-needed-by-a-container
 [owasp8]: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8-set-filesystem-and-volumes-to-read-only
 [owasp12]: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-12-utilize-docker-secrets-for-sensitive-data-management
