@@ -149,6 +149,23 @@ The run header names the `.env` it read, so two machines that read different one
 
 **Coverage gaps.** Beyond that overlay, compose-lint follows no references out of a file, so `include:` and cross-file `extends: {file: ...}` leave part of the stack unlinted. Reporting a pass over a partial view is the one failure mode a merge gate cannot have, so a gap is an error: exit 2, a JSON `errors[]` entry, and a SARIF `toolExecutionNotifications` record. Lint the merged output (`docker compose config`) to cover everything, or pass `--allow-partial-coverage` to accept the gap and grade what is visible.
 
+## How it compares
+
+| Tool | Compose security rules | Auto-fix | Scope | Zero config |
+|------|----------------------|----------|-------|-------------|
+| **compose-lint** | Yes | Yes — dry-run diff first | Docker Compose | Yes |
+| **KICS** | Yes | Yes (`remediate` command) | Broad IaC (Terraform, K8s, Compose, ...) | No |
+| **Hadolint** | No — Dockerfile only | No | Dockerfile | Yes |
+| **dclint** | Yes — schema/structure only | Style/formatting only | Docker Compose | Yes |
+| **Trivy** | No — image/CVE + IaC misconfig scanning, no dedicated Compose ruleset | No | Dockerfiles, images, IaC | Yes |
+| **Checkov** | No — no dedicated Compose ruleset | No | Broad IaC (Terraform, K8s, ...) | No |
+
+*A capability snapshot, verified July 2026 — check each tool's docs for current state.*
+
+If you need broad IaC coverage across Terraform, Kubernetes, and more, KICS covers Docker Compose and is worth evaluating. If you want a lightweight, focused tool with zero config and actionable fix guidance for Compose files specifically, this is it.
+
+**Not in scope**: compose-lint does not validate Compose schema, scan images for CVEs, or lint Dockerfiles. Pair it with [dclint](https://github.com/zavoloklom/docker-compose-linter) for schema/structure, [Hadolint](https://github.com/hadolint/hadolint) for Dockerfiles, and [Trivy](https://github.com/aquasecurity/trivy) for image CVEs.
+
 ## Example Output
 
 Given this `docker-compose.yml`:
@@ -231,23 +248,6 @@ CRITICAL socket mount resolved four different ways (delete the service,
 re-architect it away, constrain it, or suppress it with the risk written
 down), two rules in genuine tension, and a stack that lints clean — see the
 [examples gallery](https://tmatens.github.io/compose-lint/examples/).
-
-## How it compares
-
-| Tool | Compose security rules | Auto-fix | Scope | Zero config |
-|------|----------------------|----------|-------|-------------|
-| **compose-lint** | Yes | Yes — dry-run diff first | Docker Compose | Yes |
-| **KICS** | Yes | Yes (`remediate` command) | Broad IaC (Terraform, K8s, Compose, ...) | No |
-| **Hadolint** | No — Dockerfile only | No | Dockerfile | Yes |
-| **dclint** | Yes — schema/structure only | Style/formatting only | Docker Compose | Yes |
-| **Trivy** | No — image/CVE + IaC misconfig scanning, no dedicated Compose ruleset | No | Dockerfiles, images, IaC | Yes |
-| **Checkov** | No — no dedicated Compose ruleset | No | Broad IaC (Terraform, K8s, ...) | No |
-
-*Competitor capabilities verified July 2026.*
-
-If you need broad IaC coverage across Terraform, Kubernetes, and more, KICS covers Docker Compose and is worth evaluating. If you want a lightweight, focused tool with zero config and actionable fix guidance for Compose files specifically, this is it.
-
-**Not in scope**: compose-lint does not validate Compose schema, scan images for CVEs, or lint Dockerfiles. Pair it with [dclint](https://github.com/zavoloklom/docker-compose-linter) for schema/structure, [Hadolint](https://github.com/hadolint/hadolint) for Dockerfiles, and [Trivy](https://github.com/aquasecurity/trivy) for image CVEs.
 
 ## Rules
 
