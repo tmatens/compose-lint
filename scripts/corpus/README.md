@@ -20,6 +20,24 @@ python scripts/corpus/run.py                # lint everything → runs/<ts>/
 
 If you only edited the curated lists, skip the fetches: `retier.py` then `make_tier_summary.py` regenerates per-tier numbers without re-linting.
 
+## Tiers
+
+`retier.py` is the attribution authority. Seven tiers, in priority order (an entry is only ever promoted upward):
+
+| Tier | What it is | In prevalence stats? |
+| --- | --- | --- |
+| `lab` | Deliberately-vulnerable environments: vulhub CVE reproductions, CTF challenge archives (curated list) | **No** |
+| `synthetic` | Test inputs to compose tooling: any file under a test/fixture/e2e path segment, plus whole tool repos (docker/compose, podman-compose, kompose) | **No** |
+| `canonical` | Curated vendor reference examples (awesome-compose, bitnami, …) | Yes |
+| `selfhosted` | Curated self-hosted app-store templates | Yes |
+| `collections` | Template/recipe collection repos split out of `popular` by size (>= 20 corpus entries from one repo) | Yes |
+| `popular` | Ordinary >= 50★ projects' own compose files | Yes |
+| `longtail` | Stratified code-search sweep of everything else | Yes |
+
+`lab` and `synthetic` outrank the curated tiers on purpose: a test fixture inside a canonical repo is still a test fixture. Examples, templates, and demos are **not** synthetic — they are the copy-paste material the canonical/selfhosted tiers exist to measure; only test *inputs* and lab targets are excluded. The exclusion set itself lives in `run.EXCLUDED_FROM_PREVALENCE` so `tier_summary.md`, `charts.py`, and the report cannot disagree about it.
+
+Why the split exists (measured on run `20260811T044906Z`): synthetic files showed 97.3% with-findings vs 90.6% for plain files, and docker/compose's fixtures alone moved the canonical tier's headline rate from 78.1% to 83.7%; the old blended `popular` tier was bimodal — collection repos at 9.02 findings/file and 6.4% CL-0001 vs ordinary projects at 19.43 and 15.0%; vulhub *diluted* popular (0.7% files-with-CRITICAL, 0% CL-0001) but is excluded on intent, not direction.
+
 ## Charts
 
 `charts.py` renders the report's SVGs into `docs/assets/` from a finished run. It reads the same `results.jsonl` + `index.jsonl` via `run.aggregate_tiers`, so the charts can never disagree with `tier_summary.md`.

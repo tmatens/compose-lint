@@ -44,8 +44,11 @@ CURATED_REPOS = [
     "jellyfin/jellyfin",
     "grafana/grafana",
     "pi-hole/docker-pi-hole",
-    # Official engine examples
-    "docker/compose",
+    # docker/compose was listed here as "official engine examples" until
+    # the 2026-08-27 corpus analysis showed all 92 of its fetched files
+    # are pkg/e2e and testdata fixtures — test inputs, not examples.
+    # Existing entries are retiered to `synthetic` (retier.SYNTHETIC_REPOS);
+    # it is deliberately no longer fetched as canonical.
 ]
 
 

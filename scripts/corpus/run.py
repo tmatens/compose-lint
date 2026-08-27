@@ -340,6 +340,16 @@ def summarize(run_dir: Path, results: list[dict], index: dict[str, dict], starte
     (run_dir / "summary.md").write_text("\n".join(lines))
 
 
+# Tiers whose files are not real-world deployment intent: `synthetic`
+# (test inputs to compose tooling) and `lab` (deliberately-vulnerable
+# environments — vulhub, CTF archives). aggregate_tiers still counts
+# them — they are corpus members and useful parser/fix-gate fuel — but
+# any prevalence claim ("X% of compose files …") must not include them.
+# See retier.py for the attribution rules and the measurements behind
+# them; tier_summary.md and the report's aggregates read this set.
+EXCLUDED_FROM_PREVALENCE = frozenset({"synthetic", "lab"})
+
+
 def aggregate_tiers(
     results: list[dict], index: dict[str, dict]
 ) -> tuple[dict[str, dict], dict[str, str]]:
@@ -417,10 +427,18 @@ def summarize_tiers(run_dir: Path, results: list[dict], index: dict[str, dict]) 
     for tier in sorted(by_tier):
         b = by_tier[tier]
         per_parsed = b["findings"] / b["parsed"] if b["parsed"] else 0
+        mark = "\\*" if tier in EXCLUDED_FROM_PREVALENCE else ""
         lines.append(
-            f"| `{tier}` | {b['total']} | {b['parsed']} | {b['parse_errors']} | "
+            f"| `{tier}`{mark} | {b['total']} | {b['parsed']} | {b['parse_errors']} | "
             f"{b['clean']} | {b['with_findings']} | {b['findings']} | {per_parsed:.2f} |"
         )
+    if EXCLUDED_FROM_PREVALENCE & set(by_tier):
+        lines += [
+            "",
+            "\\* excluded from prevalence stats (`run.EXCLUDED_FROM_PREVALENCE`):"
+            " synthetic test inputs and deliberately-vulnerable lab environments"
+            " are corpus members but not real-world deployment intent.",
+        ]
 
     lines += ["", "## Severity distribution per tier", "",
               "| tier | critical | high | medium | low |",
