@@ -108,6 +108,15 @@ def lint_one(path_str: str) -> dict:
             except json.JSONDecodeError as e:
                 result["error"] = f"json_decode: {e}"
                 result["stdout_head"] = proc.stdout[:500]
+            # A v1 file or structural fragment exits 0 with zero findings
+            # and only a stderr note (ADR-013) — indistinguishable from a
+            # genuinely clean file unless the note is kept. Without this,
+            # every "clean" rate silently absorbs files in which nothing
+            # was linted (the vacuous-clean artifact, #759).
+            for line in (proc.stderr or "").splitlines():
+                if "Skipped:" in line:
+                    result["skip_note"] = line.split("Skipped:", 1)[1].strip()[:300]
+                    break
         else:
             result["error"] = "usage_or_parse"
             result["stderr"] = proc.stderr.strip()[:1000]
@@ -367,9 +376,11 @@ def aggregate_tiers(
     by_tier: dict[str, dict] = defaultdict(lambda: {
         "total": 0, "parsed": 0, "parse_errors": 0, "timeouts": 0,
         "clean": 0, "with_findings": 0, "findings": 0,
+        "skipped": 0,  # exit-0 skip notes: v1 / fragment, nothing linted
         "rules": Counter(), "severity": Counter(),
         "files_per_rule": Counter(),  # rule_id -> distinct files in this tier
         "parse_classes": Counter(),  # exit-2 stderr class -> count in this tier
+        "skip_classes": Counter(),  # skip-note class -> count in this tier
     })
     rule_severity: dict[str, str] = {}
 
@@ -386,6 +397,14 @@ def aggregate_tiers(
             continue
         if r.get("lint") is None:
             continue  # other crash; counted in 'total' only
+        if r.get("skip_note"):
+            # Nothing was linted: not parsed, not clean (see lint_one).
+            b["skipped"] += 1
+            note = r["skip_note"]
+            b["skip_classes"]["v1" if "Compose v1" in note
+                              else "fragment" if "fragment" in note
+                              else "other"] += 1
+            continue
         b["parsed"] += 1
         lint = r["lint"]
         findings = lint if isinstance(lint, list) else lint.get("findings", [])
@@ -424,16 +443,17 @@ def summarize_tiers(run_dir: Path, results: list[dict], index: dict[str, dict]) 
         "",
         "## Counts per tier",
         "",
-        "| tier | total | parsed | parse-err | clean | w/findings | findings | per-parsed |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| tier | total | parsed | skipped | parse-err | clean | w/findings | findings | per-parsed |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for tier in sorted(by_tier):
         b = by_tier[tier]
         per_parsed = b["findings"] / b["parsed"] if b["parsed"] else 0
         mark = "\\*" if tier in EXCLUDED_FROM_PREVALENCE else ""
         lines.append(
-            f"| `{tier}`{mark} | {b['total']} | {b['parsed']} | {b['parse_errors']} | "
-            f"{b['clean']} | {b['with_findings']} | {b['findings']} | {per_parsed:.2f} |"
+            f"| `{tier}`{mark} | {b['total']} | {b['parsed']} | {b['skipped']} | "
+            f"{b['parse_errors']} | {b['clean']} | {b['with_findings']} | "
+            f"{b['findings']} | {per_parsed:.2f} |"
         )
     if EXCLUDED_FROM_PREVALENCE & set(by_tier):
         lines += [
