@@ -72,7 +72,7 @@ Severity distribution across the 81,879 findings:
 | MEDIUM | 61,560 | 75.2% |
 | LOW | 13,724 | 16.8% |
 
-![Stacked bar of findings by severity across all 81,879 findings: MEDIUM 75.2% (61,560), LOW 16.8% (13,724), HIGH 6.9% (5,682), CRITICAL 1.1% (913).](assets/severity-distribution.svg)
+![Waffle chart of 100 squares, each 1 in 100 of the 5,907 parsed files, colored by the worst finding in the file: 11 in 100 carry a CRITICAL finding (red), another 30 in 100 top out at HIGH (orange), 58 in 100 carry only MEDIUM or LOW findings (sand), and fewer than 1 in 100 is clean (one outlined square).](assets/file-severity.svg)
 
 The MEDIUM-heavy distribution is a property of compose-lint's rule design, not of the corpus: the hardening misses that fire on nearly every file sit at MEDIUM. CRITICAL findings are rarer but not marginal: **10.6% of parsed files carry at least one CRITICAL finding**, and 7.8% carry a mounted host control socket specifically. Broadening to HIGH-or-above, **40.8% of parsed files carry at least one finding rated HIGH or CRITICAL** — the jump from the previous edition's 34.2% is mostly the credential rules reading `env_file:` contents they previously could not (see [the delta](#what-changed-since-the-last-edition)).
 
@@ -81,6 +81,8 @@ The MEDIUM-heavy distribution is a property of compose-lint's rule design, not o
 ## Skipped is not clean
 
 **In plain terms:** some files exit the linter successfully with zero findings because there was *nothing in them to lint* — an obsolete Compose v1 layout (services at the top level, retired by Docker in 2023) or a structural fragment with no services. Earlier editions counted those as "clean", which quietly inflated the clean population; the previous edition's statistical review caught 438 of them by hand. The harness now separates them by construction.
+
+![Stacked bar chart titled "The files that never got linted": per tier, the share of files that were skipped (Compose v1 relics and fragments, blue) or failed to parse (orange) — canonical 23%, selfhosted 0, collections 12%, popular 3%, longtail 16%.](assets/never-linted.svg)
 
 This edition's skip population: **466 files in the prevalence tiers (447 Compose v1, 19 fragments)** — 7.0% of those tiers — concentrated in `longtail` (247) and `collections` (159). With them out of the denominator, genuinely clean files number **47 of 5,907 (0.8%)**: 46 in `longtail`, 1 in `collections`, and **zero** in `canonical`, `selfhosted`, or `popular`. The v1 population is fossil material — 61% of ≥5-year-old files vs ~1% of files under a year old — and the deeper sweep behind this edition surfaces proportionally far less of it.
 
@@ -96,11 +98,11 @@ This edition's skip population: **466 files in the prevalence tiers (447 Compose
 | `popular` | 1,231 | 1,192 | 5 | 34 | 1,192 | 0 | **100%** | **19.93** | 734 |
 | `longtail` | 3,105 | 2,618 | 247 | 240 | 2,572 | 46 | 98.2% | 14.11 | 2,583 |
 
-![Bar chart of the share of parsed files with at least one finding, by tier: canonical 100%, selfhosted 100%, collections 99.9%, popular 100%, longtail 98.2%.](assets/findings-by-tier.svg)
-
 The "Source repos" column matters as much as the file counts: a tier built on few repos describes those repos, however many files they contribute — `selfhosted` is four registries, `canonical` eight vendors. With the skip artifact gone, the with-findings rate has stopped being an interesting *axis of comparison* (every tier is at or near 100%, longtail's 98.2% carrying a repo-resampling interval of 97.7–98.7%); the discriminating numbers are findings per file, per service, and the acute-rule rates below.
 
 ### The fair comparison: per service, not per file
+
+![Two-panel bar chart titled "Bigger, not sloppier": findings per file by tier (popular 19.9 highlighted in red, longtail 14.1, canonical 13.2, collections 10.0, selfhosted 9.4) beside findings per service (all tiers within a shaded 5.8–6.3 band).](assets/bigger-not-sloppier.svg)
 
 **In plain terms:** a file with six services has six chances to miss a hardening flag. Per-file comparisons across tiers whose files differ in size partly measure file size; the per-service view is the fair one.
 
@@ -118,7 +120,7 @@ Findings per service is nearly flat — 5.8 to 6.3, everywhere. **The per-servic
 
 Ten rules account for 98% of all findings. They cluster into three groups: hardening defaults that nobody flips, supply-chain shortcuts, and acute privilege grants.
 
-![Horizontal bar chart of the ten most common rules by share of parsed files affected, coloured by severity: CL-0007 read_only 99% (LOW), CL-0006 cap_drop ALL 99% (MEDIUM), CL-0026 No resource limits 97% (MEDIUM), CL-0003 no-new-privileges 97% (MEDIUM), CL-0005 Ports published on 0.0.0.0 72% (MEDIUM), CL-0019 Image tags without digest pins 50% (MEDIUM), CL-0004 Unpinned image tags 50% (MEDIUM), CL-0020 Credential-shaped environment keys 28% (HIGH), CL-0001 Host control socket exposed 8% (CRITICAL), CL-0021 Connection-string credentials 5% (HIGH).](assets/top-findings.svg)
+![Grouped horizontal bar chart titled "Ten findings are 98% of the problem", share of parsed files affected. The hardening nobody flips: read-only filesystem not set 99%, no capability restrictions 99%, no resource limits 97%, privilege escalation not blocked 97%. Supply-chain shortcuts: ports on 0.0.0.0 72%, no digest pin 50%, unpinned tag 50%. The acute cliff, where bars turn orange and red: literal credential in environment 28%, host control socket mounted 8%, credential in connection string 5%.](assets/top-findings.svg)
 
 ### Hardening defaults (the bulk of the findings)
 
@@ -161,11 +163,17 @@ New in this edition: 3,579 overlay/variant files (`docker-compose.override.yml`,
 2. **Dev and local overlays are credential dumps.** Literal-credential rates (CL-0020/21): `dev` 34%, `local` 36% — 1.7× the full-file rate — while `prod`/`production`/`override` sit at ~20–21%, which still means one in five *production* overlays hardcodes a credential. Port publishing also concentrates here (76% of overlays vs 72% of full files, peaking in `local` at 82%).
 3. **Overlays are current practice**: 48% authored within a year of the snapshot, 79% within three. This surface is live and growing, not legacy.
 
+![Bar chart titled "It's just dev is a measurable habit": share of overlay files with a literal credential by filename variant — local 36%, dev 34%, development 30% in orange; staging 22%, prod 22%, override 21%, production 20% in blue; dashed reference line at the ordinary-file rate of 20.3%.](assets/overlay-credentials.svg)
+
 Their per-service findings rate (≈5.4) sits just below the full-file band — overlays are ordinary unhardened Compose, in greater numbers, in more places.
 
 ## Is practice improving over time?
 
-No — and the claim has now been replicated. Each file's `blob_authored_at` records when the captured content was last authored (coverage: 99% of the corpus). Findings per service, by file age, within each tier:
+No — and the claim has now been replicated. Each file's `blob_authored_at` records when the captured content was last authored (coverage: 99% of the corpus).
+
+![Line chart titled "Four years of Compose files. Zero improvement.": findings per service by file age, individual tiers in grey and the all-files line in red, flat at 5.98 / 5.96 / 5.82 across files written in the last year, 1–3 years ago, and 3+ years ago; y-axis starts at zero.](assets/not-improving.svg)
+
+Findings per service, by file age, within each tier:
 
 | Tier | <1y | 1–3y | ≥3y |
 | --- | ---: | ---: | ---: |

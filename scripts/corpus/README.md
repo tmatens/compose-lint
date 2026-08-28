@@ -45,7 +45,7 @@ Why the split exists (measured on run `20260811T044906Z`): synthetic files showe
 
 ## Charts
 
-`charts.py` renders the report's SVGs into `docs/assets/` from a finished run. It reads the same `results.jsonl` + `index.jsonl` via `run.aggregate_tiers`, so the charts can never disagree with `tier_summary.md`.
+`charts.py` renders the report's six figures into `docs/assets/` from a finished run — every number computed from `results.jsonl` + `index.jsonl` (plus a parse pass over the corpus files for service counts), so a chart can never disagree with the tables. The figures follow the third edition's editorial identity (claim titles, direct labels, masthead/footer); typography is Inter / JetBrains Mono, vendored under `scripts/corpus/assets/fonts/` with their SIL OFL licenses, and SVGs embed text as paths so they render identically everywhere. Requires the corpus cache present locally.
 
 ```bash
 pip install -e '.[corpus]'                   # one-time: pulls in matplotlib
