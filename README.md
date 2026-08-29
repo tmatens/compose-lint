@@ -497,6 +497,24 @@ documents the attack this blocks):
         args: [--fail-on, low, --]
 ```
 
+## Agent-written Compose
+
+If a coding agent writes or edits Compose files in your repo, the two gates
+above already cover it and the agent needs to know nothing: the pre-commit hook
+catches it before the commit, the Action before the merge. Agent-authored
+Compose then gets graded on exactly the same terms as anyone else's, which is
+the cheapest way to make this reliable.
+
+If you are instead driving compose-lint *from* an agent or a script, parse
+`--format json` — a versioned envelope, unlike the text output — and read
+[Automation and agent
+use](https://tmatens.github.io/compose-lint/cli/#automation-and-agent-use).
+It covers the behaviours an agent tends to get wrong: exit 2 means a coverage
+gap or a broken run rather than a lint failure, `fix` is a dry run by default
+and its refusals are deliberate, suppressions live in `.compose-lint.yml` with
+a reason and there is no inline comment syntax, and `--explain CL-XXXX` reads
+the rule docs offline so nothing has to be fetched or guessed.
+
 ## Security posture
 
 compose-lint is built to be safe to depend on:
