@@ -51,14 +51,14 @@ dependencies = [
 # "Development dependencies" — and Dependabot's weekly pass bumps
 # them.
 lint = [
-    "ruff==0.16.4",
+    "ruff==0.16.5",
 ]
 security = [
     "bandit==1.9.4",
     "pip-audit==2.10.1",
 ]
 publish = [
-    "build==1.5.1",
+    "build==1.6.0",
     "twine==7.0.0",
     # Used by the post-release canary in publish.yml to verify the
     # Sigstore bundles attached to the GitHub Release. Matches the
@@ -70,7 +70,7 @@ publish = [
 # the generated requirements-build.lock hash-pins only what's needed to
 # invoke `python -m build`, without pulling in pytest/ruff/mypy/etc.
 container = [
-    "build==1.5.1",
+    "build==1.6.0",
 ]
 # Chart generation for the State of Compose report (scripts/corpus/charts.py).
 # Manual maintainer task run at report-refresh time, not a CI job — so this
