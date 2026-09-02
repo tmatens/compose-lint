@@ -458,9 +458,11 @@ def summarize_tiers(run_dir: Path, results: list[dict], index: dict[str, dict]) 
     if EXCLUDED_FROM_PREVALENCE & set(by_tier):
         lines += [
             "",
-            "\\* excluded from prevalence stats (`run.EXCLUDED_FROM_PREVALENCE`):"
-            " synthetic test inputs and deliberately-vulnerable lab environments"
-            " are corpus members but not real-world deployment intent.",
+            (
+                "\\* excluded from prevalence stats (`run.EXCLUDED_FROM_PREVALENCE`):"
+                " synthetic test inputs and deliberately-vulnerable lab environments"
+                " are corpus members but not real-world deployment intent."
+            ),
         ]
 
     lines += ["", "## Severity distribution per tier", "",
