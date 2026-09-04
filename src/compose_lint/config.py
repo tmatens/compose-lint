@@ -240,6 +240,8 @@ def _parse_rules(
     strict: bool = False,
 ) -> tuple[dict[str, str | None], dict[str, Severity], ExcludedServices]:
     """Parse the rules section of a config file."""
+    if rules is None:
+        rules = {}
     if not isinstance(rules, dict):
         raise ConfigError("'rules' must be a mapping")
 
@@ -251,6 +253,8 @@ def _parse_rules(
     for rule_id, rule_config in rules.items():
         rule_id = str(rule_id)
 
+        if rule_config is None:
+            rule_config = {}
         if not isinstance(rule_config, dict):
             raise ConfigError(f"Config for rule '{rule_id}' must be a mapping")
 
@@ -302,6 +306,8 @@ def _parse_exclude_services(rule_id: str, value: Any) -> dict[str, str | None]:
     Accepts either a list of service names (no reasons) or a mapping of
     service name to reason string.
     """
+    if value is None:
+        return {}
     if isinstance(value, list):
         result: dict[str, str | None] = {}
         for item in value:

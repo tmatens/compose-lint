@@ -102,6 +102,38 @@ class TestLoadConfig:
         assert disabled == {}
         assert overrides == {}
 
+    def test_rules_null_behaves_like_empty_mapping(self, tmp_path: Path) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n")
+        disabled, overrides, excluded = load_config(config)
+        assert disabled == {}
+        assert overrides == {}
+        assert excluded == {}
+
+    def test_per_rule_null_config_behaves_like_empty_mapping(
+        self, tmp_path: Path
+    ) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0001:\n")
+        disabled, overrides, excluded = load_config(config)
+        assert "CL-0001" not in disabled
+        assert "CL-0001" not in overrides
+        assert "CL-0001" not in excluded
+
+    def test_rules_wrong_type_raises(self, tmp_path: Path) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules: hello\n")
+        with pytest.raises(ConfigError, match="'rules' must be a mapping"):
+            load_config(config)
+
+    def test_per_rule_wrong_type_raises(self, tmp_path: Path) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0001: hello\n")
+        with pytest.raises(
+            ConfigError, match="Config for rule 'CL-0001' must be a mapping"
+        ):
+            load_config(config)
+
     def test_config_not_mapping(self, tmp_path: Path) -> None:
         config = tmp_path / ".compose-lint.yml"
         config.write_text("- list\n- items\n")
@@ -287,6 +319,18 @@ class TestExcludeServices:
         config.write_text("rules:\n  CL-0003:\n    enabled: false\n")
         _disabled, _overrides, excluded = load_config(config)
         assert excluded == {}
+
+    def test_exclude_services_null_behaves_like_empty(self, tmp_path: Path) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0003:\n    exclude_services:\n")
+        _disabled, _overrides, excluded = load_config(config)
+        assert excluded == {"CL-0003": {}}
+
+    def test_exclude_services_wrong_type_raises(self, tmp_path: Path) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0003:\n    exclude_services: 5\n")
+        with pytest.raises(ConfigError, match="must be a list or mapping"):
+            load_config(config)
 
     def test_invalid_scalar_value(self, tmp_path: Path) -> None:
         config = tmp_path / ".compose-lint.yml"
