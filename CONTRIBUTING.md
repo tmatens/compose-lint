@@ -211,11 +211,16 @@ Verify locally with `git log --show-signature`. If it prints
 
 ### Developer Certificate of Origin
 
-All commits must carry a `Signed-off-by:` trailer certifying that you wrote
-the change (or have the right to submit it under this project's MIT license).
-This is the [Developer Certificate of Origin](https://developercertificate.org).
+Every commit that carries authored changes must have a `Signed-off-by:`
+trailer certifying that you wrote the change (or have the right to submit it
+under this project's MIT license). This is the
+[Developer Certificate of Origin](https://developercertificate.org).
 It is independent of [commit signing](#commit-signing) above: cryptographic
 signing proves *who committed*, DCO asserts *right to contribute*.
+
+Merge commits are exempt — they introduce no authored content, so there is
+nothing for their author to certify. CI skips them, as the GitHub DCO app
+does.
 
 Add the trailer with `-s`:
 
@@ -233,9 +238,17 @@ What catches a commit that is missing it is the repo's `pre-push` hook, which
 refuses the push before a PR ever exists — provided you ran the
 `git config core.hooksPath .githooks` from [Development setup](#development-setup).
 
-The `Signed-off-by` name and email must match your commit author identity. CI
-will block the PR if any commit is missing a matching trailer. Fix existing
-commits with `git commit --amend --signoff` or `git rebase --signoff main`.
+The `Signed-off-by` name and email must match your commit author identity
+**exactly**. A trailer that names you but carries a different address — a
+personal address on a commit authored as `...@users.noreply.github.com`, say —
+does not satisfy the check, which reports the expected and found trailers
+side by side so the difference is visible. Fix existing commits with
+`git commit --amend --signoff` or `git rebase --signoff main`.
+
+When your branch needs to catch up with `main`, **rebase and re-push with
+`--force-with-lease`** rather than using GitHub's "Update branch" button.
+Either route satisfies the up-to-date requirement, but the button writes a
+merge commit, and a linear branch is what this repo squashes cleanly.
 
 ## Pull requests
 
