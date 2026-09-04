@@ -577,6 +577,14 @@ jobs:
           # Bot commits (Dependabot, Renovate, github-actions) can't add a
           # Signed-off-by trailer from the Probot runtime. They're allow-listed.
           bot_pattern='(dependabot|renovate|github-actions|mend)\[bot\]'
+          # Merge commits are skipped (--no-merges): they introduce no authored
+          # content, so there is nothing for their author to certify. GitHub's
+          # own "Update branch" button mints one with no trailer, and this repo
+          # requires branches to be current before merge — so gating merge
+          # commits punishes contributors for taking the route the UI offers.
+          # The GitHub DCO app skips them for the same reason (dcoapp/app
+          # `lib/dco.js`: `const isMerge = parents && parents.length > 1`).
+          # Squash-merge means they never reach main regardless.
           bad=""
           while IFS=$'\t' read -r sha author_name author_email; do
             if echo "${author_name}${author_email}" | grep -iqE "${bot_pattern}"; then
@@ -587,7 +595,7 @@ jobs:
               bad="${bad}${sha}	${author_name} <${author_email}>
           "
             fi
-          done < <(git log --format='%H%x09%an%x09%ae' "${BASE_SHA}..${HEAD_SHA}")
+          done < <(git log --no-merges --format='%H%x09%an%x09%ae' "${BASE_SHA}..${HEAD_SHA}")
           if [ -n "${bad}" ]; then
             echo "::error::Commits missing matching Signed-off-by (DCO) trailer:"
             printf '%s' "${bad}" | while IFS=$'\t' read -r sha author; do
