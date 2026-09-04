@@ -35,8 +35,15 @@ Closes #
 
 ## Checklist
 
-- [ ] Commits are signed (GitHub shows **Verified**)
-- [ ] Commits carry a `Signed-off-by:` trailer (`git commit -s`) — separate from signing
+<!-- Signing and signing off are two different requirements with confusingly
+     similar names, and CI enforces them separately. Doing one does not do the
+     other. See CONTRIBUTING.md, "Commit signing" and "Developer Certificate of
+     Origin". -->
+
+- [ ] Commits are **signed** — GitHub shows a `Verified` badge (proves *who committed*)
+- [ ] Commits are **signed off** — every commit with authored changes carries a
+      `Signed-off-by:` trailer whose name and email match its author exactly, added
+      by `git commit -s` (asserts *right to contribute*; not the same as signing)
 - [ ] One logical change per commit; no unrelated changes bundled in
 - [ ] `ruff check`, `ruff format --check`, `mypy src/`, and `pytest` all pass locally
 - [ ] New/changed behavior has tests (positive **and** negative cases for rules)
