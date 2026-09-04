@@ -585,24 +585,41 @@ jobs:
           # The GitHub DCO app skips them for the same reason (dcoapp/app
           # `lib/dco.js`: `const isMerge = parents && parents.length > 1`).
           # Squash-merge means they never reach main regardless.
-          bad=""
+          # Report the trailers that *are* present alongside the one expected.
+          # A trailer whose email differs from the author's fails this gate, and
+          # saying only "missing" sends the contributor looking for an absent
+          # line that is in fact right there (PR #726). The two cases need
+          # different fixes, so they get different output.
+          report="$(mktemp)"
           while IFS=$'\t' read -r sha author_name author_email; do
-            if echo "${author_name}${author_email}" | grep -iqE "${bot_pattern}"; then
+            if printf '%s' "${author_name}${author_email}" | grep -iqE "${bot_pattern}"; then
               continue
             fi
             expected="Signed-off-by: ${author_name} <${author_email}>"
-            if ! git log -1 --format='%B' "${sha}" | grep -qiF "${expected}"; then
-              bad="${bad}${sha}	${author_name} <${author_email}>
-          "
+            message="$(git log -1 --format='%B' "${sha}")"
+            if printf '%s\n' "${message}" | grep -qiF "${expected}"; then
+              continue
             fi
+            {
+              printf '  %s  %s\n' "${sha}" "$(git log -1 --format='%s' "${sha}")"
+              printf '    expected: %s\n' "${expected}"
+              found="$(printf '%s\n' "${message}" | grep -i '^[[:space:]]*Signed-off-by:' || true)"
+              if [ -z "${found}" ]; then
+                printf '    found:    (none - this commit has no Signed-off-by trailer)\n'
+              else
+                printf '%s\n' "${found}" | while IFS= read -r line; do
+                  printf '    found:    %s\n' "${line#"${line%%[![:space:]]*}"}"
+                done
+              fi
+            } >> "${report}"
           done < <(git log --no-merges --format='%H%x09%an%x09%ae' "${BASE_SHA}..${HEAD_SHA}")
-          if [ -n "${bad}" ]; then
-            echo "::error::Commits missing matching Signed-off-by (DCO) trailer:"
-            printf '%s' "${bad}" | while IFS=$'\t' read -r sha author; do
-              [ -n "${sha}" ] && echo "::error::  ${sha}  ${author}"
-            done
-            echo "::error::Add 'Signed-off-by: Name <email>' matching your author identity."
-            echo "::error::Fix with 'git commit --amend --signoff' or 'git rebase --signoff ${BASE_SHA}'."
+          if [ -s "${report}" ]; then
+            echo "::error::Commits without a Signed-off-by trailer matching their author identity:"
+            while IFS= read -r line; do
+              echo "::error::${line}"
+            done < "${report}"
+            echo "::error::The trailer's name and email must match the commit author exactly; a trailer carrying a different address does not satisfy the DCO."
+            echo "::error::Fix the last commit with 'git commit --amend --signoff', or all of them with 'git rebase --signoff ${BASE_SHA}', then re-push with --force-with-lease (not the 'Update branch' button)."
             exit 1
           fi
           echo "All PR commits carry a matching Signed-off-by trailer."
