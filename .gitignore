@@ -52,6 +52,14 @@ htmlcov/
 mutants/
 .mutmut-stats/
 
+# uv's project-mode lockfile, written as a side effect of the `uv run` in
+# docs/mutation-testing.md. Untracked on purpose: the tracked locks are the
+# four requirements*.lock files that CI regenerates and byte-diffs, and a
+# committed uv.lock would hand Renovate's pep621 manager a second lockfile
+# for the same [project] deps — the duplicate-PR failure the disabled poetry
+# manager already documents in .github/renovate.json.
+uv.lock
+
 # Environment / secrets
 .env
 .env.*
