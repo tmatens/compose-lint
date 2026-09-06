@@ -215,7 +215,7 @@ def _subcommands() -> set[str]:
 
 
 def _add_check_subparser(
-    subparsers: argparse._SubParsersAction,  # type: ignore[type-arg]
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
     """Register the `check` subcommand (the default lint operation)."""
     check = subparsers.add_parser(
@@ -349,7 +349,7 @@ def _add_check_subparser(
 
 
 def _add_fix_subparser(
-    subparsers: argparse._SubParsersAction,  # type: ignore[type-arg]
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
     """Register the `fix` subcommand (ADR-014).
 
@@ -427,7 +427,7 @@ def _add_fix_subparser(
 
 
 def _add_init_subparser(
-    subparsers: argparse._SubParsersAction,  # type: ignore[type-arg]
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
     """Register the `init` subcommand (ADR-011).
 

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`py.typed` marker.** The package has been type-checked in strict mode
+  since early on, but without the marker any downstream `import compose_lint`
+  saw every symbol as `Any`. mypy and pyright now pick up the real
+  signatures. CI also type-checks `tests/` now (relaxed, not strict); the
+  handful of real errors it surfaced are fixed. Prompted by #775.
+
 ## [0.26.0] - 2026-08-27
 
 ### Added
