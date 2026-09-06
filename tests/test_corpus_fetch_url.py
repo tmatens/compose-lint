@@ -18,7 +18,7 @@ import pytest
 _COMMON = Path(__file__).resolve().parents[1] / "scripts" / "corpus" / "_common.py"
 
 
-def _load_common():  # type: ignore[no-untyped-def]
+def _load_common():
     spec = importlib.util.spec_from_file_location("_corpus_common", _COMMON)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

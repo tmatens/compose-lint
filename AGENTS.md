@@ -31,7 +31,7 @@ Disables still produce suppressed findings. `reason` flows to `suppression_reaso
 
 ## Quality checks
 
-`ruff check src/ tests/`, `ruff format --check src/ tests/`, `mypy src/` (strict), `pytest`. All four must pass, scoped exactly as written — CI lints only `src/` and `tests/`, and a bare `ruff check` also sweeps `scripts/`, which has known, accepted violations. CI test matrix: Python 3.11–3.14 on ubuntu-24.04.
+`ruff check src/ tests/`, `ruff format --check src/ tests/`, `mypy src/ tests/` (strict on `src/`, relaxed on `tests/`), `pytest`. All four must pass, scoped exactly as written — CI lints only `src/` and `tests/`, and a bare `ruff check` also sweeps `scripts/`, which has known, accepted violations. CI test matrix: Python 3.11–3.14 on ubuntu-24.04.
 
 Running a branch's tests from a `git worktree` needs `PYTHONPATH` pointed at that worktree's `src/`. The dev install is editable and resolves `compose_lint` to the **main checkout's** `src/`, so a bare `pytest` in a worktree grades the branch's tests against `main`'s source and fails in exactly the way a genuinely broken change would. Confirm with `python -c 'import compose_lint; print(compose_lint.__file__)'` before believing a red run.
 

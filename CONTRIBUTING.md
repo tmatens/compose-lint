@@ -65,7 +65,7 @@ All four must pass locally before you push. CI runs the same commands.
 ```bash
 ruff check src/ tests/          # Linting
 ruff format --check src/ tests/ # Formatting
-mypy src/                       # Type checking (strict mode)
+mypy src/ tests/                # Type checking (strict on src/, relaxed on tests/)
 pytest                          # Tests
 ```
 

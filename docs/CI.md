@@ -56,7 +56,7 @@ cancels in-progress runs when you push new commits to the same PR.
 | Job                       | Purpose                                                                                   |
 | ------------------------- | ----------------------------------------------------------------------------------------- |
 | `lint`                    | `ruff check` + `ruff format --check` on `src/` and `tests/`                               |
-| `type-check`              | `mypy src/` in strict mode                                                                |
+| `type-check`              | `mypy src/ tests/`; strict on `src/`, relaxed on `tests/`                                  |
 | `test`                    | `pytest` across the Python matrix — 3.11, 3.12, 3.13, 3.14                          |
 | `coverage`                | `pytest --cov` with `--cov-fail-under=80` — fails below 80% statement coverage             |
 | `security`                | `bandit -r src/ -ll` (blocking) + `pip-audit` for dep CVEs (informational on PRs — see note) |

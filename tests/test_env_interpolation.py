@@ -34,7 +34,11 @@ def rules_fired(directory: Path, *, use_env: bool = True) -> set[str]:
 
 def evidence_for(directory: Path, rule_id: str) -> set[str]:
     data, lines = load_compose(directory / "compose.yml")
-    return {f.evidence for f in run_rules(data, lines) if f.rule_id == rule_id}
+    return {
+        f.evidence
+        for f in run_rules(data, lines)
+        if f.rule_id == rule_id and f.evidence is not None
+    }
 
 
 class TestDeploymentValuesResolve:

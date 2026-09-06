@@ -28,7 +28,7 @@ pytestmark = pytest.mark.skipif(not CORPUS_ENV, reason="COMPOSE_LINT_CORPUS not 
 
 def test_snapshot_matches_latest_run() -> None:
     sys.path.insert(0, str(REPO_ROOT / "scripts"))
-    import snapshot as snap
+    import snapshot as snap  # type: ignore[import-not-found]
 
     cache = Path(CORPUS_ENV).expanduser()  # type: ignore[arg-type]
     if not cache.is_dir():

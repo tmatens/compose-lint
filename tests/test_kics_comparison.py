@@ -15,15 +15,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from compose_lint.engine import run_rules
-from compose_lint.models import Severity
+from compose_lint.models import Finding, Severity
 from compose_lint.parser import load_compose
 
 FIXTURE = Path(__file__).parent / "compose_files" / "kics_comparison.yml"
 
 
 def _findings_for_service(
-    findings: list[object], service: str, rule_id: str
-) -> list[object]:
+    findings: list[Finding], service: str, rule_id: str
+) -> list[Finding]:
     return [f for f in findings if f.service == service and f.rule_id == rule_id]
 
 

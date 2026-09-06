@@ -146,7 +146,9 @@ def test_envelope_key_set_is_exact() -> None:
 
     assert set(log) == ENVELOPE_KEYS, _RULE
     assert log["version"] == SCHEMA_VERSION, _RULE
-    assert set(log["tool"]) == TOOL_KEYS, _RULE  # type: ignore[arg-type]
+    tool = log["tool"]
+    assert isinstance(tool, dict)
+    assert set(tool) == TOOL_KEYS, _RULE
     assert log["tool"] == {"name": "compose-lint", "version": __version__}
 
 

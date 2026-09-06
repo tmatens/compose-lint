@@ -31,7 +31,7 @@ _CREDENTIAL_MARKERS = (
 )
 
 
-def _load(name: str) -> dict[str, Any]:
+def _load(name: str) -> dict[Any, Any]:
     return yaml.safe_load((WORKFLOWS / name).read_text(encoding="utf-8"))
 
 
@@ -81,7 +81,7 @@ def test_the_tag_gate_is_a_reusable_workflow() -> None:
     doc = _load("verify-tag.yml")
     # YAML 1.1 resolves the bare key `on` to the boolean True — the same
     # coercion CL-0002 has to handle for `privileged: on`.
-    triggers = doc.get("on", doc.get(True))
+    triggers = doc["on"] if "on" in doc else doc[True]
     assert "workflow_call" in triggers
     assert "tag" in triggers["workflow_call"]["inputs"]
 

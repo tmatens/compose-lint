@@ -60,9 +60,9 @@ def test_register_rule_appends_to_registry() -> None:
 
     before = len(get_registered_rules())
 
-    class _ProbeRule(BaseRule):  # type: ignore[misc]
+    class _ProbeRule(BaseRule):
         @property
-        def metadata(self):  # type: ignore[no-untyped-def]
+        def metadata(self):
             from compose_lint.models import RuleMetadata, Severity
 
             return RuleMetadata(
@@ -73,7 +73,7 @@ def test_register_rule_appends_to_registry() -> None:
                 references=["test"],
             )
 
-        def check(self, *_args, **_kwargs):  # type: ignore[no-untyped-def]
+        def check(self, *_args, **_kwargs):
             return iter(())
 
     register_rule(_ProbeRule)

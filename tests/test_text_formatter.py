@@ -12,6 +12,7 @@ import sys
 
 import pytest
 
+from compose_lint._output import sanitize as _sanitize
 from compose_lint.formatters.text import (
     _COLORS,
     _LABEL_WIDTH,
@@ -21,7 +22,6 @@ from compose_lint.formatters.text import (
     _display_width,
     _excerpt,
     _find_token,
-    _sanitize,
     format_aggregate_summary,
     format_findings,
     format_summary,
@@ -67,13 +67,13 @@ def _image_finding(severity: Severity) -> Finding:
     )
 
 
-def _write_compose(tmp_path) -> str:  # type: ignore[no-untyped-def]
+def _write_compose(tmp_path) -> str:
     path = tmp_path / "compose.yml"
     path.write_text("services:\n  web:\n    image: nginx:1.0\n", encoding="utf-8")
     return str(path)
 
 
-def test_underline_uses_box_drawing_not_caret(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_underline_uses_box_drawing_not_caret(tmp_path) -> None:
     filepath = _write_compose(tmp_path)
     out = format_findings([_image_finding(Severity.MEDIUM)], filepath)
     assert "─" * len("nginx:1.0") in out
@@ -88,7 +88,7 @@ def test_every_severity_has_a_color() -> None:
 @pytest.mark.parametrize("severity", list(Severity))
 def test_underline_color_matches_severity_label(
     severity: Severity,
-    tmp_path,  # type: ignore[no-untyped-def]
+    tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _force_color(monkeypatch)
@@ -122,7 +122,7 @@ def test_findings_within_service_sort_by_severity_then_line() -> None:
     assert order == ["CL-0001", "CL-0005", "CL-0007", "CL-0003"]
 
 
-def test_column_header_labels_the_line_column(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_column_header_labels_the_line_column(tmp_path) -> None:
     filepath = _write_compose(tmp_path)
     out = format_findings([_image_finding(Severity.MEDIUM)], filepath)
     # The header row names every column so the leading number reads as a line.
@@ -221,7 +221,7 @@ def test_force_color_zero_does_not_force(monkeypatch: pytest.MonkeyPatch) -> Non
 # --- quiet mode -----------------------------------------------------------
 
 
-def test_quiet_mode_is_one_line_per_finding(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_quiet_mode_is_one_line_per_finding(tmp_path) -> None:
     filepath = _write_compose(tmp_path)
     finding = Finding(
         "CL-0019",
@@ -314,7 +314,7 @@ def test_new_credential_rules_are_presence_rules() -> None:
     assert {"CL-0020", "CL-0021"} <= _PRESENCE_RULES
 
 
-def test_cl0020_renders_source_excerpt(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_cl0020_renders_source_excerpt(tmp_path) -> None:
     path = tmp_path / "compose.yml"
     path.write_text(
         "services:\n  web:\n    environment:\n"
@@ -374,7 +374,7 @@ def test_find_token_prefers_boundary_over_substring() -> None:
     assert _find_token("only-substr", "subst") == 5
 
 
-def test_underline_targets_standalone_token(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_underline_targets_standalone_token(tmp_path) -> None:
     path = tmp_path / "compose.yml"
     path.write_text(
         "services:\n  web:\n    ports:\n      - 8080:80\n", encoding="utf-8"

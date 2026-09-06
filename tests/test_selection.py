@@ -17,6 +17,7 @@ import pytest
 from compose_lint._selection import plan_documents
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
 BASE = "services:\n  web:\n    image: i\n"
@@ -45,7 +46,7 @@ def project(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def in_project(project: Path) -> Path:
+def in_project(project: Path) -> Iterator[Path]:
     """Run from inside the project, which is what bare discovery means."""
     previous = os.getcwd()
     os.chdir(project)

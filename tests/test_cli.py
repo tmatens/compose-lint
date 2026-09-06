@@ -805,8 +805,8 @@ class TestFixSubcommand:
             f.write_text(_BARE_SERVICE)
 
         class _UnreadableSecondRead:
-            def __init__(self, *a: object, **k: object) -> None:
-                self._p = Path(*a, **k)
+            def __init__(self, *a: str | os.PathLike[str]) -> None:
+                self._p = Path(*a)
 
             def read_text(self, *a: object, **k: object) -> str:
                 raise OSError("simulated: file became unreadable")
@@ -837,8 +837,8 @@ class TestFixSubcommand:
         f.write_text(_BARE_SERVICE)
 
         class _UnreadableSecondRead:
-            def __init__(self, *a: object, **k: object) -> None:
-                self._p = Path(*a, **k)
+            def __init__(self, *a: str | os.PathLike[str]) -> None:
+                self._p = Path(*a)
 
             def open(self, *a: object, **k: object) -> object:
                 raise OSError("simulated: file became unreadable")

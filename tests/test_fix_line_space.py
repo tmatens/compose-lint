@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from compose_lint import cli
+from compose_lint.fix import collect_edits as real_collect
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -173,9 +174,7 @@ def test_batch_sarif_survives_a_file_whose_fixes_cannot_be_computed(
     )
     poisoned = _write(tmp_path / "poisoned.yml", _compose(" "))
 
-    real_collect = cli_module.collect_edits
-
-    def _explode(findings, data, lines, text, **kwargs):  # type: ignore[no-untyped-def]
+    def _explode(findings, data, lines, text, **kwargs):
         if "line one" in text:  # the poisoned document
             raise LineOutOfRangeError(
                 "edit names line 99, outside the file's 15 line(s)"

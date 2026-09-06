@@ -122,7 +122,7 @@ class TestRunRules:
         assert findings[1].line == 10
 
     def test_empty_services(self) -> None:
-        data = {"services": {}}
+        data: dict[str, Any] = {"services": {}}
         findings = run_rules(data, {})
         assert len(findings) == 0
 
@@ -272,7 +272,7 @@ class TestRuleIsolation:
 
     def test_crash_reported_per_service(self) -> None:
         seen: list[str] = []
-        data = {"services": {"web": {}, "db": {}}}
+        data: dict[str, Any] = {"services": {"web": {}, "db": {}}}
         run_rules(data, {}, on_error=lambda _rid, svc, _exc: seen.append(svc))
         assert sorted(seen) == ["db", "web"]
 

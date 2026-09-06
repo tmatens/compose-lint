@@ -321,11 +321,13 @@ def test_evidence_is_normalized_not_as_written() -> None:
         "    cap_add: [CAP_SYS_ADMIN]\n",
         "    cap_add: [cap_sys_admin]\n",
     ]
-    seen = set()
+    seen: set[str] = set()
     for cap in variants:
         doc = "services:\n  s:\n    image: x:1\n" + cap
         data, lines = loads(doc)
         seen.update(
-            f.evidence for f in run_rules(data, lines) if f.rule_id == "CL-0024"
+            f.evidence
+            for f in run_rules(data, lines)
+            if f.rule_id == "CL-0024" and f.evidence is not None
         )
     assert len(seen) == 1, f"the same capability derived {len(seen)} evidences: {seen}"

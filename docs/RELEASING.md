@@ -225,7 +225,7 @@ version number.
 - [ ] `git pull --ff-only` — up to date with origin.
 - [ ] `ruff check src/ tests/`
 - [ ] `ruff format --check src/ tests/`
-- [ ] `mypy src/`
+- [ ] `mypy src/ tests/`
 - [ ] `pytest`
 - [ ] CI on `main` is green for the commit you're about to release.
 - [ ] No open Renovate PRs you meant to merge first.

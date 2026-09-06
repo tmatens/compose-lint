@@ -45,7 +45,7 @@ Closes #
       `Signed-off-by:` trailer whose name and email match its author exactly, added
       by `git commit -s` (asserts *right to contribute*; not the same as signing)
 - [ ] One logical change per commit; no unrelated changes bundled in
-- [ ] `ruff check`, `ruff format --check`, `mypy src/`, and `pytest` all pass locally
+- [ ] `ruff check`, `ruff format --check`, `mypy src/ tests/`, and `pytest` all pass locally
 - [ ] New/changed behavior has tests (positive **and** negative cases for rules)
 - [ ] User-visible behavior change has a `CHANGELOG.md` entry under `[Unreleased]`
 - [ ] Docs updated where behavior changed (`README.md`, `docs/rules/CL-XXXX.md`)

@@ -489,7 +489,7 @@ class TestPartialFingerprints:
             severity=base.severity,
             service=base.service,
             message=base.message,
-            line=base.line + 100,
+            line=(base.line or 0) + 100,
         )
         fa = format_findings([base], "x.yml")[0]["partialFingerprints"]
         fb = format_findings([moved], "x.yml")[0]["partialFingerprints"]

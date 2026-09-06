@@ -159,6 +159,18 @@ also_copy = [
 [tool.mypy]
 strict = true
 
+# Tests are checked too, but not at strict: fixtures and parametrize tables
+# lean on bare generics and untyped helpers, and annotating every one of
+# them buys nothing. The real errors (wrong attribute, None indexed, bad
+# argument type) still fail.
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_calls = false
+disallow_any_generics = false
+warn_return_any = false
+
 [tool.ruff]
 target-version = "py311"
 
