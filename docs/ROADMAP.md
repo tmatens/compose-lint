@@ -106,6 +106,7 @@ Pursue based on user demand after v1.0.
 | LSP server | Language Server Protocol support — follows VS Code extension post-v1.0 |
 | Linux packages (`.deb`/`.rpm`) | Revisit [ADR-008](adr/008-linux-packages.md) on first concrete user request |
 | Homebrew tap | `brew install tmatens/tap/compose-lint` (macOS Intel/ARM + Homebrew-on-Linux). Closes the "not everyone has pip" gap with working `brew upgrade` UX. Formula in a separate `homebrew-tap` repo; release workflow syncs via `brew bump-formula-pr`. Pursue on demand signal, like the row above |
+| Agent skill / plugin | A packaged distillation of [Automation and agent use](cli.md#automation-and-agent-use), so the judgment layer reaches an agent working in a repo that has wired neither the pre-commit hook nor the Action. Deferred in [ADR-035](adr/035-defer-the-agent-skill-channel.md): no demand signal, and the channel has no staging or signing analog for [DISTRIBUTION.md](DISTRIBUTION.md). The shipped docs section and the two gates cover everything else |
 
 ---
 

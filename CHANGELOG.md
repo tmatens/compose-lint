@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   signatures. CI also type-checks `tests/` now (relaxed, not strict); the
   handful of real errors it surfaced are fixed. Prompted by #775.
 
+### Changed
+
+- **No agent skill ships as a distribution channel**
+  ([ADR-035](docs/adr/035-defer-the-agent-skill-channel.md)). The agent-facing
+  surface stays the [Automation and agent
+  use](https://tmatens.github.io/compose-lint/cli/#automation-and-agent-use)
+  section, the README pointer at it, and the pre-commit hook and Action that
+  grade agent-authored Compose without needing the agent's cooperation. A
+  published skill would reach only the human who could wire those gates
+  instead, has no demand signal, and has no staging or signing analog for the
+  channel contract. The ADR records what would reopen it. Closes #763.
+
 ## [0.26.0] - 2026-08-27
 
 ### Added
