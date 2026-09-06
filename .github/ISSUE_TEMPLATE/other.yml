@@ -1,0 +1,27 @@
+name: Other
+description: Anything that isn't a linter bug or a feature — docs, code quality, tooling, CI, or a question.
+title: "[other] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for anything the other templates don't fit: documentation, code quality, project tooling, CI, or a question about compose-lint.
+
+        Security vulnerabilities should go through [private vulnerability reporting](https://github.com/tmatens/compose-lint/security/advisories/new), not this form.
+
+  - type: textarea
+    id: details
+    attributes:
+      label: What's on your mind?
+      description: Describe the issue or question. Link to the file, doc, or line if there is one.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: compose-lint version
+      description: Only if it matters for this issue.
+      placeholder: "x.y.z"
+    validations:
+      required: false

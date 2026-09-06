@@ -10,6 +10,8 @@ body:
 
         Security vulnerabilities should go through [private vulnerability reporting](https://github.com/tmatens/compose-lint/security/advisories/new), not this form.
 
+        Docs, code quality, tooling, or a question? Use the "Other" template instead. It doesn't ask for a Compose file.
+
   - type: textarea
     id: compose-file
     attributes:
@@ -46,17 +48,25 @@ body:
     id: actual
     attributes:
       label: Actual behavior
-      description: What actually happened? Paste the full output.
-      render: shell
+      description: What actually happened?
     validations:
       required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The full `compose-lint` output, if there is any.
+      render: shell
+    validations:
+      required: false
 
   - type: input
     id: version
     attributes:
       label: compose-lint version
       description: Output of `compose-lint --version`.
-      placeholder: "0.2.0"
+      placeholder: "x.y.z"
     validations:
       required: true
 
