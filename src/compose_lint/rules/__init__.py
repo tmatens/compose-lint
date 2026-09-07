@@ -74,6 +74,23 @@ class BaseRule(abc.ABC):
         """
         return None
 
+    def fix_writes_keys(self) -> frozenset[str]:
+        """Service-level keys :meth:`fix` writes into the document.
+
+        Declared rather than inferred, because the caller has to know what a
+        fixer *would* write before it is asked for edits: a key another
+        document deleted with ``!reset`` is absent from the merged view, so an
+        absence rule fires and its fixer writes the key back into a file where
+        it changes nothing — or duplicates a key that is still written there.
+        :func:`~compose_lint.fix.collect_edits` defers those findings by
+        comparing this set against the paths a ``!reset`` removed.
+
+        The default is empty, which is correct for a report-only rule.
+        ``tests/test_fix.py`` fails if a rule overrides :meth:`fix` and leaves
+        it empty.
+        """
+        return frozenset()
+
 
 def register_rule(cls: type[BaseRule]) -> type[BaseRule]:
     """Decorator to register a rule class in the global registry."""

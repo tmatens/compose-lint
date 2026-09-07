@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePath
 from typing import TYPE_CHECKING, Any
 
@@ -1727,6 +1727,12 @@ class Loaded:
     # One message per cross-file reference that could not be followed, each
     # naming which residual it hit (ADR-036 decision 7).
     gaps: tuple[str, ...] = ()
+    # Dotted paths this document deleted with `!reset`, each naming the file
+    # that asked for it — always this one here. The same map `Merged` carries
+    # for a fold, so `fix` reads one shape either way: a `!reset` deletes the
+    # key from `data` whether or not a second document is merged, so an absence
+    # rule fires on it and its fixer would write it straight back.
+    resets: dict[str, str] = field(default_factory=dict)
 
 
 def load_compose_full(path: str | Path, *, use_env: bool = True) -> Loaded:
@@ -1770,14 +1776,19 @@ def load_compose_full(path: str | Path, *, use_env: bool = True) -> Loaded:
     # not of the link's target. Resolving physically named a different host path
     # than the one Compose actually mounts, in either direction.
     base_dir = filepath.absolute().parent
-    data, lines, _, _, gaps = _loads_full(
+    data, lines, resets, _, gaps = _loads_full(
         content,
         base_dir=base_dir,
         use_env=use_env,
         project_dir=base_dir,
         document_path=filepath.absolute(),
     )
-    return Loaded(data=data, lines=lines, gaps=gaps)
+    return Loaded(
+        data=data,
+        lines=lines,
+        gaps=gaps,
+        resets=dict.fromkeys(resets, str(path)),
+    )
 
 
 def _loads_full(  # noqa: PLR0913

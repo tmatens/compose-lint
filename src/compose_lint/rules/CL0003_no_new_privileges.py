@@ -89,6 +89,10 @@ class NoNewPrivilegesRule(BaseRule):
                 references=[OWASP_REF, CIS_REF],
             )
 
+    def fix_writes_keys(self) -> frozenset[str]:
+        """The entry it appends lives in `security_opt`."""
+        return frozenset({"security_opt"})
+
     def fix(
         self,
         finding: Finding,

@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`fix` no longer refuses a whole file because one key was deleted with
+  `!reset`.** A `!reset` removes the key from the configuration Compose runs,
+  so an absence rule fires on it and its fixer wrote the key straight back into
+  a document where the reset deletes it again. Two ways that showed, both
+  fail-closed and both discarding every other fix in the file: the document did
+  not hold the key, so the patch did not converge; or it still held it, so the
+  insertion duplicated a mapping key and Compose rejected the result. Neither
+  message named the `!reset` that caused it, so both read as an internal fixer
+  bug. That finding is now deferred on its own, with a note naming the key and
+  the file the `!reset` is written in, and every other fix in the file applies.
+  A rule declares which service-level keys its fixer writes, so a report-only
+  rule is unaffected and a new fixer cannot opt out silently. No second
+  document is needed for any of this — a `!reset` in the only file there is
+  behaves the same way
+  ([#811](https://github.com/tmatens/compose-lint/issues/811)).
+
 - **`fix` no longer refuses a whole file because another document's findings
   cannot be fixed in it.** The convergence check filters out findings belonging
   to another document, but the filter was gated on an overlay being merged.

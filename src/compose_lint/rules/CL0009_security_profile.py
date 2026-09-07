@@ -140,6 +140,10 @@ class SecurityProfileRule(BaseRule):
                 ],
             )
 
+    def fix_writes_keys(self) -> frozenset[str]:
+        """It deletes an entry from `security_opt`."""
+        return frozenset({"security_opt"})
+
     def fix(
         self,
         finding: Finding,

@@ -260,6 +260,10 @@ class UnboundPortsRule(BaseRule):
             references=[OWASP_REF, CIS_REF],
         )
 
+    def fix_writes_keys(self) -> frozenset[str]:
+        """The host_ip it binds is written inside `ports`."""
+        return frozenset({"ports"})
+
     def fix(
         self,
         finding: Finding,

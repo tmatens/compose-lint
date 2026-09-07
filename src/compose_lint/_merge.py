@@ -218,6 +218,12 @@ class Merged:
     lines: dict[str, int] = field(default_factory=dict)
     sources: dict[str, str] = field(default_factory=dict)
     gaps: tuple[str, ...] = ()
+    # Dotted paths some document in the set deleted with `!reset`, each naming
+    # the file that asked for the deletion. The key is absent from `data`, so
+    # an absence rule fires on it and its fixer would write it back — into a
+    # document where the reset deletes it again. `fix` reads this to defer that
+    # finding instead of refusing the file it appears in.
+    resets: dict[str, str] = field(default_factory=dict)
 
     def source_of(self, path: str) -> str | None:
         return self.sources.get(path)
@@ -716,7 +722,16 @@ def merge_documents(documents: list[Document]) -> Merged:
         accumulated = acc_doc
 
     gaps = tuple(gap for document in documents for gap in document.gaps)
-    return Merged(data=merged_data, lines=rec.lines, sources=rec.sources, gaps=gaps)
+    # Later documents win, matching the fold: two documents resetting the same
+    # path leave the last one named.
+    resets = {path: document.path for document in documents for path in document.resets}
+    return Merged(
+        data=merged_data,
+        lines=rec.lines,
+        sources=rec.sources,
+        gaps=gaps,
+        resets=resets,
+    )
 
 
 def merge_service_from(

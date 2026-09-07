@@ -83,6 +83,10 @@ class ReadOnlyFilesystemRule(BaseRule):
                 references=[OWASP_REF, CIS_REF],
             )
 
+    def fix_writes_keys(self) -> frozenset[str]:
+        """It inserts `read_only`."""
+        return frozenset({"read_only"})
+
     def fix(
         self,
         finding: Finding,

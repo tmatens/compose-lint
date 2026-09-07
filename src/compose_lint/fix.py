@@ -33,7 +33,7 @@ from compose_lint._yaml_edit import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Callable, Iterable, Mapping
     from pathlib import Path
 
     from compose_lint.models import Finding, Severity, TextEdit
@@ -128,7 +128,9 @@ class FixResult:
     edits among ``edits``, in first-seen order, for the dry-run banner.
     ``fixed_edits`` pairs each accepted finding with its own edits, in the same
     order as ``fixed``; the flattened ``edits`` loses that grouping, which
-    per-finding consumers (SARIF ``artifactChanges``) need.
+    per-finding consumers (SARIF ``artifactChanges``) need. ``notes`` carries
+    one line per refusal a count cannot explain — a finding is in ``manual``
+    for a reason the user can act on, and only the collector knows it.
     """
 
     edits: list[TextEdit] = field(default_factory=list)
@@ -136,6 +138,7 @@ class FixResult:
     manual: list[Finding] = field(default_factory=list)
     caveats: list[tuple[str, str]] = field(default_factory=list)
     fixed_edits: list[tuple[Finding, list[TextEdit]]] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
 
 def _spans_conflict(a: tuple[int, int], b: tuple[int, int]) -> bool:
@@ -339,6 +342,7 @@ def collect_edits(
     text: str,
     *,
     only: set[str] | None = None,
+    resets: Mapping[str, str] | None = None,
 ) -> FixResult:
     """Gather every fixer's edits for one file, refusing conflicts.
 
@@ -347,6 +351,16 @@ def collect_edits(
     deliberate human decision; ADR-014). When ``only`` is given, findings whose
     rule id is not in it are ignored entirely. Findings whose fixer returns
     ``None`` (report-only or a per-occurrence refusal) go to ``manual``.
+
+    ``resets`` maps a dotted path some document deleted with ``!reset`` to the
+    file that asked for the deletion. The key is gone from ``data``, so an
+    absence rule fires on it and its fixer would write it straight back — where
+    the reset deletes it again (a second pass still edits the file) or collides
+    with the ``!reset`` line still written there (a duplicate key). Neither is
+    fixable in this file, so those findings go to ``manual`` with a note naming
+    the reset, and every other fix in the file still applies. A rule declares
+    what its fixer writes through
+    :meth:`~compose_lint.rules.BaseRule.fix_writes_keys`.
 
     Before the per-finding pass, a coordination pass groups cross-rule findings
     that one merged edit resolves jointly where each rule's own fixer would refuse
@@ -371,6 +385,33 @@ def collect_edits(
         and (only is None or finding.rule_id in only)
         and finding.rule_id in rules_by_id
     ]
+
+    reset_manual: list[Finding] = []
+    notes: list[str] = []
+    if resets:
+        kept = []
+        seen_notes: set[str] = set()
+        for finding in eligible:
+            erased = sorted(
+                written
+                for written in rules_by_id[finding.rule_id].fix_writes_keys()
+                if f"services.{finding.service}.{written}" in resets
+            )
+            if not erased:
+                kept.append(finding)
+                continue
+            reset_manual.append(finding)
+            for written in erased:
+                note = (
+                    f"{finding.rule_id} on '{finding.service}': a !reset in "
+                    f"{resets[f'services.{finding.service}.{written}']} deletes "
+                    f"'{written}', so writing it here would not take effect; "
+                    "it needs fixing in that file"
+                )
+                if note not in seen_notes:
+                    seen_notes.add(note)
+                    notes.append(note)
+        eligible = kept
 
     source_lines = split_lines(text)
 
@@ -456,6 +497,8 @@ def collect_edits(
                 seen_caveats.add(key)
                 result.caveats.append(key)
     result.manual.extend(manual)
+    result.manual.extend(reset_manual)
+    result.notes.extend(notes)
     return result
 
 
@@ -598,6 +641,7 @@ def verify_apply(
     excluded_services: dict[str, dict[str, str | None]] | None = None,
     reparse: Callable[[str], tuple[dict[str, Any], dict[str, int]]] | None = None,
     fixable: Callable[[Finding], bool] | None = None,
+    resets: Mapping[str, str] | None = None,
 ) -> str | None:
     """Verify a patched candidate beyond "it parses" before it is written.
 
@@ -657,7 +701,9 @@ def verify_apply(
     convergence_input = (
         [f for f in re_findings if fixable(f)] if fixable is not None else re_findings
     )
-    if collect_edits(convergence_input, re_data, re_lines, patched, only=only).edits:
+    if collect_edits(
+        convergence_input, re_data, re_lines, patched, only=only, resets=resets
+    ).edits:
         return "computed fix does not converge: a second pass would still edit it"
 
     before = {(f.rule_id, f.service, f.message) for f in findings}

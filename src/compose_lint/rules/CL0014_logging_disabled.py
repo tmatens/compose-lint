@@ -80,6 +80,10 @@ class LoggingDisabledRule(BaseRule):
                 references=[DOCKER_REF, OWASP_REF],
             )
 
+    def fix_writes_keys(self) -> frozenset[str]:
+        """It deletes the `logging` block."""
+        return frozenset({"logging"})
+
     def fix(
         self,
         finding: Finding,

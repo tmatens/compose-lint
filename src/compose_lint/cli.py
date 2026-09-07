@@ -1225,6 +1225,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             if overlays:
                 merged = load_merged([filepath, *overlays], use_env=not args.no_env)
                 data, lines, gaps = merged.data, merged.lines, merged.gaps
+                resets = merged.resets
                 emit(
                     f"note: {filepath}: merged {', '.join(overlays)} before "
                     "linting. Only findings written in this file can be fixed here."
@@ -1232,6 +1233,10 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             else:
                 loaded = load_compose_full(filepath, use_env=not args.no_env)
                 data, lines, gaps = loaded.data, loaded.lines, loaded.gaps
+                # A `!reset` needs no second document to matter: it deletes the
+                # key from this file's own parsed data, and the key is still
+                # written here for a fixer's insertion to collide with.
+                resets = loaded.resets
         except ComposeNotApplicableError as e:
             # v1 / fragment file: skipped, not an error (ADR-013). Must precede
             # the ComposeError clause below — it is a subclass.
@@ -1288,13 +1293,21 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
                 f"{', '.join(origins)} and need manual review there"
             )
         try:
-            result = collect_edits(fixable_findings, data, lines, text, only=only)
+            result = collect_edits(
+                fixable_findings, data, lines, text, only=only, resets=resets
+            )
         except LineOutOfRangeError as e:
             # Same fail-closed treatment as the check path: refuse this file,
             # write nothing, let the rest of the batch run (VULN-017).
             emit(f"Error: {filepath}: could not compute fixes: {e}")
             had_error = True
             continue
+
+        # Emitted before the edits are weighed so the reason survives every
+        # path below: a refusal a count cannot explain is the one the user has
+        # to be told about, whether or not anything else in the file was fixed.
+        for note in result.notes:
+            emit(f"{filepath}: {note}")
 
         if not result.edits:
             if result.manual:
@@ -1352,6 +1365,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             # overlay at all, and `_is_local` answers from the finding's own
             # source file rather than from how the document was assembled.
             fixable=_is_local,
+            resets=resets,
         )
         if verify_error is not None:
             emit_block(render_file_diff(filepath, text, patched, result.caveats))
