@@ -641,9 +641,11 @@ def test_an_object_form_entry_resolves_against_its_first_path(
     )
     data = load_compose_full(target).data
 
-    assert data["services"]["sidecar"]["volumes"] == [
-        f"{tmp_path / 'parts' / 'local'}:/local"
-    ]
+    # The suffix, not the whole path: the absolute prefix is a lint-host
+    # detail whose spelling differs by platform (ADR-023 §1), and the segment
+    # under test is the tail.
+    (source,) = data["services"]["sidecar"]["volumes"]
+    assert source.endswith("/parts/local:/local"), source
     assert "from_parts" in data["services"]
     assert "from_sub" not in data["services"]
 
@@ -656,9 +658,8 @@ def test_swapping_the_paths_moves_the_entrys_root(tmp_path: Path) -> None:
     )
     data = load_compose_full(target).data
 
-    assert data["services"]["sidecar"]["volumes"] == [
-        f"{tmp_path / 'sub' / 'local'}:/local"
-    ]
+    (source,) = data["services"]["sidecar"]["volumes"]
+    assert source.endswith("/sub/local:/local"), source
     assert "from_sub" in data["services"]
 
 
@@ -672,9 +673,8 @@ def test_each_list_form_entry_is_its_own_sub_project(tmp_path: Path) -> None:
     target = _sub_project(tmp_path, "include:\n  - parts/a.yml\n  - sub/compose.yml\n")
     data = load_compose_full(target).data
 
-    assert data["services"]["sidecar"]["volumes"] == [
-        f"{tmp_path / 'sub' / 'local'}:/local"
-    ]
+    (source,) = data["services"]["sidecar"]["volumes"]
+    assert source.endswith("/sub/local:/local"), source
     assert "from_sub" in data["services"]
 
 
@@ -690,7 +690,10 @@ def test_project_directory_names_the_entrys_root(tmp_path: Path) -> None:
     )
     data = load_compose_full(target).data
 
-    assert data["services"]["sidecar"]["volumes"] == [f"{tmp_path / 'local'}:/local"]
+    (source,) = data["services"]["sidecar"]["volumes"]
+    assert source.endswith("/local:/local"), source
+    assert "/parts/" not in source
+    assert "/sub/" not in source
 
 
 def test_an_entrys_root_moves_which_env_an_included_file_reads(
