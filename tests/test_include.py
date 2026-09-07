@@ -538,6 +538,44 @@ def test_fix_defers_an_included_files_findings_under_an_overlay(
     assert "read_only: true" in target.read_text(encoding="utf-8")
 
 
+def test_fix_converges_on_a_merged_run_with_no_overlay(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The convergence pass owns the same findings the edit pass does.
+
+    ``verify_apply``'s ``fixable`` filter was gated on an overlay being merged,
+    but since ADR-036 a document merges others through ``include:`` and a
+    cross-file ``extends:`` with no overlay at all. There the filter was off,
+    so the convergence pass asked for an *included* file's edits against this
+    file's text and reported a second pass that is never attempted — refusing
+    the whole file's fixes
+    ([#814](https://github.com/tmatens/compose-lint/issues/814)).
+
+    The included file is padded so its service key lands on the same line
+    number as ``web:`` here. The defect needs the foreign line to address
+    editable text in this file; where it addresses something a fixer declines,
+    no edit is produced and the refusal does not appear.
+    """
+    _write(
+        tmp_path / "parts" / "a.yml",
+        "# pad\n# pad\nservices:\n  api:\n    image: myapp:1.0\n",
+    )
+    target = _project(
+        tmp_path,
+        "include:\n  - ./parts/a.yml\nservices:\n  web:\n    image: myapp:1.0\n",
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["fix", "--apply", str(target)])
+
+    assert exc.value.code == 0
+    written = target.read_text(encoding="utf-8")
+    assert "read_only: true" in written
+    err = capsys.readouterr().err.replace("\\", "/")
+    assert "does not converge" not in err
+    assert "parts/a.yml and need manual review there" in err
+
+
 def test_a_config_beside_an_included_file_does_not_widen_suppression(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

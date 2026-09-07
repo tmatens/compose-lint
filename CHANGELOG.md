@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`fix` no longer refuses a whole file because another document's findings
+  cannot be fixed in it.** The convergence check filters out findings belonging
+  to another document, but the filter was gated on an overlay being merged.
+  Since ADR-036 a document merges others through `include:` and a cross-file
+  `extends:` with no overlay at all, and in those projects the filter was off:
+  the convergence pass asked for the edits of findings written in another file,
+  against this file's text, and reported a second pass that is never attempted.
+  Every fix in the file was discarded with the refusal. The edit pass already
+  decided this from the finding's own source file; the convergence pass now
+  asks the same question
+  ([#814](https://github.com/tmatens/compose-lint/issues/814)).
+
 - **A finding written in an included file is no longer reported against the
   file that includes it.** Once `include:` or a cross-file `extends:` had
   folded another document in, merging an overlay beside it credited every

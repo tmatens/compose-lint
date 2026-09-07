@@ -1347,7 +1347,11 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             # checked. Verifying the patched base alone would compare a
             # single-file result against a merged one.
             reparse=_merged_reparser(filepath, overlays, use_env=not args.no_env),
-            fixable=_is_local if overlays else None,
+            # Unconditional, like the edit pass above: since ADR-036 a document
+            # merges others through `include:` and cross-file `extends:` with no
+            # overlay at all, and `_is_local` answers from the finding's own
+            # source file rather than from how the document was assembled.
+            fixable=_is_local,
         )
         if verify_error is not None:
             emit_block(render_file_diff(filepath, text, patched, result.caveats))
