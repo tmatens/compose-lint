@@ -42,29 +42,39 @@ class OracleResult:
         return self.returncode == 0
 
 
-def oracle_available() -> bool:
-    """Whether the Compose CLI is present to be asked."""
-    return shutil.which("docker") is not None
-
-
 @functools.lru_cache(maxsize=1)
-def oracle_version() -> str:
-    """The Compose version answering this session, for the pytest header.
+def oracle_version() -> str | None:
+    """The Compose version answering this session, or None if none does.
+
+    Asks the *plugin*, not the ``docker`` binary. A machine can have `docker`
+    on PATH and no compose plugin behind it — the GitHub Windows runner is
+    exactly that — and a `shutil.which("docker")` guard admits it, then fails
+    every case with `unknown flag: --profile` from `docker` itself.
 
     Cached because it is a property of the machine, not of a test, and because
     a subprocess per parametrised case would cost more than the oracle calls.
     """
-    if not oracle_available():
-        return "unavailable"
-    result = subprocess.run(
-        ["docker", "compose", "version", "--short"],
-        capture_output=True,
-        text=True,
-        timeout=ORACLE_TIMEOUT_SECONDS,
-        check=False,
-        env=_scrubbed_env(),
-    )
-    return result.stdout.strip() or "unknown"
+    if shutil.which("docker") is None:
+        return None
+    try:
+        result = subprocess.run(
+            ["docker", "compose", "version", "--short"],
+            capture_output=True,
+            text=True,
+            timeout=ORACLE_TIMEOUT_SECONDS,
+            check=False,
+            env=_scrubbed_env(),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def oracle_available() -> bool:
+    """Whether there is a Compose plugin to ask."""
+    return oracle_version() is not None
 
 
 def _scrubbed_env() -> dict[str, str]:

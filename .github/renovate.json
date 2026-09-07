@@ -31,6 +31,17 @@
     "enabled": false,
     "description": "pyproject.toml is already covered by pep621 + pip-compile. The poetry manager detects the same [project] deps but is not in the python group rule, so it spawned duplicate ungrouped PRs that bumped pyproject without regenerating the lockfiles (e.g. renovate/ruff-0.x, #329)."
   },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "The Docker Compose plugin the differential suites are graded against. The runner image pins its own — images/ubuntu/toolsets/toolset-2404.json in actions/runner-images holds it at 2.38.2 while docker/compose is on 5.x — and that version is not a choice this project made: CI was grading ADR-036's include: orderings, every one measured on Compose 5.5.0, against a binary that refuses the documents describing them ('services.web conflicts with imported resource'). .github/scripts/install-compose-plugin.sh installs the pin ahead of the image's copy; this manager moves it. Deliberately outside the automerge packageRule below, which matches only pep621/pip_requirements/pip-compile/github-actions: a Compose bump is precisely the PR that has to be triaged into 'Compose changed', 'we were wrong', or 'a new deliberate divergence', so it opens for review rather than merging itself. ci.yml is in the `code` change filter so this PR actually runs the suites it exists to re-prove.",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z-]+?) depName=(?<depName>.+?)\\s+COMPOSE_VERSION: (?<currentValue>v\\S+)"
+      ],
+      "versioningTemplate": "semver"
+    }
+  ],
   "packageRules": [
     {
       "description": "GitHub Actions: SHA-pin every uses: with version comment (CLAUDE.md).",

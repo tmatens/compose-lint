@@ -80,7 +80,13 @@ jobs:
           # matter and headings, and the rule-count claims on the README and
           # mkdocs nav. A docs-only edit could break those and merge green,
           # reddening main after the gate had passed.
-          if match '^(src/|tests/|scripts/|docs/|README\.md$|mkdocs\.yml$|pyproject\.toml$|requirements[.-].*lock$|action\.yml$|\.pre-commit-hooks\.yaml$)'; then
+          # `.github/workflows/ci.yml` and `.github/scripts/` are here for one
+          # reason: the pinned Compose version lives in this file, and a
+          # Renovate bump of it is the whole mechanism by which "a Compose
+          # release changed a loader rule" is meant to surface. Left out of
+          # this group, that PR would skip the differential suites it exists
+          # to run.
+          if match '^(src/|tests/|scripts/|docs/|README\.md$|mkdocs\.yml$|pyproject\.toml$|requirements[.-].*lock$|action\.yml$|\.pre-commit-hooks\.yaml$|\.github/scripts/|\.github/workflows/ci\.yml$)'; then
             code=true
           fi
           if match '^(Dockerfile$|\.dockerignore$|requirements\.lock$|requirements-build\.lock$|pyproject\.toml$|src/)'; then
@@ -188,6 +194,11 @@ jobs:
         run: |
           pip install --require-hashes -r requirements-dev.lock
           pip install --no-deps -e .
+      - name: Install the pinned Docker Compose plugin
+        env:
+          # renovate: datasource=github-releases depName=docker/compose
+          COMPOSE_VERSION: v5.5.1
+        run: .github/scripts/install-compose-plugin.sh
       - run: pytest
 
   # Enforces the OpenSSF Best Practices Silver `test_statement_coverage80`
@@ -232,6 +243,11 @@ jobs:
         run: |
           site=$(python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
           echo "import coverage; coverage.process_startup()" > "${site}/coverage_subprocess.pth"
+      - name: Install the pinned Docker Compose plugin
+        env:
+          # renovate: datasource=github-releases depName=docker/compose
+          COMPOSE_VERSION: v5.5.1
+        run: .github/scripts/install-compose-plugin.sh
       - name: Run tests with coverage
         env:
           COVERAGE_PROCESS_START: ${{ github.workspace }}/pyproject.toml
