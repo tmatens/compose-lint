@@ -17,6 +17,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A cross-file `extends: {file: ...}` that stays inside the project is now
+  resolved and merged, instead of being refused as a coverage gap**
+  ([ADR-036](docs/adr/036-resolve-references-that-stay-inside-the-project.md)).
+  The base is graded by *where its path resolves*, under the same two-gate
+  containment rule `env_file:` already uses: a lexical test that reads the same
+  on every platform (ADR-023 §1), then a filesystem test at read time that
+  refuses a symlink pointing out of the project, then a bounded read. 98.3% of
+  the `extends:` references in an 11,111-file corpus resolve inside.
+
+  Two directories, verified against Compose 5.5.0 on a fixture before being
+  implemented: the base's own relative paths resolve against **the base file's
+  directory** (`./cfg` in `shared/base.yml` mounts `shared/cfg`), while its
+  `${VAR}` values come from **the project's `.env`** and never from one sitting
+  beside the base. An inherited `env_file:` is re-spelled against the project
+  root so it is read from where Compose reads it. Chains are followed as
+  Compose follows them, bounded at 8 deep and 64 files, and a cycle ends as a
+  gap rather than a hang.
+
+  **Exit codes move only for references that now resolve**, identically under
+  every command: `check` on a present, inside base goes from 2 to the ordinary
+  0/1 findings verdict, and its JSON `errors[]` entry and SARIF
+  `toolExecutionNotifications` record go away with `executionSuccessful: true`.
+  A resolved base can surface a finding that was invisible before, so a file
+  can go 0 to 1 — that is the new-findings class, and it is why this is the
+  "retire a coverage-gap condition" row rather than a PATCH. A finding whose
+  evidence is written in the base names that file, and `fix` still rewrites
+  only the file it was pointed at, deferring the rest by name.
+
+  Everything else stays a gap at today's exit code, and the message now says
+  *which*: outside the project directory, not found, interpolated, unreadable,
+  a cycle, a cap, or a base that declares no such service. `include:` is
+  unchanged in this release.
+
+  Verified with a corpus comparator over all 11,111 files (in-process
+  `load_compose` + `run_rules` on a worktree of `main` against this branch;
+  control path `/etc` present in 1,845 of them): **zero of 158,076 finding rows
+  changed**, and the same 94 files report a coverage gap before and after. That
+  bounds the regression risk; it does not exercise the resolution path, because
+  the corpus stores files individually with no sibling context, so every
+  reference in it is a missing target either way. The resolution semantics are
+  pinned by fixture tests measured against Compose 5.5.0 instead. Refs #780.
+
 - **The bump policy now prices coverage-gap conditions**
   ([ADR-036](docs/adr/036-resolve-references-that-stay-inside-the-project.md)).
   A coverage gap is not a finding, so `--fail-on` cannot gate it — an

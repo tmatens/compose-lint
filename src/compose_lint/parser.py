@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path, PurePath
 from typing import TYPE_CHECKING, Any
 
@@ -10,8 +11,20 @@ import yaml
 
 from compose_lint._env_file import read_env
 from compose_lint._lines import find_ambiguous_break
-from compose_lint._merge import Document, Merged, merge_documents, merge_values
-from compose_lint._safe_read import UnsafeFileError, read_text_bounded
+from compose_lint._merge import (
+    Document,
+    Merged,
+    SourcedLine,
+    merge_documents,
+    merge_service_from,
+    merge_values,
+)
+from compose_lint._safe_read import (
+    OutsideProjectError,
+    UnsafeFileError,
+    read_text_bounded,
+)
+from compose_lint._service_env import project_relative
 from compose_lint.config import KNOWN_TOP_LEVEL_KEYS
 from compose_lint.rules._interpolation import (
     reference_names,
@@ -814,6 +827,267 @@ def _resolve_in_file_extends(data: dict[str, Any]) -> None:
         services[name] = _resolve(name, ())
 
 
+# Compose follows `extends:` chains as deep as an author writes them, and since
+# ADR-036 so does compose-lint — which turns one document into an entry point
+# for reads of others, so the expansion is bounded in both directions: how deep
+# one chain goes, and how many files one run of a single document may open.
+#
+# The numbers are deliberately far above anything a hand-written stack reaches
+# and are not derived from measurement: the corpus stores files with no sibling
+# context, so it can report how many references a document makes but not how
+# deep a chain actually resolves. They exist so that a cycle the guard below
+# somehow misses, or a fan-out written to be pathological, ends as a coverage
+# gap rather than as an outage — the same role as the caps in `_limits`.
+MAX_REFERENCE_DEPTH = 8
+MAX_REFERENCE_FILES = 64
+
+
+class _ExtendsBudget:
+    """How many files one document's cross-file expansion may still open.
+
+    Shared by every reference reached from one primary document, so a wide
+    fan-out cannot spend a fresh allowance per branch. Depth is carried
+    separately, down the call stack, because it is a property of one chain
+    rather than of the document.
+    """
+
+    def __init__(self) -> None:
+        self.files = 0
+
+    def spend_file(self) -> bool:
+        self.files += 1
+        return self.files <= MAX_REFERENCE_FILES
+
+
+def _extends_file_ref(config: Any) -> tuple[str, Any] | None:
+    """The ``(file, service)`` of a cross-file ``extends:``, or ``None``.
+
+    Only the mapping form carries a ``file:``; the string short form and
+    ``{service: ...}`` name a service in this document and are resolved by
+    :func:`_resolve_in_file_extends`.
+    """
+    if not isinstance(config, dict):
+        return None
+    ext = config.get("extends")
+    if not isinstance(ext, dict):
+        return None
+    target = ext.get("file")
+    if not isinstance(target, str) or not target:
+        return None
+    return target, ext.get("service")
+
+
+def _locate_reference(reference: str, project_dir: Path) -> tuple[Path | None, str]:
+    """Resolve a document reference under ``project_dir``, or say why not.
+
+    The lexical half of the two-gate containment rule ADR-036 carries over from
+    ``env_file:``: whether a path *says* it leaves the project is a fact about
+    the document, identical on every platform (ADR-023 §1), so it is answered
+    before anything touches the filesystem. The physical half — a committed
+    symlink that passes lexically and points out — is
+    :func:`~compose_lint._safe_read.read_text_bounded`'s ``within`` gate, at
+    the moment of reading.
+
+    An unresolved interpolation is refused ahead of both. ``${BASE}/base.yml``
+    has no shipped value, so there is no path to grade: guessing one would
+    either invent a finding or, worse, read whatever file the guess landed on.
+    """
+    if "${" in reference:
+        return None, "its path is interpolated and has no shipped value"
+    segments = project_relative(reference)
+    if segments is None:
+        return None, "it resolves outside the project directory"
+    return project_dir.joinpath(*segments), ""
+
+
+def _rebase_env_files(data: dict[str, Any], prefix: tuple[str, ...]) -> None:
+    """Re-express a base document's ``env_file:`` paths against the project root.
+
+    Bind sources are made absolute during the base's own parse, so the merge
+    carries them across correctly. ``env_file:`` is resolved later and
+    elsewhere — :func:`~compose_lint._service_env.resolve_env_files` is handed
+    the *primary* file's directory — so an inherited ``./app.env`` would be
+    read from beside the extending file rather than from beside the base, which
+    is not where Compose reads it and could open a different file that happens
+    to exist there.
+
+    Rewriting the spelling rather than resolving it keeps the whole path
+    lexical and deploy-host-independent (ADR-023 §1): ``../app.env`` written in
+    ``shared/base.yml`` becomes ``app.env``, and one that pops past the project
+    root is left exactly as written so it grades as leaving, which is what it
+    does.
+    """
+
+    def _rebased(value: Any) -> Any:
+        if isinstance(value, str):
+            segments = project_relative(value, prefix)
+            return "/".join(segments) if segments else value
+        if isinstance(value, list):
+            return [_rebased(item) for item in value]
+        if isinstance(value, dict) and "path" in value:
+            return {**value, "path": _rebased(value["path"])}
+        return value
+
+    services = data.get("services")
+    if not isinstance(services, dict):
+        return
+    for config in services.values():
+        if isinstance(config, dict) and "env_file" in config:
+            config["env_file"] = _rebased(config["env_file"])
+
+
+def _resolve_cross_file_extends(
+    data: dict[str, Any],
+    lines: dict[str, int],
+    *,
+    document_path: Path,
+    project_dir: Path,
+    env_dir: Path,
+    use_env: bool,
+    budget: _ExtendsBudget,
+    depth: int,
+    chain: tuple[tuple[str, str], ...],
+) -> list[str]:
+    """Merge every resolvable cross-file ``extends:`` base into ``data``.
+
+    Returns one message per reference that stayed a coverage gap, each naming
+    *which* residual it hit (ADR-036 decision 7) rather than the single
+    "is not resolved" sentence every shape shared before.
+
+    Two directories, deliberately different, both verified against Compose
+    5.5.0 on a synthetic fixture:
+
+    - The base's **relative paths** resolve against the *base file's* own
+      directory. ``./cfg`` in ``shared/base.yml`` mounts ``shared/cfg``, not a
+      ``cfg`` beside the extending file. The spec's "relative to the location
+      of the main Compose file" describes the ``file:`` value itself, not the
+      paths inside what it points at.
+    - The base's **interpolation** reads the *project's* ``.env``, not one
+      sitting beside the base. With ``TAG`` set in the project's ``.env`` and
+      differently in ``shared/.env``, Compose ships the project's value; with
+      no project ``.env`` at all it ships the ``${TAG:-none}`` default and
+      never looks in ``shared/``. (``include:`` differs here, which is why the
+      two directories are separate parameters rather than one.)
+
+    Containment is always measured against ``project_dir``, the directory of
+    the file the run was pointed at — never against the base's own directory,
+    which a chain could otherwise walk outwards one hop at a time.
+    """
+    services = data.get("services")
+    if not isinstance(services, dict):
+        return []
+    gaps: list[str] = []
+    # Grouped by the reference and the reason it failed, not emitted per
+    # service: a monorepo root where nine services extend the same absent file
+    # has one thing wrong with it, and nine near-identical lines describe it no
+    # better than one. Two services failing for *different* reasons still get a
+    # line each, which is the distinction the grouping has to keep.
+    refused: dict[tuple[str, str], list[str]] = {}
+    child_doc = Document(path=str(document_path), data=data, lines=lines)
+
+    for name in list(services):
+        ref = _extends_file_ref(services[name])
+        if ref is None:
+            continue
+        reference, base_service = ref
+
+        def _gap(reason: str, *, _name: str = name, _ref: str = reference) -> None:
+            refused.setdefault((_ref, reason), []).append(_name)
+
+        if not isinstance(base_service, str) or not base_service:
+            _gap("it names no 'service:' to inherit")
+            continue
+        if depth >= MAX_REFERENCE_DEPTH:
+            _gap(f"the chain is deeper than {MAX_REFERENCE_DEPTH} files")
+            continue
+
+        target, why = _locate_reference(reference, project_dir)
+        if target is None:
+            _gap(why)
+            continue
+        # A cycle is keyed on (file, service): Compose lets two services in one
+        # file extend different bases in the same other file, so the file alone
+        # would refuse a legal document.
+        step = (str(target.absolute()), base_service)
+        if step in chain:
+            _gap("the chain returns to a base it already inherited")
+            continue
+        if not budget.spend_file():
+            _gap(f"the document opens more than {MAX_REFERENCE_FILES} files")
+            continue
+
+        try:
+            content = read_text_bounded(target, newline="", within=project_dir)
+        except OutsideProjectError:
+            _gap("it resolves outside the project directory")
+            continue
+        except FileNotFoundError:
+            _gap("the file was not found")
+            continue
+        except (UnsafeFileError, OSError) as exc:
+            _gap(f"it could not be read safely ({exc})")
+            continue
+
+        try:
+            base_data, base_lines, _, _, base_gaps = _loads_full(
+                content,
+                base_dir=target.absolute().parent,
+                merging=True,
+                use_env=use_env,
+                project_dir=project_dir,
+                env_dir=env_dir,
+                budget=budget,
+                depth=depth + 1,
+                chain=(*chain, step),
+                document_path=target,
+            )
+        except ComposeError as exc:
+            _gap(f"it is not a Compose document compose-lint can read ({exc})")
+            continue
+
+        base_services = base_data.get("services")
+        if not isinstance(base_services, dict) or base_service not in base_services:
+            _gap(f"it declares no service '{base_service}'")
+            continue
+
+        gaps.extend(base_gaps)
+        try:
+            prefix = tuple(target.absolute().parent.relative_to(project_dir).parts)
+        except ValueError:  # pragma: no cover - the read gate already refused
+            _gap("it resolves outside the project directory")
+            continue
+        _rebase_env_files(base_data, prefix)
+        # A base reached through another base carries lines that already name
+        # their own file. Without seeding `sources`, the merge would credit
+        # every one of them to the file this hop opened.
+        inherited = {
+            path: line.source
+            for path, line in base_lines.items()
+            if isinstance(line, SourcedLine) and line.source is not None
+        }
+        base_doc = Document(
+            path=str(target),
+            data=base_data,
+            lines=base_lines,
+            sources=inherited or None,
+        )
+        merged, merged_lines, _ = merge_service_from(
+            base_doc, base_service, child_doc, name
+        )
+        services[name] = merged
+        lines.update(merged_lines)
+
+    for (reference, reason), names in refused.items():
+        listed = ", ".join(repr(name) for name in sorted(names))
+        gaps.append(
+            f"cross-file 'extends: {{file: {reference}}}' was not merged "
+            f"because {reason}, so {listed} "
+            f"{'was' if len(names) == 1 else 'were'} graded without the "
+            "inherited base."
+        )
+    return gaps
+
+
 def _lexical_join(base_dir: PurePath, source: str) -> str:
     """Join ``source`` onto ``base_dir`` lexically, in POSIX notation.
 
@@ -927,21 +1201,6 @@ def coverage_gaps(data: dict[str, Any]) -> list[str]:
             "'include:' is not resolved, so services from the included files "
             "were not linted."
         )
-    if isinstance(services, dict):
-        unmerged = sorted(
-            name
-            for name, config in services.items()
-            if isinstance(config, dict)
-            and isinstance(config.get("extends"), dict)
-            and config["extends"].get("file")
-        )
-        if unmerged:
-            listed = ", ".join(repr(name) for name in unmerged)
-            gaps.append(
-                f"cross-file 'extends: {{file: ...}}' is not resolved, so "
-                f"{listed} {'was' if len(unmerged) == 1 else 'were'} graded "
-                "without the inherited base."
-            )
     return gaps
 
 
@@ -1182,9 +1441,35 @@ def load_compose(
     file as plain Python dicts with the line-map metadata stripped, and
     lines is a flat dict mapping dot-notation paths to line numbers.
 
+    Callers that report coverage want :func:`load_compose_full`, which returns
+    the same two values plus the references that stayed gaps.
+
     Raises:
         ComposeError: If the file is not valid YAML or not a valid Compose file.
         FileNotFoundError: If the file does not exist.
+    """
+    loaded = load_compose_full(path, use_env=use_env)
+    return loaded.data, loaded.lines
+
+
+@dataclass(frozen=True)
+class Loaded:
+    """One loaded document, plus what the run could not see of it."""
+
+    data: dict[str, Any]
+    lines: dict[str, int]
+    # One message per cross-file reference that could not be followed, each
+    # naming which residual it hit (ADR-036 decision 7).
+    gaps: tuple[str, ...] = ()
+
+
+def load_compose_full(path: str | Path, *, use_env: bool = True) -> Loaded:
+    """Load a Compose file, reporting the references that stayed gaps.
+
+    The coverage-reporting sibling of :func:`load_compose`. A cross-file
+    ``extends:`` that resolves inside the project is merged, so it is not a gap
+    and does not appear here; one that leaves, is missing, is interpolated or
+    fails the bounded read does, with the reason stated.
     """
     filepath = Path(path)
     try:
@@ -1218,16 +1503,32 @@ def load_compose(
     # through a symlinked directory, "../etc" is the parent of the *link* path,
     # not of the link's target. Resolving physically named a different host path
     # than the one Compose actually mounts, in either direction.
-    return loads(content, base_dir=filepath.absolute().parent, use_env=use_env)
+    base_dir = filepath.absolute().parent
+    data, lines, _, _, gaps = _loads_full(
+        content,
+        base_dir=base_dir,
+        use_env=use_env,
+        project_dir=base_dir,
+        document_path=filepath.absolute(),
+    )
+    return Loaded(data=data, lines=lines, gaps=gaps)
 
 
-def _loads_full(
+def _loads_full(  # noqa: PLR0913
     content: str,
     base_dir: Path | None = None,
     *,
     merging: bool = False,
     use_env: bool = True,
-) -> tuple[dict[str, Any], dict[str, int], frozenset[str], frozenset[str]]:
+    project_dir: Path | None = None,
+    env_dir: Path | None = None,
+    budget: _ExtendsBudget | None = None,
+    depth: int = 0,
+    chain: tuple[tuple[str, str], ...] = (),
+    document_path: Path | None = None,
+) -> tuple[
+    dict[str, Any], dict[str, int], frozenset[str], frozenset[str], tuple[str, ...]
+]:
     """Parse and validate Compose from an in-memory string.
 
     The string form of :func:`load_compose`: identical YAML parsing, line
@@ -1240,6 +1541,19 @@ def _loads_full(
     and ``~`` bind sources resolve against (see :func:`_resolve_bind_sources`).
     Omitted, those sources are left as written — correct for a caller that has
     no file, such as the fix engine's validation re-parse.
+
+    Three directories rather than one, because a document reached through
+    ``extends:`` is read from a place that is not where its paths resolve and
+    not where its values come from (ADR-036, verified against Compose 5.5.0):
+    ``base_dir`` resolves its relative paths, ``env_dir`` supplies its
+    interpolated values, and ``project_dir`` is the containment boundary every
+    reference it makes is measured against. For the file the run was pointed
+    at all three are the same directory, which is why the last two default to
+    ``base_dir``.
+
+    Returns the parsed document, its line map, the ``!reset`` and ``!override``
+    paths a merge needs, and one message per cross-file reference that stayed a
+    coverage gap.
 
     Raises:
         ComposeError: If the text is not valid YAML or not a valid Compose file.
@@ -1305,6 +1619,7 @@ def _loads_full(
     # returned: a raw traceback, exit 1 where the contract says 2, and every
     # later file in the batch never linted. The fail-loud boundary has to cover
     # each pass that walks the document, not only the one that builds it.
+    gaps: list[str] = []
     try:
         lines = _collect_lines(raw, seq_lines)
         reset_paths = _collect_tagged(raw, raw_resets)
@@ -1322,10 +1637,32 @@ def _loads_full(
         if use_env and base_dir is not None:
             wanted = _referenced_names(data)
             if wanted:
-                parsed_env = read_env(base_dir, wanted)
+                parsed_env = read_env(env_dir or base_dir, wanted)
                 if parsed_env is not None and parsed_env.values:
                     supplied = parsed_env.values
         _substitute_interpolation_defaults(data, supplied)
+        # Cross-file bases are merged *before* the in-file pass, so a service
+        # that inherits from another service in this document inherits what
+        # that service itself pulled in from elsewhere — the order Compose
+        # resolves the two in. It runs before the bind-source pass for the
+        # mirror reason: each base's own relative sources were already made
+        # absolute against its own directory during its own parse, and an
+        # absolute source is left alone by the pass below rather than being
+        # re-resolved against the extending file's directory.
+        if base_dir is not None and project_dir is not None:
+            gaps.extend(
+                _resolve_cross_file_extends(
+                    data,
+                    lines,
+                    document_path=document_path or base_dir,
+                    project_dir=project_dir,
+                    env_dir=env_dir or base_dir,
+                    use_env=use_env,
+                    budget=budget if budget is not None else _ExtendsBudget(),
+                    depth=depth,
+                    chain=chain,
+                )
+            )
         _resolve_in_file_extends(data)
         if base_dir is not None:
             _resolve_bind_sources(data, base_dir)
@@ -1336,7 +1673,7 @@ def _loads_full(
             "`${VAR}` default)"
         ) from e
 
-    return data, lines, reset_paths, override_paths
+    return data, lines, reset_paths, override_paths, tuple(gaps)
 
 
 def loads(
@@ -1345,9 +1682,19 @@ def loads(
     """Parse Compose from a string, returning ``(data, lines)``.
 
     The public string entry point. :func:`_loads_full` additionally reports the
-    paths deleted by ``!reset``, which only a merge needs.
+    paths deleted by ``!reset``, which only a merge needs, and the coverage
+    gaps only a caller that reports them needs.
+
+    A caller that supplies ``base_dir`` is describing a document that sits
+    there, so that directory is also the project its references are contained
+    to — which is what makes ``fix``'s verification re-parse grade the same
+    merged configuration the first parse graded. Without it the re-parse would
+    see the patched text with every cross-file base missing, and read the
+    base's findings disappearing as something the patch did.
     """
-    data, lines, _, _ = _loads_full(content, base_dir=base_dir, use_env=use_env)
+    data, lines, _, _, _ = _loads_full(
+        content, base_dir=base_dir, use_env=use_env, project_dir=base_dir
+    )
     return data, lines
 
 
@@ -1367,11 +1714,22 @@ def load_document(path: str | Path, *, use_env: bool = True) -> Document:
         raise ComposeError(f"Invalid encoding: file is not valid UTF-8 ({e})") from e
     except OSError as e:
         raise ComposeError(f"Cannot read file: {e}") from e
-    data, lines, resets, overrides = _loads_full(
-        content, base_dir=filepath.absolute().parent, merging=True, use_env=use_env
+    base_dir = filepath.absolute().parent
+    data, lines, resets, overrides, gaps = _loads_full(
+        content,
+        base_dir=base_dir,
+        merging=True,
+        use_env=use_env,
+        project_dir=base_dir,
+        document_path=filepath.absolute(),
     )
     return Document(
-        path=str(path), data=data, lines=lines, resets=resets, overrides=overrides
+        path=str(path),
+        data=data,
+        lines=lines,
+        resets=resets,
+        overrides=overrides,
+        gaps=gaps,
     )
 
 
@@ -1455,8 +1813,13 @@ def merge_patched(
     ever changes, the guard belongs here too.
     """
     base_dir = Path(base_path).absolute().parent
-    data, lines, resets, overrides = _loads_full(
-        patched, base_dir=base_dir, merging=True, use_env=use_env
+    data, lines, resets, overrides, _ = _loads_full(
+        patched,
+        base_dir=base_dir,
+        merging=True,
+        use_env=use_env,
+        project_dir=base_dir,
+        document_path=Path(base_path).absolute(),
     )
     candidate = Document(
         path=str(base_path),

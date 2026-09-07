@@ -170,8 +170,16 @@ def env_file_refs(value: Any) -> list[EnvFileRef]:
     return refs
 
 
-def _project_relative(path: str) -> list[str] | None:
+def project_relative(path: str, prefix: tuple[str, ...] = ()) -> list[str] | None:
     """``path`` as cleaned segments under the project, or ``None`` if it leaves.
+
+    ``prefix`` seeds the walk with the segments of the directory ``path`` was
+    written relative to, which is how a path inside a document reached through
+    ``extends:`` or ``include:`` is re-expressed against the project root: the
+    base file's own directory is the prefix, so ``../app.env`` written in
+    ``shared/base.yml`` cleans to ``app.env`` and stays inside, while the same
+    spelling in a file at the root pops past the start and leaves. Callers
+    grading a path written beside the project's own file pass nothing.
 
     Segment math, never the lint host's path semantics: whether a document
     reaches outside its own project is a fact about the document, and ADR-023
@@ -186,7 +194,7 @@ def _project_relative(path: str) -> list[str] | None:
     """
     if path.startswith(("/", "~", "\\\\")) or (len(path) > 1 and path[1] == ":"):
         return None
-    segments: list[str] = []
+    segments: list[str] = list(prefix)
     for segment in path.replace("\\", "/").split("/"):
         if segment in ("", "."):
             continue
@@ -206,7 +214,7 @@ def _classify(ref: EnvFileRef, base_dir: Path) -> tuple[Path | None, Unread | No
         # substituted by the time this runs, so a surviving `$` means the name
         # is unknowable from the files (ADR-026 divergence 1).
         return None, Unread.UNRESOLVED_PATH
-    segments = _project_relative(ref.path)
+    segments = project_relative(ref.path)
     if segments is None:
         return None, Unread.OUTSIDE_PROJECT
     candidate = base_dir.joinpath(*segments)

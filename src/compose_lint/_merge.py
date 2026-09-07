@@ -204,6 +204,10 @@ class Document:
     # accumulator a mixture, and attributing all of it to a single `path`
     # credited the first document with values the second supplied.
     sources: dict[str, str] | None = None
+    # References inside this document that could not be followed, one message
+    # each (ADR-036 decision 7). Carried here so a merge set reports the gaps
+    # of every document in it, not only the primary's.
+    gaps: tuple[str, ...] = ()
 
 
 @dataclass
@@ -213,6 +217,7 @@ class Merged:
     data: dict[str, Any]
     lines: dict[str, int] = field(default_factory=dict)
     sources: dict[str, str] = field(default_factory=dict)
+    gaps: tuple[str, ...] = ()
 
     def source_of(self, path: str) -> str | None:
         return self.sources.get(path)
@@ -653,4 +658,40 @@ def merge_documents(documents: list[Document]) -> Merged:
         rec.sources = carried
         accumulated = acc_doc
 
-    return Merged(data=merged_data, lines=rec.lines, sources=rec.sources)
+    gaps = tuple(gap for document in documents for gap in document.gaps)
+    return Merged(data=merged_data, lines=rec.lines, sources=rec.sources, gaps=gaps)
+
+
+def merge_service_from(
+    base: Document,
+    base_service: str,
+    child: Document,
+    child_service: str,
+) -> tuple[Any, dict[str, int], dict[str, str]]:
+    """Merge a service written in another document under ``child_service``.
+
+    The cross-file ``extends:`` counterpart of :func:`merge_documents`, and the
+    reason that function's provenance machinery is reused rather than
+    reimplemented: an inherited key's line number belongs to the *base* file,
+    and a sequence Compose append-merges moves every index, so re-keying by
+    hand is exactly the ambiguity :class:`SourcedLine` exists to remove.
+
+    Returns the merged service config plus the line and source maps for it,
+    keyed on the merged document's paths (``services.<child_service>...``).
+    The caller folds those into the document's own maps; keys the child
+    supplies keep the child's lines, which is what the merge already records.
+    """
+    base_path = f"services.{base_service}"
+    child_path = f"services.{child_service}"
+    base_value = base.data.get("services", {}).get(base_service)
+    child_value = child.data.get("services", {}).get(child_service)
+    rec = _Recorder()
+    merged = merge_values(
+        base_value,
+        child_value,
+        base_side=_Side(base_value, base, base_path),
+        over_side=_Side(child_value, child, child_path),
+        out_path=child_path,
+        rec=rec,
+    )
+    return merged, rec.lines, rec.sources

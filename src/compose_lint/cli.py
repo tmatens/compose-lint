@@ -52,6 +52,7 @@ from compose_lint.parser import (
     ComposeNotApplicableError,
     coverage_gaps,
     load_compose,
+    load_compose_full,
     load_merged,
     merge_patched,
     unresolved_mount_sources,
@@ -126,9 +127,7 @@ def _note_env_not_read(selection: Selection) -> None:
         )
 
 
-def _attribute_sources(
-    findings: list[Finding], merged: Merged, primary: str
-) -> list[Finding]:
+def _attribute_sources(findings: list[Finding], primary: str) -> list[Finding]:
     """Tag each finding with the merged file its evidence was written in.
 
     Exact, not inferred: the line number a rule looked up is a
@@ -686,7 +685,12 @@ _FIX_GAP_REMEDY = (
 
 
 def _report_coverage_gaps(
-    filepath: str, data: dict[str, Any], *, fatal: bool, remedy: str
+    filepath: str,
+    data: dict[str, Any],
+    *,
+    fatal: bool,
+    remedy: str,
+    extra: tuple[str, ...] = (),
 ) -> list[tuple[str, str]]:
     """Report parts of ``filepath`` that were not linted; return them if fatal.
 
@@ -704,8 +708,14 @@ def _report_coverage_gaps(
 
     ``remedy`` is the caller's closing sentence, so the advice names only
     what that command can actually do.
+
+    ``extra`` carries the gaps the parser found while following cross-file
+    references, which :func:`~compose_lint.parser.coverage_gaps` cannot derive
+    from the document alone: whether an ``extends: {file: ...}`` is a gap
+    depends on where its path resolved and whether the target was there, and
+    only the pass that tried knows (ADR-036).
     """
-    messages = [f"{gap} {remedy}" for gap in coverage_gaps(data)]
+    messages = [f"{gap} {remedy}" for gap in (*coverage_gaps(data), *extra)]
     if not messages:
         return []
     label = "Error" if fatal else "Warning"
@@ -819,7 +829,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         try:
             if overlays:
                 merged = load_merged([filepath, *overlays], use_env=not args.no_env)
-                data, lines = merged.data, merged.lines
+                data, lines, gaps = merged.data, merged.lines, merged.gaps
                 # Not a coverage gap — coverage was achieved, not missed — so
                 # this warns without touching the exit code. What it must never
                 # do is stay silent: the findings below describe a document that
@@ -842,7 +852,8 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                     "configuration."
                 )
             else:
-                data, lines = load_compose(filepath, use_env=not args.no_env)
+                loaded = load_compose_full(filepath, use_env=not args.no_env)
+                data, lines, gaps = loaded.data, loaded.lines, loaded.gaps
         except ComposeNotApplicableError as e:
             # v1 / fragment file: not malformed, just outside what we lint.
             # Per ADR-013 this is exit 0 (skipped, not a parse error). Must
@@ -860,6 +871,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                 data,
                 fatal=not args.allow_partial_coverage,
                 remedy=_CHECK_GAP_REMEDY,
+                extra=gaps,
             )
         )
         for note in unresolved_mount_sources(data):
@@ -898,8 +910,10 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             on_error=_record_rule_error,
             env_files=service_env_files,
         )
-        if merged is not None:
-            findings = _attribute_sources(findings, merged, filepath)
+        # Also on the single-file path: a resolved cross-file `extends:` puts
+        # lines from another document into this one's map, so a finding can be
+        # written in a file the report is not headed by even with no overlay.
+        findings = _attribute_sources(findings, filepath)
 
         if args.skip_suppressed:
             findings = [f for f in findings if not f.suppressed]
@@ -1217,13 +1231,14 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
         try:
             if overlays:
                 merged = load_merged([filepath, *overlays], use_env=not args.no_env)
-                data, lines = merged.data, merged.lines
+                data, lines, gaps = merged.data, merged.lines, merged.gaps
                 emit(
                     f"note: {filepath}: merged {', '.join(overlays)} before "
                     "linting. Only findings written in this file can be fixed here."
                 )
             else:
-                data, lines = load_compose(filepath, use_env=not args.no_env)
+                loaded = load_compose_full(filepath, use_env=not args.no_env)
+                data, lines, gaps = loaded.data, loaded.lines, loaded.gaps
         except ComposeNotApplicableError as e:
             # v1 / fragment file: skipped, not an error (ADR-013). Must precede
             # the ComposeError clause below — it is a subclass.
@@ -1234,7 +1249,9 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             had_error = True
             continue
 
-        _report_coverage_gaps(filepath, data, fatal=False, remedy=_FIX_GAP_REMEDY)
+        _report_coverage_gaps(
+            filepath, data, fatal=False, remedy=_FIX_GAP_REMEDY, extra=gaps
+        )
 
         try:
             # newline="" preserves the file's original line endings: read_text's
@@ -1267,11 +1284,17 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             return origin is None or Path(origin).absolute() == Path(_path).absolute()
 
         fixable_findings = [f for f in findings if _is_local(f)]
-        deferred = len(findings) - len(fixable_findings)
+        deferred = [f for f in findings if not _is_local(f)]
         if deferred:
+            # Named from the findings themselves, not from `overlays`: since
+            # ADR-036 a finding can come from a document this file `extends:`
+            # rather than from an overlay merged beside it, and the overlay
+            # list is empty in that case — which printed the sentence with a
+            # blank where the file should be.
+            origins = sorted({str(getattr(f.line, "source", "")) for f in deferred})
             emit(
-                f"{filepath}: {deferred} finding(s) come from "
-                f"{', '.join(overlays or [])} and need manual review there"
+                f"{filepath}: {len(deferred)} finding(s) come from "
+                f"{', '.join(origins)} and need manual review there"
             )
         try:
             result = collect_edits(fixable_findings, data, lines, text, only=only)

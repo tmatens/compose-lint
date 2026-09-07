@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from compose_lint import cli
-from compose_lint.parser import coverage_gaps, loads
+from compose_lint.parser import coverage_gaps, load_compose_full, loads
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -43,6 +43,32 @@ def _write(path: Path, text: str) -> Path:
 # --- Detection -------------------------------------------------------------
 
 
+def _gap_body(kind: str) -> str:
+    """A document whose ``kind`` reference is a coverage gap after ADR-036.
+
+    ``include:`` is still refused as a class. A cross-file ``extends:`` is not:
+    one that resolves inside the project is merged, so the shape that is still
+    a gap has to be a *residual* — here a target that is not there. Pointing
+    the extends leg at ``base.yml``, which these tests write, would exercise
+    the resolved path and assert nothing about gaps at all.
+    """
+    if kind == "include":
+        return "include:\n  - base.yml\nservices:\n  web:\n    image: nginx:1.27\n"
+    return (
+        "services:\n  web:\n    image: nginx:1.27\n"
+        "    extends:\n      file: nope.yml\n      service: app\n"
+    )
+
+
+# The sentence each gap kind states. Both name what was not seen; only the
+# `include:` one still says "not resolved", because for `extends:` the run now
+# knows *why* it could not follow the reference and says which residual it hit.
+_GAP_PHRASE = {
+    "include": "not resolved",
+    "extends": "was not found",
+}
+
+
 def test_include_alongside_services_is_a_gap() -> None:
     data, _lines = loads(
         "include:\n  - base.yml\nservices:\n  web:\n    image: nginx:1.27\n"
@@ -50,19 +76,29 @@ def test_include_alongside_services_is_a_gap() -> None:
     assert any("include" in gap for gap in coverage_gaps(data))
 
 
-def test_cross_file_extends_is_a_gap_and_names_the_service() -> None:
-    data, _lines = loads(
+def test_cross_file_extends_names_the_service_and_the_residual(
+    tmp_path: Path,
+) -> None:
+    """A cross-file ``extends:`` is a gap only when it could not be followed.
+
+    The message says which residual it hit rather than the flat "is not
+    resolved" every shape shared before ADR-036, because "the file was not
+    found" and "it resolves outside the project directory" call for different
+    edits from the reader.
+    """
+    target = _write(
+        tmp_path / "compose.yml",
         "services:\n"
         "  web:\n"
         "    image: nginx:1.27\n"
         "    extends:\n"
-        "      file: base.yml\n"
-        "      service: app\n"
+        "      file: nope.yml\n"
+        "      service: app\n",
     )
-    gaps = coverage_gaps(data)
+    gaps = load_compose_full(target).gaps
     assert len(gaps) == 1
-    assert "extends" in gaps[0]
     assert "'web'" in gaps[0]
+    assert "was not found" in gaps[0]
 
 
 def test_in_file_extends_is_not_a_gap() -> None:
@@ -92,16 +128,18 @@ def test_a_gap_fails_the_gate_even_when_local_services_are_clean(
 ) -> None:
     """The false-clean case: nothing locally wrong, everything dangerous hidden."""
     _write(tmp_path / "base.yml", DANGEROUS_BASE)
+    hardened = (
+        "    read_only: true\n"
+        "    cap_drop: [ALL]\n"
+        '    security_opt: ["no-new-privileges:true"]\n'
+        '    user: "1000:1000"\n'
+    )
     if kind == "include":
         body = (
             "include:\n  - base.yml\n"
             "services:\n"
             "  web:\n"
-            "    image: nginx@sha256:" + "ab" * 32 + "\n"
-            "    read_only: true\n"
-            "    cap_drop: [ALL]\n"
-            '    security_opt: ["no-new-privileges:true"]\n'
-            '    user: "1000:1000"\n'
+            "    image: nginx@sha256:" + "ab" * 32 + "\n" + hardened
         )
     else:
         body = (
@@ -109,12 +147,8 @@ def test_a_gap_fails_the_gate_even_when_local_services_are_clean(
             "  web:\n"
             "    image: nginx@sha256:" + "ab" * 32 + "\n"
             "    extends:\n"
-            "      file: base.yml\n"
-            "      service: app\n"
-            "    read_only: true\n"
-            "    cap_drop: [ALL]\n"
-            '    security_opt: ["no-new-privileges:true"]\n'
-            '    user: "1000:1000"\n'
+            "      file: nope.yml\n"
+            "      service: app\n" + hardened
         )
     target = _write(tmp_path / "compose.yml", body)
 
@@ -128,14 +162,7 @@ def test_the_gap_is_machine_readable_in_json(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], kind: str
 ) -> None:
     _write(tmp_path / "base.yml", DANGEROUS_BASE)
-    body = (
-        "include:\n  - base.yml\nservices:\n  web:\n    image: nginx:1.27\n"
-        if kind == "include"
-        else (
-            "services:\n  web:\n    image: nginx:1.27\n"
-            "    extends:\n      file: base.yml\n      service: app\n"
-        )
-    )
+    body = _gap_body(kind)
     target = _write(tmp_path / "compose.yml", body)
 
     with pytest.raises(SystemExit) as exc:
@@ -144,7 +171,7 @@ def test_the_gap_is_machine_readable_in_json(
 
     doc = json.loads(capsys.readouterr().out)
     assert doc["errors"], f"{kind}: JSON errors[] is empty"
-    assert any("not resolved" in e["message"] for e in doc["errors"]), kind
+    assert any(_GAP_PHRASE[kind] in e["message"] for e in doc["errors"]), kind
 
 
 @pytest.mark.parametrize("kind", ["include", "extends"])
@@ -152,14 +179,7 @@ def test_the_gap_is_machine_readable_in_sarif(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], kind: str
 ) -> None:
     _write(tmp_path / "base.yml", DANGEROUS_BASE)
-    body = (
-        "include:\n  - base.yml\nservices:\n  web:\n    image: nginx:1.27\n"
-        if kind == "include"
-        else (
-            "services:\n  web:\n    image: nginx:1.27\n"
-            "    extends:\n      file: base.yml\n      service: app\n"
-        )
-    )
+    body = _gap_body(kind)
     target = _write(tmp_path / "compose.yml", body)
 
     with pytest.raises(SystemExit):
@@ -168,7 +188,7 @@ def test_the_gap_is_machine_readable_in_sarif(
     invocation = json.loads(capsys.readouterr().out)["runs"][0]["invocations"][0]
     assert invocation["executionSuccessful"] is False, kind
     assert any(
-        "not resolved" in n["message"]["text"]
+        _GAP_PHRASE[kind] in n["message"]["text"]
         for n in invocation["toolExecutionNotifications"]
     ), kind
 
@@ -239,14 +259,7 @@ def test_fix_never_names_a_flag_it_does_not_accept(
     is not added to ``fix`` — it never fails on a gap, so there is nothing to
     accept — the sentence is scoped to the caller instead."""
     _write(tmp_path / "base.yml", DANGEROUS_BASE)
-    body = (
-        "include:\n  - base.yml\nservices:\n  web:\n    image: nginx:1.27\n"
-        if kind == "include"
-        else (
-            "services:\n  web:\n    image: nginx:1.27\n"
-            "    extends:\n      file: base.yml\n      service: app\n"
-        )
-    )
+    body = _gap_body(kind)
     target = _write(tmp_path / "compose.yml", body)
 
     with pytest.raises(SystemExit) as exc:
@@ -270,14 +283,7 @@ def test_check_still_names_the_flag_on_every_channel(
     """Scoping the remedy must not cost ``check`` its own: the flag is the
     documented way out, on stderr and in the structured errors alike."""
     _write(tmp_path / "base.yml", DANGEROUS_BASE)
-    body = (
-        "include:\n  - base.yml\nservices:\n  web:\n    image: nginx:1.27\n"
-        if kind == "include"
-        else (
-            "services:\n  web:\n    image: nginx:1.27\n"
-            "    extends:\n      file: base.yml\n      service: app\n"
-        )
-    )
+    body = _gap_body(kind)
     target = _write(tmp_path / "compose.yml", body)
 
     with pytest.raises(SystemExit) as exc:
@@ -290,13 +296,17 @@ def test_check_still_names_the_flag_on_every_channel(
     assert any("--allow-partial-coverage" in e["message"] for e in errors), errors
 
 
-def test_the_parser_states_the_gap_without_prescribing_a_flag() -> None:
+def test_the_parser_states_the_gap_without_prescribing_a_flag(
+    tmp_path: Path,
+) -> None:
     """The remedy is a CLI concern; the parser has no idea which command asked."""
-    data, _lines = loads(
+    target = _write(
+        tmp_path / "compose.yml",
         "include:\n  - base.yml\n"
         "services:\n  web:\n    image: nginx:1.27\n"
-        "    extends:\n      file: base.yml\n      service: app\n"
+        "    extends:\n      file: nope.yml\n      service: app\n",
     )
-    gaps = coverage_gaps(data)
+    loaded = load_compose_full(target)
+    gaps = (*coverage_gaps(loaded.data), *loaded.gaps)
     assert len(gaps) == 2
     assert not any("--" in gap for gap in gaps)
