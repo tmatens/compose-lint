@@ -16,7 +16,7 @@ agreement, which is how #797 shipped.
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from compose_lint._selection import plan_documents
@@ -35,6 +35,9 @@ class LintedProject:
     """What a compose-lint run made of a project directory."""
 
     findings: FindingCounts
+    # The merged document itself, for the shape comparator: findings are blind
+    # to any field no rule reads, which is how #797 shipped.
+    merged: dict[str, Any] = field(default_factory=dict)
     # References the run could not follow, one message each. A non-empty tuple
     # is exit 2: part of the stack was never linted, so its findings are not
     # comparable to a resolved document's.
@@ -86,7 +89,8 @@ def lint_project(primary: Path) -> LintedProject:
     if merged.gaps:
         return LintedProject(findings=Counter(), gaps=merged.gaps)
     return LintedProject(
-        findings=findings_of(merged.data, merged.lines, primary.absolute().parent)
+        findings=findings_of(merged.data, merged.lines, primary.absolute().parent),
+        merged=merged.data,
     )
 
 

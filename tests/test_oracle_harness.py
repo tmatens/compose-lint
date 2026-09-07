@@ -25,25 +25,32 @@ Three assertions per seed:
   (A10). Conversely, a project Compose resolves must not leave a gap behind.
 * **Findings parity.** The same rules over the two documents report the same
   ``(rule_id, service)`` multiset.
-
-What it cannot see: a field no rule reads, merged to the wrong value, with the
-multisets agreeing — which is how #797 shipped. That is the shape comparator's
-job, and it is not here yet.
+* **Shape parity.** Our merged document, handed back to Compose, resolves to
+  the same configuration. This is what sees a field no rule reads — the case
+  that let #797 ship with the finding multisets in perfect agreement — and it
+  compares two Compose renderings rather than measuring ours against a
+  hand-written normaliser (see ``oracle_harness/_shape.py``).
 """
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import TYPE_CHECKING
 
 import pytest
 
 from tests.oracle_harness import (
+    DUMP_NAME,
     describe_difference,
+    describe_shape_difference,
+    findings_of,
     generate,
     lint_project,
     oracle_available,
     run_oracle,
+    shape_of,
     truth_findings,
+    write_dump,
 )
 
 if TYPE_CHECKING:
@@ -72,6 +79,9 @@ def test_generated_project_matches_compose(seed: int, tmp_path: Path) -> None:
     root.mkdir()
     primary = project.write(root)
 
+    # Before the dump exists: it lives in the project root so that a relative
+    # `env_file:` still resolves, and the truth has to be the project as
+    # written.
     oracle = run_oracle(root)
     linted = lint_project(primary)
     context = f"seed {seed}\n{project.render()}\n{_replay(seed)}"
@@ -95,6 +105,19 @@ def test_generated_project_matches_compose(seed: int, tmp_path: Path) -> None:
     assert linted.findings == expected, (
         f"{context}\n{describe_difference(linted.findings, expected)}"
     )
+
+    write_dump(linted.merged, root)
+    dumped = run_oracle(root, files=(DUMP_NAME,))
+    # A merged document Compose refuses is a loader defect that happens not to
+    # show up as a diff — #805 arrived exactly this way, as
+    # `services.web.user must be a string` on a project whose original was
+    # accepted.
+    assert dumped.accepted, (
+        f"{context}\ncompose accepted the project and refused our merge of it:\n"
+        f"{dumped.stderr.strip()}"
+    )
+    theirs, ours = shape_of(oracle.stdout), shape_of(dumped.stdout)
+    assert ours == theirs, f"{context}\n{describe_shape_difference(theirs, ours)}"
 
 
 def test_seeds_are_deterministic() -> None:
@@ -123,3 +146,72 @@ def test_the_generator_reaches_every_shape_it_claims() -> None:
         "missing-include",
         "override",
     }
+
+
+def test_the_shape_comparator_sees_what_findings_cannot(tmp_path: Path) -> None:
+    """The comparator's whole justification, made falsifiable.
+
+    A merged document that is wrong in a field no rule reads produces
+    identical findings and a different resolved configuration. #797 was
+    exactly that — a `depends_on` merge emitting a Python `repr`, through a
+    green suite, because nothing grades `depends_on`. `labels:` is used here
+    instead because Compose *accepts* a wrong label and renders it, so the
+    demonstration is a shape difference rather than a rejection, and does not
+    depend on any particular error text.
+
+    Without this, a comparator that silently compared a document with itself
+    would pass all 400 seeds and prove nothing.
+    """
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "compose.yaml").write_text(
+        "services:\n"
+        "  web:\n"
+        "    image: nginx:1.27\n"
+        '    labels: {tier: "edge"}\n'
+        '    ports: ["8080:80"]\n'
+    )
+
+    oracle = run_oracle(root)
+    assert oracle.accepted, oracle.stderr
+    linted = lint_project(root / "compose.yaml")
+
+    broken = deepcopy(linted.merged)
+    broken["services"]["web"]["labels"] = {"tier": "core"}
+
+    # The two documents are indistinguishable to every rule...
+    assert findings_of(broken, {}, root) == findings_of(linted.merged, {}, root)
+
+    # ...and distinguishable to the comparator.
+    write_dump(broken, root)
+    dumped = run_oracle(root, files=(DUMP_NAME,))
+    assert dumped.accepted, dumped.stderr
+    assert shape_of(dumped.stdout) != shape_of(oracle.stdout)
+
+
+def test_a_faithful_merge_round_trips(tmp_path: Path) -> None:
+    """The other half: the comparator does not report a difference that is ours.
+
+    Compose emits a canonical form and this project does not, so an unperturbed
+    merge round-tripping proves the dump is being normalised rather than
+    compared as written.
+    """
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "compose.yaml").write_text(
+        "services:\n"
+        "  web:\n"
+        "    image: nginx:1.27\n"
+        '    ports: ["8080:80"]\n'
+        '    volumes: ["./data:/data"]\n'
+        '    environment: ["TIER=edge"]\n'
+    )
+
+    oracle = run_oracle(root)
+    assert oracle.accepted, oracle.stderr
+    linted = lint_project(root / "compose.yaml")
+
+    write_dump(linted.merged, root)
+    dumped = run_oracle(root, files=(DUMP_NAME,))
+    assert dumped.accepted, dumped.stderr
+    assert shape_of(dumped.stdout) == shape_of(oracle.stdout)

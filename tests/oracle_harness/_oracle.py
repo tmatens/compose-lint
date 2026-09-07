@@ -81,7 +81,13 @@ def _scrubbed_env() -> dict[str, str]:
     return {"PATH": os.environ.get("PATH", "")}
 
 
-def run_oracle(project: Path, *, all_profiles: bool = True) -> OracleResult:
+def run_oracle(
+    project: Path,
+    *,
+    all_profiles: bool = True,
+    files: tuple[str, ...] = (),
+    project_name: str = "oracle",
+) -> OracleResult:
     """Resolve ``project`` the way Compose would, from inside its directory.
 
     ``--profile '*'`` enables every profile the project declares. compose-lint
@@ -91,10 +97,21 @@ def run_oracle(project: Path, *, all_profiles: bool = True) -> OracleResult:
     with a profile would report a disagreement that is settled policy. Pass
     ``all_profiles=False`` to ask what a default run resolves, which is what
     pins that policy as a *deliberate* difference rather than an accident.
+
+    ``files`` names documents explicitly instead of letting Compose discover
+    them, which is how the shape comparator asks about its dump without the
+    project's own documents joining in.
+
+    ``project_name`` is fixed rather than derived from the directory, because
+    Compose writes it into the output — as ``name:`` and inside the default
+    network's ``<project>_default`` — and two resolutions being compared have
+    to agree on it.
     """
-    argv = ["docker", "compose"]
+    argv = ["docker", "compose", "--project-name", project_name]
     if all_profiles:
         argv += ["--profile", "*"]
+    for name in files:
+        argv += ["-f", name]
     argv += ["config"]
     result = subprocess.run(
         argv,

@@ -25,18 +25,30 @@ from tests.oracle_harness._oracle import (
     run_oracle,
 )
 from tests.oracle_harness._project import GeneratedProject, generate
+from tests.oracle_harness._shape import (
+    DUMP_NAME,
+    describe_shape_difference,
+    dump_document,
+    shape_of,
+    write_dump,
+)
 
 __all__ = [
+    "DUMP_NAME",
     "FindingCounts",
     "GeneratedProject",
     "LintedProject",
     "OracleResult",
     "describe_difference",
+    "describe_shape_difference",
+    "dump_document",
     "findings_of",
     "generate",
     "lint_project",
     "oracle_available",
     "oracle_version",
     "run_oracle",
+    "shape_of",
     "truth_findings",
+    "write_dump",
 ]
