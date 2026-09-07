@@ -124,5 +124,9 @@ Prose that states how many rules there are is a different kind of pin: it goes s
 - No rules without authoritative grounding
 - No unactionable findings
 - No inline suppression syntax unless explicitly planned
-- No private/internal tooling references in a public repo
+- No private context in a public artifact. Issues, PRs, commit messages and docs
+  publish as written, and this project's tracker is public. Not only internal
+  tooling: private repo names, commit SHAs, CI run numbers, and the service, file
+  and host names of a private deployment. Generalize evidence before it crosses —
+  the finding travels, the provenance does not
 - No mutable refs in CI (see pinning section above)
