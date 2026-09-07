@@ -26,6 +26,11 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
 
+# Per-page <title> and meta description, derived from existing content
+# (front matter is unavailable: --explain prints these files raw).
+hooks:
+  - scripts/mkdocs_seo_hook.py
+
 markdown_extensions:
   - toc:
       permalink: true

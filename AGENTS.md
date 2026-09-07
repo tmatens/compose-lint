@@ -53,8 +53,11 @@ CONTRIBUTING.md is the source of truth for commits, signing, and PRs. Key points
 ## Rule docs (docs/rules/)
 
 - H1 format: `# CL-XXXX: <directive> — <symptom phrasing>` (query-phrased, id first).
-  The docs-site `<title>` comes from the matching nav label in `mkdocs.yml` — keep
-  both in sync. `tests/test_cli.py` pins CL-0003's H1; update it if that changes.
+  The docs-site `<title>` is derived from the matching nav label in `mkdocs.yml` by
+  `scripts/mkdocs_seo_hook.py`, which moves the rule id to the **end** so the
+  searchable phrasing leads in a search result. The H1 and the nav label both keep
+  the id first and still need to stay in sync with each other.
+  `tests/test_cli.py` pins CL-0003's H1; update it if that changes.
 - "Reading the failure" symptom tables quote **verbatim, live-captured** error
   strings. Busybox wordings must be re-proven by a mapping check in
   `scripts/validate_rule_premises.py` (see the ADR-016 amendment); other wordings
