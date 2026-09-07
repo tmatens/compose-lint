@@ -69,12 +69,29 @@ FIELD_POOL: dict[str, list[str]] = {
     "environment": [
         '{AWS_SECRET_ACCESS_KEY: "AKIAIOSFODNN7EXAMPLE"}',
         '{HARMLESS: "1"}',
+        '["AWS_SECRET_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE"]',
+        '["HARMLESS=1"]',
     ],
+    # No rule reads the four below, so they contribute nothing to the findings
+    # comparison on their own. They are here because a *merge* of them can
+    # still be wrong — mixing the list and mapping spellings of a key/value
+    # field produced a Python repr for `depends_on` — and because a merge that
+    # crashes or drops a sibling key is caught wherever it happens.
+    "depends_on": [
+        "[db]",
+        "{db: {condition: service_healthy}}",
+        "{db: {condition: service_started, required: false}}",
+    ],
+    "labels": ['["role=web"]', '{role: "web"}', '{tier: "edge"}'],
+    "sysctls": ['["net.ipv4.ip_forward=1"]', '{net.core.somaxconn: "1024"}'],
+    "command": ['["sh", "-c", "sleep 1"]', '"sleep 2"'],
+    "entrypoint": ['"/bin/sh"', '["/bin/bash", "-lc"]'],
 }
 
-# `network_mode` conflicts with `ports`, and Compose rejects the project rather
-# than merging it. Generating the pair wastes a subprocess on a skip.
-_EXCLUSIVE = [{"network_mode", "ports"}]
+# `depends_on` names another service, and Compose refuses a project whose
+# dependency is undefined. Emitted into the base document whenever either half
+# of a pair depends on it.
+DEPENDENCY_SERVICE = "  db:\n    image: postgres:16\n"
 
 DIRECTIVES = ["", "", "", "", "!override ", "!reset "]
 
@@ -108,11 +125,6 @@ def _pick(rng: random.Random) -> tuple[dict[str, str], dict[str, str]]:
                 over[field] = "!reset null"
             else:
                 over[field] = f"{directive}{rng.choice(FIELD_POOL[field])}"
-    for group in _EXCLUSIVE:
-        if len(group & (set(base) | set(over))) > 1:
-            for field in sorted(group)[1:]:
-                base.pop(field, None)
-                over.pop(field, None)
     return base, over
 
 
@@ -143,6 +155,8 @@ def test_generated_pair_matches_docker_compose(seed: int, tmp_path: Path) -> Non
     base_fields, over_fields = _pick(rng)
 
     base_text = _render(base_fields, with_image=True)
+    if "depends_on" in base_fields or "depends_on" in over_fields:
+        base_text += DEPENDENCY_SERVICE
     over_text = _render(over_fields, with_image=False)
     (tmp_path / "compose.yml").write_text(base_text)
     (tmp_path / "compose.override.yml").write_text(over_text)
