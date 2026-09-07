@@ -1847,14 +1847,7 @@ def _loads_full(  # noqa: PLR0913
                         layered.update(parsed_env.values)
                 supplied = layered or None
         _substitute_interpolation_defaults(data, supplied)
-        # Cross-file bases are merged *before* the in-file pass, so a service
-        # that inherits from another service in this document inherits what
-        # that service itself pulled in from elsewhere — the order Compose
-        # resolves the two in. It runs before the bind-source pass for the
-        # mirror reason: each base's own relative sources were already made
-        # absolute against its own directory during its own parse, and an
-        # absolute source is left alone by the pass below rather than being
-        # re-resolved against the extending file's directory.
+        prefix: tuple[str, ...] = ()
         if base_dir is not None and project_dir is not None:
             try:
                 # Where this document sits under the project, which is what a
@@ -1865,28 +1858,27 @@ def _loads_full(  # noqa: PLR0913
                 )
             except ValueError:  # pragma: no cover - the read gate refuses first
                 prefix = ()
-            gaps.extend(
-                _resolve_cross_file_extends(
-                    data,
-                    lines,
-                    document_path=document_path or base_dir,
-                    project_dir=project_dir,
-                    env_dirs=env_dirs or (base_dir,),
-                    use_env=use_env,
-                    budget=budget if budget is not None else _ExtendsBudget(),
-                    depth=depth,
-                    chain=chain,
-                    prefix=prefix,
-                )
-            )
-        _resolve_in_file_extends(data)
+        # This document's own relative bind sources become absolute first, so
+        # that every value either `include:` or `extends:` moves around below
+        # is already resolved against the file that wrote it. Absolute sources
+        # are left alone, so nothing arriving from another document is
+        # re-resolved against this one's directory.
         if base_dir is not None:
             _resolve_bind_sources(data, base_dir)
-        # Includes fold in last, after this document is fully resolved. Each
-        # included document was fully resolved in its own recursive load —
-        # its own bases merged, its own bind sources already absolute — so
-        # what happens here is a plain document merge with nothing left to
-        # re-resolve in either half.
+        # `include:` folds in *before* either `extends:` pass, which is the
+        # order Compose resolves them in — measured, and not the order a
+        # reading of the docs suggests. An included document's contribution to
+        # a service is visible to an `extends:` that names it; an overriding
+        # document's is not:
+        #
+        #     include: -> extends: -> `-f` / compose.override merge
+        #
+        # Getting this backwards was silent rather than loud. A service
+        # extending one that an included file hardens inherited the *unincluded*
+        # version, so the absence rules reported hardening that was there and
+        # the presence rules missed configuration that was. Each included
+        # document was fully resolved in its own recursive load, so the fold
+        # itself is a plain document merge with nothing left to re-resolve.
         if resolving_includes and project_dir is not None and base_dir is not None:
             data, lines, include_gaps = _resolve_includes(
                 data,
@@ -1902,6 +1894,26 @@ def _loads_full(  # noqa: PLR0913
                 prefix=prefix,
             )
             gaps.extend(include_gaps)
+        # Cross-file bases merge before the in-file pass, so a service that
+        # inherits from another service in this document inherits what that
+        # service itself pulled in from elsewhere — the order Compose resolves
+        # the two in.
+        if base_dir is not None and project_dir is not None:
+            gaps.extend(
+                _resolve_cross_file_extends(
+                    data,
+                    lines,
+                    document_path=document_path or base_dir,
+                    project_dir=project_dir,
+                    env_dirs=env_dirs or (base_dir,),
+                    use_env=use_env,
+                    budget=budget if budget is not None else _ExtendsBudget(),
+                    depth=depth,
+                    chain=chain,
+                    prefix=prefix,
+                )
+            )
+        _resolve_in_file_extends(data)
         if "include" in data and "services" not in data:
             # Deferred from `_validate_compose`, and only for the document that
             # deferral applied to: an include-only file whose references could

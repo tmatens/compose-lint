@@ -9,7 +9,7 @@ pass over services nobody read is the one failure a merge gate cannot have.
 moves *when* that is decided, not whether: the references are followed first,
 and the refusal stands only if nothing could be read.
 
-Three orderings decide what a duplicated service ends up as, they are not the
+Four orderings decide what a duplicated service ends up as, they are not the
 same ordering, and every one of them was measured against Compose 5.5.0 rather
 than reasoned about:
 
@@ -18,6 +18,10 @@ than reasoned about:
    ``-f a -f b``.
 3. Within one object-form ``path:`` list, **later** wins again, because that
    list is one project assembled from several files.
+4. ``include:`` folds in **before** ``extends:`` resolves, and the ``-f`` /
+   ``compose.override`` merge happens **after** it. So an included file's
+   contribution to a service is visible to whatever extends it, and an
+   overriding document's is not.
 
 Getting any of them backwards reports the wrong image and the wrong user for a
 service that is really deployed, with nothing in the output to say so, which is
@@ -36,6 +40,7 @@ from compose_lint.parser import (
     MAX_REFERENCE_FILES,
     ComposeError,
     load_compose_full,
+    load_merged,
 )
 
 if TYPE_CHECKING:
@@ -491,3 +496,106 @@ def test_a_config_beside_an_included_file_does_not_widen_suppression(
     findings = json.loads(capsys.readouterr().out)["findings"]
     privileged = next(f for f in findings if f["rule_id"] == "CL-0002")
     assert privileged["suppressed"] is False
+
+
+# --- Where `extends:` sits in the resolution order --------------------------
+
+
+def test_an_included_files_contribution_reaches_an_in_file_extends(
+    tmp_path: Path,
+) -> None:
+    """`include:` folds in before `extends:` resolves, so the base is complete.
+
+    Measured against Compose 5.5.0. The order is not the one a reading of the
+    documentation suggests, and it is not symmetric — the overriding document
+    below is on the other side of the same boundary:
+
+        include: -> extends: -> `-f` / compose.override merge
+
+    Getting it backwards was silent. A service extending one that an included
+    file hardens inherited the *unincluded* version, so the absence rules
+    reported hardening the deployed container has and the presence rules
+    missed configuration it has.
+    """
+    _write(
+        tmp_path / "parts" / "a.yml",
+        "services:\n  api:\n    user: root\n    cap_add: [SYS_ADMIN]\n",
+    )
+    target = _project(
+        tmp_path,
+        "include:\n"
+        "  - ./parts/a.yml\n"
+        "services:\n"
+        "  api:\n"
+        "    image: nginx:1.27\n"
+        "  derived:\n"
+        "    extends:\n"
+        "      service: api\n",
+    )
+
+    derived = load_compose_full(target).data["services"]["derived"]
+    assert derived["user"] == "root"
+    assert derived["cap_add"] == ["SYS_ADMIN"]
+
+
+def test_an_included_files_contribution_reaches_a_cross_file_extends(
+    tmp_path: Path,
+) -> None:
+    """Same boundary, the other `extends:` spelling.
+
+    The included file's `user: root` reaches `web` before the cross-file base
+    is merged under it, so the base's `user` loses — Compose 5.5.0 ships
+    ``root``. Resolving the base first inverted it and reported ``1000``, a
+    user the deployed container never runs as.
+    """
+    _write(tmp_path / "parts" / "a.yml", "services:\n  web:\n    user: root\n")
+    _write(
+        tmp_path / "base" / "common.yml",
+        "services:\n  common:\n    user: '1000'\n    read_only: true\n",
+    )
+    target = _project(
+        tmp_path,
+        "include:\n"
+        "  - ./parts/a.yml\n"
+        "services:\n"
+        "  web:\n"
+        "    image: nginx:1.27\n"
+        "    extends:\n"
+        "      file: ./base/common.yml\n"
+        "      service: common\n",
+    )
+
+    web = load_compose_full(target).data["services"]["web"]
+    assert web["user"] == "root"
+    # Everything the base contributes that the merged service does not have
+    # still arrives.
+    assert web["read_only"] is True
+
+
+def test_an_overriding_documents_contribution_does_not_reach_an_extends(
+    tmp_path: Path,
+) -> None:
+    """The other side of the boundary, and the reason it is a boundary at all.
+
+    `compose.override.yml` merges *after* `extends:` has resolved, so a value
+    it adds to a base service is not inherited by the service extending it.
+    Verified against Compose 5.5.0, whose `derived` carries neither key.
+    """
+    _write(
+        tmp_path / "compose.override.yml",
+        "services:\n  api:\n    user: root\n    cap_add: [SYS_ADMIN]\n",
+    )
+    target = _project(
+        tmp_path,
+        "services:\n"
+        "  api:\n"
+        "    image: nginx:1.27\n"
+        "  derived:\n"
+        "    extends:\n"
+        "      service: api\n",
+    )
+
+    merged = load_merged([target, tmp_path / "compose.override.yml"])
+    derived = merged.data["services"]["derived"]
+    assert "user" not in derived
+    assert "cap_add" not in derived

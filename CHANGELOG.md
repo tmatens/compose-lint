@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`extends:` now resolves after `include:` folds in, which is the order
+  Compose uses.** A service extending one that an included file contributes to
+  was inheriting the *unincluded* version of its base, so the configuration
+  being graded was not the one Compose runs. The order is not symmetric —
+  `include:` merges before `extends:` resolves, and a `-f` or
+  `compose.override` document merges after it — and only the first half was
+  wrong. It was silent in both directions: an absence rule (CL-0003, CL-0006,
+  CL-0007, CL-0026) reported missing hardening the deployed container has,
+  and a presence rule (CL-0002, CL-0009, CL-0010, CL-0018, CL-0020, CL-0027)
+  missed configuration it has — `user: root` inherited through an included
+  file went ungraded by CL-0018. Cross-file `extends:` inverted the same way,
+  reporting the base's `user` where Compose ships the included file's
+  ([#800](https://github.com/tmatens/compose-lint/issues/800)).
+
 - **An empty-but-present config section is no longer a fatal error.** In YAML a
   key with no value is `null`, so `rules:` and `rules: {}` express the same
   intent — no rule overrides — but the first aborted the run at exit 2 while
