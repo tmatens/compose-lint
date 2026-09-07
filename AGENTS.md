@@ -18,7 +18,7 @@ CRITICAL > HIGH > MEDIUM > LOW. A rule's severity is **derived**, not chosen: it
 
 - 0: No findings at/above threshold
 - 1: Findings at/above threshold
-- 2: Usage error (bad args, file not found, invalid Compose) **or a coverage gap** — `include:`, or a cross-file `extends:` that could not be followed (leaves the project directory, missing, interpolated, unreadable), where part of the stack was never linted. A cross-file `extends:` resolving inside the project is merged rather than refused (ADR-036). `--allow-partial-coverage` downgrades the gap to a stderr warning. `fix` reports gaps but never fails on them; it is not the gate.
+- 2: Usage error (bad args, file not found, invalid Compose) **or a coverage gap** — an `include:` or cross-file `extends:` that could not be followed (leaves the project directory, missing, interpolated, a cycle, unreadable), where part of the stack was never linted. One resolving inside the project is merged rather than refused (ADR-036); an include-only file whose references all fail is still a parse error, not a downgradable gap (#516). `--allow-partial-coverage` downgrades the gap to a stderr warning. `fix` reports gaps but never fails on them; it is not the gate.
 - Default threshold: HIGH. Configurable via `--fail-on`.
 
 ## CLI output

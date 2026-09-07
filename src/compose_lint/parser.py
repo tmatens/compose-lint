@@ -679,7 +679,9 @@ def _collect_tagged(
     return frozenset(found)
 
 
-def _validate_compose(data: Any, *, merging: bool = False) -> dict[str, Any]:
+def _validate_compose(
+    data: Any, *, merging: bool = False, include_resolvable: bool = False
+) -> dict[str, Any]:
     """Validate that parsed YAML is a Docker Compose file.
 
     ``merging`` relaxes the per-service check for a document that is one
@@ -688,6 +690,14 @@ def _validate_compose(data: Any, *, merging: bool = False) -> dict[str, Any]:
     document as-is and deploys the base unaltered, so refusing it there
     discarded a lintable project and reported PASS on one that was never
     graded (#671). Linted on its own the fragment still raises.
+
+    ``include_resolvable`` defers the include-only refusal rather than
+    retiring it. An include-only file has no services of its own, and #516's
+    rule stands: reporting one clean without reading what it pulls in is a
+    false pass. What changed in ADR-036 is *when* the question can be
+    answered — the caller is about to follow those references, so the check
+    moves to after the merge, where "no services" means the references really
+    could not be followed rather than that they were never tried.
     """
     if not isinstance(data, dict):
         raise ComposeError(
@@ -695,6 +705,8 @@ def _validate_compose(data: Any, *, merging: bool = False) -> dict[str, Any]:
         )
 
     if "services" not in data:
+        if include_resolvable and "include" in data:
+            return data
         classified = _classify_missing_services(data)
         if merging and isinstance(classified, ComposeFragmentError):
             # Fragment overlay half: contribute its top-level keys to the
@@ -954,13 +966,201 @@ def _rebase_env_files(data: dict[str, Any], prefix: tuple[str, ...]) -> None:
             config["env_file"] = _rebased(config["env_file"])
 
 
+def _include_entries(data: dict[str, Any]) -> list[list[str]]:
+    """The references each ``include:`` entry names, one inner list per entry.
+
+    Both spellings, because they nest differently and the nesting decides the
+    merge order. A bare string is one document. The object form's ``path:``
+    takes a string *or a list*, and a list is one project assembled from
+    several files — so it folds like ``-f a -f b``, later winning, while the
+    entries around it fold the other way (see :func:`_resolve_includes`).
+
+    Other object-form keys (``env_file:``, ``project_directory:``) are read but
+    not acted on: measured against Compose 5.5.0, neither redirected an
+    included file's interpolation on a fixture where the project's ``.env`` and
+    the included file's disagreed. Claiming an effect that was not observed is
+    how a linter reports a value Compose does not ship.
+    """
+    raw = data.get("include")
+    if not isinstance(raw, list):
+        return []
+    entries: list[list[str]] = []
+    for entry in raw:
+        if isinstance(entry, str) and entry:
+            entries.append([entry])
+        elif isinstance(entry, dict):
+            path = entry.get("path")
+            if isinstance(path, str) and path:
+                entries.append([path])
+            elif isinstance(path, list):
+                found = [item for item in path if isinstance(item, str) and item]
+                if found:
+                    entries.append(found)
+    return entries
+
+
+def _resolve_includes(  # noqa: PLR0913
+    data: dict[str, Any],
+    lines: dict[str, int],
+    *,
+    document_path: Path,
+    base_dir: Path,
+    project_dir: Path,
+    env_dirs: tuple[Path, ...],
+    use_env: bool,
+    budget: _ExtendsBudget,
+    depth: int,
+    chain: tuple[str, ...],
+    prefix: tuple[str, ...],
+) -> tuple[dict[str, Any], dict[str, int], list[str]]:
+    """Fold every resolvable ``include:`` into this document.
+
+    Returns the merged document, its line map and one message per reference
+    that stayed a coverage gap.
+
+    **The fold runs backwards, and that is not a mistake.** Measured against
+    Compose 5.5.0 with two included files declaring the same service:
+
+    - The *including* document overrides everything it includes.
+    - An *earlier* ``include:`` entry overrides a later one — the reverse of
+      ``-f a -f b``, where later wins.
+    - But within one object-form ``path:`` list, later wins again, because
+      that list is one project assembled from several files.
+
+    So entries are reversed before folding and the primary goes last, while a
+    single entry's own list folds forwards. The tell is the sequence order:
+    with ``cap_add: [NET_ADMIN]`` in the first entry and ``[SYS_TIME]`` in the
+    second, Compose ships ``[SYS_TIME, NET_ADMIN]`` — the later file's entry
+    first, which is exactly ``merge_values``' base-first rule with the later
+    document as the base. Getting this backwards reports the wrong image and
+    the wrong user for a duplicated service, and nothing in the output says so.
+
+    A merged document is a whole document, not a services map: an included
+    file's top-level ``networks:`` and ``volumes:`` reach the project, verified
+    on the same fixture.
+    """
+    entries = _include_entries(data)
+    if not entries:
+        return data, lines, []
+
+    gaps: list[str] = []
+    resolved: list[Document] = []
+
+    for references in entries:
+        documents: list[Document] = []
+        for reference in references:
+
+            def _gap(reason: str, *, _ref: str = reference) -> None:
+                gaps.append(
+                    f"'include: {_ref}' was not resolved because {reason}, so "
+                    "services from it were not linted."
+                )
+
+            if depth >= MAX_REFERENCE_DEPTH:
+                _gap(f"the chain is deeper than {MAX_REFERENCE_DEPTH} files")
+                continue
+            target, why = _locate_reference(reference, project_dir, prefix)
+            if target is None:
+                _gap(why)
+                continue
+            step = str(target.absolute())
+            if step in chain:
+                _gap("the include chain returns to a file it already pulled in")
+                continue
+            if not budget.spend_file():
+                _gap(f"the document opens more than {MAX_REFERENCE_FILES} files")
+                continue
+
+            try:
+                content = read_text_bounded(target, newline="", within=project_dir)
+            except OutsideProjectError:
+                _gap("it resolves outside the project directory")
+                continue
+            except FileNotFoundError:
+                _gap("the file was not found")
+                continue
+            except (UnsafeFileError, OSError) as exc:
+                _gap(f"it could not be read safely ({exc})")
+                continue
+
+            target_dir = target.absolute().parent
+            try:
+                inc_data, inc_lines, inc_resets, inc_overrides, inc_gaps = _loads_full(
+                    content,
+                    base_dir=target_dir,
+                    use_env=use_env,
+                    project_dir=project_dir,
+                    # The included file's own `.env` sits *under* the
+                    # project's: it supplies names the project does not
+                    # define, and loses every name they share.
+                    env_dirs=(target_dir, *(env_dirs or (base_dir,))),
+                    budget=budget,
+                    depth=depth + 1,
+                    include_chain=(*chain, step),
+                    document_path=target,
+                )
+            except ComposeError as exc:
+                _gap(f"it is not a Compose document compose-lint can read ({exc})")
+                continue
+
+            gaps.extend(inc_gaps)
+            documents.append(
+                Document(
+                    path=str(target),
+                    data=inc_data,
+                    lines=inc_lines,
+                    resets=inc_resets,
+                    overrides=inc_overrides,
+                    sources=_carried_sources(inc_lines),
+                )
+            )
+
+        if documents:
+            resolved.append(_folded(documents))
+
+    if not resolved:
+        return data, lines, gaps
+
+    primary = Document(path=str(document_path), data=data, lines=lines)
+    merged = merge_documents([*reversed(resolved), primary])
+    return merged.data, merged.lines, gaps
+
+
+def _carried_sources(lines: dict[str, int]) -> dict[str, str] | None:
+    """Provenance already recorded in ``lines``, as a ``sources`` map.
+
+    A document that itself merged others carries lines naming *their* files.
+    Without seeding ``sources``, the next merge credits every one of them to
+    the file this hop opened.
+    """
+    carried = {
+        path: line.source
+        for path, line in lines.items()
+        if isinstance(line, SourcedLine) and line.source is not None
+    }
+    return carried or None
+
+
+def _folded(documents: list[Document]) -> Document:
+    """Merge one ``include:`` entry's own file list, later winning."""
+    if len(documents) == 1:
+        return documents[0]
+    merged = merge_documents(documents)
+    return Document(
+        path=documents[0].path,
+        data=merged.data,
+        lines=merged.lines,
+        sources=merged.sources,
+    )
+
+
 def _resolve_cross_file_extends(
     data: dict[str, Any],
     lines: dict[str, int],
     *,
     document_path: Path,
     project_dir: Path,
-    env_dir: Path,
+    env_dirs: tuple[Path, ...],
     use_env: bool,
     budget: _ExtendsBudget,
     depth: int,
@@ -985,8 +1185,9 @@ def _resolve_cross_file_extends(
       sitting beside the base. With ``TAG`` set in the project's ``.env`` and
       differently in ``shared/.env``, Compose ships the project's value; with
       no project ``.env`` at all it ships the ``${TAG:-none}`` default and
-      never looks in ``shared/``. (``include:`` differs here, which is why the
-      two directories are separate parameters rather than one.)
+      never looks in ``shared/``. (``include:`` differs — an included file's
+      own ``.env`` *is* read, under the project's — which is why ``env_dirs``
+      is a layered list rather than one directory.)
 
     Containment is always measured against ``project_dir``, the directory of
     the file the run was pointed at — never against the base's own directory,
@@ -1057,7 +1258,7 @@ def _resolve_cross_file_extends(
                 merging=True,
                 use_env=use_env,
                 project_dir=project_dir,
-                env_dir=env_dir,
+                env_dirs=env_dirs,
                 budget=budget,
                 depth=depth + 1,
                 chain=(*chain, step),
@@ -1187,38 +1388,6 @@ def _resolved_bind_source(source: str, base_dir: PurePath) -> str | None:
             return None
         return _lexical_join(base_dir, source)
     return None
-
-
-def coverage_gaps(data: dict[str, Any]) -> list[str]:
-    """Describe every part of ``data`` compose-lint could not actually lint.
-
-    compose-lint reads single files and does no I/O to follow references out of
-    them, so two spellings leave services ungraded: ``include:`` alongside
-    ``services:`` (the included files' services are never seen) and
-    ``extends: {file: ...}`` (the base is never merged, so the child is graded
-    on its own keys only). Both are invisible in the result — the run reports a
-    clean pass over a partial view, which for a merge gate is the one failure
-    mode that matters.
-
-    Returned as messages rather than raised, because the local services *can*
-    still be linted usefully; the caller decides whether the gap is fatal. An
-    ``include``-only file has no local services at all and is already rejected
-    at parse time, which is the precedent this generalizes.
-
-    Each message states only the fact — what was not seen. The remedy is the
-    caller's sentence, because it differs by command: ``check`` can accept the
-    gap with ``--allow-partial-coverage``, ``fix`` has no such flag and never
-    fails on a gap, so naming the flag from here sent ``fix`` users to an
-    argument it rejects (#779).
-    """
-    gaps: list[str] = []
-    services = data.get("services")
-    if "include" in data and isinstance(services, dict):
-        gaps.append(
-            "'include:' is not resolved, so services from the included files "
-            "were not linted."
-        )
-    return gaps
 
 
 # The one subtree a `.env` value never reaches. See the function below for why
@@ -1538,10 +1707,11 @@ def _loads_full(  # noqa: PLR0913
     merging: bool = False,
     use_env: bool = True,
     project_dir: Path | None = None,
-    env_dir: Path | None = None,
+    env_dirs: tuple[Path, ...] = (),
     budget: _ExtendsBudget | None = None,
     depth: int = 0,
     chain: tuple[tuple[str, str], ...] = (),
+    include_chain: tuple[str, ...] = (),
     document_path: Path | None = None,
 ) -> tuple[
     dict[str, Any], dict[str, int], frozenset[str], frozenset[str], tuple[str, ...]
@@ -1559,14 +1729,22 @@ def _loads_full(  # noqa: PLR0913
     Omitted, those sources are left as written — correct for a caller that has
     no file, such as the fix engine's validation re-parse.
 
-    Three directories rather than one, because a document reached through
-    ``extends:`` is read from a place that is not where its paths resolve and
-    not where its values come from (ADR-036, verified against Compose 5.5.0):
-    ``base_dir`` resolves its relative paths, ``env_dir`` supplies its
-    interpolated values, and ``project_dir`` is the containment boundary every
-    reference it makes is measured against. For the file the run was pointed
-    at all three are the same directory, which is why the last two default to
-    ``base_dir``.
+    Three roles rather than one directory, because a document reached through
+    ``extends:`` or ``include:`` is read from a place that is not where its
+    paths resolve and not where its values come from (ADR-036, verified
+    against Compose 5.5.0): ``base_dir`` resolves its relative paths,
+    ``env_dirs`` supplies its interpolated values, and ``project_dir`` is the
+    containment boundary every reference it makes is measured against. For the
+    file the run was pointed at, all three are the same directory.
+
+    ``env_dirs`` is a *list*, read in order with later winning, because the two
+    constructs layer differently and both were measured:
+
+    - An ``extends:`` base ignores a ``.env`` beside itself entirely and uses
+      the extending document's environment, so it inherits ``env_dirs``
+      unchanged.
+    - An included file's own ``.env`` **is** read, but the project's wins on a
+      name they both define, so it prepends its own directory.
 
     Returns the parsed document, its line map, the ``!reset`` and ``!override``
     paths a merge needs, and one message per cross-file reference that stayed a
@@ -1628,7 +1806,10 @@ def _loads_full(  # noqa: PLR0913
     if raw is None:
         raise ComposeError("Not a valid Compose file: file is empty")
 
-    _validate_compose(raw, merging=merging)
+    # Includes are followed only when the caller said where the project is;
+    # a bare `loads()` with no directory has nothing to resolve against.
+    resolving_includes = base_dir is not None and project_dir is not None
+    _validate_compose(raw, merging=merging, include_resolvable=resolving_includes)
 
     # The post-parse passes recurse too, and the guard above covered only the
     # parse. A 2000-deep `extends:` chain, or a self-referential
@@ -1654,9 +1835,12 @@ def _loads_full(  # noqa: PLR0913
         if use_env and base_dir is not None:
             wanted = _referenced_names(data)
             if wanted:
-                parsed_env = read_env(env_dir or base_dir, wanted)
-                if parsed_env is not None and parsed_env.values:
-                    supplied = parsed_env.values
+                layered: dict[str, str] = {}
+                for directory in env_dirs or (base_dir,):
+                    parsed_env = read_env(directory, wanted)
+                    if parsed_env is not None and parsed_env.values:
+                        layered.update(parsed_env.values)
+                supplied = layered or None
         _substitute_interpolation_defaults(data, supplied)
         # Cross-file bases are merged *before* the in-file pass, so a service
         # that inherits from another service in this document inherits what
@@ -1682,7 +1866,7 @@ def _loads_full(  # noqa: PLR0913
                     lines,
                     document_path=document_path or base_dir,
                     project_dir=project_dir,
-                    env_dir=env_dir or base_dir,
+                    env_dirs=env_dirs or (base_dir,),
                     use_env=use_env,
                     budget=budget if budget is not None else _ExtendsBudget(),
                     depth=depth,
@@ -1693,6 +1877,37 @@ def _loads_full(  # noqa: PLR0913
         _resolve_in_file_extends(data)
         if base_dir is not None:
             _resolve_bind_sources(data, base_dir)
+        # Includes fold in last, after this document is fully resolved. Each
+        # included document was fully resolved in its own recursive load —
+        # its own bases merged, its own bind sources already absolute — so
+        # what happens here is a plain document merge with nothing left to
+        # re-resolve in either half.
+        if resolving_includes and project_dir is not None and base_dir is not None:
+            data, lines, include_gaps = _resolve_includes(
+                data,
+                lines,
+                document_path=document_path or base_dir,
+                base_dir=base_dir,
+                project_dir=project_dir,
+                env_dirs=env_dirs,
+                use_env=use_env,
+                budget=budget if budget is not None else _ExtendsBudget(),
+                depth=depth,
+                chain=include_chain,
+                prefix=prefix,
+            )
+            gaps.extend(include_gaps)
+        if "include" in data and "services" not in data:
+            # Deferred from `_validate_compose`, and only for the document that
+            # deferral applied to: an include-only file whose references could
+            # not be followed linted nothing at all, and a verdict over nothing
+            # is #516's false pass. Now that the attempt has been made the
+            # refusal is honest and names what failed. A fragment with neither
+            # key is a different bucket and is not reached from here.
+            raise ComposeError(
+                "Not a lintable target: this file's services all come from "
+                "'include:', and none of those files could be read. " + " ".join(gaps)
+            )
     except RecursionError as e:
         raise ComposeError(
             "Invalid Compose file: resolving the document is too deeply nested "

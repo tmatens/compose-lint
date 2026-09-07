@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from compose_lint import cli
-from compose_lint.parser import coverage_gaps, load_compose_full, loads
+from compose_lint.parser import load_compose_full
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -46,77 +46,80 @@ def _write(path: Path, text: str) -> Path:
 def _gap_body(kind: str) -> str:
     """A document whose ``kind`` reference is a coverage gap after ADR-036.
 
-    ``include:`` is still refused as a class. A cross-file ``extends:`` is not:
-    one that resolves inside the project is merged, so the shape that is still
-    a gap has to be a *residual* — here a target that is not there. Pointing
-    the extends leg at ``base.yml``, which these tests write, would exercise
-    the resolved path and assert nothing about gaps at all.
+    Neither construct is refused as a class any more: one that resolves inside
+    the project is merged, so the shape that is still a gap has to be a
+    *residual*. Both legs here point at a file that is not there — pointing
+    them at ``base.yml``, which these tests write, would exercise the resolved
+    path and assert nothing about gaps at all.
     """
     if kind == "include":
-        return "include:\n  - base.yml\nservices:\n  web:\n    image: nginx:1.27\n"
+        return "include:\n  - nope.yml\nservices:\n  web:\n    image: nginx:1.27\n"
     return (
         "services:\n  web:\n    image: nginx:1.27\n"
         "    extends:\n      file: nope.yml\n      service: app\n"
     )
 
 
-# The sentence each gap kind states. Both name what was not seen; only the
-# `include:` one still says "not resolved", because for `extends:` the run now
-# knows *why* it could not follow the reference and says which residual it hit.
+# Both messages now say *which* residual the reference hit, rather than the
+# flat "is not resolved" every shape shared before ADR-036.
 _GAP_PHRASE = {
-    "include": "not resolved",
+    "include": "was not found",
     "extends": "was not found",
 }
 
 
-def test_include_alongside_services_is_a_gap() -> None:
-    data, _lines = loads(
-        "include:\n  - base.yml\nservices:\n  web:\n    image: nginx:1.27\n"
-    )
-    assert any("include" in gap for gap in coverage_gaps(data))
-
-
-def test_cross_file_extends_names_the_service_and_the_residual(
-    tmp_path: Path,
-) -> None:
-    """A cross-file ``extends:`` is a gap only when it could not be followed.
-
-    The message says which residual it hit rather than the flat "is not
-    resolved" every shape shared before ADR-036, because "the file was not
-    found" and "it resolves outside the project directory" call for different
-    edits from the reader.
-    """
+def test_a_gap_names_the_reference_and_the_residual(tmp_path: Path) -> None:
+    """ "the file was not found" and "it resolves outside the project directory"
+    call for different edits from the reader, so the message says which."""
     target = _write(
         tmp_path / "compose.yml",
+        "include:\n  - missing-include.yml\n"
         "services:\n"
         "  web:\n"
         "    image: nginx:1.27\n"
         "    extends:\n"
-        "      file: nope.yml\n"
+        "      file: missing-base.yml\n"
         "      service: app\n",
     )
     gaps = load_compose_full(target).gaps
-    assert len(gaps) == 1
-    assert "'web'" in gaps[0]
-    assert "was not found" in gaps[0]
+
+    assert len(gaps) == 2
+    included = next(g for g in gaps if "missing-include.yml" in g)
+    assert "was not found" in included
+    extended = next(g for g in gaps if "missing-base.yml" in g)
+    assert "was not found" in extended
+    assert "'web'" in extended
 
 
-def test_in_file_extends_is_not_a_gap() -> None:
+def test_a_resolved_reference_is_not_a_gap(tmp_path: Path) -> None:
+    """The distinction that matters: nothing is unlinted, so nothing is said."""
+    _write(tmp_path / "base.yml", DANGEROUS_BASE)
+    target = _write(
+        tmp_path / "compose.yml",
+        "include:\n  - base.yml\nservices:\n  web:\n    image: nginx:1.27\n",
+    )
+    assert load_compose_full(target).gaps == ()
+
+
+def test_in_file_extends_is_not_a_gap(tmp_path: Path) -> None:
     """It is resolved, so nothing is unlinted — the distinction that matters."""
-    data, _lines = loads(
+    target = _write(
+        tmp_path / "compose.yml",
         "services:\n"
         "  base:\n"
         "    image: nginx:1.27\n"
         "  web:\n"
         "    extends:\n"
-        "      service: base\n"
+        "      service: base\n",
     )
-    assert coverage_gaps(data) == []
+    assert load_compose_full(target).gaps == ()
 
 
-def test_an_ordinary_file_has_no_gaps() -> None:
-    data, _lines = loads("services:\n  web:\n    image: nginx:1.27\n")
-    assert coverage_gaps(data) == []
+def test_an_ordinary_file_has_no_gaps(tmp_path: Path) -> None:
+    target = _write(
+        tmp_path / "compose.yml", "services:\n  web:\n    image: nginx:1.27\n"
+    )
+    assert load_compose_full(target).gaps == ()
 
 
 # --- The gate: exit code, not just stderr ---------------------------------
@@ -136,7 +139,7 @@ def test_a_gap_fails_the_gate_even_when_local_services_are_clean(
     )
     if kind == "include":
         body = (
-            "include:\n  - base.yml\n"
+            "include:\n  - nope.yml\n"
             "services:\n"
             "  web:\n"
             "    image: nginx@sha256:" + "ab" * 32 + "\n" + hardened
@@ -199,10 +202,9 @@ def test_the_gap_is_machine_readable_in_sarif(
 def test_allow_partial_coverage_grades_what_it_can_see(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _write(tmp_path / "base.yml", DANGEROUS_BASE)
     target = _write(
         tmp_path / "compose.yml",
-        "include:\n  - base.yml\n"
+        "include:\n  - nope.yml\n"
         "services:\n  web:\n    image: nginx:1.27\n    privileged: true\n",
     )
 
@@ -219,11 +221,7 @@ def test_allow_partial_coverage_grades_what_it_can_see(
 def test_opting_out_keeps_the_gap_out_of_the_structured_errors(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _write(tmp_path / "base.yml", DANGEROUS_BASE)
-    target = _write(
-        tmp_path / "compose.yml",
-        "include:\n  - base.yml\nservices:\n  web:\n    image: nginx:1.27\n",
-    )
+    target = _write(tmp_path / "compose.yml", _gap_body("include"))
 
     with pytest.raises(SystemExit) as exc:
         cli.main(["check", "--allow-partial-coverage", "--format", "json", str(target)])
@@ -235,10 +233,9 @@ def test_fix_reports_the_gap_without_failing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """``fix`` is not the merge gate, so a gap is advisory there."""
-    _write(tmp_path / "base.yml", DANGEROUS_BASE)
     target = _write(
         tmp_path / "compose.yml",
-        "include:\n  - base.yml\nservices:\n  web:\n    image: nginx:1.27\n",
+        "include:\n  - nope.yml\nservices:\n  web:\n    image: nginx:1.27\n",
     )
 
     with pytest.raises(SystemExit) as exc:
@@ -302,11 +299,10 @@ def test_the_parser_states_the_gap_without_prescribing_a_flag(
     """The remedy is a CLI concern; the parser has no idea which command asked."""
     target = _write(
         tmp_path / "compose.yml",
-        "include:\n  - base.yml\n"
+        "include:\n  - nope.yml\n"
         "services:\n  web:\n    image: nginx:1.27\n"
-        "    extends:\n      file: nope.yml\n      service: app\n",
+        "    extends:\n      file: nope2.yml\n      service: app\n",
     )
-    loaded = load_compose_full(target)
-    gaps = (*coverage_gaps(loaded.data), *loaded.gaps)
+    gaps = load_compose_full(target).gaps
     assert len(gaps) == 2
     assert not any("--" in gap for gap in gaps)

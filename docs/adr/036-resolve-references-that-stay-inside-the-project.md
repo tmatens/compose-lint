@@ -100,14 +100,42 @@ principle is kept; the precedent is amended.
    recursion guard and bounded reader. A cycle or an exceeded cap is a coverage
    gap. A `compose.override.yml` or `.env` beside an *included* file is **not**
    merged: override discovery stays a property of the primary file.
-5. **Interpolation for an included file uses its own directory** — its default
-   `.env` there, or the object form's `env_file` when that resolves inside. An
-   `env_file` or `project_directory` that leaves the project is a gap.
-   `--no-env` widens to cover them, following ADR-027 §8. The object form's
-   `path` is honoured as string or list.
-6. **Duplicate service names across included files mirror Compose.** If Compose
-   errors, it is a gap at exit 2; if it warns and keeps one, take the same one
-   and note it. No third behaviour is invented.
+5. **Interpolation for an included file layers the two environments**, project
+   over own. *Amended from the original decision, which said an included file
+   uses its own directory; measurement said otherwise.* Its own `.env` **is**
+   read, but the project's wins every name they both define — with `TAG` set
+   differently in each, Compose 5.5.0 ships the project's, and a name present
+   only in the included file's `.env` is still supplied. Adding `env_file:` or
+   `project_directory:` to the object form redirected neither on that fixture,
+   so those keys are read and not acted on: claiming an effect that was not
+   observed is how a linter reports a value Compose does not ship. `--no-env`
+   widens to cover both files, following ADR-027 §8. The object form's `path`
+   is honoured as string or list.
+
+   This is **not** what `extends:` does, and the difference is the reason the
+   two directories are separate parameters rather than one: an `extends:` base
+   ignores a `.env` beside itself entirely and uses the extending document's
+   environment. With `TAG` sitting in the base's directory and no project
+   `.env` at all, Compose ships the `${TAG:-none}` default, so it never
+   looked.
+6. **Duplicate service names across included files are merged**, through the
+   existing field-strategy table. *The original decision anticipated an error
+   or a warn-and-pick; it is a third thing, and mirroring Compose was what the
+   decision asked for.* Three orderings, all measured, and they are not the
+   same ordering:
+
+   - The **including document** overrides everything it includes.
+   - An **earlier** `include:` entry overrides a later one — the reverse of
+     `-f a -f b`.
+   - Within one object-form `path:` list, **later** wins again, because that
+     list is one project assembled from several files.
+
+   All three fall out of one fold — reverse the entries, primary last, each
+   entry's own list forward — so this needs no new merge code, only the right
+   argument order. The tell is the sequence order: with `cap_add: [NET_ADMIN]`
+   in the first entry and `[SYS_TIME]` in the second, Compose ships
+   `[SYS_TIME, NET_ADMIN]`, which is exactly `merge_values`' base-first rule
+   with the later document as the base.
 7. **What stays a coverage gap:** a reference that climbs out, an absolute or
    `~` path, an interpolated path, a missing target, a bounded-read refusal, a
    symlink failing the filesystem gate, a cycle or an exceeded cap, and
@@ -144,8 +172,20 @@ decisions turn on resolution semantics a spec reading got wrong:
    "relative to the location of the main Compose file" describes the `file:`
    value itself, not the paths inside the base.
 3. A missing include target makes Compose itself exit 1.
-4. Compose *accepts* an `extends:` base outside the project directory. Refusing
-   it is the linter's containment choice, exactly as in ADR-027 §7.
+4. Compose *accepts* an `extends:` base outside the project directory, and an
+   `include:` of one. Refusing them is the linter's containment choice,
+   exactly as in ADR-027 §7.
+5. An `include:` cycle makes Compose itself fail (`include cycle detected`,
+   exit 1), as does a missing include target.
+6. An included file's top-level `networks:` and `volumes:` reach the merged
+   project, so a merged document is a whole document rather than a services
+   map.
+7. A reference is written relative to *its own* document while containment is
+   measured against the project. Both must be answered, and answering the
+   first from the project root is silent in two ways: a `../` climb out of a
+   subdirectory reads as leaving the project, and a `./sibling.yml` finds a
+   like-named file at the root instead — not a gap at all, but a different
+   document graded as if it were the right one.
 
 **Consequences:**
 

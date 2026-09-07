@@ -50,7 +50,6 @@ from compose_lint.parser import (
     ComposeError,
     ComposeFileError,
     ComposeNotApplicableError,
-    coverage_gaps,
     load_compose,
     load_compose_full,
     load_merged,
@@ -685,12 +684,7 @@ _FIX_GAP_REMEDY = (
 
 
 def _report_coverage_gaps(
-    filepath: str,
-    data: dict[str, Any],
-    *,
-    fatal: bool,
-    remedy: str,
-    extra: tuple[str, ...] = (),
+    filepath: str, gaps: tuple[str, ...], *, fatal: bool, remedy: str
 ) -> list[tuple[str, str]]:
     """Report parts of ``filepath`` that were not linted; return them if fatal.
 
@@ -709,13 +703,13 @@ def _report_coverage_gaps(
     ``remedy`` is the caller's closing sentence, so the advice names only
     what that command can actually do.
 
-    ``extra`` carries the gaps the parser found while following cross-file
-    references, which :func:`~compose_lint.parser.coverage_gaps` cannot derive
-    from the document alone: whether an ``extends: {file: ...}`` is a gap
-    depends on where its path resolved and whether the target was there, and
-    only the pass that tried knows (ADR-036).
+    ``gaps`` comes from the parser rather than from the document, because
+    since ADR-036 the document cannot answer the question: whether an
+    ``include:`` or ``extends: {file: ...}`` is a gap depends on where its path
+    resolved and whether the target was readable, and only the pass that tried
+    to follow it knows.
     """
-    messages = [f"{gap} {remedy}" for gap in (*coverage_gaps(data), *extra)]
+    messages = [f"{gap} {remedy}" for gap in gaps]
     if not messages:
         return []
     label = "Error" if fatal else "Warning"
@@ -868,10 +862,9 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         coverage_errors.extend(
             _report_coverage_gaps(
                 filepath,
-                data,
+                gaps,
                 fatal=not args.allow_partial_coverage,
                 remedy=_CHECK_GAP_REMEDY,
-                extra=gaps,
             )
         )
         for note in unresolved_mount_sources(data):
@@ -1249,9 +1242,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             had_error = True
             continue
 
-        _report_coverage_gaps(
-            filepath, data, fatal=False, remedy=_FIX_GAP_REMEDY, extra=gaps
-        )
+        _report_coverage_gaps(filepath, gaps, fatal=False, remedy=_FIX_GAP_REMEDY)
 
         try:
             # newline="" preserves the file's original line endings: read_text's

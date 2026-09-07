@@ -17,6 +17,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`include:` is now followed when its targets stay inside the project, and an
+  include-only file is lintable**
+  ([ADR-036](docs/adr/036-resolve-references-that-stay-inside-the-project.md)).
+  The same two-gate containment rule the previous entry applies to `extends:`,
+  and the same residual gaps. A file whose only services come from `include:`
+  was refused at parse time under every command, flag included; it is now
+  linted when its references resolve. That is where the construct lives: nine
+  include-only monorepo roots carry 245 of the 273 `include:` references in an
+  11,111-file corpus. #516's rule is intact — a root whose references *all*
+  fail still refuses, as a parse error rather than a downgradable gap, because
+  nothing at all was read.
+
+  **Three merge orderings, all measured against Compose 5.5.0, and they differ
+  from each other.** The including document overrides everything it includes;
+  an *earlier* `include:` entry overrides a later one, which is the reverse of
+  `-f a -f b`; and within one object-form `path:` list *later* wins again,
+  because that list is one project assembled from several files. The same two
+  files under one entry and under two entries produce opposite answers. An
+  included file's top-level `networks:` and `volumes:` reach the project too —
+  it is a whole-document merge.
+
+  **An included file's own `.env` is read, under the project's.** The project
+  wins every name they both define; a name only the included file's supplies is
+  still supplied. This corrects the design note that said an included file
+  interpolates from its own directory, and it is *not* what `extends:` does — a
+  base ignores a `.env` beside itself entirely. `--no-env` covers both.
+  `env_file:` and `project_directory:` in the object form are read but not
+  acted on, because neither redirected interpolation on the fixture that
+  measured it.
+
+  `coverage_gaps()` is gone from the parser's surface: with both constructs
+  resolved per reference, nothing about a gap can be derived from the document
+  alone any more. Corpus comparator over all 11,111 files: **zero of 158,076
+  finding rows changed**, and the same 94 files report a coverage gap — the
+  corpus has no sibling files, so nothing in it resolves either way. Refs #780.
+
 - **A cross-file `extends: {file: ...}` that stays inside the project is now
   resolved and merged, instead of being refused as a coverage gap**
   ([ADR-036](docs/adr/036-resolve-references-that-stay-inside-the-project.md)).

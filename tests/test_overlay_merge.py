@@ -604,20 +604,46 @@ def test_own_config_overlay_is_an_error_not_a_skip(tmp_path: Path) -> None:
     assert "PASS" not in result.stdout
 
 
-def test_include_only_overlay_is_not_admitted_as_a_fragment(tmp_path: Path) -> None:
-    """An `include:`-only overlay stays a hard error, never a fragment (#516).
+def test_include_only_overlay_whose_include_is_unreadable_is_not_a_fragment(
+    tmp_path: Path,
+) -> None:
+    """An `include:`-only overlay that resolved nothing stays a hard error (#516).
 
-    `_classify_missing_services` special-cases include precisely because
-    compose-lint does not resolve it: admitting the file as a harmless
-    fragment would report a clean pass on a deployable stack. This is the one
-    place where widening the fragment bucket would silently undo #516, so the
-    boundary is pinned here.
+    ADR-036 moved *when* this is decided, not whether: admitting the file as a
+    harmless fragment would report a clean pass on a deployable stack, so an
+    include-only document that ended with no services is still refused. What
+    changed is that the refusal now happens after the attempt and names the
+    file that could not be read. This is the one place where widening the
+    fragment bucket would silently undo #516, so the boundary is pinned here.
     """
     _write_pair(tmp_path, BASE_PRIVILEGED, "include:\n  - other.yml\n")
     result = run_cli("check", cwd=tmp_path)
 
     assert result.returncode == 2
-    assert "uses 'include:'" in result.stderr
+    assert "services all come from 'include:'" in result.stderr
+    assert "other.yml" in result.stderr
+
+
+def test_include_only_overlay_that_resolves_contributes_its_services(
+    tmp_path: Path,
+) -> None:
+    """The other side of the same boundary, and why #516 is not weakened.
+
+    When the included file is there and inside the project it is *read*, so
+    the overlay contributes real services rather than being waved through as
+    a fragment. The failure #516 named — a clean pass over services nobody
+    saw — cannot happen either way.
+    """
+    _write_pair(tmp_path, BASE_PRIVILEGED, "include:\n  - other.yml\n")
+    (tmp_path / "other.yml").write_text(
+        "services:\n  api:\n    image: redis:7\n    privileged: true\n",
+        encoding="utf-8",
+    )
+    result = run_cli("check", "--format", "json", cwd=tmp_path)
+
+    assert result.returncode == 1
+    findings = json.loads(result.stdout)["findings"]
+    assert {"web", "api"} <= {f["service"] for f in findings}
 
 
 def test_fragment_base_with_services_in_the_overlay_lints(tmp_path: Path) -> None:
