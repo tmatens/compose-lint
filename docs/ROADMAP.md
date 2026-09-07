@@ -6,7 +6,7 @@ compose-lint today ships 27 security rules, PyPI distribution, a published GitHu
 
 compose-lint's differentiation is depth in Compose-specific security, not distribution breadth. Competitors (KICS, Checkov, Trivy) cover Compose as one format among many; they are wide and shallow per-format. Compose-lint wins by being the one tool that tells you exactly what's wrong with a Compose file and exactly how to fix it. Roadmap priorities are ordered around that thesis.
 
-Open issues #4 (CL-0006 capability guidance) and #111 (real-world examples library) are the live signal from real-world usage now that #5 is closed. Distribution items beyond the already-shipped Docker image have no demand signal and are deprioritized accordingly.
+The usage-driven asks that shaped the last two milestones — #5 (per-service overrides), #4 (CL-0006 capability guidance) and #111 (real-world examples library) — are all closed and shipped. The live signal now runs through the 1.0 stability commitment (Milestone 4) and the one Milestone 3 item still open, shellcheck ([ADR-007](adr/007-shellcheck-integration.md), pending decision). Distribution items beyond the already-shipped Docker image have no demand signal and are deprioritized accordingly.
 
 ---
 
@@ -16,7 +16,7 @@ Shipped in v0.3.0. Added 9 rules (CL-0011 – CL-0019) plus CL-0010 `uts: host` 
 
 ---
 
-## Milestone 2 — Configuration Depth (v0.4) [shipped]
+## Milestone 2 — Configuration Depth (v0.4) [complete]
 
 Per-service rule overrides shipped in v0.4.0 (issue #5, [ADR-010](adr/010-per-service-rule-overrides.md)). `.compose-lint.yml` now supports `exclude_services` per rule, with mapping (service → reason) and list forms. Excluded services still produce suppressed findings carrying the per-service reason — same suppression plumbing as global disables.
 
@@ -64,7 +64,7 @@ Turn findings into fixes. This is where the product's differentiation grows the 
 
 ---
 
-## Milestone 3.5 — Severity Grounding (v0.16) [shipped]
+## Milestone 3.5 — Severity Grounding (v0.16) [complete]
 
 A prerequisite for the 1.0 freeze rather than a feature: after 1.0 a severity change is a breaking change, so the numbers have to be defensible before the contract closes over them.
 
