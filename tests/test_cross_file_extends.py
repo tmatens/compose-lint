@@ -252,6 +252,99 @@ def test_an_in_file_extends_inherits_what_its_target_pulled_in(
     assert load_compose_full(target).data["services"]["web"]["privileged"] is True
 
 
+def test_a_nested_reference_is_written_relative_to_its_own_file(
+    tmp_path: Path,
+) -> None:
+    """A base in a subdirectory writes its own references relative to itself,
+    not to the project root — the two questions the ``prefix`` separates.
+
+    Both halves were wrong at once and both are silent. Measuring ``../`` from
+    the project root reported a climb out of a *subdirectory* as leaving the
+    project, so a base Compose merges became a coverage gap and its
+    ``privileged: true`` was never graded — a false negative, which is the
+    worst failure a security linter has. Verified against Compose 5.5.0: it
+    resolves the chain and ships the privileged service.
+    """
+    (tmp_path / "shared").mkdir()
+    (tmp_path / "other").mkdir()
+    (tmp_path / "compose.yml").write_text(
+        CHILD.format(reference="./shared/base.yml"), encoding="utf-8"
+    )
+    (tmp_path / "shared" / "base.yml").write_text(
+        "services:\n"
+        "  app:\n"
+        "    extends:\n"
+        "      file: ../other/base2.yml\n"
+        "      service: app\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "other" / "base2.yml").write_text(DANGEROUS_BASE, encoding="utf-8")
+
+    loaded = load_compose_full(tmp_path / "compose.yml")
+    assert loaded.gaps == ()
+    assert loaded.data["services"]["web"]["privileged"] is True
+
+
+def test_a_nested_reference_does_not_read_a_like_named_file_at_the_root(
+    tmp_path: Path,
+) -> None:
+    """The other half, and the more dangerous one: it is not a gap at all but a
+    *different file read as if it were the right one*.
+
+    ``./decoy.yml`` written in ``shared/mid.yml`` means ``shared/decoy.yml``.
+    Resolved against the project root it found the root's copy, which exists,
+    so nothing looked wrong — the run simply graded the wrong document.
+    Verified against Compose 5.5.0, which reads the sibling.
+    """
+    (tmp_path / "shared").mkdir()
+    (tmp_path / "compose.yml").write_text(
+        CHILD.format(reference="./shared/mid.yml"), encoding="utf-8"
+    )
+    (tmp_path / "shared" / "mid.yml").write_text(
+        "services:\n"
+        "  app:\n"
+        "    extends:\n"
+        "      file: ./decoy.yml\n"
+        "      service: app\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "shared" / "decoy.yml").write_text(
+        "services:\n  app:\n    image: correct:1\n", encoding="utf-8"
+    )
+    (tmp_path / "decoy.yml").write_text(
+        "services:\n  app:\n    image: wrong-file:1\n", encoding="utf-8"
+    )
+
+    loaded = load_compose_full(tmp_path / "compose.yml")
+    assert loaded.gaps == ()
+    assert loaded.data["services"]["web"]["image"] == "correct:1"
+
+
+def test_a_chain_cannot_walk_out_of_the_project_one_hop_at_a_time(
+    tmp_path: Path,
+) -> None:
+    """Containment is still measured against the project, not against the
+    previous hop — otherwise each ``../`` would buy another level."""
+    project = tmp_path / "project"
+    (project / "shared").mkdir(parents=True)
+    (tmp_path / "outside.yml").write_text(DANGEROUS_BASE, encoding="utf-8")
+    (project / "compose.yml").write_text(
+        CHILD.format(reference="./shared/base.yml"), encoding="utf-8"
+    )
+    (project / "shared" / "base.yml").write_text(
+        "services:\n"
+        "  app:\n"
+        "    extends:\n"
+        "      file: ../../outside.yml\n"
+        "      service: app\n",
+        encoding="utf-8",
+    )
+    loaded = load_compose_full(project / "compose.yml")
+
+    assert any("outside the project directory" in gap for gap in loaded.gaps)
+    assert "privileged" not in loaded.data["services"]["web"]
+
+
 # --- What stays a coverage gap (ADR-036 decision 7) ------------------------
 
 

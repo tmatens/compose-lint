@@ -877,8 +877,26 @@ def _extends_file_ref(config: Any) -> tuple[str, Any] | None:
     return target, ext.get("service")
 
 
-def _locate_reference(reference: str, project_dir: Path) -> tuple[Path | None, str]:
+def _locate_reference(
+    reference: str, project_dir: Path, prefix: tuple[str, ...]
+) -> tuple[Path | None, str]:
     """Resolve a document reference under ``project_dir``, or say why not.
+
+    ``prefix`` is the directory of the document that *wrote* the reference,
+    spelled relative to the project root, and it is what makes the two
+    questions separable. A reference is written relative to its own file;
+    containment is measured against the project. Seeding the segment walk with
+    the prefix answers both in one pass: ``../other/base2.yml`` written in
+    ``shared/base.yml`` cleans to ``other/base2.yml`` and stays inside, while
+    the same spelling in a file at the root pops past the start and leaves.
+
+    Both halves matter, and getting either wrong is silent. Resolving against
+    the project root instead of the writing file's directory reported a
+    ``../`` climb from a subdirectory as leaving the project — a false coverage
+    gap over a base Compose merges — and pointed ``./decoy.yml`` at the root's
+    copy rather than the sibling's, which is not a gap at all but a *different
+    file read as if it were the right one*. Both are verified against Compose
+    5.5.0 in ``tests/test_cross_file_extends.py``.
 
     The lexical half of the two-gate containment rule ADR-036 carries over from
     ``env_file:``: whether a path *says* it leaves the project is a fact about
@@ -894,7 +912,7 @@ def _locate_reference(reference: str, project_dir: Path) -> tuple[Path | None, s
     """
     if "${" in reference:
         return None, "its path is interpolated and has no shipped value"
-    segments = project_relative(reference)
+    segments = project_relative(reference, prefix)
     if segments is None:
         return None, "it resolves outside the project directory"
     return project_dir.joinpath(*segments), ""
@@ -947,6 +965,7 @@ def _resolve_cross_file_extends(
     budget: _ExtendsBudget,
     depth: int,
     chain: tuple[tuple[str, str], ...],
+    prefix: tuple[str, ...],
 ) -> list[str]:
     """Merge every resolvable cross-file ``extends:`` base into ``data``.
 
@@ -1001,7 +1020,7 @@ def _resolve_cross_file_extends(
             _gap(f"the chain is deeper than {MAX_REFERENCE_DEPTH} files")
             continue
 
-        target, why = _locate_reference(reference, project_dir)
+        target, why = _locate_reference(reference, project_dir, prefix)
         if target is None:
             _gap(why)
             continue
@@ -1028,6 +1047,9 @@ def _resolve_cross_file_extends(
             _gap(f"it could not be read safely ({exc})")
             continue
 
+        base_prefix = tuple(
+            target.absolute().parent.relative_to(project_dir.absolute()).parts
+        )
         try:
             base_data, base_lines, _, _, base_gaps = _loads_full(
                 content,
@@ -1051,12 +1073,7 @@ def _resolve_cross_file_extends(
             continue
 
         gaps.extend(base_gaps)
-        try:
-            prefix = tuple(target.absolute().parent.relative_to(project_dir).parts)
-        except ValueError:  # pragma: no cover - the read gate already refused
-            _gap("it resolves outside the project directory")
-            continue
-        _rebase_env_files(base_data, prefix)
+        _rebase_env_files(base_data, base_prefix)
         # A base reached through another base carries lines that already name
         # their own file. Without seeding `sources`, the merge would credit
         # every one of them to the file this hop opened.
@@ -1650,6 +1667,15 @@ def _loads_full(  # noqa: PLR0913
         # absolute source is left alone by the pass below rather than being
         # re-resolved against the extending file's directory.
         if base_dir is not None and project_dir is not None:
+            try:
+                # Where this document sits under the project, which is what a
+                # reference it writes is relative to. Empty for the file the
+                # run was pointed at, since that file *is* the project root.
+                prefix = tuple(
+                    base_dir.absolute().relative_to(project_dir.absolute()).parts
+                )
+            except ValueError:  # pragma: no cover - the read gate refuses first
+                prefix = ()
             gaps.extend(
                 _resolve_cross_file_extends(
                     data,
@@ -1661,6 +1687,7 @@ def _loads_full(  # noqa: PLR0913
                     budget=budget if budget is not None else _ExtendsBudget(),
                     depth=depth,
                     chain=chain,
+                    prefix=prefix,
                 )
             )
         _resolve_in_file_extends(data)
