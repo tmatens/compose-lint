@@ -41,10 +41,7 @@ def test_a_reset_in_the_only_file_defers_that_finding_alone(
 ) -> None:
     target = tmp_path / "compose.yml"
     target.write_text(
-        "services:\n"
-        "  web:\n"
-        "    image: nginx:1.27\n"
-        "    security_opt: !reset null\n",
+        "services:\n  web:\n    image: nginx:1.27\n    security_opt: !reset null\n",
         encoding="utf-8",
     )
 
@@ -67,10 +64,7 @@ def test_a_reset_in_an_overlay_defers_a_key_the_base_lacks(
     """The non-convergence shape: writing the key here changes nothing."""
     target = tmp_path / "compose.yml"
     target.write_text(
-        "services:\n"
-        "  db:\n"
-        "    image: nginx:1.27\n"
-        '    volumes: ["./data:/data"]\n',
+        'services:\n  db:\n    image: nginx:1.27\n    volumes: ["./data:/data"]\n',
         encoding="utf-8",
     )
     (tmp_path / "compose.override.yml").write_text(
