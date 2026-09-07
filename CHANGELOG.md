@@ -21,6 +21,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Thanks [@VedantMadane](https://github.com/VedantMadane) ([#726](https://github.com/tmatens/compose-lint/pull/726)).
 
+- **Mixing the list and mapping spellings of a key/value field across two
+  documents now merges the way Compose merges it.** `environment:`, `labels:`,
+  `sysctls:` and `depends_on:` each accept a list of `K=V` strings or a
+  mapping, and a base file may use one spelling while its overlay uses the
+  other. The merge used to flatten the mapping side back into strings with
+  Python's `str()`, which is not a spelling Compose has: a `depends_on: [db]`
+  base under a `depends_on: {db: {condition: service_healthy}}` overlay
+  produced the list entry `db={'condition': 'service_healthy'}`, and a typed
+  value such as `environment: {DEBUG: true}` arrived as `DEBUG=True` rather
+  than Compose's `DEBUG: "true"`. Both sides are now expanded to the mapping
+  Compose resolves them to and merged by name, including `depends_on`'s short
+  form standing for the whole long-form entry. Same-spelling documents are
+  untouched, and no finding changes — the rules that read `environment:`
+  already accept either form
+  ([#797](https://github.com/tmatens/compose-lint/issues/797)).
+
 ## [0.27.0] - 2026-09-07
 
 ### Added

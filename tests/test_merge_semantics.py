@@ -346,6 +346,120 @@ def test_append_fields_match_compose_shape(field_name: str, tmp_path: Path) -> N
     assert [str(v) for v in actual] == [str(v) for v in expected]
 
 
+# The four key/value fields accept a list of `K=V` strings *or* a mapping, and
+# a document may use one spelling while its overlay uses the other. Findings
+# comparison is blind to every one of them: no rule reads `labels`, `sysctls` or
+# `depends_on` at all, and the two that read `environment` report the key name.
+# So the merge shipped rendering a `depends_on` mapping value with `str()` —
+# `["db={'condition': 'service_healthy'}"]`, a list entry no Compose document
+# could contain — through a green suite. Shape is the only detector, which is
+# the case these cases make.
+#
+# Compared modulo Compose's scalar normalisation (it stringifies every value it
+# emits, so `true` arrives as `"true"`), because that normalisation is not what
+# is under test here.
+DB = "  db:\n    image: postgres:16\n"
+DB_AND_CACHE = DB + "  cache:\n    image: redis:7\n"
+
+KV_FORM_CASES = [
+    # (id, extra services, field, base value, override value)
+    ("env-list-base", "", "environment", '["A=1", "B=2"]', '{A: "9", C: "3"}'),
+    ("env-map-base", "", "environment", '{A: "1", B: "2"}', '["A=9", "C=3"]'),
+    # A typed override value under a list base is the milder form of the same
+    # `str()` defect: it produced `DEBUG=True`, not Compose's `DEBUG: "true"`.
+    (
+        "env-typed-override",
+        "",
+        "environment",
+        '["DEBUG=0", "PORT=1"]',
+        "{DEBUG: true, PORT: 8080}",
+    ),
+    ("labels-list-base", "", "labels", '["a=1", "b=2"]', '{a: "9", c: "3"}'),
+    ("labels-map-base", "", "labels", '{a: "1", b: "2"}', '["a=9", "c=3"]'),
+    (
+        "sysctls-list-base",
+        "",
+        "sysctls",
+        '["net.ipv4.ip_forward=1"]',
+        '{net.core.somaxconn: "1024"}',
+    ),
+    (
+        "sysctls-map-base",
+        "",
+        "sysctls",
+        '{net.core.somaxconn: "1024"}',
+        '["net.ipv4.ip_forward=1"]',
+    ),
+    (
+        "depends-list-base",
+        DB,
+        "depends_on",
+        "[db]",
+        "{db: {condition: service_healthy}}",
+    ),
+    # The short spelling is sugar for the *whole* long-form entry, both defaults
+    # included, so an overriding `[db]` resets `required:` rather than leaving
+    # the base's `false` in place.
+    (
+        "depends-map-base",
+        DB,
+        "depends_on",
+        "{db: {condition: service_healthy, required: false}}",
+        "[db]",
+    ),
+    (
+        "depends-unmentioned-name",
+        DB_AND_CACHE,
+        "depends_on",
+        "[db, cache]",
+        "{db: {condition: service_healthy}}",
+    ),
+]
+
+
+def _stringified(value: object) -> object:
+    """Scalars as Compose emits them, so only the merged structure is compared."""
+    if isinstance(value, dict):
+        return {k: _stringified(v) for k, v in value.items()}
+    if isinstance(value, bool):
+        return str(value).lower()
+    if value is None:
+        return None
+    return str(value)
+
+
+@pytest.mark.parametrize(
+    "case_id,extra_services,field,base_value,over_value",
+    KV_FORM_CASES,
+    ids=[c[0] for c in KV_FORM_CASES],
+)
+def test_key_value_form_merge_matches_compose_shape(
+    case_id: str,
+    extra_services: str,
+    field: str,
+    base_value: str,
+    over_value: str,
+    tmp_path: Path,
+) -> None:
+    """A list base under a mapping overlay (or the reverse) merges as Compose does."""
+    _write_pair(
+        tmp_path,
+        f"services:\n  web:\n    image: myapp:1.0\n    {field}: {base_value}\n"
+        f"{extra_services}",
+        f"services:\n  web:\n    {field}: {over_value}\n",
+    )
+
+    truth_file = tmp_path / "truth.yml"
+    truth_file.write_text(_compose_config(tmp_path))
+    truth_data, _ = load_compose(truth_file)
+    expected = truth_data["services"]["web"].get(field)
+
+    merged = load_merged([tmp_path / "compose.yml", tmp_path / "compose.override.yml"])
+    actual = merged.data["services"]["web"].get(field)
+
+    assert _stringified(actual) == _stringified(expected), case_id
+
+
 # Every field whose merge strategy differs, crossed with every Compose merge
 # directive. Hand-picked cases test what the author thought of: `!override` was
 # probed while deriving the table above, was not turned into a case, and the
@@ -371,7 +485,20 @@ DIRECTIVE_FIELDS = [
     ("read_only", "true", "false"),
     ("privileged", "false", "true"),
     ("logging", '{driver: "json-file"}', '{driver: "none"}'),
+    # Fields with their own merge strategy that the matrix never reached. No
+    # rule reads any of them, so their rows prove only that the directives are
+    # accepted and change no *other* service's grading; the shape they merge to
+    # is pinned by `KV_FORM_CASES` below and by the append/replace tests above.
+    ("labels", '{a: "1"}', '{b: "2"}'),
+    ("sysctls", '{net.ipv4.ip_forward: "1"}', '{net.core.somaxconn: "1024"}'),
+    ("command", '["sh", "-c", "sleep 1"]', '"sleep 2"'),
+    ("entrypoint", '"/bin/sh"', '["/bin/bash", "-lc"]'),
+    ("depends_on", "[db]", "{db: {condition: service_healthy}}"),
 ]
+
+# Compose refuses a project whose dependency is undefined, so a `depends_on`
+# row has to bring the service it names.
+EXTRA_SERVICES = {"depends_on": "  db:\n    image: postgres:16\n"}
 
 DIRECTIVES = ["", "!override ", "!reset "]
 
@@ -407,7 +534,8 @@ def test_field_and_directive_matrix_matches_compose(
     value = "null" if directive.startswith("!reset") else over_value
     _write_pair(
         tmp_path,
-        f"services:\n  web:\n    image: myapp:1.0\n    {field}: {base_value}\n",
+        f"services:\n  web:\n    image: myapp:1.0\n    {field}: {base_value}\n"
+        f"{EXTRA_SERVICES.get(field, '')}",
         f"services:\n  web:\n    {field}: {directive}{value}\n",
     )
 
