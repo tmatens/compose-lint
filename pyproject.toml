@@ -51,7 +51,7 @@ dependencies = [
 # "Development dependencies" — and Dependabot's weekly pass bumps
 # them.
 lint = [
-    "ruff==0.16.5",
+    "ruff==0.16.6",
 ]
 security = [
     "bandit==1.9.4",
@@ -100,7 +100,7 @@ dev = [
     # Statement coverage gate (>=80%) is enforced by the `coverage` CI job.
     # Threshold lives in [tool.coverage.report] below.
     "pytest-cov==7.1.0",
-    "types-pyyaml==6.0.12.20260815",
+    "types-pyyaml==6.0.12.20260906",
 ]
 
 [project.scripts]
