@@ -30,6 +30,8 @@ theme:
 # (front matter is unavailable: --explain prints these files raw).
 hooks:
   - scripts/mkdocs_seo_hook.py
+  # Sitemap <lastmod> per page, from git rather than the build date.
+  - scripts/mkdocs_git_dates_hook.py
 
 markdown_extensions:
   - toc:

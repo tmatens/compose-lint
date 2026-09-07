@@ -9,12 +9,18 @@ on:
     paths:
       - "docs/**"
       - mkdocs.yml
+      # The hooks mkdocs.yml loads: they shape the built HTML and sitemap, so
+      # editing one has to rebuild the site the same as editing a page does.
+      - "scripts/mkdocs_*_hook.py"
       - requirements-docs.lock
       - .github/workflows/docs.yml
   pull_request:
     paths:
       - "docs/**"
       - mkdocs.yml
+      # The hooks mkdocs.yml loads: they shape the built HTML and sitemap, so
+      # editing one has to rebuild the site the same as editing a page does.
+      - "scripts/mkdocs_*_hook.py"
       - requirements-docs.lock
       - .github/workflows/docs.yml
   workflow_dispatch:
@@ -31,6 +37,12 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Sitemap <lastmod> is the last commit date of each page's source
+          # (scripts/mkdocs_git_dates_hook.py). The default depth-1 checkout
+          # dates every page to the tip commit, so the hook detects the
+          # shallow clone and falls back rather than publishing a fake date.
+          fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
