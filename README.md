@@ -430,7 +430,7 @@ jobs:
       security-events: write  # upload the SARIF to Code Scanning
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: tmatens/compose-lint@eb8e66eaee240fb47f970ea65096a4fd6cb9a8fa # v0.26.0
+      - uses: tmatens/compose-lint@6989a93e81a4b1d5d11a91b1b84496db66c37c45 # v0.27.0
         with:
           sarif-file: results.sarif
 ```
