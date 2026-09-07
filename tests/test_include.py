@@ -599,3 +599,150 @@ def test_an_overriding_documents_contribution_does_not_reach_an_extends(
     derived = merged.data["services"]["derived"]
     assert "user" not in derived
     assert "cap_add" not in derived
+
+
+# --- An object-form entry is one sub-project --------------------------------
+
+
+def _sub_project(tmp_path: Path, include_block: str) -> Path:
+    """Two included files in different directories, one with relative paths."""
+    _write(tmp_path / "parts" / "a.yml", "services:\n  api:\n    image: nginx:1.27\n")
+    _write(
+        tmp_path / "parts" / "nested.yml", "services:\n  from_parts:\n    image: a:1\n"
+    )
+    _write(tmp_path / "sub" / "nested.yml", "services:\n  from_sub:\n    image: a:1\n")
+    _write(
+        tmp_path / "sub" / "compose.yml",
+        "include:\n"
+        "  - ./nested.yml\n"
+        "services:\n"
+        "  sidecar:\n"
+        "    image: nginx:1.27\n"
+        '    volumes: ["./local:/local"]\n',
+    )
+    return _project(tmp_path, include_block)
+
+
+def test_an_object_form_entry_resolves_against_its_first_path(
+    tmp_path: Path,
+) -> None:
+    """An entry is a project, not a file list, and the first path names its root.
+
+    Measured against Compose 5.5.0. `./local` written in `sub/compose.yml`
+    mounts ``parts/local`` when the entry lists ``parts/a.yml`` first, and the
+    nested `include: ./nested.yml` reads ``parts/nested.yml``. Resolving each
+    file against its own directory instead mounted a host path the deployed
+    container never sees, which is a wrong answer for the mount rules
+    (CL-0013, CL-0017, CL-0025) with nothing in the output to say so.
+    """
+    target = _sub_project(
+        tmp_path,
+        "include:\n  - path:\n      - parts/a.yml\n      - sub/compose.yml\n",
+    )
+    data = load_compose_full(target).data
+
+    assert data["services"]["sidecar"]["volumes"] == [
+        f"{tmp_path / 'parts' / 'local'}:/local"
+    ]
+    assert "from_parts" in data["services"]
+    assert "from_sub" not in data["services"]
+
+
+def test_swapping_the_paths_moves_the_entrys_root(tmp_path: Path) -> None:
+    """It really is the *first* path, not a preference for shallow directories."""
+    target = _sub_project(
+        tmp_path,
+        "include:\n  - path:\n      - sub/compose.yml\n      - parts/a.yml\n",
+    )
+    data = load_compose_full(target).data
+
+    assert data["services"]["sidecar"]["volumes"] == [
+        f"{tmp_path / 'sub' / 'local'}:/local"
+    ]
+    assert "from_sub" in data["services"]
+
+
+def test_each_list_form_entry_is_its_own_sub_project(tmp_path: Path) -> None:
+    """The list form nests differently, and so resolves differently.
+
+    Two bare entries are two sub-projects, each rooted at its own file — which
+    is why the list form was never wrong, and why the fix has to distinguish
+    the spellings rather than pick one directory for both.
+    """
+    target = _sub_project(tmp_path, "include:\n  - parts/a.yml\n  - sub/compose.yml\n")
+    data = load_compose_full(target).data
+
+    assert data["services"]["sidecar"]["volumes"] == [
+        f"{tmp_path / 'sub' / 'local'}:/local"
+    ]
+    assert "from_sub" in data["services"]
+
+
+def test_project_directory_names_the_entrys_root(tmp_path: Path) -> None:
+    """`project_directory:` overrides the first path. Verified on Compose 5.5.0."""
+    target = _sub_project(
+        tmp_path,
+        "include:\n"
+        "  - path:\n"
+        "      - parts/a.yml\n"
+        "      - sub/compose.yml\n"
+        "    project_directory: .\n",
+    )
+    data = load_compose_full(target).data
+
+    assert data["services"]["sidecar"]["volumes"] == [f"{tmp_path / 'local'}:/local"]
+
+
+def test_an_entrys_root_moves_which_env_an_included_file_reads(
+    tmp_path: Path,
+) -> None:
+    """The entry's own `.env` comes from its project directory too.
+
+    Measured against Compose 5.5.0 with `TAG` defined in both `parts/.env` and
+    `sub/.env`: `nginx:${TAG:-fallback}` written in `sub/compose.yml` ships
+    `nginx:from-parts` when the entry lists `parts/a.yml` first. Reading the
+    file's own `.env` instead reported an image tag the deployed container
+    never runs.
+    """
+    _write(tmp_path / "parts" / "a.yml", "services:\n  api:\n    image: nginx:1.27\n")
+    _write(tmp_path / "parts" / ".env", "TAG=from-parts\n")
+    _write(tmp_path / "sub" / ".env", "TAG=from-sub\n")
+    _write(
+        tmp_path / "sub" / "compose.yml",
+        "services:\n  sidecar:\n    image: nginx:${TAG:-fallback}\n",
+    )
+    target = _project(
+        tmp_path,
+        "include:\n  - path:\n      - parts/a.yml\n      - sub/compose.yml\n",
+    )
+
+    data = load_compose_full(target).data
+    assert data["services"]["sidecar"]["image"] == "nginx:from-parts"
+
+
+def test_project_directory_moves_the_env_lookup_with_it(tmp_path: Path) -> None:
+    """`project_directory: .` roots the entry where there is no `.env` at all.
+
+    Same fixture, same measurement: Compose 5.5.0 ships the written default,
+    because the entry's project directory is now the root and the root has no
+    `.env`. This is the half that shows the `.env` follows the *entry*, not
+    the including document — the including document's own `.env` would still
+    be layered on top if it had one.
+    """
+    _write(tmp_path / "parts" / "a.yml", "services:\n  api:\n    image: nginx:1.27\n")
+    _write(tmp_path / "sub" / ".env", "TAG=from-sub\n")
+    _write(
+        tmp_path / "sub" / "compose.yml",
+        "services:\n  sidecar:\n    image: nginx:${TAG:-fallback}\n",
+    )
+    target = _project(
+        tmp_path,
+        "include:\n"
+        "  - path:\n"
+        "      - parts/a.yml\n"
+        "      - sub/compose.yml\n"
+        "    project_directory: .\n",
+    )
+
+    data = load_compose_full(target).data
+    assert data["services"]["sidecar"]["image"] == "nginx:fallback"

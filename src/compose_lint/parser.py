@@ -979,37 +979,82 @@ def _rebase_env_files(data: dict[str, Any], prefix: tuple[str, ...]) -> None:
             config["env_file"] = _rebased(config["env_file"])
 
 
-def _include_entries(data: dict[str, Any]) -> list[list[str]]:
-    """The references each ``include:`` entry names, one inner list per entry.
+@dataclass(frozen=True)
+class _IncludeEntry:
+    """One ``include:`` entry: a sub-project, and where its paths resolve.
+
+    An entry is a *project*, not a file list. Every relative path written
+    anywhere inside it — a bind source, a nested ``include:``, an ``env_file:``
+    target — resolves against that one directory, which is ``project_directory:``
+    if the entry gives one and otherwise the directory of the **first** path.
+    Measured against Compose 5.5.0 on an entry listing ``parts/a.yaml`` then
+    ``sub/compose.yaml``: ``./local`` written in ``sub/compose.yaml`` mounts
+    ``parts/local``, its ``include: ./nested.yaml`` reads ``parts/nested.yaml``,
+    and its ``env_file: ./local.vars`` reads ``parts/local.vars``. Swapping the
+    two paths moves all three to ``sub/``.
+
+    Its own ``.env`` moves with it: with ``TAG`` defined in both ``parts/.env``
+    and ``sub/.env``, ``nginx:${TAG:-fallback}`` in ``sub/compose.yaml`` ships
+    ``nginx:from-parts``, and under ``project_directory: .`` — a root with no
+    ``.env`` — it ships the default. It still sits *under* the including
+    project's ``.env``, which wins on any name they share.
+    """
+
+    references: tuple[str, ...]
+    project_directory: str | None = None
+
+
+def _include_entries(data: dict[str, Any]) -> list[_IncludeEntry]:
+    """The references each ``include:`` entry names, one entry per element.
 
     Both spellings, because they nest differently and the nesting decides the
     merge order. A bare string is one document. The object form's ``path:``
     takes a string *or a list*, and a list is one project assembled from
     several files — so it folds like ``-f a -f b``, later winning, while the
     entries around it fold the other way (see :func:`_resolve_includes`).
-
-    Other object-form keys (``env_file:``, ``project_directory:``) are read but
-    not acted on: measured against Compose 5.5.0, neither redirected an
-    included file's interpolation on a fixture where the project's ``.env`` and
-    the included file's disagreed. Claiming an effect that was not observed is
-    how a linter reports a value Compose does not ship.
     """
     raw = data.get("include")
     if not isinstance(raw, list):
         return []
-    entries: list[list[str]] = []
+    entries: list[_IncludeEntry] = []
     for entry in raw:
         if isinstance(entry, str) and entry:
-            entries.append([entry])
+            entries.append(_IncludeEntry((entry,)))
         elif isinstance(entry, dict):
             path = entry.get("path")
+            directory = entry.get("project_directory")
+            directory = directory if isinstance(directory, str) and directory else None
             if isinstance(path, str) and path:
-                entries.append([path])
+                entries.append(_IncludeEntry((path,), directory))
             elif isinstance(path, list):
-                found = [item for item in path if isinstance(item, str) and item]
+                found = tuple(item for item in path if isinstance(item, str) and item)
                 if found:
-                    entries.append(found)
+                    entries.append(_IncludeEntry(found, directory))
     return entries
+
+
+def _entry_directory(
+    entry: _IncludeEntry, project_dir: Path, prefix: tuple[str, ...]
+) -> Path | None:
+    """The directory an entry's relative paths resolve against, or None.
+
+    None means the entry names a project directory that cannot be placed —
+    an interpolated path, or one leaving the project. Callers fall back to each
+    file's own directory, which is what a single-path entry resolves to anyway
+    and is the only sensible reading when the entry's own root is unknown.
+    """
+    if entry.project_directory is not None:
+        # `project_relative` answers about a *file*, so an empty result means
+        # the path named nothing and it returns None both for `.` — the project
+        # root, which is a perfectly good project directory — and for a path
+        # that climbs out of the project. Asking about a file *inside* the
+        # directory separates the two, and then the file is dropped again.
+        segments = project_relative(f"{entry.project_directory}/x", prefix)
+        if segments is None:
+            return None
+        return project_dir.absolute().joinpath(*segments[:-1])
+    located, _why = _locate_reference(entry.references[0], project_dir, prefix)
+    return None if located is None else located.absolute().parent
 
 
 def _resolve_includes(  # noqa: PLR0913
@@ -1059,9 +1104,13 @@ def _resolve_includes(  # noqa: PLR0913
     gaps: list[str] = []
     resolved: list[Document] = []
 
-    for references in entries:
+    for entry in entries:
         documents: list[Document] = []
-        for reference in references:
+        # The entry is one sub-project with one project directory, so every
+        # file in it resolves its relative paths against the same place — not
+        # against its own directory. See :class:`_IncludeEntry`.
+        entry_dir = _entry_directory(entry, project_dir, prefix)
+        for reference in entry.references:
 
             def _gap(reason: str, *, _ref: str = reference) -> None:
                 gaps.append(
@@ -1100,13 +1149,19 @@ def _resolve_includes(  # noqa: PLR0913
             try:
                 inc_data, inc_lines, inc_resets, inc_overrides, inc_gaps = _loads_full(
                     content,
-                    base_dir=target_dir,
+                    # The entry's project directory, which for a single-path
+                    # entry *is* this file's own directory. The two only differ
+                    # inside an object-form `path:` list.
+                    base_dir=entry_dir or target_dir,
                     use_env=use_env,
                     project_dir=project_dir,
-                    # The included file's own `.env` sits *under* the
-                    # project's: it supplies names the project does not
-                    # define, and loses every name they share.
-                    env_dirs=(target_dir, *(env_dirs or (base_dir,))),
+                    # The included sub-project's own `.env` sits *under* the
+                    # including project's: it supplies names that one does not
+                    # define, and loses every name they share. Read from the
+                    # entry's directory, not the file's — they differ only
+                    # inside an object-form `path:` list, and there it is the
+                    # entry's that Compose reads (see `_IncludeEntry`).
+                    env_dirs=(entry_dir or target_dir, *(env_dirs or (base_dir,))),
                     budget=budget,
                     depth=depth + 1,
                     include_chain=(*chain, step),

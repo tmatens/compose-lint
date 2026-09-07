@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An object-form `include:` entry is now treated as one sub-project.** When
+  an entry's `path:` is a list, the files in it are one project assembled from
+  several documents, and every relative path written anywhere inside it
+  resolves against that project's directory — the first path's directory, or
+  `project_directory:` where the entry names one. Each file was resolving
+  against its own directory instead, which moved bind sources, nested
+  `include:` targets, `env_file:` targets and the sub-project's own `.env` to
+  the wrong place: a host path the deployed container never mounts (graded by
+  CL-0013, CL-0017 and CL-0025), and a nested reference reading a different
+  document as if it were the right one. The list form is unaffected — two bare
+  entries are two sub-projects, each rooted at its own file — and the
+  containment boundary is unchanged, so a sub-project still cannot reach
+  outside the including project
+  ([#807](https://github.com/tmatens/compose-lint/issues/807)).
+
 - **`!override` and `!reset` no longer coerce a quoted scalar to its plain
   type.** The tag's scalar was re-resolved through its quoting, so
   `user: !override "0"` became the int `0` — a value Compose refuses outright
