@@ -69,9 +69,12 @@ def extends_targets(data: dict[str, Any]) -> set[str]:
     ``cap_add``, ...) auto-appended or created by a fixer: Docker append-merges
     the base's list into every service that ``extends`` it, so an item we add to
     the base can collide with one the child already declares — or one a fixer
-    adds to a sibling — yielding a duplicate item Docker rejects. Our parser
-    never resolves ``extends``, so that duplicate exists only post-merge, where
-    neither the reparse guard nor ``verify_apply`` can see it. This mirrors the
+    adds to a sibling — yielding a duplicate item Docker rejects. The duplicate
+    exists only in the *text* Compose merges, which no reparse guard and no
+    ``verify_apply`` pass looks at: both grade the resolved document, where the
+    two lists have already become one. That the parser now merges the base
+    (ADR-036) does not change it — the refusal is about what an edit would do
+    to the file on disk, not about what the run could see. This mirrors the
     child-side ``"extends" in service_config`` refusal the per-finding fixers
     already carry (issue #277 C1).
 

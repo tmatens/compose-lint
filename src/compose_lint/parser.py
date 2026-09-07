@@ -180,15 +180,20 @@ def _classify_missing_services(data: dict[str, Any]) -> ComposeError:
     is not recognisable as Compose at all). See ADR-013 for the heuristic.
     """
 
-    # `include` pulls services in from other files. compose-lint reads files
-    # only and does not resolve it, so an include-only file is NOT a harmless
-    # fragment — treating it as one produces a reassuring clean pass on a
-    # deployable stack (issue #516). Refuse honestly instead.
+    # `include` pulls services in from other files, so an include-only file is
+    # NOT a harmless fragment — treating it as one produces a reassuring clean
+    # pass on a deployable stack (issue #516).
+    #
+    # Since ADR-036 those files are followed, and the caller that can follow
+    # them passes `include_resolvable` and never reaches here. This branch is
+    # what is left: a caller that gave no directory to resolve against — the
+    # string entry point with no `base_dir` — where the references cannot be
+    # located at all, let alone read.
     if "include" in data:
         return ComposeError(
-            "Not a lintable target: this file uses 'include:', which pulls in "
-            "services from other files. compose-lint reads files only and does "
-            "not resolve include. Lint the merged output instead: "
+            "Not a lintable target: this file's services all come from "
+            "'include:', and this run was given no directory to resolve those "
+            "paths against. Lint the file by path, or lint the merged output: "
             "docker compose config > merged.yml && compose-lint merged.yml"
         )
 

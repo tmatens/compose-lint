@@ -65,12 +65,16 @@ severity never moves on judgment alone.
 
 ### Coverage gaps are not findings
 
-When compose-lint cannot see part of a stack — today, an unresolved `include:`
-or cross-file `extends: {file: ...}` — it does not guess. It reports a
-**coverage gap**: a stderr `Error:` line, a JSON `errors[]` entry, a SARIF
+When compose-lint cannot see part of a stack — today, an `include:` or
+cross-file `extends: {file: ...}` it could not follow, because the target
+leaves the project directory, is missing, is interpolated, is a cycle, or
+could not be read safely — it does not guess. It reports a **coverage gap**: a
+stderr `Error:` line, a JSON `errors[]` entry, a SARIF
 `toolExecutionNotifications` record with `executionSuccessful: false`, and
 **exit 2**. That is deliberate: reporting 0 findings on a file whose real
-configuration was never read would be a false pass.
+configuration was never read would be a false pass. A reference that *does*
+resolve inside the project is followed and merged, so it is not a gap
+([ADR-036](adr/036-resolve-references-that-stay-inside-the-project.md)).
 
 Because a gap is not a finding, `--fail-on` does not gate it. It exits 2 at
 every threshold, `--fail-on critical` included. The flag that clears one is

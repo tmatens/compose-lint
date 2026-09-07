@@ -87,6 +87,13 @@ the table as though it were a derivation.
    plus `.compose-lint.yml`. No registry, no daemon, no image contents.
    *Grounding* is the separate phase that validates a premise, and it does use
    live containers at the posture above ([ADR-016](016-runtime-rule-premise-validation.md)).
+
+   *Amended (#780):* "files" has since grown to include the documents a run
+   routes to — the sibling `.env` (ADR-026), `env_file:` targets (ADR-027),
+   and `include:` / `extends:` targets that resolve inside the project
+   ([ADR-036](036-resolve-references-that-stay-inside-the-project.md)). The
+   boundary this constraint draws is unmoved: no network, no daemon, no image
+   contents, and nothing outside the project directory.
 4. **Calibration overrides are adopted.** A rule may ship a severity different
    from its derived one, but only by declaring it with a reason from a closed
    list and a link. The derivation is never altered to reach a desired number.

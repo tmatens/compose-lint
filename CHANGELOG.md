@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Docs describing what a run reads are brought in line with what it does.**
+  `docs/severity.md` and [ADR-020](docs/adr/020-severity-scoping-and-overrides.md)
+  §3 said analysis reads "the compose file(s) named on the command line plus
+  `.compose-lint.yml`", which had been incomplete since the sibling `.env`
+  (ADR-026) and `env_file:` targets (ADR-027) and is more so now. Both state
+  the boundary that actually holds instead: the documents the named file
+  *routes to*, all of which must resolve inside its own directory — and still
+  no registry, no daemon, no image contents. README's "What a run actually
+  reads" and `docs/compatibility.md`'s coverage-gap section say the same.
+
 - **`include:` is now followed when its targets stay inside the project, and an
   include-only file is lintable**
   ([ADR-036](docs/adr/036-resolve-references-that-stay-inside-the-project.md)).

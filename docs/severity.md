@@ -61,9 +61,11 @@ A rule that departs from this baseline states the departure on its own page in a
 `Daemon assumptions:` field. That field is an exception list, not something
 every rule repeats.
 
-**Analysis reads files only** — the compose file(s) named on the command line
-plus `.compose-lint.yml`. compose-lint does not read the registry, the daemon,
-or image contents. *Grounding* (premise validation, `scripts/validate_rule_premises.py`)
+**Analysis reads files only** — the Compose documents a run actually grades
+(the file named on the command line, the overlay Compose merges beside it, and
+the `include:` / `extends:` / `env_file:` targets it routes to that resolve
+inside the project), plus `.compose-lint.yml`. compose-lint does not read the
+registry, the daemon, or image contents. *Grounding* (premise validation, `scripts/validate_rule_premises.py`)
 is the separate phase that measures live containers at the posture above.
 
 If your daemon is **not** at defaults, some findings become unreliable:

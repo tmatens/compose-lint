@@ -129,8 +129,14 @@ for the full behavior.
 
 compose-lint grades the configuration Compose actually runs, not just the
 file you name: the sibling `compose.override.yml` is merged, the sibling
-`.env` is resolved, `env_file:` targets are graded — and a part of the stack
-it *cannot* see is an error, never a silent pass.
+`.env` is resolved, `env_file:` targets are graded, `include:` and cross-file
+`extends:` are followed — and a part of the stack it *cannot* see is an error,
+never a silent pass.
+
+Everything it opens is a document the one you named routes it to, and every
+one of them has to resolve inside that file's own directory. Nothing outside
+the project is read, no matter what the document says, and no registry, daemon
+or image is consulted at all.
 
 **Overlays are merged.** `docker compose up` merges a `compose.override.yml`
 sitting beside the base file, with no flag and no opt-in, so compose-lint
