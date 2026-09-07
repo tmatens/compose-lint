@@ -304,7 +304,14 @@ check fails on a commit you did not write.
    `fix/parser-merge-keys`.
 2. **Make small, focused commits** (see [commit conventions](#commit-conventions)).
 3. **Run local checks.** All four must pass before you push.
-4. **Open a PR** and fill out the template. Link any related issue.
+4. **Open a PR** and fill out the template. Link any related issue. The
+   template is short because CI covers most of what a checklist used to
+   claim — sign-off, the four local gates, AI attribution, the rule surfaces,
+   the severity matrix — and a reviewer reads those off the checks tab. What
+   it asks for instead is the evidence no check can produce: which tests
+   cover this and what they assert, and what the change makes wrong
+   elsewhere. Answer those in your own words; a question you find you can't
+   answer is worth more to you than a ticked box.
 5. **Wait for CI** — all required checks must be green before merge.
 6. **Respond to review comments.** All comments must be resolved before merge.
 7. **Squash-merge** when approved. We use squash-merge exclusively so `main`
@@ -326,8 +333,9 @@ check fails on a commit you did not write.
   be covered (see "Local quality checks" for how to run the same check
   yourself).
 - **Update documentation** if you change behavior. Rule changes need
-  `docs/rules/CL-XXXX.md`; CLI changes need `README.md`; version-visible
-  changes need a CHANGELOG entry.
+  `docs/rules/CL-XXXX.md`; CLI changes need `README.md`. You do not need a
+  `CHANGELOG.md` entry — see "You get credited" above, the releaser writes
+  it. Adding one is welcome, not expected.
 - **Do not regenerate the corpus snapshot.** If your change touches rule
   predicates, severity, or finding line attribution, say so in the PR and leave
   `tests/corpus_snapshot.json.gz` alone. A maintainer regenerates it and
