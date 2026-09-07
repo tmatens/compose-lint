@@ -476,6 +476,68 @@ def test_fix_rewrites_only_the_file_it_was_pointed_at(
     )
 
 
+def test_a_finding_from_an_included_file_still_names_it_under_an_overlay(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Adding an overlay must not move a finding onto the including file.
+
+    ``file``/``line`` are part of the JSON and SARIF contract, so losing the
+    included file's provenance puts a code-scanning annotation on the wrong
+    file, at a line that belongs to a different service. The overlay is the
+    only difference from the test above; it is the axis the ``include:`` suite
+    never crossed with, which is why the loss went unseen
+    ([#813](https://github.com/tmatens/compose-lint/issues/813)).
+    """
+    _write(tmp_path / "apps" / "api.yml", DANGEROUS)
+    target = _project(
+        tmp_path,
+        "include:\n  - ./apps/api.yml\nservices:\n  web:\n    image: nginx:1.27\n",
+    )
+    _write(
+        tmp_path / "compose.override.yml",
+        "services:\n  web:\n    mem_limit: 512m\n",
+    )
+
+    with pytest.raises(SystemExit):
+        cli.main(["check", "--format", "json", str(target)])
+
+    findings = json.loads(capsys.readouterr().out)["findings"]
+    privileged = next(f for f in findings if f["rule_id"] == "CL-0002")
+    assert privileged["source_file"].replace("\\", "/").endswith("apps/api.yml")
+    assert privileged["file"].replace("\\", "/").endswith("apps/api.yml")
+
+
+def test_fix_defers_an_included_files_findings_under_an_overlay(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``fix`` decides what it may edit here from a finding's own source file.
+
+    With that provenance gone under an overlay it read the primary's path for
+    everything and used an *included* file's line numbers as insertion points
+    in this one. ADR-014's nets caught the result and refused, so nothing was
+    ever written wrongly — but the whole file's fixes went with the refusal.
+    """
+    included = _write(tmp_path / "apps" / "api.yml", DANGEROUS)
+    before = included.read_text(encoding="utf-8")
+    target = _project(
+        tmp_path,
+        "include:\n  - ./apps/api.yml\nservices:\n  web:\n    image: nginx:1.27\n",
+    )
+    _write(
+        tmp_path / "compose.override.yml",
+        "services:\n  web:\n    mem_limit: 512m\n",
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["fix", "--apply", str(target)])
+
+    assert exc.value.code == 0
+    assert included.read_text(encoding="utf-8") == before
+    err = capsys.readouterr().err.replace("\\", "/")
+    assert "apps/api.yml and need manual review there" in err
+    assert "read_only: true" in target.read_text(encoding="utf-8")
+
+
 def test_a_config_beside_an_included_file_does_not_widen_suppression(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

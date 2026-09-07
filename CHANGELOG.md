@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A finding written in an included file is no longer reported against the
+  file that includes it.** Once `include:` or a cross-file `extends:` had
+  folded another document in, merging an overlay beside it credited every
+  folded line to the primary document: `file` and `line` are part of the JSON
+  and SARIF contract, so a code-scanning annotation landed on the wrong file at
+  a line that usually belongs to a different service. Two `Document`
+  constructors — the one every `load_merged` document goes through, and the
+  candidate `fix` re-parses to verify a patch — did not seed the per-path
+  provenance the merge carries. `fix` read the same provenance to decide what
+  it may edit here, so it also treated a foreign finding as local and used that
+  file's line numbers as insertion points in this one; ADR-014's nets refused
+  the result and wrote nothing, but the whole file's fixes were discarded with
+  it. Reachable only with an overlay merged, which is why the `include:` and
+  `extends:` suites never saw it
+  ([#813](https://github.com/tmatens/compose-lint/issues/813)).
+
 - **An object-form `include:` entry is now treated as one sub-project.** When
   an entry's `path:` is a list, the files in it are one project assembled from
   several documents, and every relative path written anywhere inside it

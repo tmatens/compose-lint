@@ -2064,6 +2064,10 @@ def load_document(path: str | Path, *, use_env: bool = True) -> Document:
         resets=resets,
         overrides=overrides,
         gaps=gaps,
+        # `_loads_full` may already have folded `include:` or a cross-file
+        # `extends:` into this document, so `lines` can name other files. Seed
+        # `sources` from it or the next merge credits all of them to `path`.
+        sources=_carried_sources(lines),
     )
 
 
@@ -2161,6 +2165,7 @@ def merge_patched(
         lines=lines,
         resets=resets,
         overrides=overrides,
+        sources=_carried_sources(lines),
     )
     merged = merge_documents(
         [candidate, *(load_document(p, use_env=use_env) for p in overlays)]
