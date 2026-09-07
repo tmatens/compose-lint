@@ -58,7 +58,7 @@ cancels in-progress runs when you push new commits to the same PR.
 | `lint`                    | `ruff check` + `ruff format --check` on `src/` and `tests/`                               |
 | `type-check`              | `mypy src/ tests/`; strict on `src/`, relaxed on `tests/`                                  |
 | `test`                    | `pytest` across the Python matrix — 3.11, 3.12, 3.13, 3.14                          |
-| `coverage`                | `pytest --cov` with `--cov-fail-under=80` — fails below 80% statement coverage             |
+| `coverage`                | `pytest --cov` with `--cov-fail-under=80` — fails below 80% statement coverage repo-wide; on a PR, `diff-cover` also fails below 90% coverage of the lines that PR adds or changes (see note) |
 | `security`                | `bandit -r src/ -ll` (blocking) + `pip-audit` for dep CVEs (informational on PRs — see note) |
 | `dependency-review`       | Blocks PRs adding deps with known high-severity CVEs or disallowed licenses               |
 | `actionlint`              | Lints every workflow under `.github/workflows/` (embeds shellcheck for `run:` blocks)     |
@@ -76,6 +76,53 @@ cancels in-progress runs when you push new commits to the same PR.
 `version-consistency` and `changelog-gate` were added in 0.3.8 to catch
 the historically painful release-bump mistakes at review time rather
 than tag-push time.
+
+### Patch-coverage gate (`diff-cover`)
+
+The `coverage` job runs two gates over one measurement pass.
+
+The **repo-wide floor** (`--cov-fail-under=80`) is what the OpenSSF Best
+Practices Silver `test_statement_coverage80` criterion measures: statement
+coverage across the whole package. It is the trunk's number and is not
+traded away for anything below.
+
+The **patch gate** grades only the lines the PR adds or changes.
+`diff-cover` diffs against the PR's base commit and reads the same
+`coverage.xml` the floor produced, so nothing is measured twice. It exists
+because a floor structurally cannot see a change that adds untested code —
+a handful of new uncovered lines does not move a whole-repo percentage, so
+the floor stays green and the only thing standing between untested code and
+`main` is a checkbox the author ticks about their own work. The threshold is
+90%, deliberately above the floor: new code that has tests lands near 100%,
+and the gap is room for a genuinely untestable line, which takes a
+`# pragma: no cover` and a comment saying why.
+
+It runs on `pull_request` only. A push to `main` has no base to diff
+against, and the floor is the gate that speaks for the aggregate.
+
+A PR that touches only docs, tests or metadata has no measurable line in
+its diff. `diff-cover` reports that and passes — correctly. The problem is
+that it reports exactly the same thing, and passes just as quietly, when
+`coverage.xml` has stopped lining up with the repo: it matches a report path
+against a diff path as text, so a gate that has silently stopped measuring
+anything looks identical to a gate with nothing to measure. That is the
+failure this whole check exists to stop, one level up, so
+`.github/scripts/patch-coverage.py` wraps it with two checks:
+
+- **Every file the report names must exist here, and it must name some.**
+  Runs on every invocation, not only the quiet ones. This is the case that
+  matters: a report written against `compose_lint/cli.py` when the diff says
+  `src/compose_lint/cli.py` matches nothing at all, and no comparison
+  against the diff would notice, because the mismatch makes both sides
+  empty.
+- **When nothing was measured, no line the diff adds may be one the report
+  calls a statement.** This catches line numbers that have drifted from the
+  diff. It is deliberately not claimed as exhaustive — code appended past
+  the report's last statement leaves nothing to intersect — so it backs up
+  the path check rather than standing in for it.
+
+`tests/test_patch_coverage.py` covers both, since a wrong parser there would
+make the guard itself the silent check it exists to prevent.
 
 ### Dependency-CVE gate (`pip-audit`)
 

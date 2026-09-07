@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CI now grades the lines a pull request changes, not just the repo
+  total.** The `coverage` job's repo-wide floor is what the OpenSSF Silver
+  `test_statement_coverage80` criterion measures, and it cannot see a change
+  that adds untested code: a few new uncovered lines do not move a whole-repo
+  percentage, so the gate was green either way and "does this change bring
+  tests?" rested on a self-ticked checkbox. `diff-cover` now reads the same
+  `coverage.xml` and requires 90% of the lines a PR adds or changes to be
+  covered, naming the uncovered ones in the job summary. The floor is
+  unchanged — this is an extra condition, not a replacement — and a genuinely
+  untestable line still has `# pragma: no cover`. A docs- or tests-only PR has
+  nothing to measure and passes — and because a gate that has silently stopped
+  measuring reports exactly the same thing, a companion check requires every
+  file the coverage report names to exist in the repository, and fails the
+  build rather than passing on a report that could never have matched
+  ([#802](https://github.com/tmatens/compose-lint/issues/802)).
+
 ### Fixed
 
 - **`fix` no longer refuses a whole file because one key was deleted with

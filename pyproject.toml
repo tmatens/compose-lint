@@ -90,6 +90,10 @@ dev = [
     # Self-reference so the ruff pin lives only in [lint]; no drift.
     "compose-lint[lint]",
     "check-jsonschema==0.38.0",
+    # Patch-coverage gate: grades the lines a PR adds or changes against the
+    # same coverage.xml the statement gate already produces. Threshold and
+    # rationale live in ci.yml's `coverage` job.
+    "diff-cover==10.5.1",
     "mutmut==3.7.0",
     "mypy==2.3.1",
     # Drives the `precommit-smoke` job: `pre-commit try-repo` runs

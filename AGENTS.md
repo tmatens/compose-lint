@@ -33,6 +33,13 @@ Disables still produce suppressed findings. `reason` flows to `suppression_reaso
 
 `ruff check src/ tests/`, `ruff format --check src/ tests/`, `mypy src/ tests/` (strict on `src/`, relaxed on `tests/`), `pytest`. All four must pass, scoped exactly as written — CI lints only `src/` and `tests/`, and a bare `ruff check` also sweeps `scripts/`, which has known, accepted violations. CI test matrix: Python 3.11–3.14 on ubuntu-24.04.
 
+Coverage is gated twice in the `coverage` job: >= 80% statements repo-wide (the
+OpenSSF Silver criterion), and >= 90% of the lines a PR adds or changes
+(`diff-cover`, PRs only). The second is what catches a change that ships
+untested code — a floor cannot, since a few new uncovered lines do not move a
+whole-repo percentage. A genuinely untestable line takes `# pragma: no cover`
+with a reason, not a lower threshold. See `docs/CI.md`.
+
 Running a branch's tests from a `git worktree` needs `PYTHONPATH` pointed at that worktree's `src/`. The dev install is editable and resolves `compose_lint` to the **main checkout's** `src/`, so a bare `pytest` in a worktree grades the branch's tests against `main`'s source and fails in exactly the way a genuinely broken change would. Confirm with `python -c 'import compose_lint; print(compose_lint.__file__)'` before believing a red run.
 
 ## Adding a rule

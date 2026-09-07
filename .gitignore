@@ -37,6 +37,10 @@ ENV/
 # Testing / coverage
 .pytest_cache/
 .coverage
+# `parallel = true` writes one data file per process; the patch-coverage
+# gate and CONTRIBUTING's local recipe both ask for the XML report.
+.coverage.*
+coverage.xml
 htmlcov/
 .tox/
 .nox/

@@ -201,15 +201,29 @@ jobs:
         run: .github/scripts/install-compose-plugin.sh
       - run: pytest
 
-  # Enforces the OpenSSF Best Practices Silver `test_statement_coverage80`
-  # criterion: statement coverage must stay >= 80% on the trunk. Runs on
-  # one Python version (3.13, matches lint/type-check/security) — the
-  # matrix `test` job already covers cross-version pass/fail. The
-  # threshold is configured in pyproject.toml [tool.coverage.report];
-  # `--cov-fail-under=80` here makes the gate explicit at the workflow
-  # level so a config drift can't silently lower it.
+  # Two gates over one measurement run.
+  #
+  # The repo-wide floor enforces the OpenSSF Best Practices Silver
+  # `test_statement_coverage80` criterion: statement coverage must stay
+  # >= 80% on the trunk. The threshold is configured in pyproject.toml
+  # [tool.coverage.report]; `--cov-fail-under=80` here makes the gate
+  # explicit at the workflow level so a config drift can't silently lower
+  # it.
+  #
+  # The patch gate grades only the lines a PR adds or changes. A repo-wide
+  # percentage cannot see a few new uncovered lines — a PR adding three
+  # untested branches leaves it exactly where it was — so until this
+  # existed, "did this change bring tests?" was enforced by a self-ticked
+  # checkbox and nothing else (#802). The floor stays as-is: the OpenSSF
+  # criterion is about the trunk aggregate and isn't traded away for this.
+  # The patch threshold is higher than the floor on purpose. New code with
+  # tests lands near 100%, so 90% leaves room for a genuinely untestable
+  # line without inviting drift.
+  #
+  # Runs on one Python version (3.13, matches lint/type-check/security) —
+  # the matrix `test` job already covers cross-version pass/fail.
   coverage:
-    name: Test coverage (>= 80% statement)
+    name: Test coverage (>= 80% statement, >= 90% patch)
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
@@ -219,6 +233,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The patch gate diffs against the PR's base commit, so that
+          # commit has to be in the clone. A default shallow checkout of
+          # the merge ref does not carry it.
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -251,7 +269,18 @@ jobs:
       - name: Run tests with coverage
         env:
           COVERAGE_PROCESS_START: ${{ github.workspace }}/pyproject.toml
-        run: pytest --cov=compose_lint --cov-report=term-missing --cov-fail-under=80
+        run: |
+          pytest --cov=compose_lint --cov-report=term-missing \
+            --cov-report=xml --cov-fail-under=80
+      - name: Patch coverage (>= 90% of the lines this PR touches)
+        # Skipped on push: a merge to main has no base to diff against, and
+        # the floor above is the gate that speaks for the trunk aggregate.
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          python .github/scripts/patch-coverage.py \
+            --base-sha "${BASE_SHA}" --fail-under 90
 
   security:
     name: Security scan (bandit + pip-audit)

@@ -69,13 +69,23 @@ mypy src/ tests/                # Type checking (strict on src/, relaxed on test
 pytest                          # Tests
 ```
 
-Statement coverage must stay >= 80% on `main`. The CI `coverage` job
-enforces this; check locally before pushing a change that touches a lot
-of code:
+Coverage is gated twice. Statement coverage must stay >= 80% across the
+package, and **90% of the lines your PR adds or changes must be covered**.
+The second gate is the one a PR is likely to hit: a repo-wide percentage
+cannot see a few new untested lines, so the patch gate is what actually asks
+whether your change brought tests. Check both locally before pushing:
 
 ```bash
-pytest --cov=compose_lint --cov-report=term-missing --cov-fail-under=80
+pytest --cov=compose_lint --cov-report=term-missing \
+  --cov-report=xml --cov-fail-under=80        # the repo-wide floor
+diff-cover coverage.xml --compare-branch=origin/main \
+  --fail-under=90 --show-uncovered            # the lines you changed
 ```
+
+`diff-cover` names the uncovered lines. If one is genuinely untestable,
+mark it `# pragma: no cover` with a comment saying why, rather than dropping
+the threshold. A PR that changes only docs, tests or metadata has no
+measurable line and passes.
 
 On hosts where `/tmp` is mounted `noexec` (hardened containers), point
 pytest's temp directory somewhere executable first — the action-contract
@@ -312,7 +322,9 @@ check fails on a commit you did not write.
 - **Don't mix refactors with behavior changes.** Land the refactor first, then
   the behavior change, in separate PRs.
 - **Update tests.** New rules need positive and negative tests. Bug fixes need
-  a regression test.
+  a regression test. CI measures this: 90% of the lines your PR touches must
+  be covered (see "Local quality checks" for how to run the same check
+  yourself).
 - **Update documentation** if you change behavior. Rule changes need
   `docs/rules/CL-XXXX.md`; CLI changes need `README.md`; version-visible
   changes need a CHANGELOG entry.
