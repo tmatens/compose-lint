@@ -61,6 +61,28 @@ def _rule_ids(findings: list[dict[str, object]]) -> set[object]:
     return {f["rule_id"] for f in findings}
 
 
+def _anchorless(path: Path) -> str:
+    """``path`` spelled the way a resolved bind source is spelled.
+
+    Resolution is lexical and ``/``-rooted on every platform (ADR-023 §1), so
+    the drive or UNC anchor is dropped: the deploy-host-independent fact is
+    "climbs to the root of the containing filesystem", and a Windows lint host
+    must not stamp ``C:`` onto a path headed for a Linux server. Building the
+    expectation with ``as_posix()`` keeps the anchor and passes only on POSIX.
+    """
+    return "/" + "/".join(path.absolute().parts[1:])
+
+
+def _sources(volumes: list[str]) -> list[str]:
+    """The host side of each short-syntax bind. Targets carry no colon."""
+    return [volume.rsplit(":", 1)[0] for volume in volumes]
+
+
+def _slashed(text: str) -> str:
+    """``text`` with native separators normalised, for path assertions."""
+    return text.replace("\\", "/")
+
+
 # --- The reference is followed ---------------------------------------------
 
 
@@ -122,8 +144,8 @@ def test_a_relative_bind_source_resolves_against_the_base_file(
     )
     volumes = load_compose_full(target).data["services"]["web"]["volumes"]
 
-    root = tmp_path.absolute().as_posix()
-    assert volumes == [f"{root}/shared/cfg:/etc/nginx/conf.d", f"{root}/up:/up"]
+    root = _anchorless(tmp_path)
+    assert _sources(volumes) == [f"{root}/shared/cfg", f"{root}/up"]
 
 
 def test_interpolation_in_the_base_reads_the_projects_env(tmp_path: Path) -> None:
@@ -442,7 +464,7 @@ def test_fix_defers_a_finding_written_in_the_base_and_names_it(
         cli.main(["fix", "--apply", str(target)])
     assert exc.value.code == 0
 
-    err = capsys.readouterr().err
+    err = _slashed(capsys.readouterr().err)
     assert "come from" in err
     assert "shared/base.yml and need manual review there" in err
     # The base is another file's document. `fix` does not touch it.
@@ -467,5 +489,5 @@ def test_a_finding_written_in_the_base_names_the_base(
 
     findings = json.loads(capsys.readouterr().out)["findings"]
     privileged = next(f for f in findings if f["rule_id"] == "CL-0002")
-    assert privileged["source_file"].endswith("shared/base.yml")
+    assert _slashed(privileged["source_file"]).endswith("shared/base.yml")
     assert privileged["line"] == 4  # `privileged: true` in the base, not the child
