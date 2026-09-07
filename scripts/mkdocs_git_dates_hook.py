@@ -57,11 +57,24 @@ _LOG_ARGS = (
 
 
 def _git(repo_root: Path, *args: str) -> str | None:
+    """Run git and decode its output as UTF-8, not as the ambient locale.
+
+    `text=True` alone decodes with `locale.getencoding()`, which is UTF-8 on
+    Linux and the ANSI codepage (cp1252) on Windows -- while git, with
+    quotePath disabled, emits UTF-8 path bytes on every platform. The mismatch
+    is invisible until a page has a non-ASCII name, at which point its map key
+    becomes mojibake, no page matches it, and that page quietly keeps the build
+    date. `errors="replace"` keeps a genuinely undecodable path from raising
+    through the docs build: an unmatched key costs one page its real date,
+    where an exception would cost the whole site its sitemap.
+    """
     try:
         result = subprocess.run(
             ("git", "-C", str(repo_root), *args),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=True,
         )
     except (OSError, subprocess.CalledProcessError):

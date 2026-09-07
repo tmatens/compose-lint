@@ -148,6 +148,30 @@ class TestCommitDates:
         assert dates is not None
         assert dates[repo / "docs" / "pörtainer.md"] == "2026-05-01"
 
+    def test_git_output_is_decoded_as_utf8_not_the_locale(
+        self, repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """git emits UTF-8 paths everywhere; `text=True` alone decodes as cp1252
+        on Windows, so a non-ASCII page silently keeps the build date.
+
+        `test_non_ascii_paths_are_matched` only catches this on a non-UTF-8
+        runner — it passed on Linux and failed on windows-2025. This pins the
+        decode itself so the regression fails on every platform.
+        """
+        seen: list[dict[str, object]] = []
+        real = subprocess.run
+
+        def spy(*args, **kwargs):
+            seen.append(kwargs)
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(hook.subprocess, "run", spy)
+        hook._commit_dates(repo / "docs")
+
+        assert seen, "no git call was made; the spy proved nothing"
+        assert all(kw.get("encoding") == "utf-8" for kw in seen)
+        assert all(kw.get("errors") == "replace" for kw in seen)
+
     def test_files_outside_docs_dir_are_not_mapped(self, repo: pathlib.Path) -> None:
         """The log walk is pathspec-scoped; a tracked README must not appear."""
         dates = hook._commit_dates(repo / "docs")
