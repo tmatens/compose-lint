@@ -934,6 +934,11 @@ def _locate_reference(
     An unresolved interpolation is refused ahead of both. ``${BASE}/base.yml``
     has no shipped value, so there is no path to grade: guessing one would
     either invent a finding or, worse, read whatever file the guess landed on.
+
+    ``tests/test_oracle_harness.py`` re-derives the reachable half of this from
+    the binary on every run; the containment half is policy and is registered
+    as a divergence (``tests/oracle_harness/_divergences.py``), because Compose
+    reads a reference this refuses.
     """
     if "${" in reference:
         return None, "its path is interpolated and has no shipped value"
@@ -1096,6 +1101,13 @@ def _resolve_includes(  # noqa: PLR0913
     A merged document is a whole document, not a services map: an included
     file's top-level ``networks:`` and ``volumes:`` reach the project, verified
     on the same fixture.
+
+    None of the above is grounded by this comment any more. Each ordering has a
+    case in ``tests/test_include.py``, and ``tests/test_oracle_harness.py``
+    re-derives all of them from the binary on every run over generated projects
+    that combine ``include:`` with overlays, ``extends:`` and ``.env`` — which
+    is what caught the two orderings this docstring used to get wrong (#800,
+    #807).
     """
     entries = _include_entries(data)
     if not entries:
@@ -1381,7 +1393,7 @@ def _lexical_join(base_dir: PurePath, source: str) -> str:
     path *segments*, never through the lint host's path semantics. On a
     POSIX lint host the result is byte-identical to
     ``os.path.normpath(os.path.join(base_dir, source))`` — the behavior
-    verified against Docker Compose 29.4.3. On Windows the drive or UNC
+    re-measured against Compose 5.5.0. On Windows the drive or UNC
     anchor is dropped and the result is still ``/``-rooted: a climb that
     saturates the anchor names ``/`` — the root of whatever filesystem
     contains the compose file at deploy time, which is the fact the rules
@@ -1411,9 +1423,9 @@ def _resolved_bind_source(source: str, base_dir: PurePath) -> str | None:
 
     Compose resolves a relative source (``./x``, ``../x``, ``.``, ``..``)
     against the directory holding the compose file, and expands a leading
-    ``~`` to the invoking user's home. Both verified against Docker Compose
-    (29.4.3): a long-syntax bind with twelve ``..`` segments mounted the host
-    root filesystem, and ``~:/probe`` mounted the home directory.
+    ``~`` to the invoking user's home. Both re-measured against Compose 5.5.0:
+    a bind source with twelve ``..`` segments resolves to the host root
+    filesystem, and ``~:/probe`` to the home directory.
 
     Resolution is lexical segment math in POSIX notation on every platform
     (ADR-023): what a source names is a fact about the *document*, not about
@@ -1425,7 +1437,7 @@ def _resolved_bind_source(source: str, base_dir: PurePath) -> str | None:
     the old expand-against-the-linting-user proxy unnecessary (#602).
 
     ``~user`` is deliberately left as written, but *not* because Compose
-    ignores it. Measured against Docker Compose 29.4.3: Compose strips the
+    ignores it. Re-measured against Compose 5.5.0: Compose strips the
     ``~`` and joins the remainder onto the invoking user's ``$HOME``, so
     ``~root/.ssh`` becomes ``$HOME/root/.ssh`` and ``~someone/x`` becomes
     ``$HOME/someone/x``. It never resolves another account's home directory.
@@ -1753,7 +1765,7 @@ def load_compose_full(path: str | Path, *, use_env: bool = True) -> Loaded:
     #
     # Deliberately *not* ``.resolve()``, which would follow symlinks. Compose
     # resolves a relative source lexically against the project directory as
-    # given. Verified against Docker Compose 29.4.3: for a compose file reached
+    # given. Re-measured against Compose 5.5.0: for a compose file reached
     # through a symlinked directory, "../etc" is the parent of the *link* path,
     # not of the link's target. Resolving physically named a different host path
     # than the one Compose actually mounts, in either direction.

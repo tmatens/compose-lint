@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from pathlib import Path
 
 # Long enough that a slow runner is not mistaken for a hang, short enough that
@@ -87,6 +88,7 @@ def run_oracle(
     all_profiles: bool = True,
     files: tuple[str, ...] = (),
     project_name: str = "oracle",
+    environment: Mapping[str, str] | None = None,
 ) -> OracleResult:
     """Resolve ``project`` the way Compose would, from inside its directory.
 
@@ -106,6 +108,11 @@ def run_oracle(
     Compose writes it into the output — as ``name:`` and inside the default
     network's ``<project>_default`` — and two resolutions being compared have
     to agree on it.
+
+    ``environment`` adds names on top of ``PATH``. It exists for exactly one
+    caller: the registered divergence whose *subject* is Compose's shell-
+    environment fallback, which cannot be demonstrated without one. Everything
+    else runs scrubbed, and should.
     """
     argv = ["docker", "compose", "--project-name", project_name]
     if all_profiles:
@@ -113,6 +120,9 @@ def run_oracle(
     for name in files:
         argv += ["-f", name]
     argv += ["config"]
+    env = _scrubbed_env()
+    if environment:
+        env.update(environment)
     result = subprocess.run(
         argv,
         cwd=project,
@@ -120,7 +130,7 @@ def run_oracle(
         text=True,
         timeout=ORACLE_TIMEOUT_SECONDS,
         check=False,
-        env=_scrubbed_env(),
+        env=env,
     )
     return OracleResult(
         returncode=result.returncode, stdout=result.stdout, stderr=result.stderr

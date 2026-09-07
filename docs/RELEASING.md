@@ -280,6 +280,29 @@ version number.
       contributions with no attribution and had to be corrected after the
       fact — release bodies are editable, so fix it there too if this is
       caught late.)
+- [ ] **No unresolved Compose-pin bump.** The differential suites are graded
+      against one pinned Compose plugin, installed by
+      `.github/scripts/install-compose-plugin.sh` from the `COMPOSE_VERSION`
+      pin in `ci.yml`; the pytest header names the version that answered.
+      Renovate opens a PR when Compose releases, and that PR's CI is where a
+      Compose release that changed a loader rule shows up. A red run on it is
+      triaged into exactly one of three outcomes, never left open across a
+      release:
+
+      1. **Compose changed.** Update the affected case to what the new
+         version does, and say so in `CHANGELOG.md` — under the behaviour
+         that moved if a finding changed, or under "Known limitations" if
+         one did not.
+      2. **We were wrong.** Fix the loader. The pin bump only revealed a
+         defect that was already shipped.
+      3. **A new deliberate divergence.** Add an entry to
+         `tests/oracle_harness/_divergences.py` with the ADR or issue that
+         decides it, and a matching generator check so the harness's seeds
+         keep avoiding it.
+
+      Reaching for (3) because (1) and (2) are more work is how the registry
+      becomes a suppression list and coverage silently shrinks. An entry with
+      no decision behind it is a bug that has been written down.
 - [ ] `.vex/compose-lint.openvex.json` is current: any new pip (or other
       stripped-component) CVE that a scanner now reports against the image
       is either covered by an existing `not_affected` statement with

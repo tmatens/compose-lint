@@ -14,11 +14,11 @@ from typing import Any
 
 # The full YAML 1.1 boolean set Compose's Go loader coerces. The
 # single-letter forms are not a curiosity: `privileged: y` is emitted as
-# `privileged: true` by `docker compose config` (verified on Compose
-# 29.7.2), so omitting "y" let one character hide the tool's
-# highest-severity finding. "n" is included for symmetry — it failed safe,
-# but a false-negative and a false-positive should not be split across the
-# same table.
+# `privileged: true` by `docker compose config` (re-measured on Compose
+# 5.5.0, which also warns that "y" is not YAML 1.2), so omitting "y" let one
+# character hide the tool's highest-severity finding. "n" is included for
+# symmetry — it failed safe, but a false-negative and a false-positive should
+# not be split across the same table.
 _TRUE = frozenset({"y", "yes", "true", "on"})
 _FALSE = frozenset({"n", "no", "false", "off"})
 

@@ -18,6 +18,7 @@ from tests.oracle_harness._compare import (
     lint_project,
     truth_findings,
 )
+from tests.oracle_harness._divergences import DIVERGENCES, Divergence
 from tests.oracle_harness._oracle import (
     OracleResult,
     oracle_available,
@@ -34,7 +35,9 @@ from tests.oracle_harness._shape import (
 )
 
 __all__ = [
+    "DIVERGENCES",
     "DUMP_NAME",
+    "Divergence",
     "FindingCounts",
     "GeneratedProject",
     "LintedProject",
