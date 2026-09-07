@@ -17,6 +17,14 @@ lexical, never following the lint host's symlinks (verified against Compose
 29.4.3); and `~user` sources are left unclaimed rather than asserting a path
 from the linting user's environment for another account's home.
 
+*Amended (#780):* the second of those precedents is narrowed by
+[ADR-036](036-resolve-references-that-stay-inside-the-project.md). A reference
+that resolves *inside the project directory* is read, because its target is
+another Compose document — one Compose itself will not run without, so it
+travels with the file rather than belonging to the lint host. A reference that
+leaves the project, or resolves only by following a symlink out of it, is still
+refused. The remaining three precedents are unchanged.
+
 One layer violated it: `_resolved_bind_source` did its relative and `~` math
 through the host's path semantics (`os.path.join`/`normpath`/`expanduser`).
 Issue #588 surfaced the consequence when the OS smoke first ran on Windows:
@@ -56,6 +64,13 @@ deploy host. Concretely:
    follow document references through the lint host's filesystem is
    claiming a deploy-host fact it cannot know. Such context is admissible
    only as a new declared proxy or an explicit opt-in flag.
+
+   *Amended (#780):* following a document reference is admissible when the
+   reference stays inside the project directory and the target is itself part
+   of the configuration Compose requires to run (ADR-036). The prohibition it
+   was written for stands: nothing is resolved *through* the host — no symlink
+   is followed out, no `~` is expanded, no host environment is read — so the
+   claim remains a fact about the document set, not about the machine.
 
 **Consequences:** Windows lint hosts regain the climb-to-root claims and
 produce the same `/`-rooted notation as every other platform (a visible

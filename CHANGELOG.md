@@ -17,6 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The bump policy now prices coverage-gap conditions**
+  ([ADR-036](docs/adr/036-resolve-references-that-stay-inside-the-project.md)).
+  A coverage gap is not a finding, so `--fail-on` cannot gate it — an
+  unresolved `include:` or cross-file `extends:` exits 2 at every threshold —
+  yet `docs/compatibility.md` offered only pinning and `--fail-on` as escape
+  hatches. Post-1.0, *adding* an exit-2 coverage-gap condition is a MINOR with
+  ADR-031's one-release runway (announce as a warning, enforce the next
+  release) and *retiring* one is a plain MINOR; neither is a change to the
+  exit-code contract. `--allow-partial-coverage` is now named in the
+  compatibility promise as the third hatch. The same ADR decides that an
+  `include:` or `extends:` reference resolving inside the project directory
+  should be read rather than refused, using the containment rule already
+  shipped for `env_file:`, and amends ADR-023's precedent list accordingly.
+  Implementation follows; this release is policy only. Refs #780.
+
 - **No agent skill ships as a distribution channel**
   ([ADR-035](docs/adr/035-defer-the-agent-skill-channel.md)). The agent-facing
   surface stays the [Automation and agent

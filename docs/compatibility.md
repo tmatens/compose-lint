@@ -43,12 +43,15 @@ tightens rules in MINOR releases** — the same convention as Hadolint,
 ShellCheck, and ruff. A file that is clean on `1.2.0` may report new findings on
 `1.3.0`. That is intentional, not a contract break.
 
-Two escape hatches keep a pipeline deterministic:
+Three escape hatches keep a pipeline deterministic:
 
 - **Pin the version** (`==1.2.0` in this example, or the digest-pinned Action /
   image) for identical results across runs.
 - **Use `--fail-on`** to gate CI on a severity threshold, so new lower-severity
   findings surface without failing the build.
+- **Use `--allow-partial-coverage`** for the one thing `--fail-on` cannot
+  reach: a *coverage gap*, which exits 2 rather than reporting a finding. See
+  below.
 
 A rule's **severity** is part of the contract: post-1.0, *downgrading* a
 severity is a MINOR, and *upgrading* one is a **MINOR with a one-release
@@ -59,6 +62,41 @@ applies it. A pinned user is untouched either way; a threshold-gated
 build. Every upgrade must still be *derived* — the two-axis model has to
 produce the new number (an axis correction or a declared override), so a
 severity never moves on judgment alone.
+
+### Coverage gaps are not findings
+
+When compose-lint cannot see part of a stack — today, an unresolved `include:`
+or cross-file `extends: {file: ...}` — it does not guess. It reports a
+**coverage gap**: a stderr `Error:` line, a JSON `errors[]` entry, a SARIF
+`toolExecutionNotifications` record with `executionSuccessful: false`, and
+**exit 2**. That is deliberate: reporting 0 findings on a file whose real
+configuration was never read would be a false pass.
+
+Because a gap is not a finding, `--fail-on` does not gate it. It exits 2 at
+every threshold, `--fail-on critical` included. The flag that clears one is
+`--allow-partial-coverage`, which downgrades the gap to a stderr warning; it is
+run-level, so it accepts every gap in that run, not a chosen one. (`fix`
+reports gaps and never fails on them, so it does not take the flag.)
+
+That makes the two hatches above insufficient for a release that **adds** a gap
+condition: a pinned user is fine, but a threshold-gated one goes red on a
+document the tool never called insecure. So, post-1.0:
+
+- **Adding an exit-2 coverage-gap condition is a MINOR with a one-release
+  runway.** The release before it announces the condition and emits it as a
+  stderr warning plus a machine-readable note; the next release enforces it as
+  exit 2. Same shape as a severity upgrade
+  ([ADR-031](adr/031-severity-upgrades-are-minor-with-runway.md)).
+- **Retiring one is a plain MINOR**, no runway — it can only turn a red build
+  green. It is not a PATCH, because a reference that is now resolved can
+  surface findings that were previously invisible, and that is the
+  new-findings class above.
+
+Neither is a change to the exit-code contract: `0` / `1` / `2` keep their
+meanings and no code is added. The reasoning is recorded in
+[ADR-036](adr/036-resolve-references-that-stay-inside-the-project.md), which
+also decided that a reference resolving inside the project directory should be
+read rather than refused.
 
 ### Alert identity
 
@@ -122,7 +160,9 @@ Two things are never reused or quietly repurposed:
   set to be known to the tool rather than only to its tests; until it is,
   drop the stale entry or stop passing `--strict-config`.
 - **Exit-code meanings** — `0` / `1` / `2` keep their meanings; adding a new
-  non-zero code is a MAJOR change.
+  non-zero code is a MAJOR change. Adding or retiring a *condition* under the
+  existing exit 2 is not — see [Coverage gaps are not
+  findings](#coverage-gaps-are-not-findings).
 
 ## Changing this policy
 

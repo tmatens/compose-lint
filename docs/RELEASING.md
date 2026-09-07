@@ -137,7 +137,9 @@ Once `1.0.0` ships, the contract tightens:
     (an evidence-refuted retirement through the lifecycle is MINOR; rule
     IDs are never reused either way — see `AGENTS.md`).
   - Changing the exit-code contract (e.g., adding a new non-zero
-    exit code, changing the default `--fail-on` threshold).
+    exit code, changing the default `--fail-on` threshold). Adding or
+    retiring a *condition* under the existing exit 2 is not that — see
+    the coverage-gap rows in the cheat sheet.
   - Restructuring JSON/SARIF output in a way that removes or renames
     existing fields.
   - Dropping support for a Python version *off-schedule* — before its
@@ -161,6 +163,8 @@ Once `1.0.0` ships, the contract tightens:
 | Retire a rule admitted on *judgment* (ADR-028 records it as such), via lifecycle | MINOR | MINOR (ADR-032 cond. 1) |
 | Retire a rule ID off-lifecycle               | MINOR   | MAJOR    |
 | Change the default `--fail-on` threshold     | MINOR   | MAJOR    |
+| Add an exit-2 coverage-gap condition         | MINOR   | MINOR, announced one release ahead (ADR-036) |
+| Retire an exit-2 coverage-gap condition      | MINOR   | MINOR (ADR-036) |
 | Drop a Python version on schedule (ADR-029)  | MINOR   | MINOR    |
 | Drop a Python version off-schedule           | MINOR   | MAJOR    |
 | Add a field to JSON/SARIF output             | MINOR   | MINOR    |
@@ -176,7 +180,7 @@ When in doubt pre-1.0, pick MINOR. When in doubt post-1.0, pick the
 higher bump — MAJOR costs the maintainer some release ceremony, but a
 too-low bump breaks users who trusted the version contract.
 
-Three rows need a word of explanation, because each was a real gap rather
+Four rows need a word of explanation, because each was a real gap rather
 than an omission for brevity.
 
 **Evidence.** A rule's `evidence` never appears in text output, so it reads
@@ -197,6 +201,24 @@ records as admitted on judgment — a closed set, currently `{CL-0014}` —
 can never meet that bar, because its premise holds and what is thin is its
 grounding. Without its own row such a rule would be *harder* to remove than
 a grounded one, which is backwards.
+
+**Coverage gaps.** A coverage gap is not a finding — it says part of the
+stack was never linted — so `--fail-on` does not gate it: an unresolved
+`include:` or cross-file `extends:` exits 2 at every threshold, `critical`
+included. Only `--allow-partial-coverage` clears one, and until
+[ADR-036](adr/036-resolve-references-that-stay-inside-the-project.md) that
+flag was not named anywhere in the compatibility promise. So neither hatch
+that promise offers for a MINOR — pin the version, or use `--fail-on` —
+reaches a *newly added* gap condition: it turns a threshold-gated pipeline
+red with no documented remedy short of editing the Compose file. 0.18.0 did
+exactly that. Hence the runway: announce the condition one release ahead as
+a stderr warning plus a machine-readable note, enforce it as exit 2 the
+next release, the same shape ADR-031 gives a severity upgrade. Retiring a
+condition needs no runway — it can only turn a red build green — but it is
+still a MINOR rather than a PATCH, because resolving a reference that was
+previously refused can surface findings that were invisible before, which
+is the new-findings class. Neither row is "adding a new non-zero exit
+code": the codes and their meanings do not move.
 
 **Amending this policy.** The ladder comes from
 [ADR-030](adr/030-the-policy-is-part-of-the-contract.md) and governs every
