@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`!override` and `!reset` no longer coerce a quoted scalar to its plain
+  type.** The tag's scalar was re-resolved through its quoting, so
+  `user: !override "0"` became the int `0` — a value Compose refuses outright
+  (`services.app.user must be a string`) — and `privileged: !override "yes"`
+  became the boolean the quotes were written to prevent. Quoting decides the
+  type; the tag decides the merge. Plain values are unchanged, so
+  `!override 8080` is still an int and `!reset null` still deletes the key, and
+  untagged values were never affected. No finding changes today: CL-0018
+  already reads the int `0` as root and CL-0002 already accepts the YAML 1.1
+  boolean spellings — the defect was in the type of the merged value
+  ([#805](https://github.com/tmatens/compose-lint/issues/805)).
+
 - **`extends:` now resolves after `include:` folds in, which is the order
   Compose uses.** A service extending one that an included file contributes to
   was inheriting the *unincluded* version of its base, so the configuration

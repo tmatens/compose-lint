@@ -157,6 +157,28 @@ class TestOverrideTags:
         )
         assert data["services"]["app"]["shm_size"] == 8080
 
+    def test_override_scalar_keeps_a_quoted_value_a_string(self) -> None:
+        """Quoting decides the type; the tag decides the merge. Not the reverse.
+
+        Re-resolving through the quotes coerced every quoted override value:
+        `user: "0"` became the int 0 — which Compose refuses outright,
+        `services.app.user must be a string` — and `privileged: "yes"` became
+        the boolean the quotes were written to prevent. Untagged values were
+        never affected, so the tag was the only route that discarded the style.
+        """
+        data, _lines = loads(
+            "services:\n"
+            "  app:\n"
+            "    image: nginx\n"
+            '    user: !override "0"\n'
+            '    privileged: !override "yes"\n'
+            '    mem_limit: !override "512"\n'
+        )
+        app = data["services"]["app"]
+        assert app["user"] == "0"
+        assert app["privileged"] == "yes"
+        assert app["mem_limit"] == "512"
+
     def test_override_mapping_keeps_line_tracking(self) -> None:
         data, lines = loads(
             "services:\n"

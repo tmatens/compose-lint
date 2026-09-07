@@ -411,8 +411,16 @@ def _construct_override_tag(loader: LineLoader, node: yaml.Node) -> Any:
     if isinstance(node, yaml.SequenceNode):
         return _construct_sequence(loader, node)
     # Only a scalar node remains. Re-resolve its implicit type as if the tag were
-    # absent so `!override 8080` stays an int and `!reset null` stays None.
+    # absent so `!override 8080` stays an int and `!reset null` stays None —
+    # but *only* for a plain scalar. Quoting is what makes a scalar a string in
+    # YAML, and resolving through it turned `!override "0"` into the int 0, a
+    # value Compose refuses outright for `user:`; `!override "yes"` into the
+    # boolean the quotes were written to prevent; and `!override "8080"` into
+    # an int. Untagged values were never affected — the tag was the only route
+    # that discarded the style.
     assert isinstance(node, yaml.ScalarNode)  # noqa: S101
+    if node.style is not None:
+        return loader.construct_yaml_str(node)
     resolved_tag = loader.resolve(yaml.ScalarNode, node.value, (True, False))  # type: ignore[no-untyped-call]
     plain = yaml.ScalarNode(
         resolved_tag, node.value, node.start_mark, node.end_mark, node.style
