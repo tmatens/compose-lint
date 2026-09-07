@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An empty-but-present config section is no longer a fatal error.** In YAML a
+  key with no value is `null`, so `rules:` and `rules: {}` express the same
+  intent — no rule overrides — but the first aborted the run at exit 2 while
+  the second worked. The same split applied to a blank per-rule block and a
+  blank `exclude_services:`. All three now read as the empty mapping, matching
+  their `{}` form exactly, including under `--strict-config`. Every other wrong
+  type is still a hard error: `rules: hello` and `exclude_services: 5` continue
+  to exit 2 with their existing messages
+  ([#724](https://github.com/tmatens/compose-lint/issues/724)).
+
+  Thanks [@VedantMadane](https://github.com/VedantMadane) ([#726](https://github.com/tmatens/compose-lint/pull/726)).
+
 ## [0.27.0] - 2026-09-07
 
 ### Added

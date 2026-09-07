@@ -140,6 +140,7 @@ A `.compose-lint.yml` that silently fails to take effect is a security risk — 
 - **Unknown top-level keys warn.** Only `rules` is recognized at the top level. A misplaced CLI flag (e.g. a top-level `fail_on:`) or any other key warns instead of being ignored. This is also the path a leftover `profiles:` block now takes — the profile-enrichment preview was withdrawn in 0.15.0 ([ADR-019](adr/019-withdraw-security-profile-catalog.md)), so the key is simply unrecognized and warns like any other.
 - **Unknown per-rule keys warn.** Inside a rule block, only `enabled`, `reason`, `severity`, and `exclude_services` are recognized. A typo'd `severty:` warns.
 - **`enabled` must be a real boolean.** A quoted `'false'`, `0`, or any non-boolean is a **hard error** (exit 2), not a silent no-op that would leave the rule on. YAML's boolean keywords (`true`/`false`, `yes`/`no`, `on`/`off`) all parse to a real boolean and work as expected.
+- **A blank section is empty, not an error.** In YAML a key with no value is `null`, so `rules:`, a blank per-rule block, and a blank `exclude_services:` are read as the empty mapping — exactly as if you had written `{}`. Stubbing a section out is a normal thing to do, not a typo, so the blank value itself does not warn. Every *other* wrong type stays a hard error: `rules: hello` and `exclude_services: 5` still exit 2.
 
 Warnings never change the exit code; only the hard errors above do.
 
