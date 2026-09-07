@@ -109,7 +109,7 @@ compose-lint = "compose_lint.cli:main"
 [project.urls]
 Homepage = "https://github.com/tmatens/compose-lint"
 Source = "https://github.com/tmatens/compose-lint"
-Documentation = "https://github.com/tmatens/compose-lint/tree/main/docs"
+Documentation = "https://tmatens.github.io/compose-lint/"
 Issues = "https://github.com/tmatens/compose-lint/issues"
 Changelog = "https://github.com/tmatens/compose-lint/blob/main/CHANGELOG.md"
 
