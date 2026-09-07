@@ -95,8 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Everything else stays a gap at today's exit code, and the message now says
   *which*: outside the project directory, not found, interpolated, unreadable,
-  a cycle, a cap, or a base that declares no such service. `include:` is
-  unchanged in this release.
+  a cycle, a cap, or a base that declares no such service.
 
   Verified with a corpus comparator over all 11,111 files (in-process
   `load_compose` + `run_rules` on a worktree of `main` against this branch;
