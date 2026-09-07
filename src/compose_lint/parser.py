@@ -913,14 +913,19 @@ def coverage_gaps(data: dict[str, Any]) -> list[str]:
     still be linted usefully; the caller decides whether the gap is fatal. An
     ``include``-only file has no local services at all and is already rejected
     at parse time, which is the precedent this generalizes.
+
+    Each message states only the fact — what was not seen. The remedy is the
+    caller's sentence, because it differs by command: ``check`` can accept the
+    gap with ``--allow-partial-coverage``, ``fix`` has no such flag and never
+    fails on a gap, so naming the flag from here sent ``fix`` users to an
+    argument it rejects (#779).
     """
     gaps: list[str] = []
     services = data.get("services")
     if "include" in data and isinstance(services, dict):
         gaps.append(
             "'include:' is not resolved, so services from the included files "
-            "were not linted. Lint the merged output (docker compose config) "
-            "to cover them, or pass --allow-partial-coverage to accept the gap."
+            "were not linted."
         )
     if isinstance(services, dict):
         unmerged = sorted(
@@ -935,9 +940,7 @@ def coverage_gaps(data: dict[str, Any]) -> list[str]:
             gaps.append(
                 f"cross-file 'extends: {{file: ...}}' is not resolved, so "
                 f"{listed} {'was' if len(unmerged) == 1 else 'were'} graded "
-                "without the inherited base. Lint the merged output "
-                "(docker compose config) to cover it, or pass "
-                "--allow-partial-coverage to accept the gap."
+                "without the inherited base."
             )
     return gaps
 

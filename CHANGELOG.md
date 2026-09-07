@@ -27,6 +27,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead, has no demand signal, and has no staging or signing analog for the
   channel contract. The ADR records what would reopen it. Closes #763.
 
+### Fixed
+
+- **`fix` no longer tells you to pass `--allow-partial-coverage`**, a flag
+  only `check` accepts. The coverage-gap warning for an unresolved
+  `include:` or cross-file `extends:` was one sentence shared by both
+  commands, so `fix` named a remedy its own parser rejects. The flag is not
+  added to `fix` — it never fails on a gap, so there is nothing to accept.
+  Instead the remedy is scoped to the caller: `check` still names the flag
+  and the merged-output route on every channel; `fix` says that what was
+  not seen was not fixed, and names only the merged-output route. Closes
+  #779.
+
 ## [0.26.0] - 2026-08-27
 
 ### Added

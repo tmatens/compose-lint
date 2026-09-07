@@ -670,8 +670,23 @@ def main(argv: list[str] | None = None) -> NoReturn:
         raise
 
 
+# The remedy sentence appended to every coverage gap, per command. ``check``
+# can accept the gap with a flag; ``fix`` has no such flag — it never fails on
+# a gap, so there is nothing to accept — and telling it to pass one sent users
+# to an argument the subcommand rejects (#779). What ``fix`` needs to hear is
+# that the unseen part was not fixed either.
+_CHECK_GAP_REMEDY = (
+    "Lint the merged output (docker compose config) to cover the gap, or pass "
+    "--allow-partial-coverage to accept it."
+)
+_FIX_GAP_REMEDY = (
+    "What was not seen was not fixed. Lint the merged output "
+    "(docker compose config) to cover the gap."
+)
+
+
 def _report_coverage_gaps(
-    filepath: str, data: dict[str, Any], *, fatal: bool
+    filepath: str, data: dict[str, Any], *, fatal: bool, remedy: str
 ) -> list[tuple[str, str]]:
     """Report parts of ``filepath`` that were not linted; return them if fatal.
 
@@ -686,14 +701,17 @@ def _report_coverage_gaps(
     ``errors[]`` and SARIF ``toolExecutionNotifications`` and force exit 2.
     With ``--allow-partial-coverage`` the gap is stated on stderr and the run
     is graded on what could be seen.
+
+    ``remedy`` is the caller's closing sentence, so the advice names only
+    what that command can actually do.
     """
-    gaps = coverage_gaps(data)
-    if not gaps:
+    messages = [f"{gap} {remedy}" for gap in coverage_gaps(data)]
+    if not messages:
         return []
     label = "Error" if fatal else "Warning"
-    for gap in gaps:
-        emit(f"{label}: {filepath}: {gap}")
-    return [(filepath, gap) for gap in gaps] if fatal else []
+    for message in messages:
+        emit(f"{label}: {filepath}: {message}")
+    return [(filepath, message) for message in messages] if fatal else []
 
 
 def _exit_2_with_envelope(args: argparse.Namespace, message: str) -> NoReturn:
@@ -837,7 +855,12 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             continue
 
         coverage_errors.extend(
-            _report_coverage_gaps(filepath, data, fatal=not args.allow_partial_coverage)
+            _report_coverage_gaps(
+                filepath,
+                data,
+                fatal=not args.allow_partial_coverage,
+                remedy=_CHECK_GAP_REMEDY,
+            )
         )
         for note in unresolved_mount_sources(data):
             emit(f"note: {filepath}: {note}")
@@ -1211,7 +1234,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             had_error = True
             continue
 
-        _report_coverage_gaps(filepath, data, fatal=False)
+        _report_coverage_gaps(filepath, data, fatal=False, remedy=_FIX_GAP_REMEDY)
 
         try:
             # newline="" preserves the file's original line endings: read_text's

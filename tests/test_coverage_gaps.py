@@ -225,3 +225,78 @@ def test_fix_reports_the_gap_without_failing(
         cli.main(["fix", str(target)])
     assert exc.value.code == 0
     assert "include" in capsys.readouterr().err.lower()
+
+
+# --- The remedy names only what the command can do (#779) -------------------
+
+
+@pytest.mark.parametrize("kind", ["include", "extends"])
+def test_fix_never_names_a_flag_it_does_not_accept(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], kind: str
+) -> None:
+    """``fix`` inherited ``check``'s remedy verbatim and sent users to
+    ``--allow-partial-coverage``, which the ``fix`` subparser rejects. The flag
+    is not added to ``fix`` — it never fails on a gap, so there is nothing to
+    accept — the sentence is scoped to the caller instead."""
+    _write(tmp_path / "base.yml", DANGEROUS_BASE)
+    body = (
+        "include:\n  - base.yml\nservices:\n  web:\n    image: nginx:1.27\n"
+        if kind == "include"
+        else (
+            "services:\n  web:\n    image: nginx:1.27\n"
+            "    extends:\n      file: base.yml\n      service: app\n"
+        )
+    )
+    target = _write(tmp_path / "compose.yml", body)
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["fix", str(target)])
+    assert exc.value.code == 0
+    err = capsys.readouterr().err
+    assert "--allow-partial-coverage" not in err, kind
+    assert "not fixed" in err, kind
+    assert "docker compose config" in err, kind
+
+    # The flag really is check-only; the test above is meaningless otherwise.
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["fix", "--allow-partial-coverage", str(target)])
+    assert exc.value.code == 2
+
+
+@pytest.mark.parametrize("kind", ["include", "extends"])
+def test_check_still_names_the_flag_on_every_channel(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], kind: str
+) -> None:
+    """Scoping the remedy must not cost ``check`` its own: the flag is the
+    documented way out, on stderr and in the structured errors alike."""
+    _write(tmp_path / "base.yml", DANGEROUS_BASE)
+    body = (
+        "include:\n  - base.yml\nservices:\n  web:\n    image: nginx:1.27\n"
+        if kind == "include"
+        else (
+            "services:\n  web:\n    image: nginx:1.27\n"
+            "    extends:\n      file: base.yml\n      service: app\n"
+        )
+    )
+    target = _write(tmp_path / "compose.yml", body)
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["check", "--format", "json", str(target)])
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert "--allow-partial-coverage" in captured.err, kind
+    assert "not fixed" not in captured.err, kind
+    errors = json.loads(captured.out)["errors"]
+    assert any("--allow-partial-coverage" in e["message"] for e in errors), errors
+
+
+def test_the_parser_states_the_gap_without_prescribing_a_flag() -> None:
+    """The remedy is a CLI concern; the parser has no idea which command asked."""
+    data, _lines = loads(
+        "include:\n  - base.yml\n"
+        "services:\n  web:\n    image: nginx:1.27\n"
+        "    extends:\n      file: base.yml\n      service: app\n"
+    )
+    gaps = coverage_gaps(data)
+    assert len(gaps) == 2
+    assert not any("--" in gap for gap in gaps)
