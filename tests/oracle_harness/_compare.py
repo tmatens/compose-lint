@@ -15,17 +15,18 @@ agreement, which is how #797 shipped.
 
 from __future__ import annotations
 
+import contextlib
+import io
+import os
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 
 from compose_lint._selection import plan_documents
 from compose_lint._service_env import resolve_env_files
 from compose_lint.engine import run_rules
 from compose_lint.parser import ComposeError, load_compose, load_merged
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 FindingCounts = Counter[tuple[str, str]]
 
@@ -114,3 +115,52 @@ def describe_difference(ours: FindingCounts, theirs: FindingCounts) -> str:
         f"  only ours:   {sorted((ours - theirs).elements())}\n"
         f"  only theirs: {sorted((theirs - ours).elements())}"
     )
+
+
+def fix_in_place(project_root: Path, primary: str) -> tuple[int | None, str]:
+    """Run ``compose-lint fix --apply`` on ``primary``, from inside its project.
+
+    The CLI rather than ``collect_edits`` directly, because what phase 5 gates
+    is the whole path a user takes: the local-findings filter that keeps a
+    fix out of a file the finding was not written in, and ADR-014's two safety
+    nets — the candidate must re-parse, and it must converge and raise no new
+    finding — which refuse a write rather than persisting a bad one.
+
+    In the project directory, not a copy of the file. Today's smoke copies one
+    document into a bare temp dir, which severs every ``include:``,
+    ``extends:``, ``env_file:`` and ``.env`` it had, so it can only ever gate
+    the single-file case (G3).
+    """
+    from compose_lint import cli
+
+    previous = Path.cwd()
+    captured = io.StringIO()
+    code: int | None = None
+    try:
+        os.chdir(project_root)
+        with (
+            contextlib.redirect_stdout(captured),
+            contextlib.redirect_stderr(captured),
+        ):
+            cli.main(["fix", "--apply", primary])
+    except SystemExit as exit_signal:
+        code = exit_signal.code if isinstance(exit_signal.code, int) else None
+    finally:
+        os.chdir(previous)
+    return code, captured.getvalue()
+
+
+def document_changes(
+    before: dict[str, Any], after: dict[str, Any]
+) -> set[tuple[str, str]]:
+    """``(service, key)`` pairs whose value differs between two documents."""
+    changed: set[tuple[str, str]] = set()
+    old = before.get("services") or {}
+    new = after.get("services") or {}
+    for service in set(old) | set(new):
+        old_body = old.get(service) or {}
+        new_body = new.get(service) or {}
+        for key in set(old_body) | set(new_body):
+            if old_body.get(key) != new_body.get(key):
+                changed.add((service, key))
+    return changed

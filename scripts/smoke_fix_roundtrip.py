@@ -29,6 +29,16 @@ So this closes the loop where a user stands:
 The whole loop runs twice, once on an LF copy and once on a CRLF copy,
 because CRLF is a supported input shape with a known past failure.
 
+This stays a *single-file* smoke, and deliberately so: what it uniquely
+checks is the bytes — line endings, and idempotence at the CLI — on a
+document copied to a scratch directory. Copying severs every
+``include:``, ``extends:``, ``env_file:`` and ``.env`` the file had, so it
+can say nothing about a document with references. That half now lives in
+``tests/test_oracle_harness.py::test_fix_holds_in_the_project_directory``,
+which runs ``fix --apply`` *in* a generated project directory with those
+references intact and then asks Compose whether the result still resolves
+to the same configuration outside the services the fix reported on.
+
 Usage:
     python scripts/smoke_fix_roundtrip.py [--allow-missing-docker]
 

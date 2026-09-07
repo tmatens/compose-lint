@@ -36,6 +36,8 @@ import time
 from multiprocessing import Pool
 from pathlib import Path
 
+import yaml
+
 from compose_lint.engine import run_rules
 from compose_lint.fix import apply_edits, collect_edits
 from compose_lint.parser import (
@@ -51,26 +53,55 @@ WORKERS = int(os.environ.get("LINT_WORKERS", str(os.cpu_count() or 4)))
 CONFIG_TIMEOUT = 30
 
 
-def _docker_config_ok(text: str) -> tuple[bool, str]:
-    """Write ``text`` to an isolated project dir and run ``docker compose config``.
+def _run_config(compose: Path) -> tuple[bool, str, str]:
+    """``docker compose config`` on one file, as ``(accepted, resolved, stderr)``.
 
-    Returns ``(accepted, stderr)``. Each file gets its own temp dir so Docker's
-    env-file / project-name resolution can't leak between files or pick up a
-    stray ``.env`` from the shared cwd.
+    A fixed project name so the two resolutions being compared agree on
+    ``name:`` and on the default network's ``<project>_default``.
+    """
+    try:
+        proc = subprocess.run(
+            ["docker", "compose", "-p", "gate", "-f", str(compose), "config"],
+            capture_output=True,
+            text=True,
+            timeout=CONFIG_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "", f"timeout after {CONFIG_TIMEOUT}s"
+    return proc.returncode == 0, proc.stdout, proc.stderr.strip()
+
+
+def _config_pair(
+    original: str, patched: str
+) -> tuple[tuple[bool, str], tuple[bool, str, str]]:
+    """Resolve both texts in the *same* project directory, original first.
+
+    One directory because Compose resolves a relative bind source against the
+    project dir: two temp dirs give `- .:/sources` two different absolute
+    sources, and every file with a relative mount then reads as the fix having
+    changed a service it never touched.
     """
     with tempfile.TemporaryDirectory() as project:
         compose = Path(project) / "compose.yaml"
-        compose.write_text(text, encoding="utf-8")
-        try:
-            proc = subprocess.run(
-                ["docker", "compose", "-f", str(compose), "config", "-q"],
-                capture_output=True,
-                text=True,
-                timeout=CONFIG_TIMEOUT,
-            )
-        except subprocess.TimeoutExpired:
-            return False, f"timeout after {CONFIG_TIMEOUT}s"
-        return proc.returncode == 0, proc.stderr.strip()
+        compose.write_text(original, encoding="utf-8")
+        orig_ok, orig_resolved, _ = _run_config(compose)
+        compose.write_text(patched, encoding="utf-8")
+        fixed_ok, fixed_resolved, fixed_err = _run_config(compose)
+    return (orig_ok, orig_resolved), (fixed_ok, fixed_resolved, fixed_err)
+
+
+def _service_changes(before: str, after: str) -> set[tuple[str, str]]:
+    """``(service, key)`` pairs whose resolved value differs between two runs."""
+    old = (yaml.safe_load(before) or {}).get("services") or {}
+    new = (yaml.safe_load(after) or {}).get("services") or {}
+    changed: set[tuple[str, str]] = set()
+    for service in set(old) | set(new):
+        old_body = old.get(service) or {}
+        new_body = new.get(service) or {}
+        for key in set(old_body) | set(new_body):
+            if old_body.get(key) != new_body.get(key):
+                changed.add((service, key))
+    return changed
 
 
 def check_file(path: Path) -> dict:
@@ -93,13 +124,35 @@ def check_file(path: Path) -> dict:
     result["fixed"] = 1
     patched = apply_edits(text, collected.edits)
 
-    fixed_ok, fixed_err = _docker_config_ok(patched)
+    # Both resolutions in ONE project directory. Compose resolves a relative
+    # bind source against the project dir, so two temp dirs make every `- .:/x`
+    # mount differ between the runs and every such file reads as a regression.
+    (orig_ok, orig_resolved), (fixed_ok, fixed_resolved, fixed_err) = _config_pair(
+        text, patched
+    )
     if fixed_ok:
         result["fixed_ok"] = 1
+        # Acceptance is not enough: a miscomputed edit span can mangle a
+        # neighbouring key and still emit valid Compose. Compare the *resolved*
+        # configurations and require every service the fix changed to be one a
+        # finding named. Compose normalises both sides, so this needs no
+        # normaliser of ours (the same argument as
+        # tests/oracle_harness/_shape.py).
+        if orig_ok:
+            claimed = {str(f.service) for f in collected.fixed}
+            strayed = {
+                service
+                for service, _key in _service_changes(orig_resolved, fixed_resolved)
+                if service not in claimed
+            }
+            if strayed:
+                result["regression"] = (
+                    f"{path.name}: fix changed service(s) it did not report on: "
+                    f"{', '.join(sorted(strayed))}"
+                )
         return result
 
     # Fixed text was rejected — was the original accepted? If so, we broke it.
-    orig_ok, _ = _docker_config_ok(text)
     if orig_ok:
         reason = fixed_err.splitlines()[-1] if fixed_err else "rejected"
         result["regression"] = f"{path.name}: {reason}"

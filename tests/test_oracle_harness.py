@@ -39,11 +39,14 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from compose_lint.parser import ComposeError, load_compose_full
 from tests.oracle_harness import (
     DUMP_NAME,
     describe_difference,
     describe_shape_difference,
+    document_changes,
     findings_of,
+    fix_in_place,
     generate,
     lint_project,
     oracle_available,
@@ -215,3 +218,147 @@ def test_a_faithful_merge_round_trips(tmp_path: Path) -> None:
     dumped = run_oracle(root, files=(DUMP_NAME,))
     assert dumped.accepted, dumped.stderr
     assert shape_of(dumped.stdout) == shape_of(oracle.stdout)
+
+
+# --- The fix gate, run where the user runs it -------------------------------
+
+
+@pytest.mark.parametrize("seed", SEEDS)
+def test_fix_holds_in_the_project_directory(
+    seed: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`fix --apply` in situ: still deployable, and changed only what it claimed.
+
+    Three properties, and the third is the one no existing gate could ask.
+    Today's smoke copies a single document into a bare temp directory, which
+    severs every `include:`, `extends:`, `env_file:` and `.env` it had — so it
+    can only ever gate a file with no references. Running in the generated
+    project directory keeps them all resolvable.
+
+    * **G1 — still accepted.** Compose resolves the project after the fix.
+    * **G2 — changed only what it claimed.** The resolved configuration differs
+      only in `(service, key)` pairs that also changed in our own documents,
+      the set of services is unchanged, and no top-level key outside
+      `services:` moved. Derived from the documents rather than from a table of
+      which key each rule writes, so it cannot drift out of date.
+    * **G3 — the same under a reference.** Falls out of running in place: the
+      document being fixed is the one whose `extends:` and `include:` targets
+      are still on disk beside it.
+
+    A refusal is a valid outcome, not a skipped case. ADR-014's nets exist to
+    stop `fix` persisting a bad candidate, and the invariant they owe is that a
+    refusal writes *nothing* — which is asserted here rather than assumed.
+    """
+    project = generate(seed)
+    if project.expects_gap:
+        return
+    root = tmp_path / "project"
+    root.mkdir()
+    project.write(root)
+
+    before = run_oracle(root)
+    if not before.accepted:
+        # Not a fix concern; the sibling test owns Compose's acceptance.
+        return
+
+    snapshot = {path: path.read_bytes() for path in root.rglob("*") if path.is_file()}
+    documents_before = _documents(root)
+
+    monkeypatch.chdir(root)
+    _code, output = fix_in_place(root, project.primary)
+    monkeypatch.undo()
+
+    written = [path for path, was in snapshot.items() if path.read_bytes() != was]
+    context = f"seed {seed}\n{project.render()}\n{_replay(seed)}\n{output}"
+
+    if "Error:" in output:
+        assert not written, (
+            f"{context}\nfix refused the apply and wrote to "
+            f"{[p.name for p in written]} anyway"
+        )
+        return
+    if not written:
+        return
+
+    after = run_oracle(root)
+    assert after.accepted, (  # G1
+        f"{context}\ncompose accepted the project and refused the fixed one:\n"
+        f"{after.stderr.strip()}"
+    )
+
+    theirs, ours = shape_of(before.stdout), shape_of(after.stdout)
+    assert set(theirs.get("services") or {}) == set(ours.get("services") or {}), (
+        f"{context}\nthe fix changed which services the project declares"
+    )
+    outside = (
+        {k: v for k, v in theirs.items() if k != "services"},
+        {k: v for k, v in ours.items() if k != "services"},
+    )
+    assert outside[0] == outside[1], (
+        f"{context}\nthe fix changed a top-level key outside services:"
+    )
+
+    documents_after = _documents(root)
+    in_documents: set[tuple[str, str]] = set()
+    for relative, data in documents_before.items():
+        in_documents |= document_changes(data, documents_after.get(relative, {}))
+    unclaimed = document_changes(theirs, ours) - in_documents
+    assert not unclaimed, (  # G2
+        f"{context}\nthe resolved configuration changed where no document did: "
+        f"{sorted(unclaimed)}"
+    )
+
+
+def _documents(root: Path) -> dict[str, dict[str, object]]:
+    """Every Compose document in the project, loaded on its own."""
+    loaded: dict[str, dict[str, object]] = {}
+    for path in sorted(root.rglob("*.yaml")):
+        try:
+            loaded[path.relative_to(root).as_posix()] = load_compose_full(path).data
+        except ComposeError:
+            continue
+    return loaded
+
+
+def test_the_fix_gate_reaches_documents_with_references() -> None:
+    """G3 is only a claim if some fixed project actually had references.
+
+    A gate that ran exclusively on reference-free documents would pass and
+    prove nothing more than the smoke it replaces.
+    """
+    with_references = [
+        seed
+        for seed in SEEDS
+        if not generate(seed).expects_gap
+        and {"include", "extends"} & set(generate(seed).notes)
+    ]
+    assert len(with_references) > len(SEEDS) // 4, len(with_references)
+
+
+def test_the_fix_gate_relation_reports_an_unclaimed_change() -> None:
+    """G2's relation, made falsifiable.
+
+    The relation is *resolved changes are a subset of document changes*. What
+    it exists to catch is a miscomputed edit span that mangles a neighbouring
+    key: the resolved configuration moves for a service whose document the fix
+    never touched, and `verify_apply`'s structural check can miss it because
+    that check compares the *patched file* rather than the resolved project.
+
+    Asserted on the relation itself rather than end to end, because
+    manufacturing the end-to-end shape needs a loader blind spot — which is
+    the thing being guarded against, not something a test can stage. The
+    end-to-end direction is carried by the 400-seed run and by the invariant
+    beside it: when `fix` refuses, it writes nothing.
+    """
+    before = {"services": {"web": {"user": "root"}, "other": {"image": "a:1"}}}
+    after = {"services": {"web": {"user": "1000"}, "other": {"image": "a:2"}}}
+
+    assert document_changes(before, after) == {("web", "user"), ("other", "image")}
+
+    # A fix that claimed only `web.user`: `other.image` is unclaimed, and the
+    # gate's subtraction is what surfaces it.
+    claimed = {("web", "user")}
+    assert document_changes(before, after) - claimed == {("other", "image")}
+
+    # And a fix that claimed both leaves nothing over.
+    assert not document_changes(before, after) - {("web", "user"), ("other", "image")}
