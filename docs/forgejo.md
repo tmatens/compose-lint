@@ -19,7 +19,7 @@ jobs:
         run: |
           apt-get update -qq
           apt-get install -yqq --no-install-recommends python3-pip
-          pip3 install --break-system-packages --no-cache-dir compose-lint==0.27.0
+          pip3 install --break-system-packages --no-cache-dir compose-lint==0.28.0
       - name: Run compose-lint
         run: compose-lint --fail-on high
 ```
