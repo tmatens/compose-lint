@@ -524,6 +524,18 @@ After approval, `publish` and `docker-publish` run in parallel.
   land the fix via PR, re-tag with the **same** version number, and push
   again. TestPyPI allows overwriting a yanked version on retry; real
   PyPI does not, so always retry on TestPyPI first.
+- **A pre-gate job failed, but the artifact is fine** (a `testpypi-smoke`
+  index-propagation flake is the usual case): re-run **the failed job**, not
+  the workflow. Use **Actions → the run → Re-run failed jobs**, or
+  `POST /repos/tmatens/compose-lint/actions/runs/{run_id}/rerun-failed-jobs`.
+  That reuses the successful `testpypi` upload. Re-running the **whole**
+  workflow instead re-attempts `testpypi`, which TestPyPI rejects as a
+  duplicate upload — so the intuitive action is the one that fails, and it
+  fails in a way that looks like a second, unrelated problem. Nothing is
+  published either way: a pre-gate failure skips `release-gate` and everything
+  after it, so the tag stays valid and no version number is burned. Delete and
+  re-cut the tag only once you have established the failure is *not*
+  transient — re-running the job is the cheap test for that.
 - **Real PyPI publish fails after TestPyPI succeeded**: do **not** reuse
   the version number. Bump to `X.Y.Z+1` (usually a patch), land the fix,
   and cut a new release. PyPI treats deleted versions as permanently
