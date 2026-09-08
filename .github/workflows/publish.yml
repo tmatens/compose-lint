@@ -242,7 +242,9 @@ jobs:
   testpypi-smoke:
     needs: testpypi
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # Raised from 10: the index wait below can spend ~5 min before the install
+    # starts, which the old fixed-sleep retry never did.
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -269,31 +271,97 @@ jobs:
         # nothing left to resolve.
         run: pip install --require-hashes -r requirements.lock
 
+      - name: Wait for TestPyPI to list the version
+        # The install below fails until the /simple/ index lists a file for
+        # this version, and that is a propagation delay, not a fault: TestPyPI's
+        # JSON API sees a release within seconds while /simple/ can lag by
+        # minutes. Probing that with `pip install` and reading the exit code
+        # cannot tell "not propagated yet" from "genuinely broken", so it used
+        # to fail the release on a transient — 6 fixed 20s sleeps (~100s of
+        # waiting) against a lag measured in minutes, which flaked 0.3.6 and
+        # again 0.28.0. Both times re-running the job alone passed unchanged.
+        #
+        # Wait on the actual precondition instead, with backoff, and report
+        # which surface is behind so a real failure is distinguishable.
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import json, os, sys, time, urllib.error, urllib.request
+
+          version = os.environ["VERSION"].lstrip("v")
+          SIMPLE = "https://test.pypi.org/simple/compose-lint/"
+          JSON_API = "https://test.pypi.org/pypi/compose-lint/json"
+
+          def fetch(url, simple=False):
+              headers = {"Accept": "application/vnd.pypi.simple.v1+json"} if simple else {}
+              try:
+                  with urllib.request.urlopen(
+                      urllib.request.Request(url, headers=headers), timeout=30
+                  ) as r:
+                      return json.loads(r.read())
+              except (urllib.error.URLError, json.JSONDecodeError, TimeoutError):
+                  return None
+
+          def visible():
+              """(in_json, files_in_simple) for this version."""
+              meta, simple = fetch(JSON_API), fetch(SIMPLE, simple=True)
+              in_json = bool(meta) and version in meta.get("releases", {})
+              files = [
+                  f["filename"]
+                  for f in (simple or {}).get("files", [])
+                  if f["filename"].startswith(f"compose_lint-{version}")
+              ]
+              return in_json, files
+
+          # ~4.75 min of waiting, front-loaded, which leaves headroom inside
+          # the job's timeout for the install and smoke steps below. The common
+          # case is that the first probe succeeds and none of this costs
+          # anything.
+          delays = [0, 10, 20, 30, 45, 60, 60, 60]
+          for attempt, delay in enumerate(delays, start=1):
+              if delay:
+                  time.sleep(delay)
+              in_json, files = visible()
+              if files:
+                  print(f"/simple/ lists {version} after {attempt} probe(s): {files}")
+                  break
+              print(
+                  f"probe {attempt}: json={'yes' if in_json else 'no'} "
+                  f"simple=no — waiting for the index"
+              )
+          else:
+              in_json, files = visible()
+              print(f"::error::TestPyPI never listed {version} in /simple/. "
+                    f"JSON API: {'has it' if in_json else 'does NOT have it'}; "
+                    f"/simple/: {files or 'no files'}. "
+                    f"JSON yes + /simple/ no means propagation is still catching up "
+                    f"(re-run this job); both no means the upload did not land.")
+              sys.exit(1)
+          PY
+
       - name: Install from TestPyPI and verify version
-        # TestPyPI's JSON API sees a new release within seconds of the
-        # publish step, but the /simple/ index pip uses can lag by
-        # minutes. A fixed sleep has flaked mid-release before (0.3.6),
-        # so retry the install with backoff until the index catches up
-        # or we hit ~2 minutes of attempts.
+        # The index now lists the version; a couple of retries still cover the
+        # short window where /simple/ is updated but a file is not yet served.
         #
         # `--no-deps` is what keeps TestPyPI scoped to the one artifact under
         # test: it is the only thing that legitimately lives there, and its
         # dependencies are already installed above.
         run: |
           version="${GITHUB_REF_NAME#v}"
-          for attempt in 1 2 3 4 5 6; do
+          for attempt in 1 2 3; do
             if pip install \
                 --no-deps \
                 -i https://test.pypi.org/simple/ \
                 "compose-lint==${version}"; then
               break
             fi
-            if [ "${attempt}" = 6 ]; then
-              echo "::error::TestPyPI install failed after 6 attempts; index may still be propagating"
+            if [ "${attempt}" = 3 ]; then
+              echo "::error::TestPyPI install failed after 3 attempts even though /simple/ lists ${version}"
               exit 1
             fi
-            echo "Attempt ${attempt} failed; sleeping 20s for /simple/ index propagation..."
-            sleep 20
+            echo "Attempt ${attempt} failed; retrying in 15s..."
+            sleep 15
           done
           expected="compose-lint ${version}"
           actual="$(compose-lint --version)"
