@@ -220,6 +220,43 @@ class TestConfigValidation:
         disabled, _overrides, _excluded = load_config(config)
         assert "CL-0001" not in disabled
 
+    def test_reason_without_enabled_false_warns(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0002:\n    reason: we accept this risk\n")
+        disabled, _overrides, _excluded = load_config(config)
+        assert "CL-0002" not in disabled
+        err = capsys.readouterr().err
+        assert "rule 'CL-0002'" in err
+        assert "reason" in err
+        assert "has no effect" in err
+
+    def test_reason_with_enabled_false_is_silent(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text(
+            "rules:\n  CL-0002:\n    enabled: false\n    reason: we accept this risk\n"
+        )
+        disabled, _overrides, _excluded = load_config(config)
+        assert disabled["CL-0002"] == "we accept this risk"
+        assert "has no effect" not in capsys.readouterr().err
+
+    def test_exclude_services_reason_does_not_warn(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text(
+            "rules:\n"
+            "  CL-0003:\n"
+            "    exclude_services:\n"
+            "      web: entrypoint switches users\n"
+        )
+        _disabled, _overrides, excluded = load_config(config)
+        assert excluded["CL-0003"]["web"] == "entrypoint switches users"
+        assert "has no effect" not in capsys.readouterr().err
+
 
 class TestStrictConfig:
     """strict=True escalates config diagnostics to errors (issue #380)."""
@@ -240,6 +277,15 @@ class TestStrictConfig:
         config = tmp_path / ".compose-lint.yml"
         config.write_text("rules:\n  CL-0001:\n    severty: high\n")
         with pytest.raises(ConfigError, match="unknown key 'severty'"):
+            load_config(config, strict=True)
+
+    def test_reason_without_enabled_false_raises(self, tmp_path: Path) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0002:\n    reason: we accept this risk\n")
+        with pytest.raises(
+            ConfigError,
+            match="rule 'CL-0002' has a 'reason' without 'enabled: false'",
+        ):
             load_config(config, strict=True)
 
     def test_valid_config_still_loads_under_strict(

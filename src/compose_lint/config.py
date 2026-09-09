@@ -22,8 +22,9 @@ from compose_lint.models import Severity
 KNOWN_TOP_LEVEL_KEYS = frozenset({"rules"})
 
 # Recognized keys inside a per-rule block. A key outside this set (a typo'd
-# `severty:` or a `reason:` with no `enabled: false`) is silently inert today;
-# warn so the user learns their override never took effect (issue #279 G1).
+# `severty:`) is silently inert; warn so the user learns their override never
+# took effect (issue #279 G1). A `reason:` without `enabled: false` is a
+# separate diagnostic in `_parse_rules` (issue #723).
 _KNOWN_RULE_KEYS = frozenset({"enabled", "reason", "severity", "exclude_services"})
 
 
@@ -285,6 +286,13 @@ def _parse_rules(
                 disabled[rule_id] = _scalar_field(
                     rule_config.get("reason"), rule_id, "reason"
                 )
+
+        if "reason" in rule_config and rule_id not in disabled:
+            _warn(
+                f"config: rule '{rule_id}' has a 'reason' without "
+                f"'enabled: false'; it has no effect",
+                strict,
+            )
 
         if "severity" in rule_config:
             severity_text = _scalar_field(rule_config["severity"], rule_id, "severity")
