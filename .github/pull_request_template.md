@@ -62,6 +62,9 @@ Closes #
      agree with a check that has already run. What's left is what CI cannot
      see for itself. -->
 
+- [ ] `scripts/preflight.sh` passes on this branch (runs every gate CI runs,
+      including the commit checks CI cannot report until a maintainer approves
+      the run — see CONTRIBUTING.md "Local quality checks")
 - [ ] Commits are **signed** — GitHub shows a `Verified` badge on the commits
       tab (proves *who committed*; not the same as signing off, which the
       `dco` check enforces separately — see CONTRIBUTING.md)
