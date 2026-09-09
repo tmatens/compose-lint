@@ -41,6 +41,10 @@ def _warn(message: str, strict: bool = False) -> None:
     run. Under strict-config (``--strict-config``, #380) the same diagnostics are
     raised as ``ConfigError`` instead, so a typo'd rule id or key fails loudly
     rather than silently no-op'ing where stderr may be suppressed.
+
+    Every call site carries a ``# diag: <slug>`` comment naming the bullet that
+    documents it in ``docs/configuration.md``; ``tests/test_config_surfaces.py``
+    holds the two sides together. See that module for why.
     """
     if strict:
         raise ConfigError(message)
@@ -154,6 +158,7 @@ def load_config(
             # mistyped `rulez:` is still caught. A bare unknown key still warns.
             continue
         if name not in KNOWN_TOP_LEVEL_KEYS:
+            # diag: unknown-top-level-key
             _warn(
                 f"config: unknown top-level key '{key}' (recognized: "
                 f"{', '.join(sorted(KNOWN_TOP_LEVEL_KEYS))}); it has no effect",
@@ -260,6 +265,7 @@ def _parse_rules(
             raise ConfigError(f"Config for rule '{rule_id}' must be a mapping")
 
         if rule_id not in known_ids:
+            # diag: unknown-rule-id
             _warn(
                 f"config: unknown rule id '{rule_id}'; the override has no effect "
                 "(check for a typo or a retired rule)",
@@ -268,6 +274,7 @@ def _parse_rules(
 
         for key in rule_config:
             if str(key) not in _KNOWN_RULE_KEYS:
+                # diag: unknown-per-rule-key
                 _warn(
                     f"config: rule '{rule_id}' has unknown key '{key}' (recognized: "
                     f"{', '.join(sorted(_KNOWN_RULE_KEYS))}); it has no effect",
@@ -288,6 +295,7 @@ def _parse_rules(
                 )
 
         if "reason" in rule_config and rule_id not in disabled:
+            # diag: reason-without-enabled-false
             _warn(
                 f"config: rule '{rule_id}' has a 'reason' without "
                 f"'enabled: false'; it has no effect",
