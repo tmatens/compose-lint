@@ -52,7 +52,8 @@ A new rule also needs its derivation block (with an **Evidence** line naming the
 
 CONTRIBUTING.md is the source of truth for commits, signing, and PRs. Key points:
 - One logical change per commit, imperative subject under 72 chars, no Conventional Commits prefixes
-- All commits signed (SSH). Verify with `git log --format='%h %G? %s'` — every commit shows `G`
+- All commits signed (SSH) and signed off. `scripts/preflight.sh` checks both, plus every other gate CI runs — `%G?` alone reports `N` for a correctly signed commit wherever git cannot verify the key locally
+- Conventions reviews ask for that no test states are listed in CONTRIBUTING.md "Conventions the diff won't show you"
 - All changes go through a PR, squash-merge to main
 - Maintainer side of an outside contribution — approving fork CI, review states, pre-merge checks — is `docs/MAINTAINING.md`
 - Releases: follow `docs/RELEASING.md` checklist — version lives in both `pyproject.toml` and `src/compose_lint/__init__.py`

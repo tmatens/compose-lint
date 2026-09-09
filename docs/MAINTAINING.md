@@ -74,7 +74,91 @@ the head SHA. Approving a commit that is about to be rebased burns the approval
 for nothing. When a PR needs both a rebase and review fixes, post the review
 first so one push clears everything.
 
+## Writing a good first issue
+
+Every `good first issue` here is written by a maintainer, and the review that
+follows is graded against what the maintainer knew when writing it — which is
+more than the issue says. Of the seven external PRs to date, most of the
+review rounds asked for something the issue did not: the rule-doc row that was
+in the Scope prose but not in the file list (#685), the `docs/configuration.md`
+bullet nothing mentioned (#826), the scoping comment an ADR implied (#795). A
+contributor reads **Scope** as the whole boundary — it was written to reassure
+— so what it omits is what comes back as a review comment.
+
+Write the review checklist into the issue, before the review. Copy this
+skeleton; the boilerplate has drifted when it lived in saved replies (one
+issue said `mypy src/` while CI ran `mypy src/ tests/`), so this file is its
+only home.
+
+````markdown
+## What happens
+
+<!-- Console transcript. Exit codes. Reproduced on which version. -->
+
+## Why
+
+<!-- file:line of the cause, re-checked against main @ <sha>. -->
+
+## The fix
+
+<!-- The approach. Name the traps: what an earlier attempt got wrong. -->
+
+## Also update
+
+<!-- Every file outside the code that has to change, with what changes in it.
+     This is the list the reviewer will check. If it is empty, say so. -->
+
+- `docs/…` — …
+- `CHANGELOG.md` — not needed; the releaser writes your credit line.
+
+## Tests
+
+<!-- Which file, which existing test to model on, one case per behaviour. -->
+
+## Done when
+
+<!-- Self-checkable, in the contributor's terms. Whatever you would check at
+     review goes here instead. -->
+
+- [ ] … (one line per row of the behaviour table above)
+- [ ] `scripts/preflight.sh` passes on the branch
+- [ ] Every file under *Also update* is in the diff
+
+## Out of scope
+
+<!-- What NOT to touch. This is a boundary, not a summary of the work. -->
+
+---
+
+## Before you start
+
+compose-lint's contribution process is stricter than most, and it — not the
+patch — is where a first PR usually stalls. All of it is in
+[CONTRIBUTING.md](../blob/main/CONTRIBUTING.md); the short version:
+
+- Fork, then add this repo as `upstream` — `origin` is your fork, and
+  `git rebase origin/main` does nothing useful there.
+- Run `scripts/preflight.sh` before every push. It runs every gate CI runs,
+  including the commit checks (signature, DCO trailer matching your author
+  email exactly, subject style) that CI cannot report on a first PR until a
+  maintainer approves the run.
+- Your first PR's checks stay grey until that approval. That is the fork
+  gate, not something you did; a maintainer will get to it.
+- Rebase with `--force-with-lease`, never the **Update branch** button.
+
+Ask on the issue if anything is unclear. Happy to help you land it.
+````
+
 ## Reviewing
+
+Split every review into what the contributor must change and what you will
+handle. If the issue and CONTRIBUTING did not ask for it, it is not a change
+request on someone's first PR: fix it yourself in a follow-up, or file it, and
+say which. And a review comment that could have been a test is a bug in CI,
+not a note for the contributor — write the test (`tests/test_config_surfaces.py`
+and `tests/test_rule_doc_surfaces.py` are the shape) so the next person is told
+by a red check while the branch is still open, not by you a day later.
+
 
 Post findings as a **review**, not a plain issue comment — a review carries a
 state, sets `reviewDecision`, and shows in the Reviewers panel:
