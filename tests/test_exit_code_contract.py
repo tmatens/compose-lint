@@ -190,9 +190,18 @@ def test_the_error_does_not_leak_the_internal_temp_filename(
     restore_mode.append(locked)
 
     proc = _run(["fix", "--apply", str(target)], tmp_path)
-    assert "Permission denied" in proc.stderr
-    assert ".tmp" not in proc.stderr, proc.stderr
-    assert "Errno" not in proc.stderr, proc.stderr
+    # Strip the harness's own temp root before looking for a leak. TMPDIR is
+    # whatever the machine says it is, and a root whose *name* contains
+    # ".tmp" made this fail on a message that leaked nothing — a green gate
+    # turning red for a reason its own output does not explain. mkstemp puts
+    # the scratch file beside the target (`.a.yml.<random>.tmp`), so its
+    # filename survives the strip and a real leak is still caught.
+    stderr = proc.stderr
+    for root in {str(tmp_path), str(tmp_path.resolve())}:
+        stderr = stderr.replace(root, "<tmp_path>")
+    assert "Permission denied" in stderr
+    assert ".tmp" not in stderr, proc.stderr
+    assert "Errno" not in stderr, proc.stderr
 
 
 def test_init_to_a_directory_is_a_clean_error(tmp_path: Path) -> None:
