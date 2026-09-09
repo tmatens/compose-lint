@@ -128,6 +128,39 @@ TMPDIR=$HOME/.pytest-tmp pytest --basetemp=$HOME/.pytest-tmp/bt
 - **Latest stable versions** for any new dependency unless there's a specific,
   documented reason otherwise.
 
+## Conventions the diff won't show you
+
+Five rules that reviews here have asked for and no file stated. Each names
+the test that enforces it, or says that a reviewer does.
+
+- **Every list in the docs is exhaustive, and tested.** The Validation bullets
+  in `docs/configuration.md` are held to the `_warn` sites in `config.py`
+  (`tests/test_config_surfaces.py`, through paired `# diag:` /
+  `<!-- diag: -->` markers); a rule page's pattern and exemption lists are held
+  to the rule's tuples (`tests/test_rule_doc_surfaces.py`); every rule is held
+  to every surface that lists rules (`tests/test_rule_surfaces.py`). Adding to
+  the code means adding to the page in the same PR, and CI names the missing
+  entry.
+- **One grammar, one reader.** A regex or grammar lives in one module and is
+  imported from there — `_env_file.py` takes the `${...}` grammar from
+  `rules/_interpolation` "so the two readers cannot drift". A second copy of
+  the rule-id regex in `cli.py` is what sank the first revision of #726: it
+  matched the raw argument while the original matched the normalized one.
+  Reviewed by hand.
+- **Retired rule ids are a closed set.** `CL-0012`, `CL-0015` and `CL-0023`
+  are fallow under [ADR-028](docs/adr/028-pre-1.0-rule-id-sweep.md) and never
+  reused; a post-1.0 retirement keeps a tombstone doc page
+  ([ADR-032](docs/adr/032-rule-retirement-is-minor-with-lifecycle.md) §4) and
+  does not join that set.
+  `tests/test_rule_surfaces.py::test_retired_ids_are_not_reused`.
+- **A comment that cites provenance must be right.** Test groups are labelled
+  with the issue whose corpus evidence they came from; a key filed under the
+  wrong label misstates why it is there (#685). Reviewed by hand.
+- **Say what you claim, test what you say.** Every output format or behaviour
+  change the PR body names has an assertion — SARIF as well as JSON (#670),
+  the cases the issue did not list but the change covers (#675). The PR
+  template's Evidence section asks for exactly this.
+
 ## Adding a new rule
 
 1. Create `src/compose_lint/rules/CL{NNNN}_{snake_name}.py`
@@ -333,7 +366,10 @@ check fails on a commit you did not write.
    cover this and what they assert, and what the change makes wrong
    elsewhere. Answer those in your own words; a question you find you can't
    answer is worth more to you than a ticked box.
-5. **Wait for CI** — all required checks must be green before merge.
+5. **Wait for CI** — all required checks must be green before merge. On your
+   first PR here the checks stay grey until a maintainer approves the run;
+   that is GitHub's fork gate, not something you did, and it lifts for good
+   once you have a commit merged.
 6. **Respond to review comments.** All comments must be resolved before merge.
 7. **Squash-merge** when approved. We use squash-merge exclusively so `main`
    stays linear with one commit per logical change. The full PR history is
