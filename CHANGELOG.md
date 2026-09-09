@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A per-rule `reason:` written without `enabled: false` now says so.** The
+  key is the justification that goes with a suppression, and on its own it
+  suppresses nothing — the rule stays on and keeps failing the build, which is
+  exactly the shape of a config that silently fails to take effect. The
+  unknown-per-rule-key check could not catch it, because `reason` is a
+  recognized key; it is a diagnostic of its own now, naming the rule id, and
+  `--strict-config` promotes it to a hard error like the others. On its own it
+  does not change the exit code
+  ([#723](https://github.com/tmatens/compose-lint/issues/723)).
+
+  Thanks [@Shaisolaris](https://github.com/Shaisolaris) ([#826](https://github.com/tmatens/compose-lint/pull/826)).
+
 ## [0.28.0] - 2026-09-08
 
 ### Added
