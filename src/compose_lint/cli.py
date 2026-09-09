@@ -255,9 +255,9 @@ def _add_check_subparser(
         action="store_true",
         default=False,
         help=(
-            "treat config diagnostics (unknown/typo'd rule id, unknown key) as "
-            "errors instead of stderr warnings, so a malformed config fails "
-            "loudly rather than silently disabling the wrong rule"
+            "treat config diagnostics (unknown/typo'd rule id, unknown key, an "
+            "inert reason) as errors instead of stderr warnings, so a malformed "
+            "config fails loudly rather than silently disabling the wrong rule"
         ),
     )
     check.add_argument(
@@ -418,8 +418,8 @@ def _add_fix_subparser(
         action="store_true",
         default=False,
         help=(
-            "treat config diagnostics (unknown/typo'd rule id, unknown key) as "
-            "errors instead of stderr warnings"
+            "treat config diagnostics (unknown/typo'd rule id, unknown key, an "
+            "inert reason) as errors instead of stderr warnings"
         ),
     )
 
