@@ -60,7 +60,20 @@ The last command activates the repo's git hooks. The `pre-push` hook blocks unsi
 
 ## Local quality checks
 
-All four must pass locally before you push. CI runs the same commands.
+One command runs every gate a PR faces — the four code gates below, both
+coverage gates, and the five checks on your commits (signature, DCO trailer,
+no AI attribution, subject length, no Conventional Commits prefix) — with the
+same commands CI uses, and prints one summary:
+
+```bash
+scripts/preflight.sh            # everything CI checks; --quick skips the test suite
+```
+
+A green preflight is a green PR. Run it before every push; the commit checks
+are where a first PR here usually stalls, and CI cannot tell you about them
+until a maintainer has approved the run.
+
+The four code gates, if you want them individually:
 
 ```bash
 ruff check src/ tests/          # Linting
@@ -75,14 +88,22 @@ The second gate is the one a PR is likely to hit: a repo-wide percentage
 cannot see a few new untested lines, so the patch gate is what actually asks
 whether your change brought tests. Check both locally before pushing:
 
+`scripts/preflight.sh` runs both, measured the way CI measures them. The
+CLI and integration suites spawn `python -m compose_lint`, and CI counts
+those children by calling `coverage.process_startup()` in every interpreter;
+a bare `pytest --cov` does not, so its number is lower than the one CI
+reports for the same tree. To reproduce CI's figure by hand:
+
 ```bash
-pytest --cov=compose_lint --cov-report=term-missing \
-  --cov-report=xml --cov-fail-under=80        # the repo-wide floor
-diff-cover coverage.xml --compare-branch=origin/main \
-  --fail-under=90 --show-uncovered            # the lines you changed
+shim=$(mktemp -d) && printf 'import coverage\ncoverage.process_startup()\n' > "$shim/sitecustomize.py"
+PYTHONPATH="$shim" COVERAGE_PROCESS_START="$PWD/pyproject.toml" \
+  pytest --cov=compose_lint --cov-report=xml --cov-fail-under=80   # the repo-wide floor
+python .github/scripts/patch-coverage.py \
+  --base-sha "$(git merge-base HEAD upstream/main)" --fail-under 90   # the lines you changed
 ```
 
-`diff-cover` names the uncovered lines. If one is genuinely untestable,
+(`origin/main` instead of `upstream/main` if you are not on a fork.) The
+patch script names the uncovered lines. If one is genuinely untestable,
 mark it `# pragma: no cover` with a comment saying why, rather than dropping
 the threshold. A PR that changes only docs, tests or metadata has no
 measurable line and passes.
