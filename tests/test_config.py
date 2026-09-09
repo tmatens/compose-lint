@@ -243,6 +243,23 @@ class TestConfigValidation:
         assert disabled["CL-0002"] == "we accept this risk"
         assert "has no effect" not in capsys.readouterr().err
 
+    def test_reason_with_enabled_true_warns(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """An explicit `enabled: true` is still an enabled rule.
+
+        The warning is about the reason having no effect, not about the
+        `enabled` key being absent — a rule someone deliberately turned on
+        carries the same inert justification as one they never touched.
+        """
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text(
+            "rules:\n  CL-0002:\n    enabled: true\n    reason: we accept this risk\n"
+        )
+        disabled, _overrides, _excluded = load_config(config)
+        assert "CL-0002" not in disabled
+        assert "has no effect" in capsys.readouterr().err
+
     def test_exclude_services_reason_does_not_warn(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
