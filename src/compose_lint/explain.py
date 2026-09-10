@@ -17,6 +17,12 @@ _RULE_ID_RE = re.compile(r"^CL-\d{4}$")
 # Ids that were used and retired. They must not reappear: reusing one
 # silently rewrites the meaning of a suppression someone already wrote
 # (ADR-005). Shared with tests/test_rule_surfaces.py.
+#
+# The set is closed. It is the pre-1.0 reclamation, which ended with CL-0023
+# (ADR-028). A retirement after 1.0 does *not* join it: the rule keeps a
+# tombstone doc page (ADR-032 step 4), so `--explain` resolves it and says
+# what refuted it rather than reporting it as gone. Anything here has no page
+# to resolve, which is what earns the different message.
 FALLOW_RULE_IDS = frozenset({"CL-0012", "CL-0015", "CL-0023"})
 
 

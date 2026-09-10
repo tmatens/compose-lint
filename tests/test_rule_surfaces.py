@@ -60,6 +60,35 @@ def test_surface_lists_exactly_the_registered_rules(surface: str) -> None:
     )
 
 
+def test_the_fallow_set_is_every_id_the_registry_skips() -> None:
+    """Pin the constant itself, or the two guards below verify nothing.
+
+    Both take an intersection with `FALLOW_RULE_IDS`, so emptying it leaves
+    them green — passing by having nothing to check. Deriving the set a second
+    way closes that: a retired id is a gap in the numbering, and the sweep that
+    created these ran to CL-0023 (ADR-028), so the gaps below the highest
+    registered id *are* the fallow set.
+
+    With one exception, which is why this reads doc pages rather than counting
+    gaps. A retirement after 1.0 keeps a tombstone page so `--explain` still
+    resolves it (ADR-032 step 4) — it leaves a gap in the registry but must not
+    join this set, and having a page is exactly what distinguishes it.
+    """
+    registered = sorted(int(rule_id.removeprefix("CL-")) for rule_id in REGISTERED)
+    gaps = {f"CL-{n:04d}" for n in range(1, registered[-1]) if n not in set(registered)}
+    tombstoned = {
+        rule_id
+        for rule_id in gaps
+        if (REPO / "docs" / "rules" / f"{rule_id}.md").is_file()
+    }
+    assert gaps - tombstoned == FALLOW_RULE_IDS, (
+        f"the registry skips {sorted(gaps)}, of which {sorted(tombstoned)} keep a "
+        f"doc page; FALLOW_RULE_IDS is {sorted(FALLOW_RULE_IDS)}. A pre-1.0 "
+        "reclaimed id belongs in the set; a post-1.0 retirement keeps its page "
+        "and does not."
+    )
+
+
 def test_retired_ids_are_not_reused() -> None:
     reused = FALLOW_RULE_IDS & REGISTERED
     assert not reused, (
