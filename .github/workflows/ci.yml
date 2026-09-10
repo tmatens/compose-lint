@@ -6,12 +6,18 @@ on:
   pull_request:
     branches: [main]
 
-# Cancel a PR's in-progress run when new commits land on it. A push to main is
-# never cancelled: the ruleset does not require a PR to be up to date before
-# merging, so main's own run is what proves the merged result — and a run the
-# next merge cancels proves nothing. 15 of the 300 runs before this were.
+# A PR's runs share a group and supersede each other: only the latest push
+# matters. Every push to main gets a group of its own, keyed on the commit,
+# so merges never contend. The ruleset does not require a PR to be up to date
+# before merging, which makes main's own run the thing that proves a merged
+# result, and a commit whose run was dropped has no such proof.
+#
+# `cancel-in-progress: false` alone is not enough for that, which is how this
+# was first written (#834) and what three merges inside a minute then showed:
+# a queued run joining a busy group cancels whatever was already pending, so
+# the middle of three merges lost its run. Only a per-commit group avoids it.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Deny-all at the workflow level; every job declares the scopes it needs.
