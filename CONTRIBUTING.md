@@ -56,7 +56,7 @@ pip install -e ".[dev]"
 git config core.hooksPath .githooks
 ```
 
-The last command activates the repo's git hooks. The `pre-push` hook blocks unsigned commits — see [commit signing](#commit-signing) for setup.
+The last command activates the repo's git hooks. The `pre-push` hook blocks a commit whose `Signed-off-by` trailer is missing or does not match its author, and warns about an unsigned one — see [DCO](#developer-certificate-of-origin) and [commit signing](#commit-signing).
 
 ## Local quality checks
 
@@ -230,7 +230,8 @@ the test that enforces it, or says that a reviewer does.
   not "Added CL-0011" or "CL-0011".
 - **Explain the *why* in the body, not just the *what*.** The diff already
   shows what changed; the commit message exists to explain the reason.
-- **Sign your commits.** See [commit signing](#commit-signing) below.
+- **Signing your commits is recommended, not required.** See
+  [commit signing](#commit-signing) below for what it adds and how.
 - **Sign off your commits.** Use `git commit -s` to add the
   `Signed-off-by:` trailer required by the
   [DCO](#developer-certificate-of-origin) — this is separate from
@@ -252,9 +253,17 @@ because they read naturally in `git log` without tooling.
 
 ### Commit signing
 
-All commits to `main` must be signed so GitHub shows the "Verified" badge.
-Unsigned commits can be spoofed — anyone can set `user.email` to yours and
-open a PR from a fork that attributes to you.
+Signing is **recommended, not required**. Every commit on `main` is signed
+regardless: squash is the only merge method here, and GitHub signs the squash
+commit with its own key, so `main`'s history verifies whether or not the PR's
+commits did (all of it does — checked against the API, not assumed).
+
+What a signed PR commit adds is about *you*, not `main`: it binds the author
+field to a key on your GitHub account. A `Signed-off-by` trailer alone cannot
+do that — anyone can set `user.email` to anyone's address — so a **Verified**
+badge is what makes "this person wrote this" provable rather than asserted.
+Worth the two minutes if you want your name in the history to be
+demonstrably yours; skip it and nothing blocks.
 
 SSH signing is the easiest setup because it uses the same key you already
 push with:
@@ -321,8 +330,8 @@ All changes to `main` go through a PR — including maintainer changes.
 **External contributors:** you won't have push access to this repository.
 [Fork it](https://github.com/tmatens/compose-lint/fork), create your branch on
 the fork, and open the PR from that branch back to `main` here. Everything
-below applies the same way; the DCO and commit-signing checks run on fork PRs
-too, so set those up before your first commit.
+below applies the same way; the DCO check runs on fork PRs too, so set the
+sign-off up before your first commit.
 
 Add this repository as a second remote when you clone your fork. `origin` is
 **your fork**, not this repository, so any instruction phrased as

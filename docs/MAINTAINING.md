@@ -139,8 +139,8 @@ patch — is where a first PR usually stalls. All of it is in
 - Fork, then add this repo as `upstream` — `origin` is your fork, and
   `git rebase origin/main` does nothing useful there.
 - Run `scripts/preflight.sh` before every push. It runs every gate CI runs,
-  including the commit checks (signature, DCO trailer matching your author
-  email exactly, subject style) that CI cannot report on a first PR until a
+  including the commit checks (DCO trailer matching your author email
+  exactly, subject style) that CI cannot report on a first PR until a
   maintainer approves the run.
 - Your first PR's checks stay grey until that approval. That is the fork
   gate, not something you did; a maintainer will get to it.
@@ -217,10 +217,17 @@ worth knowing:
   the PR is the right place for it.
 
 GitHub signs the squash commit with its own key, so `main`'s history verifies
-regardless of whether the contributor signed. Their signature is evidence about
-the PR, not about what lands. Note that nothing enforces it server-side: there
-is no `required_signatures` ruleset rule and no CI job, and `.githooks/pre-push`
-only binds contributors who ran `git config core.hooksPath .githooks`.
+regardless of whether the contributor signed — squash is the only merge method
+enabled, and every commit on `main` reports `verified: true` from the API.
+That is the policy: **contributor signing is recommended, not required.** A
+signed PR commit is evidence about the PR — it binds the author field to the
+contributor's account, which the DCO trailer alone cannot — not about what
+lands. Nothing enforces it and nothing should: there is no
+`required_signatures` rule, no CI job, and the pre-push hook and
+`scripts/preflight.sh` report an unsigned commit as a note. This matches the
+DCO-plus-signed-releases posture of the kernel and CNCF projects; requiring
+per-commit signatures from outside contributors would put a setup step in
+front of a first PR to protect nothing that ships.
 
 ## Known friction
 

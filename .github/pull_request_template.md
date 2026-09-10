@@ -1,7 +1,7 @@
 <!--
 Thanks for contributing! Fill in the sections below. Delete any that don't
 apply. See CONTRIBUTING.md for the full workflow, commit conventions, and
-signing requirements.
+the DCO sign-off.
 -->
 
 ## Summary
@@ -65,9 +65,9 @@ Closes #
 - [ ] `scripts/preflight.sh` passes on this branch (runs every gate CI runs,
       including the commit checks CI cannot report until a maintainer approves
       the run — see CONTRIBUTING.md "Local quality checks")
-- [ ] Commits are **signed** — GitHub shows a `Verified` badge on the commits
-      tab (proves *who committed*; not the same as signing off, which the
-      `dco` check enforces separately — see CONTRIBUTING.md)
+- [ ] Commits are **signed** — recommended, not required: `main` is signed by
+      GitHub on merge either way. A `Verified` badge proves *who committed*,
+      which the `Signed-off-by` trailer alone cannot (see CONTRIBUTING.md)
 - [ ] One logical change per commit; no unrelated changes bundled in
 - [ ] `tests/corpus_snapshot.json.gz` is **not** in this PR (a maintainer regenerates it)
 

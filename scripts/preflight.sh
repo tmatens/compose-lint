@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Run every gate a pull request faces, from this checkout, in one command.
 #
-# CI grades a PR on eleven things — ruff, ruff format, mypy, the test suite,
-# the statement-coverage floor, patch coverage, and five checks on the commits
-# themselves (signature, DCO trailer, no AI attribution, subject length, no
-# Conventional Commits prefix). CONTRIBUTING lists them across four sections,
+# CI grades a PR on ten things — ruff, ruff format, mypy, the test suite,
+# the statement-coverage floor, patch coverage, and four checks on the commits
+# themselves (DCO trailer, no AI attribution, subject length, no Conventional
+# Commits prefix); a fifth, signing, is reported but recommended only. CONTRIBUTING lists them across four sections,
 # and the pre-push hook that catches the commit ones is opt-in. In practice a
 # first PR here fails on one of the commit checks, not on code: of the last
 # seven external PRs, three lost a round to a Signed-off-by trailer that was
@@ -123,24 +123,22 @@ fi
 bot_pattern='(dependabot|renovate|github-actions|mend)\[bot\]'
 
 commits_signed() {
-  # Presence is read off the commit object's `gpgsig` header rather than
-  # %G?, which needs gpg on PATH and your own key in a local allowed_signers
-  # file before it says anything but N — the pre-push hook's %G? != G test
-  # fails a correctly signed commit on a machine that simply cannot verify
-  # it. Verifying is GitHub's job, against the keys on your account; what
-  # can be checked here is that a signature exists, and that git does not
-  # call it bad (B) where it can verify.
+  # Advisory: signing is recommended, not required. main is signed by GitHub
+  # on every squash-merge, so nothing gates on this — it is reported because
+  # a Verified badge is what makes the author field provably yours, and the
+  # DCO trailer alone cannot. Presence is read off the commit object's
+  # `gpgsig` header rather than %G?, which needs gpg on PATH and your own key
+  # in a local allowed_signers file before it says anything but N. A
+  # signature git can verify here and calls bad (B) is the one real failure.
   local ok=1 sha status
   while read -r sha status; do
     if ! git cat-file commit "${sha}" | grep -q '^gpgsig '; then
-      printf '  %s  unsigned: %s\n' "${sha:0:7}" "$(git log -1 --format=%s "${sha}")"
-      ok=0
+      printf '  %s  unsigned (recommended, not required): %s\n' "${sha:0:7}" "$(git log -1 --format=%s "${sha}")"
     elif [ "${status}" = "B" ]; then
       printf '  %s  BAD signature: %s\n' "${sha:0:7}" "$(git log -1 --format=%s "${sha}")"
       ok=0
     fi
   done < <(git log --no-merges --format='%H %G?' "${range}" 2>/dev/null)
-  [ "${ok}" -eq 1 ] || printf '  see CONTRIBUTING.md "Commit signing"\n'
   [ "${ok}" -eq 1 ]
 }
 
@@ -211,7 +209,7 @@ commit_subjects() {
   [ "${ok}" -eq 1 ]
 }
 
-gate "commits signed"                commits_signed
+gate "commits signed (recommended)"  commits_signed
 gate "commits signed off (DCO)"      commits_signed_off
 gate "no AI attribution in commits"  commits_without_ai_attribution
 gate "commit subjects"               commit_subjects
