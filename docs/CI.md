@@ -51,7 +51,9 @@ a suppression, and no duplicate `ruleId`.
 ## PR-time checks — `ci.yml`
 
 Runs on every PR to `main`. All jobs must pass before merge. Concurrency
-cancels in-progress runs when you push new commits to the same PR.
+cancels in-progress runs when you push new commits to the same PR. A push to
+`main` is never cancelled: the ruleset does not require a PR to be up to date
+before merging, so `main`'s own run is what proves the merged result.
 
 | Job                       | Purpose                                                                                   |
 | ------------------------- | ----------------------------------------------------------------------------------------- |

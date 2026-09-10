@@ -194,7 +194,7 @@ or overtaken rather than fixed, since it keeps the objection legible.
 |---|---|
 | No blocking state | `gh pr view <n> --json mergeStateStatus` → `CLEAN` |
 | Checks ran on the **current** head | Compare the run's `head_sha` to `headRefOid`; a green run on a superseded SHA proves nothing |
-| Branch is up to date | `behind_by: 0` — the ruleset sets `strict_required_status_checks_policy` |
+| No conflicts | `mergeStateStatus` is not `DIRTY`. `behind_by > 0` is fine: the ruleset does not require up to date, and `main`'s own run — never cancelled — re-tests the merged result |
 | Review threads | All resolved (CONTRIBUTING asks for this; it is not enforced) |
 | Rule predicates touched | Regenerate `tests/corpus_snapshot.json.gz` yourself and review the drift — contributors are asked to leave it alone |
 
@@ -231,12 +231,19 @@ front of a first PR to protect nothing that ships.
 
 ## Known friction
 
-`strict_required_status_checks_policy` requires a PR to be up to date before
-merging, and Renovate merges digest PRs daily. An external PR that sits for a
-day needs a rebase, the rebase force-push re-arms the approval gate, and the
-maintainer approves a second time. Merging external contributions promptly is
-the cheapest mitigation; a merge queue would remove the requirement entirely,
-at the cost of teaching `ci.yml` the `merge_group` trigger.
+The ruleset used to require a PR to be up to date before merging
+(`strict_required_status_checks_policy`). With `main` moving ~40 times a week,
+an external PR open for an afternoon was behind by evening, and every one of
+the six rebases asked for in the sweep that dropped it (#685 ×3, #795 ×2, #829)
+was "behind", not a conflict. The requirement was dropped after 300 completed
+`main` runs with zero failures: `main`'s own push run — no longer cancelled by
+the next merge — is what proves a merged result, and a real conflict still
+blocks the merge on its own. The trade is a *semantic* conflict between two
+concurrent PRs landing as a red `main` run ten minutes later, fixed forward.
+Watch condition: a `main` run that **fails** (not cancels) on a merge whose PR
+was green. If that ever happens, adopt the merge queue then — it removes the
+gap at the cost of teaching `ci.yml` the `merge_group` trigger and turning
+every merge into a ten-minute enqueue.
 
 Contributor-side friction — the DCO check being invisible until approval, and
 the sign-off guidance that does not work — is tracked in

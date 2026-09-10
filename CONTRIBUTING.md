@@ -318,10 +318,12 @@ does not satisfy the check, which reports the expected and found trailers
 side by side so the difference is visible. Fix existing commits with
 `git commit --amend --signoff` or `git rebase --signoff main`.
 
-When your branch needs to catch up with `main`, **rebase and re-push with
-`--force-with-lease`** rather than using GitHub's "Update branch" button.
-Either route satisfies the up-to-date requirement, but the button writes a
-merge commit, and a linear branch is what this repo squashes cleanly.
+When your branch conflicts with `main`, **rebase and re-push with
+`--force-with-lease`** rather than using GitHub's "Update branch" button. The
+button writes a merge commit with no `Signed-off-by` trailer, which fails the
+DCO check; a linear branch is also what this repo squashes cleanly. Being
+merely *behind* `main` is not a reason to rebase — the ruleset does not
+require it, and `main`'s own run re-tests every merge.
 
 ## Pull requests
 
@@ -345,9 +347,10 @@ cd compose-lint
 git remote add upstream https://github.com/tmatens/compose-lint.git
 ```
 
-Then `git fetch upstream` and rebase onto `upstream/main`. `main` here moves
-several times a day, and the ruleset requires a PR to be up to date before it
-merges, so expect to rebase before yours lands:
+Then, when a rebase is called for — a conflict with `main`, or a change of
+yours you want to build on — rebase onto `upstream/main`. Being behind `main`
+is not by itself a reason: the ruleset does not require a PR to be up to date,
+and `main`'s own run re-tests every merge. When you do:
 
 ```bash
 git fetch upstream && git rebase upstream/main
