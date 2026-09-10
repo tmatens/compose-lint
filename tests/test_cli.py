@@ -427,6 +427,15 @@ class TestCLI:
             assert "(expected format: CL-XXXX)" in result.stderr
 
     def test_explain_retired_rule_exits_2(self) -> None:
+        """Keep these ids literal — do not parametrize over FALLOW_RULE_IDS.
+
+        Importing the constant would make this agree with whatever it says
+        rather than with what the ids are, which is the one thing a test of a
+        retired-id message must not do. `tests/test_rule_surfaces.py` derives
+        the set from the registry's numbering to catch it going wrong; this
+        asserts the message a user actually gets for the three ids that were
+        reclaimed, spelled out.
+        """
         for rule_id in ("CL-0012", "CL-0015", "CL-0023"):
             result = run_cli("--explain", rule_id)
             assert result.returncode == 2, rule_id
