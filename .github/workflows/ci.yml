@@ -6,10 +6,13 @@ on:
   pull_request:
     branches: [main]
 
-# Cancel in-progress runs for the same branch/PR when new commits land.
+# Cancel a PR's in-progress run when new commits land on it. A push to main is
+# never cancelled: the ruleset does not require a PR to be up to date before
+# merging, so main's own run is what proves the merged result — and a run the
+# next merge cancels proves nothing. 15 of the 300 runs before this were.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Deny-all at the workflow level; every job declares the scopes it needs.
 permissions: {}
@@ -624,9 +627,9 @@ jobs:
           bot_pattern='(dependabot|renovate|github-actions|mend)\[bot\]'
           # Merge commits are skipped (--no-merges): they introduce no authored
           # content, so there is nothing for their author to certify. GitHub's
-          # own "Update branch" button mints one with no trailer, and this repo
-          # requires branches to be current before merge — so gating merge
-          # commits punishes contributors for taking the route the UI offers.
+          # own "Update branch" button mints one with no trailer, and gating
+          # merge commits would punish a contributor for taking the route the
+          # UI offers.
           # The GitHub DCO app skips them for the same reason (dcoapp/app
           # `lib/dco.js`: `const isMerge = parents && parents.length > 1`).
           # Squash-merge means they never reach main regardless.
