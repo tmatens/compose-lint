@@ -756,8 +756,16 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         try:
             canonical = normalize_rule_id(args.explain)
             doc = load_rule_doc(canonical)
-        except UnknownRuleError:
-            emit(f"Error: unknown rule id '{args.explain}' (expected format: CL-XXXX)")
+        except UnknownRuleError as exc:
+            if exc.kind == "malformed":
+                emit(
+                    f"Error: unknown rule id '{args.explain}' "
+                    "(expected format: CL-XXXX)"
+                )
+            elif exc.kind == "retired":
+                emit(f"Error: rule {exc.rule_id} was retired and is not reused")
+            else:
+                emit(f"Error: unknown rule id '{exc.rule_id}'")
             sys.exit(2)
         if args.no_pager or not _page_rule_doc(doc, canonical):
             _stdout_print(doc)

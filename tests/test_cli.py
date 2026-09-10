@@ -410,6 +410,7 @@ class TestCLI:
         assert result.returncode == 2
         assert "unknown rule id" in result.stderr.lower()
         assert "CL-9999" in result.stderr
+        assert "expected format" not in result.stderr.lower()
 
     def test_explain_rejects_structured_format(self) -> None:
         for fmt in ("json", "sarif"):
@@ -419,9 +420,24 @@ class TestCLI:
             assert result.stdout == ""
 
     def test_explain_rejects_malformed_id(self) -> None:
-        result = run_cli("--explain", "not-a-rule")
+        for raw in ("not-a-rule", "BOGUS", "CL-XX"):
+            result = run_cli("--explain", raw)
+            assert result.returncode == 2, raw
+            assert f"unknown rule id '{raw}'" in result.stderr
+            assert "(expected format: CL-XXXX)" in result.stderr
+
+    def test_explain_retired_rule_exits_2(self) -> None:
+        for rule_id in ("CL-0012", "CL-0015", "CL-0023"):
+            result = run_cli("--explain", rule_id)
+            assert result.returncode == 2, rule_id
+            assert f"rule {rule_id} was retired and is not reused" in result.stderr
+            assert "expected format" not in result.stderr.lower()
+
+    def test_explain_retired_id_is_case_insensitive(self) -> None:
+        result = run_cli("--explain", "cl-0012")
         assert result.returncode == 2
-        assert result.stderr
+        assert "rule CL-0012 was retired and is not reused" in result.stderr
+        assert "expected format" not in result.stderr.lower()
 
     def test_explain_rejects_file_argument(self) -> None:
         result = run_cli("--explain", "CL-0003", str(FIXTURES / "valid_basic.yml"))
