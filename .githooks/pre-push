@@ -11,14 +11,15 @@ while read local_ref local_sha remote_ref remote_sha; do
   base=$(git merge-base "$local_sha" origin/main 2>/dev/null \
     || git rev-list --max-parents=0 HEAD)
 
-  while IFS= read -r line; do
-    sha="${line%% *}"
-    status="${line##* }"
-    if [ "$status" != "G" ]; then
-      echo "error: commit ${sha} is unsigned or unverified — sign your commits before pushing"
-      exit 1
+  # Signing is recommended, not required: main is signed by GitHub on every
+  # squash-merge. Presence is read off the commit object, not %G?, which needs
+  # gpg on PATH and the signer's key in a local allowed_signers file before it
+  # says anything but N for a correctly signed commit.
+  while IFS= read -r sha; do
+    if ! git cat-file commit "${sha}" | grep -q '^gpgsig '; then
+      echo "note: commit ${sha} is unsigned — recommended, not required; see CONTRIBUTING.md \"Commit signing\""
     fi
-  done < <(git log --format="%H %G?" "${base}..${local_sha}")
+  done < <(git log --format="%H" "${base}..${local_sha}")
 
   # DCO. Separate from the signature above: signing proves who committed, the
   # trailer asserts the right to contribute. No git config adds it to every
