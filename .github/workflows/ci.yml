@@ -25,7 +25,7 @@ permissions: {}
 
 jobs:
   # Detects which classes of files a PR touches so the expensive jobs below
-  # (the 5-version test matrix, coverage, container smokes, rule-premises)
+  # (the four-version test matrix, coverage, container smokes, rule-premises)
   # can skip when nothing they exercise changed — a docs- or metadata-only
   # PR returns a green `ci-ok` in seconds instead of waiting on container
   # spin-ups. This is per-job gating, NOT a workflow-level `paths:` filter:
@@ -1222,11 +1222,6 @@ jobs:
           grep -q "Config file not found" out.txt \
             || { echo "::error::Expected the absorbed-path config error; the failure shape changed — re-pin it."; exit 1; }
 
-  # Runtime arm of the rule-grounding bar: every rule that describes container
-  # runtime state must demonstrate its premise against a live container (the
-  # insecure state is the Docker default, or the flagged config produces the
-  # insecure behavior). Catches the CL-0022/CL-0023 failure mode — a rule that
-  # flags a Docker default — before it ships. Runners have Docker preinstalled.
       # Same one-bit problem as everywhere else: the steps above prove the
       # hook runs and fails, not that it found the right things. `try-repo`
       # builds the hook from the working tree, so the tree's golden applies
@@ -1251,6 +1246,11 @@ jobs:
           python3 "$GITHUB_WORKSPACE/scripts/assert_golden_findings.py" \
             --in-text --surface pre-commit out.txt
 
+  # Runtime arm of the rule-grounding bar: every rule that describes container
+  # runtime state must demonstrate its premise against a live container (the
+  # insecure state is the Docker default, or the flagged config produces the
+  # insecure behavior). Catches the CL-0022/CL-0023 failure mode — a rule that
+  # flags a Docker default — before it ships. Runners have Docker preinstalled.
   rule-premises:
     name: Validate rule premises (live container)
     needs: changes
@@ -1265,7 +1265,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - name: Validate each runtime rule's premise against a live container
         run: python scripts/validate_rule_premises.py
 
