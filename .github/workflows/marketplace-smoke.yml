@@ -274,3 +274,26 @@ jobs:
             echo "::error::Expected exit code 1 from ${CL_RUN}, got ${exit_code}"
             exit 1
           fi
+
+  # Scheduled runs have no PR to go red on. Without this the only signal
+  # for a weekly failure was an email to the workflow author, which is how
+  # a broken schedule stays broken. Downstream of every job so one report
+  # covers the whole run, and the only job holding issues: write.
+  report-failure:
+    name: Report scheduled failure
+    needs:
+      - pypi-propagated
+      - marketplace-smoke
+      - precommit-published-smoke
+      - oneshot-runners-smoke
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/report-scheduled-failure

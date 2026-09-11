@@ -488,7 +488,7 @@ condition.
 | Scorecard finding                   | Security → Code Scanning (`scorecard` category)        |
 | Docker Scout CVE                    | Security → Code Scanning (`docker-scout` category)     |
 | Vulnerability with an available fix | Rolling issue labelled `fixable-vulns`                 |
-| Scheduled workflow failure          | Email to workflow author + red X on Actions tab        |
+| Scheduled workflow failure          | Issue `Scheduled run failed: <workflow>` — one per workflow, repeat failures comment on it (`.github/actions/report-scheduled-failure`); plus the author email and red X |
 | Renovate PR                         | Opens a PR tagged accordingly                          |
 
 The Security tab is the single pane of glass for everything except
