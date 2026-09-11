@@ -11,7 +11,10 @@ jobs:
   batch-fuzzing:
     permissions:
       contents: read
-      actions: write
+      # security-events for the SARIF upload, issues for the failure report
+      # below. ClusterFuzzLite's own reference workflows run with read-all
+      # and still upload corpus and crash artifacts, so `actions: write`
+      # had no consumer here. Verified by a dispatched run after the drop.
       security-events: write
       issues: write
     runs-on: ubuntu-24.04
