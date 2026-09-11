@@ -80,7 +80,7 @@ CONTRIBUTING.md is the source of truth for commits, signing, and PRs. Key points
 
 Pin everything to an immutable ref. Renovate bumps the pins.
 
-- **GitHub Actions**: SHA-pin every `uses:` (including first-party). Tag in trailing comment. Only exception: `uses: ./`.
+- **GitHub Actions**: SHA-pin every `uses:` (including first-party). Tag in trailing comment. Only exception: `uses: ./`. Enforced twice: the repository setting *Require actions to be pinned to a full-length commit SHA* refuses to start a run with an unpinned `uses:` on any branch, and zizmor's `unpinned-uses` audit fails the `actionlint` job on a PR.
 - **Runtime deps**: SemVer ranges (this is a library — exact pins break downstream resolvers). Lower bound = tested minimum. No upper bound unless we've observed a break.
 - **Dev deps + CI installs**: Hash-pinned lockfiles. Every `pip install` in CI uses `pip install --require-hashes -r requirements{,-dev}.lock`. No ad-hoc `pip install pkg==X.Y.Z` in workflows. One exception: `python -m pip install --upgrade pip` bootstrap in security-scan job.
 - **Docker base images**: Digest-pin if we ever add a Dockerfile.
