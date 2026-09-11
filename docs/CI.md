@@ -188,13 +188,17 @@ gap that storage-repo would close.
 
 ### When a scheduled fuzz run fails
 
-1. GitHub Actions emails the workflow author by default.
+1. The run opens (or comments on) an issue titled `Scheduled run failed:
+   ClusterFuzzLite batch fuzzing (<sanitizer>)`, via the shared
+   `report-scheduled-failure` composite. GitHub also emails the workflow
+   author.
 2. SARIF crashes are uploaded to **Security → Code Scanning**.
 3. The crash reproducer is in the run's artifacts (90-day retention).
 
-No auto-issue filing. Triage happens manually: download the reproducer,
+The issue is the tracker; the fix is manual: download the reproducer,
 reproduce locally with `python fuzz/fuzz_compose.py <file>`, land a fix
-via PR, land the new corpus entry in `fuzz/corpus/` if applicable.
+via PR, land the new corpus entry in `fuzz/corpus/` if applicable, and
+close the issue with the PR.
 
 The `RecursionError` fix in 0.3.5 came from this path.
 
@@ -497,7 +501,7 @@ condition.
 | Docker Scout CVE                    | Security → Code Scanning (`docker-scout` category)     |
 | Vulnerability with an available fix | Rolling issue labelled `fixable-vulns`                 |
 | Scheduled workflow failure          | Issue `Scheduled run failed: <workflow>` — one per workflow, repeat failures comment on it (`.github/actions/report-scheduled-failure`); plus the author email and red X |
-| Renovate PR                         | Opens a PR tagged accordingly                          |
+| Renovate PR                         | Opens a PR tagged accordingly; patch, pin, digest and lock-maintenance bumps automerge once green **and** the release is three days old (`renovate/stability-days` stays pending until then) |
 
 The Security tab is the single pane of glass for everything except
 PR-gating failures (which stay on the PR) and Renovate bumps (which

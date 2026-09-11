@@ -42,8 +42,9 @@ on:
     paths:
       - .github/workflows/marketplace-smoke.yml
   schedule:
-    # Weekly re-verification of both published surfaces. Failures email
-    # the workflow author (see docs/CI.md "Where findings land").
+    # Weekly re-verification of both published surfaces. A failure opens
+    # an issue via the report-failure job below (see docs/CI.md "Where
+    # findings land").
     - cron: "13 9 * * 1"
 
 permissions: {}
