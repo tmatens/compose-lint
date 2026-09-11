@@ -19,7 +19,8 @@ per-channel publish contract see [`DISTRIBUTION.md`](DISTRIBUTION.md).
 | `release-prep.yml`        | Manual (`workflow_dispatch`, maintainer)   | Opens the "Prepare X.Y.Z release" PR                   |
 | `publish-channel.yml`     | Manual (`workflow_dispatch`, maintainer)   | Emergency single-channel publish                       |
 | `marketplace-smoke.yml`   | Push to `main` touching the file + manual + weekly cron | Verifies the published action, pre-commit hook, and the `uvx`/`pipx run` one-shot forms end-to-end |
-| `forgejo-smoke.yml`       | Push to `main` touching the harness + manual + weekly cron | Runs README's Forgejo snippet on a live containerized Forgejo |
+| `forgejo-smoke.yml`       | PRs + pushes to `main` touching the harness + manual + weekly cron | Runs the Forgejo guide's snippet on a live containerized Forgejo |
+| `forgejo-smoke-bump.yml`  | Daily (05:17 UTC) + manual                 | Opens the PR that moves the harness to the newest Forgejo + runner, docs claim included |
 | `os-smoke.yml`            | Called by `ci.yml` on PRs touching code + push to `main` + manual + weekly cron | pytest (3.11 and 3.13) + pre-commit hook on macOS and Windows — **gates via `ci-ok`** |
 | `sarif-ingestion.yml`     | Push to `main` touching SARIF inputs + manual + weekly cron | Uploads a probe SARIF to Code Scanning and asserts GitHub ingested it — then deletes its own alerts |
 
@@ -382,7 +383,8 @@ Like the marketplace-pin job, this PR is authored with the
 that job it falls back to `GITHUB_TOKEN` when the secret is absent
 (release-prep touches no `.github/workflows/*` file, so the token still
 works) — but the fallback PR lands check-less and needs a manual
-close+reopen, so keep the secret configured.
+close+reopen, so keep the secret configured. `forgejo-smoke-bump.yml`
+uses the secret the same way, with the same fallback.
 
 The signed annotated tag is **not** created here. Tag creation stays
 manual because (a) `GITHUB_TOKEN`-created tags don't trigger downstream
@@ -451,12 +453,49 @@ and requires success. It then asserts the README's verified-on versions
 against the live instance and runner, so bumping the harness images
 without moving the claim (or vice versa) fails the run.
 
-Runs weekly, on pushes to `main` touching the harness — which includes
-Renovate bumps of the Forgejo/runner images, so each Forgejo release
-re-proves the snippet — and manually. Deliberately not on README PRs:
+Runs weekly, on PRs and pushes to `main` touching the harness — which is
+how each Forgejo release re-proves the snippet: the bump PR below carries
+this run as its check — and manually. Deliberately not on docs-only PRs:
 the release-prep PR bumps the snippet's `compose-lint==X.Y.Z` pin before
 that version exists on PyPI, which would fail spuriously; the weekly run
 covers the new pin after release instead.
+
+### `forgejo-smoke-bump.yml`
+
+Opens the PR that moves the harness to the newest Forgejo and runner
+releases. It has to be two files or nothing: the image pins in
+`scripts/forgejo_smoke/compose-forgejo-smoke.yml` **and** the "Verified on
+Forgejo X, runner Y" line in `docs/forgejo.md`, because `forgejo-smoke.yml`
+asserts the two agree — which is also why Renovate could never do this
+bump even where it can see the file (it cannot move the docs line). And
+it cannot see the file: the hosted Renovate fails to look up either
+registry (`Failed to look up docker package codeberg.org/forgejo/forgejo:
+no-result`, likewise `data.forgejo.org/forgejo/runner`, plus `Error
+obtaining docker token`) while a local `renovate --platform=local
+--dry-run=lookup` resolves both, so the failure is the hosted runner's
+egress. `renovate.json` disables the docker-compose manager on that file
+so two writers never race on one pin.
+
+Daily rather than weekly because Codeberg deletes a superseded Forgejo
+patch tag — digest included — within days of the next patch ([#746]);
+the old pin is on the clock from the moment a release ships.
+
+`scripts/forgejo_smoke_bump.py` is three-valued like `eol_watch.py`: 0
+nothing to do, 1 files rewritten (the job commits them, one branch per
+target version pair, and never reopens a pair a human has already closed),
+2 no trustworthy answer — a registry unreachable, an anchor gone from
+either file, or a tag resolving to a per-architecture manifest instead of
+a manifest list — which fails the run and is reported as an issue. Policy:
+the newest stable `X.Y.Z` of each image, never a `-rootless` variant or a
+floating `16`/`16.0` tag. A major that breaks the guide's snippet surfaces
+as a red `Forgejo smoke test` check on the bump PR, which is the review;
+merging stays manual.
+
+The PR is authored with `MARKETPLACE_SMOKE_PAT` (see below) so its checks
+run; without the secret it falls back to `GITHUB_TOKEN` and lands
+check-less, like `release-prep.yml`.
+
+[#746]: https://github.com/tmatens/compose-lint/issues/746
 
 ### `os-smoke.yml`
 

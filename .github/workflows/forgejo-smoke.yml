@@ -9,17 +9,24 @@ name: Forgejo smoke test
 # "Verified on Forgejo X, runner Y" claim against the live versions.
 #
 # Triggers: weekly (a Forgejo-side or PyPI-side breakage between releases
-# should be noticed before a user reports it), on pushes touching the
-# harness (including Renovate bumps of the Forgejo/runner images — a
-# version bump re-proves the snippet and forces the guide's claim to move
-# in the same PR), and manually. Deliberately NOT on docs PRs: the
+# should be noticed before a user reports it), on PRs and pushes touching
+# the harness — which is how a Forgejo/runner bump PR from
+# forgejo-smoke-bump.yml gets its review: the bump re-proves the snippet
+# on the new release before it merges, and the guide's claim has to move
+# in the same PR — and manually. Deliberately NOT on docs-only PRs: the
 # release-prep PR bumps the snippet's compose-lint pin to a version PyPI
 # does not have yet, which would fail here spuriously mid-release; the
-# post-release weekly run covers the new pin instead.
+# post-release weekly run covers the new pin instead. (The bump PR also
+# touches docs/forgejo.md, but it is the harness path that triggers.)
 on:
   workflow_dispatch:
   schedule:
     - cron: "43 9 * * 1"
+  pull_request:
+    paths:
+      - .github/workflows/forgejo-smoke.yml
+      - scripts/forgejo_smoke/**
+      - scripts/forgejo_smoke.py
   push:
     branches: [main]
     paths:

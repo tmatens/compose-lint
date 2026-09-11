@@ -1,0 +1,137 @@
+name: Forgejo smoke harness bump
+
+# Opens the PR that moves the Forgejo smoke harness to the newest Forgejo
+# and runner releases — both the image pins in
+# scripts/forgejo_smoke/compose-forgejo-smoke.yml and the "Verified on
+# Forgejo X, runner Y" claim in docs/forgejo.md, together, because
+# forgejo-smoke.yml asserts the two agree.
+#
+# Why not Renovate: the hosted runner cannot look up either registry
+# (Dependency Dashboard: "Failed to look up docker package
+# codeberg.org/forgejo/forgejo: no-result", the same for
+# data.forgejo.org/forgejo/runner, plus "Error obtaining docker token"),
+# while a local `renovate --platform=local` resolves both — the failure
+# is the hosted runner's egress, not the registries. And a Renovate PR
+# would fail the smoke anyway: it cannot move the docs claim. Meanwhile
+# Codeberg garbage-collects a superseded Forgejo patch tag, digest
+# included, within days of the next patch (#746), so the pin has to move
+# within that window. Daily, not weekly, for that reason.
+#
+# scripts/forgejo_smoke_bump.py does the work and is three-valued: 0
+# nothing to do, 1 files rewritten (this job commits them), 2 no
+# trustworthy answer (network, a stale anchor, a digest that is not a
+# manifest list) — 2 fails the run and is reported as an issue below,
+# because a watcher that silently stops watching reads as "covered".
+#
+# The PR is authored with MARKETPLACE_SMOKE_PAT so its checks run
+# (a GITHUB_TOKEN-authored PR triggers no workflows, #342); the same
+# secret the marketplace-pin and release-prep jobs already use, so no
+# new credential. forgejo-smoke.yml runs on the PR (pull_request trigger
+# on the harness paths) and is the review: a major that breaks the guide's
+# snippet shows up there, on the PR, not on main. Merging stays manual.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * *"
+
+permissions: {}
+
+jobs:
+  bump:
+    name: Move the harness to the newest Forgejo and runner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: true
+          # Push the branch as the PAT user so the PR it authors below
+          # triggers checks (#342). Falls back to GITHUB_TOKEN when the
+          # secret is absent: this workflow touches no .github/workflows/*
+          # file, so the token still functions — it just yields a
+          # check-less PR that needs a manual close+reopen.
+          token: ${{ secrets.MARKETPLACE_SMOKE_PAT || github.token }}
+
+      # No setup-python: the script is stdlib-only and the runner's own
+      # interpreter satisfies it. Nothing to install keeps this job off the
+      # lockfile/hash-pinning surface entirely.
+      - name: Compare the pins with the registries
+        id: bump
+        run: |
+          set -euo pipefail
+          rc=0
+          python3 scripts/forgejo_smoke_bump.py --github-output "${GITHUB_OUTPUT}" || rc=$?
+          if [ "${rc}" -gt 1 ]; then
+            echo "::error::forgejo_smoke_bump.py exit ${rc} — no trustworthy answer"
+            exit "${rc}"
+          fi
+          echo "changed=${rc}" >> "${GITHUB_OUTPUT}"
+
+      - name: Commit, push, open PR
+        if: steps.bump.outputs.changed == '1'
+        env:
+          GH_TOKEN: ${{ secrets.MARKETPLACE_SMOKE_PAT || github.token }}
+          BRANCH: ${{ steps.bump.outputs.branch }}
+          TITLE: ${{ steps.bump.outputs.title }}
+          FORGEJO: ${{ steps.bump.outputs.forgejo }}
+          RUNNER: ${{ steps.bump.outputs.runner }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # The branch name carries both versions, so one PR per target pair:
+          # a PR that exists for it — open, merged, or closed as declined —
+          # means this pair has already been put to a human. Do not reopen.
+          if [ "$(gh pr list --state all --head "${BRANCH}" --json number --jq 'length')" != "0" ]; then
+            echo "::notice::a PR for ${BRANCH} already exists; nothing to do"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "${BRANCH}"
+          git add scripts/forgejo_smoke/compose-forgejo-smoke.yml docs/forgejo.md
+          git commit -m "${TITLE}" -m "Opened by forgejo-smoke-bump.yml (${RUN_URL}).
+          Moves the harness image pins and the guide's verified-on claim
+          together; forgejo-smoke.yml runs on this PR and is the review."
+          # Force: the branch is generated from the target versions, so a
+          # leftover from a run that pushed but never opened its PR is ours.
+          git push --force -u origin "${BRANCH}"
+          cat > /tmp/pr-body.md <<EOF
+          **Automated harness bump.** Opened by [forgejo-smoke-bump.yml](${RUN_URL}); see \`docs/CI.md\`.
+
+          Moves \`scripts/forgejo_smoke/compose-forgejo-smoke.yml\` to Forgejo **${FORGEJO}** and runner **${RUNNER}** (manifest-list digests, taken from each registry's \`Docker-Content-Digest\`), and the "Verified on Forgejo ${FORGEJO}, runner ${RUNNER}" line in \`docs/forgejo.md\` with it, because the smoke asserts the two agree.
+
+          **The review is the \`Forgejo smoke test\` check on this PR**: it boots this exact stack and runs the guide's snippet on it. Green means the guide holds on the new release; red means the snippet or the guide needs a human before this merges. Codeberg deletes a superseded Forgejo patch tag within days of the next one, so a red run here still needs attention soon — the old pin is on the clock.
+
+          Merging is manual on purpose (no automerge for the harness).
+          EOF
+          # Strip the 10-space indentation that the YAML block scalar requires.
+          sed -i -E 's/^          //' /tmp/pr-body.md
+          gh pr create \
+            --base main \
+            --head "${BRANCH}" \
+            --title "${TITLE}" \
+            --body-file /tmp/pr-body.md
+
+  # Scheduled runs have no PR to go red on. Without this the only signal
+  # for a daily failure is an email to the workflow author, which is how a
+  # watcher stays broken — and a broken watcher here means the next Forgejo
+  # patch takes the weekly smoke red with it.
+  report-failure:
+    name: Report scheduled failure
+    needs:
+      - bump
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: $/.github/actions/report-scheduled-failure
+        with:
+          note: The harness bump did not complete, so a new Forgejo release will not be picked up until this is fixed — and Codeberg deletes the superseded tag within days.
