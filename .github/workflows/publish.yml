@@ -878,8 +878,9 @@ jobs:
   #     version and the GitHub Release page is live.
   # Only in that state does updating the Marketplace smoke test pin make
   # sense: the pinned SHA must point at an artifact that actually shipped.
-  # This job opens a PR; a human still reviews and merges it, and then
-  # triggers the Marketplace smoke workflow to verify end-to-end.
+  # This job opens a PR; a human still reviews and merges it. The merge is
+  # what runs the Marketplace smoke workflow end-to-end: it triggers on a push
+  # to main that touches its own file, so no manual dispatch follows.
   bump-marketplace-smoke-pin:
     name: Bump marketplace-smoke pin (post-tag, post-publish)
     needs: create-release
@@ -994,7 +995,7 @@ jobs:
 
           Bumps the pin in \`.github/workflows/marketplace-smoke.yml\` **and** the copy-paste GitHub Action snippet in \`README.md\` — both use the \`@<sha> # vX.Y.Z\` form that CI cannot check pre-tag.
 
-          **After merging this PR**, trigger **Actions → Marketplace smoke test → Run workflow** to verify the published Action end-to-end against the new tag.
+          **Merging this PR runs the Marketplace smoke test**: the workflow triggers on a push to \`main\` that touches its own file, so no manual dispatch is needed. Check that run's result against the new tag.
           EOF
           # Strip the 10-space indentation that the YAML block scalar requires.
           sed -i -E 's/^          //' /tmp/pr-body.md
