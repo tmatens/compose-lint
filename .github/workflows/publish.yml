@@ -51,7 +51,7 @@ jobs:
     # 'contents: none'" — before any job exists to report it.
     permissions:
       contents: read
-    uses: ./.github/workflows/verify-tag.yml
+    uses: $/.github/workflows/verify-tag.yml
     with:
       tag: ${{ github.ref_name }}
 
@@ -409,7 +409,7 @@ jobs:
     needs: build
     permissions:
       contents: read
-    uses: ./.github/workflows/release-docker-smoke.yml
+    uses: $/.github/workflows/release-docker-smoke.yml
     with:
       tag: ${{ github.ref_name }}
       matrix: >-
@@ -708,7 +708,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/update-dockerhub-description
+      - uses: $/.github/actions/update-dockerhub-description
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           token: ${{ secrets.DOCKERHUB_TOKEN }}

@@ -31,9 +31,9 @@ def _upload_step() -> dict[str, Any]:
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     steps = workflow["jobs"]["ingest"]["steps"]
     for step in steps:
-        if step.get("uses") == "./":
+        if step.get("uses") == "$/":
             return step
-    raise AssertionError("no `uses: ./` step in the ingestion workflow")
+    raise AssertionError("no `uses: $/` step in the ingestion workflow")
 
 
 def _probe_args() -> tuple[list[str], str, str]:

@@ -49,6 +49,6 @@ jobs:
 
       - name: Report scheduled failure as issue
         if: failure() && github.event_name == 'schedule'
-        uses: ./.github/actions/report-scheduled-failure
+        uses: $/.github/actions/report-scheduled-failure
         with:
           leg: ${{ matrix.sanitizer }}

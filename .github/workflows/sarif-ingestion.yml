@@ -76,7 +76,7 @@ jobs:
       # tests/test_sarif_ingestion_probe.py holds this step to that contract
       # at PR time.
       - name: Upload the probe SARIF to Code Scanning
-        uses: ./
+        uses: $/
         with:
           files: tests/smoke/insecure.yml tests/smoke/sarif-shape.yml tests/smoke/clean.yml
           config: tests/smoke/sarif-probe-config.yml
@@ -188,7 +188,4 @@ jobs:
       contents: read
       issues: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/report-scheduled-failure
+      - uses: $/.github/actions/report-scheduled-failure

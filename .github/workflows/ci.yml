@@ -787,7 +787,17 @@ jobs:
           grep " ${asset}$" checksums.txt | sha256sum --check --strict -
           tar -xzf "${asset}" actionlint
           rm "${asset}" checksums.txt
-      - run: ./actionlint -color
+      # `-ignore`: actionlint 1.7.12 predates GitHub's `$/` self-repository
+      # syntax (July 2026) and rejects every such `uses:` — actions as "ref
+      # is missing", reusable-workflow calls as "not following the format".
+      # Tracked upstream as rhysd/actionlint#711; drop both patterns when a
+      # release accepts the syntax. The check they silence — that a `uses:`
+      # names a pinnable ref — is carried by zizmor's unpinned-uses audit
+      # below and by the repository's SHA-pinning requirement.
+      - run: >-
+          ./actionlint -color
+          -ignore 'specifying action "\$/[^"]*" in invalid format because ref is missing'
+          -ignore 'reusable workflow call "\$/[^"]*" at "uses" is not following the format'
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
@@ -1008,7 +1018,7 @@ jobs:
       # it install the pin would test the source action against itself and hide
       # breakages between the two, which is what happened through 0.3.x.
       - name: Clean fixture should pass
-        uses: ./
+        uses: $/
         with:
           files: tests/smoke/clean.yml
           fail-on: high
@@ -1017,7 +1027,7 @@ jobs:
       - name: Insecure fixture should fail
         id: insecure
         continue-on-error: true
-        uses: ./
+        uses: $/
         with:
           files: tests/smoke/insecure.yml
           fail-on: high
@@ -1037,7 +1047,7 @@ jobs:
       # in tests/test_action_contract.py execute the step scripts in
       # isolation but cannot catch a wiring bug between steps or in the
       # `with:`→env plumbing, so every input gets at least one live
-      # `uses: ./` run here.
+      # `uses: $/` run here.
 
       - name: Prepare pattern fixtures (spaced path + .git decoy)
         run: |
@@ -1054,7 +1064,7 @@ jobs:
       # file, skipped .git" is green. `verbose` rides along for input
       # coverage.
       - name: Pattern discovery handles spaces and prunes .git
-        uses: ./
+        uses: $/
         with:
           pattern: "pattern smoke fixture.yml"
           fail-on: high
@@ -1064,7 +1074,7 @@ jobs:
       - name: Zero-match pattern must fail closed
         id: zero-match
         continue-on-error: true
-        uses: ./
+        uses: $/
         with:
           pattern: "matches-nothing-*.yml"
           version: latest
@@ -1076,7 +1086,7 @@ jobs:
           exit 1
 
       - name: Zero match with allow-no-files opts out
-        uses: ./
+        uses: $/
         with:
           pattern: "matches-nothing-*.yml"
           allow-no-files: "true"
@@ -1094,7 +1104,7 @@ jobs:
             > smoke-config.yml
 
       - name: Config pass-through flips the insecure outcome
-        uses: ./
+        uses: $/
         with:
           files: tests/smoke/insecure.yml
           fail-on: high
@@ -1108,7 +1118,7 @@ jobs:
       # can), and fixture findings must not land in the repo's alerts.
       - name: SARIF file is written without uploading
         id: sarif
-        uses: ./
+        uses: $/
         with:
           files: tests/smoke/sarif-shape.yml
           fail-on: critical
@@ -1138,7 +1148,7 @@ jobs:
       - name: Newline in files must be refused
         id: newline
         continue-on-error: true
-        uses: ./
+        uses: $/
         with:
           files: |
             tests/smoke/clean.yml
@@ -1393,7 +1403,7 @@ jobs:
     permissions:
       contents: read
       issues: write
-    uses: ./.github/workflows/os-smoke.yml
+    uses: $/.github/workflows/os-smoke.yml
 
   # Single rollup job for branch protection. Required-status-checks should
   # point at this job name instead of the individual ci.yml job names, so
