@@ -151,20 +151,6 @@ jobs:
 
       - name: Report scheduled failure as issue
         if: failure() && github.event_name == 'schedule'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          WORKFLOW: ${{ github.workflow }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          title="Scheduled run failed: ${WORKFLOW}"
-          body=$(printf -- '- Workflow: **%s**\n- Run: %s\n- Commit: %s\n\nThe vulnerability report did not complete, so the rolling issue may be stale.' \
-            "${WORKFLOW}" "${RUN_URL}" "${GITHUB_SHA}")
-          existing=$(gh issue list --state open --search "\"${title}\" in:title" \
-            --json number --jq '.[0].number // empty')
-          if [ -n "${existing}" ]; then
-            gh issue comment "${existing}" --body "${body}"
-          else
-            gh issue create --title "${title}" --body "${body}"
-          fi
+        uses: ./.github/actions/report-scheduled-failure
+        with:
+          note: The vulnerability report did not complete, so the rolling issue may be stale.
