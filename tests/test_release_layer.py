@@ -486,3 +486,61 @@ def test_every_checkout_drops_the_token(workflow: str) -> None:
                 assert scopes.get("contents") == "write", (
                     f"{where} keeps the token but cannot push"
                 )
+
+
+# --- Every scheduled workflow reports its failures ------------------------
+
+_REPORTER = "./.github/actions/report-scheduled-failure"
+
+
+def _scheduled_workflows() -> list[str]:
+    names = []
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        # PyYAML reads the bare `on:` key as boolean True.
+        triggers = doc.get(True) or doc.get("on") or {}
+        if isinstance(triggers, dict) and "schedule" in triggers:
+            names.append(path.name)
+    return names
+
+
+def test_the_scheduled_workflow_scan_finds_something() -> None:
+    """Guard the guard: an empty scan would make the check below vacuous."""
+    assert len(_scheduled_workflows()) >= 5
+
+
+@pytest.mark.parametrize("workflow", _scheduled_workflows())
+def test_every_scheduled_workflow_reports_a_failure_as_an_issue(workflow: str) -> None:
+    """A scheduled run has no PR to go red on.
+
+    Without a reporter the only signal is an email to the workflow author,
+    which is how a broken schedule stays broken. Every workflow with a
+    ``schedule`` trigger calls the shared reporter from a job that can open
+    the issue and has checked out the repo the composite lives in.
+    """
+    jobs = _load(workflow)["jobs"]
+    reporting = [
+        (name, job)
+        for name, job in jobs.items()
+        if any(step.get("uses") == _REPORTER for step in job.get("steps", []))
+    ]
+    assert reporting, f"{workflow}: no job calls {_REPORTER}"
+    for name, job in reporting:
+        where = f"{workflow}: job {name!r}"
+        assert (job.get("permissions") or {}).get("issues") == "write", (
+            f"{where} calls the reporter without issues: write"
+        )
+        steps = job["steps"]
+        reporter_at = next(i for i, s in enumerate(steps) if s.get("uses") == _REPORTER)
+        checkout_at = [
+            i
+            for i, s in enumerate(steps)
+            if str(s.get("uses", "")).startswith("actions/checkout@")
+        ]
+        assert checkout_at and checkout_at[0] < reporter_at, (
+            f"{where} calls the reporter before checking out the repo it lives in"
+        )
+        condition = str(steps[reporter_at].get("if") or job.get("if") or "")
+        assert "failure()" in condition and "schedule" in condition, (
+            f"{where} does not gate the reporter on a scheduled failure"
+        )

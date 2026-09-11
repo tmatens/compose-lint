@@ -1,0 +1,55 @@
+name: 'Report scheduled failure'
+description: >
+  Open, or comment on, the issue for a scheduled workflow run that failed.
+  One issue per workflow (and matrix leg, if given), found by exact title,
+  so a failure that repeats every night lands as comments on one thread
+  rather than a new issue each time. Scheduled runs have no PR to go red
+  on; without this the only signal is an email to the workflow author.
+  First-party bash over `gh`; the calling job needs `issues: write`.
+
+inputs:
+  leg:
+    description: >
+      Matrix leg or other qualifier appended to the title in parentheses,
+      e.g. the sanitizer name. Leave empty for a single-job workflow.
+    required: false
+    default: ''
+  note:
+    description: >
+      One line for the body saying what the failure leaves unwatched, e.g.
+      "The EOL radar did not complete, so the calendar is unwatched."
+    required: false
+    default: 'Reopen or close when triaged.'
+  token:
+    description: A token with issues:write on this repository.
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Open or update the scheduled-failure issue
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ github.repository }}
+        WORKFLOW: ${{ github.workflow }}
+        LEG: ${{ inputs.leg }}
+        NOTE: ${{ inputs.note }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        set -euo pipefail
+        title="Scheduled run failed: ${WORKFLOW}${LEG:+ (${LEG})}"
+        body="- Workflow: **${WORKFLOW}**"
+        if [ -n "${LEG}" ]; then
+          body="${body}"$'\n'"- Matrix leg: **${LEG}**"
+        fi
+        body="${body}"$'\n'"- Run: ${RUN_URL}"$'\n'"- Commit: ${GITHUB_SHA}"$'\n\n'"${NOTE}"
+        existing=$(gh issue list --state open --search "\"${title}\" in:title" \
+          --json number --jq '.[0].number // empty')
+        if [ -n "${existing}" ]; then
+          gh issue comment "${existing}" --body "${body}"
+          echo "Commented on #${existing}: ${title}"
+        else
+          gh issue create --title "${title}" --body "${body}"
+        fi

@@ -1383,11 +1383,16 @@ jobs:
   # in os-smoke.yml request `contents: read` to check out. Dropping this
   # makes the whole run fail as `startup_failure` before any job starts
   # (the 0.18.0 release blocker); tests/test_release_layer.py guards it.
+  # It is a ceiling, not a grant: `issues: write` is here so os-smoke.yml's
+  # `report-failure` job — the only job there that declares it, and gated
+  # to scheduled runs — can exist at all. The smoke jobs still declare
+  # `contents: read` alone and hold nothing more on a PR.
   os-smoke:
     needs: changes
     if: needs.changes.outputs.code == 'true' || needs.changes.outputs.workflows == 'true'
     permissions:
       contents: read
+      issues: write
     uses: ./.github/workflows/os-smoke.yml
 
   # Single rollup job for branch protection. Required-status-checks should
