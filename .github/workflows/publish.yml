@@ -67,14 +67,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # No pip cache on any job in this workflow: it runs on a tag and
+      # publishes what it builds, and the Actions cache is writable from any
+      # branch that shares the key. A poisoned entry would reach the
+      # artifacts (zizmor: cache-poisoning). Every install here is
+      # hash-verified from a lockfile, so a cold cache costs seconds.
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
-          cache: pip
-          cache-dependency-path: |
-            requirements.lock
-            requirements-dev.lock
-            requirements-build.lock
       - name: Install pinned build env
         run: |
           pip install --require-hashes -r requirements-dev.lock
@@ -254,11 +254,6 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
-          cache: pip
-          cache-dependency-path: |
-            requirements.lock
-            requirements-dev.lock
-            requirements-build.lock
       - name: Install the dependency closure from the hash-pinned lock
         # The dependencies must not come from TestPyPI. `-i` makes an index
         # *primary*, and pip then prefers the highest version across every
@@ -810,11 +805,6 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
-          cache: pip
-          cache-dependency-path: |
-            requirements.lock
-            requirements-dev.lock
-            requirements-build.lock
       - name: Install sigstore verifier (hash-pinned)
         run: pip install --require-hashes -r requirements-dev.lock
       - name: Download release assets
