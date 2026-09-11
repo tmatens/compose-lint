@@ -21,6 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Thanks [@Shaisolaris](https://github.com/Shaisolaris) ([#826](https://github.com/tmatens/compose-lint/pull/826)).
 
+- **`--explain` tells a malformed id, an unknown id, and a retired id apart.**
+  A well-formed id with no rule behind it, such as `CL-0012`, used to get the
+  format hint (`expected format: CL-XXXX`), which sent people hunting for a
+  typo that was not there. The hint is now reserved for ids that are not
+  `CL-XXXX` at all; an id retired under ADR-028 says it was retired and is
+  not reused; a well-formed id with no rule is reported as unknown. Exit code
+  2 is unchanged in every case
+  ([#725](https://github.com/tmatens/compose-lint/issues/725)).
+
+  Thanks [@Shaisolaris](https://github.com/Shaisolaris) ([#795](https://github.com/tmatens/compose-lint/pull/795)).
+
 ## [0.28.0] - 2026-09-08
 
 ### Added
