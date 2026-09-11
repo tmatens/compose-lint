@@ -84,10 +84,10 @@
       "enabled": false
     },
     {
-      "description": "Forgejo smoke harness: Codeberg deletes a superseded Forgejo patch tag — pinned digest included — within days of the next patch shipping, so waiting for the weekly Monday window leaves the pin 404ing and the weekly smoke run red (#746, #748). Open the bump PR same-day instead. Merge stays manual (no automerge rule matches docker-compose): the forgejo-smoke workflow re-proving the compose+docs/forgejo.md pair on the merge push is the guardrail.",
+      "description": "Forgejo smoke harness: NOT Renovate's. The hosted runner cannot look up codeberg.org/forgejo/forgejo or data.forgejo.org/forgejo/runner (Dependency Dashboard: 'no-result' + 'Error obtaining docker token', while a local `renovate --platform=local --dry-run=lookup` resolves both — the hosted runner's egress, not the registries), so the same-day bump rule that replaced #748's tests/ move never produced a PR, and a Renovate PR could not pass anyway: forgejo-smoke asserts docs/forgejo.md's 'Verified on Forgejo X, runner Y' line against the live stack, and Renovate cannot move that line. forgejo-smoke-bump.yml owns both files instead (daily; scripts/forgejo_smoke_bump.py). Disabled here so two writers never race on the same pin; the file stays listed on the dashboard for visibility.",
       "matchManagers": ["docker-compose"],
       "matchFileNames": ["scripts/forgejo_smoke/compose-forgejo-smoke.yml"],
-      "schedule": ["at any time"]
+      "enabled": false
     },
     {
       "description": "Automerge low-risk routine updates once CI is green. Patch-level Python dep bumps, pinned-digest refreshes for GitHub Actions, and lockFileMaintenance go in without human review. Docker base images stay manual because the OCI manifest-list vs per-arch digest check (see MEMORY.md) is not mechanically verified in CI. minimumReleaseAge is the one human-shaped gate on that path: a release merges itself only after it has been public for three days, which is the window in which a compromised or broken upstream release is usually pulled or yanked. Hash-locked installs do not help here — they pin whatever release was current. The PR still opens at once; Renovate holds a renovate/stability-days check pending until the age passes, then automerge proceeds. Security PRs are unaffected: vulnerabilityAlerts defaults minimumReleaseAge to null, so an OSV fix still lands immediately.",
