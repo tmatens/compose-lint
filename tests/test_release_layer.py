@@ -539,3 +539,48 @@ def test_every_scheduled_workflow_reports_a_failure_as_an_issue(workflow: str) -
         assert "failure()" in condition and "schedule" in condition, (
             f"{where} does not gate the reporter on a scheduled failure"
         )
+
+
+# --- The Docker Hub write token is read only where something is pushed ------
+
+_PUSH_MARKERS = ("push=true", "imagetools create", "update-dockerhub-description")
+
+
+def _dockerhub_logins() -> list[tuple[str, str, str, bool]]:
+    """(workflow, job, secret name, job pushes) for every Docker Hub credential use."""
+    found = []
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        raw = path.read_text(encoding="utf-8")
+        for job_name in _load(path.name)["jobs"]:
+            match = re.search(rf"^  {re.escape(job_name)}:$", raw, re.MULTILINE)
+            assert match, job_name
+            nxt = re.search(r"^  [A-Za-z0-9_-]+:$", raw[match.end() :], re.MULTILINE)
+            body = raw[match.start() : match.end() + nxt.start() if nxt else len(raw)]
+            for secret in re.findall(r"secrets\.(DOCKERHUB_(?:READ_)?TOKEN)", body):
+                pushes = any(marker in body for marker in _PUSH_MARKERS)
+                found.append((path.name, job_name, secret, pushes))
+    return found
+
+
+def test_the_dockerhub_login_scan_finds_something() -> None:
+    """Guard the guard: an empty scan would make the check below vacuous."""
+    assert len(_dockerhub_logins()) >= 6
+
+
+@pytest.mark.parametrize(
+    ("workflow", "job_name", "secret", "pushes"), _dockerhub_logins()
+)
+def test_the_write_token_is_read_only_where_something_is_pushed(
+    workflow: str, job_name: str, secret: str, pushes: bool
+) -> None:
+    """A credential's blast radius is set by its most privileged consumer.
+
+    A job that only pulls and scans logs in with the read-only token; the
+    delete-capable token is referenced only by jobs that push by digest,
+    assemble the manifest, or sync the description. A scan job that starts
+    referencing the write token widens what a leak from it carries.
+    """
+    expected = "DOCKERHUB_TOKEN" if pushes else "DOCKERHUB_READ_TOKEN"
+    assert secret == expected, (
+        f"{workflow}: job {job_name!r} uses {secret}, expected {expected}"
+    )

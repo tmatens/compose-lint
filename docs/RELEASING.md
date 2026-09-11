@@ -597,25 +597,25 @@ To close the rest:
 Until step 3, a repo-level secret is readable by any workflow in the
 repository, so steps 1–2 alone change nothing.
 
-### Split the Docker Hub PAT by capability
+### Split the Docker Hub PAT by capability (half done)
 
-One `Read, Write, Delete` PAT is referenced by every Docker Hub job, including
-read-only ones (`docker-smoke`, `scout`, `report`). A leak from any of them
-carries delete capability for the whole namespace — the scope of the credential
-is set by the single most privileged consumer.
+The scope of a shared credential is set by its most privileged consumer, so a
+leak from a scan job used to carry delete capability for the whole namespace.
+Today two tokens are routed by need; `tests/test_release_layer.py` holds the
+routing:
 
-Mint three tokens and route them by need:
-
-| Token | Scope | Used by |
+| Secret | Scope | Used by |
 |---|---|---|
-| `DOCKERHUB_TOKEN_READ` | Read | `docker-smoke`, `scout`, `report` |
-| `DOCKERHUB_TOKEN_WRITE` | Read, Write | the four build/publish jobs |
-| `DOCKERHUB_TOKEN_ADMIN` | Read, Write, Delete | the two `dockerhub-description` jobs only |
+| `DOCKERHUB_READ_TOKEN` | Public Repo Read-only | the daily `scout-scan` and `vuln-report` logins, and `publish.yml`'s pre-approval `docker-scout` job — the jobs that pull and scan |
+| `DOCKERHUB_TOKEN` | Read, Write, Delete | the four build/publish jobs (they push by digest, then assemble the manifest) and the two description syncs |
 
-The ADMIN token should live in the `dockerhub-description` environment above,
-so the other jobs cannot reference it even by name. Renaming the secrets is a
-breaking change to the release pipeline, so do it in one pass: add the new
-secrets first, land the workflow change, then revoke the old PAT.
+Still open: the write token carries Delete only for the description sync, so a
+`Read, Write` token for the four push jobs and a Delete-capable one confined to
+the `dockerhub-description` environment above would finish the split. Both need
+the current token's value re-entered or a fresh token minted, so they happen at
+the next rotation. Add the new secrets first, land the workflow change, then
+revoke the old PAT — renaming a secret the release pipeline reads is a breaking
+change if done in the other order.
 
 ## Why this checklist exists
 
