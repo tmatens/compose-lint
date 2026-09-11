@@ -774,6 +774,40 @@ jobs:
           rm "${asset}" checksums.txt
       - run: ./actionlint -color
 
+  # Lints the Dockerfile. It has carried `# hadolint ignore=DL3008` since
+  # the apt-pinning exception was written down, but nothing ran hadolint,
+  # so the directive documented a lint that never happened. Installed from
+  # the GitHub Release binary and verified against the release's checksums
+  # file, the same way actionlint is above.
+  hadolint:
+    name: Lint Dockerfile
+    needs: changes
+    if: needs.changes.outputs.dockerfile == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install hadolint
+        env:
+          # renovate: datasource=github-releases depName=hadolint/hadolint
+          HADOLINT_VERSION: "2.15.1"
+        run: |
+          set -euo pipefail
+          base="https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}"
+          asset="hadolint-linux-x86_64"
+          curl -fsSL -o hadolint "${base}/${asset}"
+          curl -fsSL -o checksums.sha256 "${base}/checksums.sha256"
+          # The checksums file lists the asset in binary mode (`*name`);
+          # rename the entry to the file on disk and let sha256sum check it.
+          grep "${asset}$" checksums.sha256 | sed "s/${asset}$/hadolint/" | sha256sum --check --strict -
+          chmod +x hadolint
+          rm checksums.sha256
+      - run: ./hadolint Dockerfile
+
   # Fails the PR if any FROM in the Dockerfile pins a per-arch manifest
   # instead of a multi-arch OCI index. Multi-arch regressions otherwise
   # don't surface until docker-publish at release time.
@@ -1357,6 +1391,7 @@ jobs:
       - no-ai-attribution
       - dependency-review
       - actionlint
+      - hadolint
       - dockerfile-digests
       - lockfiles
       - docker-smoke
