@@ -515,7 +515,11 @@ After approval, `publish` and `docker-publish` run in parallel.
 
 - **One channel's smoke is broken but the other must ship**: use the
   manual escape hatch at **Actions → Publish channel (manual) → Run
-  workflow**. Enter the tag and select the channel. That workflow bypasses
+  workflow**. Under **Use workflow from**, pick the **tag**, not `main`:
+  the publish environments admit `v*` tags only, so a run dispatched from
+  `main` fails at the publish job with zero steps executed (the 2026-04-15
+  run history shows exactly that). Then enter the tag and select the
+  channel. That workflow bypasses
   the shared gate but still requires the per-channel environment approval
   (`pypi` or `dockerhub`). Document why you used it in the GitHub Release
   notes.
