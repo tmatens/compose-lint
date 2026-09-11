@@ -420,7 +420,7 @@ the Marketplace, and the pre-commit hook as
 `repo: https://github.com/tmatens/compose-lint` pinned at a release tag
 (the `precommit-published-smoke` job, added for issue #570). Unlike
 `ci.yml`'s `action-smoke` and `precommit-smoke` jobs (which use the
-working tree via `./` and `try-repo`), these catch regressions at the
+tree under test via `$/` and `try-repo`), these catch regressions at the
 publish boundary: a missing or broken tag, a packaging regression, a
 broken published `action.yml`, a PyPI outage during install.
 

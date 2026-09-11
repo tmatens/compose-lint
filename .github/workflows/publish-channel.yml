@@ -29,7 +29,7 @@ jobs:
     # deny-all, so omitting this stops the run before any job starts.
     permissions:
       contents: read
-    uses: ./.github/workflows/verify-tag.yml
+    uses: $/.github/workflows/verify-tag.yml
     with:
       tag: ${{ inputs.tag }}
 
@@ -124,7 +124,7 @@ jobs:
     if: inputs.channel == 'docker'
     permissions:
       contents: read
-    uses: ./.github/workflows/release-docker-smoke.yml
+    uses: $/.github/workflows/release-docker-smoke.yml
     with:
       tag: ${{ inputs.tag }}
       matrix: '{"include":[{"platform":"linux/amd64","runner":"ubuntu-24.04"}]}'

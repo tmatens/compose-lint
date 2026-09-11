@@ -168,11 +168,14 @@ def test_no_workflow_resolves_dependencies_from_an_unpinned_index() -> None:
 
 
 def test_the_dockerhub_description_dispatch_is_pinned_to_the_default_branch() -> None:
-    """`workflow_dispatch` can name any ref, and `uses: ./…` runs workspace code.
+    """`workflow_dispatch` can name any ref; the checkout pin is what it still buys.
 
     The Docker Hub secrets here are repo-level, so nothing scopes them to a ref.
-    Pinning the checkout means a dispatcher chooses only *when* this runs, not
-    *what* runs with a Read+Write+Delete token.
+    The composite is a `$/` reference, resolved at the running commit — the
+    dispatched ref, which is also where this workflow file comes from — so the
+    pin does not scope the code. It scopes the two files the composite reads
+    from the workspace: the sync script and the overview markdown. The rest of
+    the gap is the `dockerhub-description` environment (docs/RELEASING.md).
     """
     jobs = _load("dockerhub-description.yml")["jobs"]
     checkout = next(
@@ -191,7 +194,7 @@ def test_the_dockerhub_credential_is_only_read_by_first_party_code() -> None:
             continue
         # The token is passed as an input to the local composite action only.
         assert "secrets.DOCKERHUB_TOKEN" in line
-    assert "uses: ./.github/actions/update-dockerhub-description" in raw
+    assert "uses: $/.github/actions/update-dockerhub-description" in raw
 
 
 # --- A called workflow gets what its jobs ask for ------------------------
@@ -220,7 +223,7 @@ def _reusable_calls() -> list[tuple[str, str, str]]:
     for path in sorted(WORKFLOWS.glob("*.yml")):
         for job_name, job in (_load(path.name).get("jobs") or {}).items():
             uses = str(job.get("uses", ""))
-            if uses.startswith("./.github/workflows/"):
+            if uses.startswith(("$/.github/workflows/", "./.github/workflows/")):
                 calls.append((path.name, job_name, uses.rsplit("/", 1)[-1]))
     return calls
 
@@ -490,7 +493,7 @@ def test_every_checkout_drops_the_token(workflow: str) -> None:
 
 # --- Every scheduled workflow reports its failures ------------------------
 
-_REPORTER = "./.github/actions/report-scheduled-failure"
+_REPORTER = "$/.github/actions/report-scheduled-failure"
 
 
 def _scheduled_workflows() -> list[str]:
@@ -515,8 +518,8 @@ def test_every_scheduled_workflow_reports_a_failure_as_an_issue(workflow: str) -
 
     Without a reporter the only signal is an email to the workflow author,
     which is how a broken schedule stays broken. Every workflow with a
-    ``schedule`` trigger calls the shared reporter from a job that can open
-    the issue and has checked out the repo the composite lives in.
+    ``schedule`` trigger calls the shared reporter, by its ``$/`` reference,
+    from a job that can open the issue.
     """
     jobs = _load(workflow)["jobs"]
     reporting = [
@@ -532,14 +535,6 @@ def test_every_scheduled_workflow_reports_a_failure_as_an_issue(workflow: str) -
         )
         steps = job["steps"]
         reporter_at = next(i for i, s in enumerate(steps) if s.get("uses") == _REPORTER)
-        checkout_at = [
-            i
-            for i, s in enumerate(steps)
-            if str(s.get("uses", "")).startswith("actions/checkout@")
-        ]
-        assert checkout_at and checkout_at[0] < reporter_at, (
-            f"{where} calls the reporter before checking out the repo it lives in"
-        )
         condition = str(steps[reporter_at].get("if") or job.get("if") or "")
         assert "failure()" in condition and "schedule" in condition, (
             f"{where} does not gate the reporter on a scheduled failure"

@@ -85,6 +85,6 @@ jobs:
 
       - name: Report scheduled failure as issue
         if: failure() && github.event_name == 'schedule'
-        uses: ./.github/actions/report-scheduled-failure
+        uses: $/.github/actions/report-scheduled-failure
         with:
           note: The EOL radar did not complete, so the calendar is unwatched until this is fixed.
