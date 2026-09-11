@@ -737,9 +737,12 @@ jobs:
   # Lints every workflow under .github/workflows/. Catches shell-quoting
   # bugs (via embedded shellcheck), unsafe ${{ }} interpolation in run:
   # blocks, unknown expressions, matrix-config typos, etc. actionlint is
-  # installed from its GitHub Release tarball with SHA256 verification so
-  # there's no curl-pipe-bash and no third-party composite action to pin.
-  # Renovate's github-releases datasource handles version bumps.
+  # installed from its GitHub Release tarball, verified against the
+  # release's own checksums file, so there's no curl-pipe-bash and no
+  # third-party composite action to pin. The `# renovate:` annotation on
+  # the version is what lets Renovate move it (renovate.json's regex
+  # manager); a bump PR opens for review rather than automerging, same as
+  # the Compose pin, because the tool's own release notes are the review.
   actionlint:
     name: Lint GitHub Actions workflows
     needs: changes
@@ -754,14 +757,21 @@ jobs:
           persist-credentials: false
       - name: Install actionlint
         env:
+          # renovate: datasource=github-releases depName=rhysd/actionlint
           ACTIONLINT_VERSION: "1.7.12"
-          ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
         run: |
-          url="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          curl -fsSL -o actionlint.tar.gz "${url}"
-          echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum -c -
-          tar -xzf actionlint.tar.gz actionlint
-          rm actionlint.tar.gz
+          set -euo pipefail
+          base="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}"
+          asset="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL -o "${asset}" "${base}/${asset}"
+          curl -fsSL -o checksums.txt "${base}/actionlint_${ACTIONLINT_VERSION}_checksums.txt"
+          # The release's published checksum, not a literal copied into this
+          # file: a literal cannot move with the version, which is why the
+          # old one was never bumped. Same trade as install-compose-plugin.sh
+          # — catches a substituted download, not a compromised release.
+          grep " ${asset}$" checksums.txt | sha256sum --check --strict -
+          tar -xzf "${asset}" actionlint
+          rm "${asset}" checksums.txt
       - run: ./actionlint -color
 
   # Fails the PR if any FROM in the Dockerfile pins a per-arch manifest
