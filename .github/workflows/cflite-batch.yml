@@ -18,6 +18,9 @@ jobs:
       security-events: write
       issues: write
     runs-on: ubuntu-24.04
+    # Fuzzer build plus a 600-second run per sanitizer; the rest is headroom
+    # for the base-image pull.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

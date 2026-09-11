@@ -438,3 +438,51 @@ def test_the_development_status_classifier_matches_the_major_version() -> None:
             f"version is {version.group(1)}, so the classifier should still be "
             f"'4 - Beta', not {status!r}."
         )
+
+
+# --- Every job is bounded and every checkout drops the token --------------
+
+
+def _every_workflow() -> list[str]:
+    return sorted(path.name for path in WORKFLOWS.glob("*.yml"))
+
+
+@pytest.mark.parametrize("workflow", _every_workflow())
+def test_every_job_sets_a_timeout(workflow: str) -> None:
+    """The default is six hours of runner time and a held concurrency slot.
+
+    A hung step, a stuck download, or a PR that makes a job wait costs the
+    whole window. A job that calls a reusable workflow cannot carry the key;
+    the callee's jobs do, and this test visits the callee too.
+    """
+    for name, job in _load(workflow)["jobs"].items():
+        if "uses" in job:
+            continue
+        assert "timeout-minutes" in job, (
+            f"{workflow}: job {name!r} has no timeout-minutes"
+        )
+
+
+@pytest.mark.parametrize("workflow", _every_workflow())
+def test_every_checkout_drops_the_token(workflow: str) -> None:
+    """actions/checkout writes the token into .git/config unless told not to.
+
+    From there any later step, third-party action, or uploaded artifact can
+    read it. Two jobs push a branch with it on purpose and say so with an
+    explicit ``true``; every other checkout says ``false``. What is not
+    allowed is the default, which keeps the token without anyone deciding to.
+    """
+    for name, job in _load(workflow)["jobs"].items():
+        for step in job.get("steps", []):
+            if not str(step.get("uses", "")).startswith("actions/checkout@"):
+                continue
+            persist = (step.get("with") or {}).get("persist-credentials")
+            where = f"{workflow}: job {name!r}"
+            assert persist is not None, (
+                f"{where} checks out without an explicit persist-credentials"
+            )
+            if persist is True:
+                scopes = job.get("permissions") or {}
+                assert scopes.get("contents") == "write", (
+                    f"{where} keeps the token but cannot push"
+                )
