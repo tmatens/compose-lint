@@ -101,7 +101,9 @@ jobs:
           if match '^(Dockerfile$|\.dockerignore$|requirements\.lock$|requirements-build\.lock$|pyproject\.toml$|src/)'; then
             docker=true
           fi
-          if match '^\.github/workflows/'; then
+          # zizmor.yml and the composite action are zizmor inputs; a change
+          # to either has to re-run the audit that reads them.
+          if match '^\.github/(workflows/|actions/|zizmor\.yml$)'; then
             workflows=true
           fi
           if match '^Dockerfile$'; then
@@ -742,9 +744,14 @@ jobs:
           fail-on-severity: high
           comment-summary-in-pr: on-failure
 
-  # Lints every workflow under .github/workflows/. Catches shell-quoting
-  # bugs (via embedded shellcheck), unsafe ${{ }} interpolation in run:
-  # blocks, unknown expressions, matrix-config typos, etc. actionlint is
+  # Lints every workflow under .github/workflows/. actionlint catches
+  # shell-quoting bugs (via embedded shellcheck), unsafe ${{ }}
+  # interpolation in run: blocks, unknown expressions, matrix-config
+  # typos, etc. zizmor is the security complement: template injection,
+  # cache poisoning on publish paths, dangerous triggers, checkouts that
+  # keep the token, unpinned uses — the class of thing the review
+  # checklist asked for and no job enforced. Any finding fails the job;
+  # deliberate exceptions go in .github/zizmor.yml with a reason. actionlint is
   # installed from its GitHub Release tarball, verified against the
   # release's own checksums file, so there's no curl-pipe-bash and no
   # third-party composite action to pin. The `# renovate:` annotation on
@@ -752,7 +759,7 @@ jobs:
   # manager); a bump PR opens for review rather than automerging, same as
   # the Compose pin, because the tool's own release notes are the review.
   actionlint:
-    name: Lint GitHub Actions workflows
+    name: Lint GitHub Actions workflows (actionlint + zizmor)
     needs: changes
     if: needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-24.04
@@ -781,6 +788,15 @@ jobs:
           tar -xzf "${asset}" actionlint
           rm "${asset}" checksums.txt
       - run: ./actionlint -color
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install zizmor (hash-pinned)
+        run: pip install --require-hashes -r requirements-dev.lock
+      - name: Audit workflows and actions with zizmor
+        # Workflows, the composite action, and the root action.yml. Exit is
+        # non-zero on any finding, informational included.
+        run: zizmor --no-progress .github/ action.yml
 
   # Lints the Dockerfile. It has carried `# hadolint ignore=DL3008` since
   # the apt-pinning exception was written down, but nothing ran hadolint,
