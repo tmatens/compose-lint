@@ -40,6 +40,16 @@
         "# renovate: datasource=(?<datasource>[a-z-]+?) depName=(?<depName>.+?)\\s+COMPOSE_VERSION: (?<currentValue>v\\S+)"
       ],
       "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "Release binaries that ci.yml jobs download from a GitHub Release and verify against the release's checksums file (actionlint, hadolint). The version is a bare X.Y.Z literal beside a `# renovate:` annotation; the tag carries a v prefix, so extractVersion strips it. Not in the automerge rule (that matches managers, and this is neither pep621 nor github-actions), so a bump opens for review with the tool's release notes as the review.",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z-]+?) depName=(?<depName>.+?)\\s+[A-Z_]+_VERSION: \"(?<currentValue>[0-9][^\"]*)\""
+      ],
+      "extractVersionTemplate": "^v(?<version>.+)$",
+      "versioningTemplate": "semver"
     }
   ],
   "packageRules": [

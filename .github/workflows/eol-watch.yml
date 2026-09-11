@@ -37,6 +37,8 @@ jobs:
       issues: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # No setup-python: the script is stdlib-only (tomllib needs >=3.11)
       # and the runner's own interpreter satisfies that. Nothing to install

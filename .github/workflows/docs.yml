@@ -35,9 +35,11 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # Sitemap <lastmod> is the last commit date of each page's source
           # (scripts/mkdocs_git_dates_hook.py). The default depth-1 checkout
           # dates every page to the tip commit, so the hook detects the
@@ -60,6 +62,7 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     permissions:
       pages: write
       id-token: write

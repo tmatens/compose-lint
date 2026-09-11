@@ -101,7 +101,9 @@ jobs:
           if match '^(Dockerfile$|\.dockerignore$|requirements\.lock$|requirements-build\.lock$|pyproject\.toml$|src/)'; then
             docker=true
           fi
-          if match '^\.github/workflows/'; then
+          # zizmor.yml and the composite action are zizmor inputs; a change
+          # to either has to re-run the audit that reads them.
+          if match '^\.github/(workflows/|actions/|zizmor\.yml$)'; then
             workflows=true
           fi
           if match '^Dockerfile$'; then
@@ -629,8 +631,11 @@ jobs:
         run: |
           set -euo pipefail
           # Bot commits (Dependabot, Renovate, github-actions) can't add a
-          # Signed-off-by trailer from the Probot runtime. They're allow-listed.
-          bot_pattern='(dependabot|renovate|github-actions|mend)\[bot\]'
+          # Signed-off-by trailer from the Probot runtime. They're allow-listed
+          # by their noreply address, anchored end to end: the author *name*
+          # is whatever `git config user.name` says, so matching on it let
+          # anyone skip the gate by naming themselves after a bot.
+          bot_pattern='^[0-9]+\+(dependabot|renovate|github-actions|mend)\[bot\]@users\.noreply\.github\.com$'
           # Merge commits are skipped (--no-merges): they introduce no authored
           # content, so there is nothing for their author to certify. GitHub's
           # own "Update branch" button mints one with no trailer, and gating
@@ -646,7 +651,7 @@ jobs:
           # different fixes, so they get different output.
           report="$(mktemp)"
           while IFS=$'\t' read -r sha author_name author_email; do
-            if printf '%s' "${author_name}${author_email}" | grep -iqE "${bot_pattern}"; then
+            if printf '%s' "${author_email}" | grep -iqE "${bot_pattern}"; then
               continue
             fi
             expected="Signed-off-by: ${author_name} <${author_email}>"
@@ -725,6 +730,11 @@ jobs:
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
+      # comment-summary-in-pr needs this to post; without it the action
+      # only logged a hint and the summary never appeared. Read-only on a
+      # fork PR regardless, so the grant is inert exactly where it would
+      # be risky.
+      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -734,14 +744,22 @@ jobs:
           fail-on-severity: high
           comment-summary-in-pr: on-failure
 
-  # Lints every workflow under .github/workflows/. Catches shell-quoting
-  # bugs (via embedded shellcheck), unsafe ${{ }} interpolation in run:
-  # blocks, unknown expressions, matrix-config typos, etc. actionlint is
-  # installed from its GitHub Release tarball with SHA256 verification so
-  # there's no curl-pipe-bash and no third-party composite action to pin.
-  # Renovate's github-releases datasource handles version bumps.
+  # Lints every workflow under .github/workflows/. actionlint catches
+  # shell-quoting bugs (via embedded shellcheck), unsafe ${{ }}
+  # interpolation in run: blocks, unknown expressions, matrix-config
+  # typos, etc. zizmor is the security complement: template injection,
+  # cache poisoning on publish paths, dangerous triggers, checkouts that
+  # keep the token, unpinned uses — the class of thing the review
+  # checklist asked for and no job enforced. Any finding fails the job;
+  # deliberate exceptions go in .github/zizmor.yml with a reason. actionlint is
+  # installed from its GitHub Release tarball, verified against the
+  # release's own checksums file, so there's no curl-pipe-bash and no
+  # third-party composite action to pin. The `# renovate:` annotation on
+  # the version is what lets Renovate move it (renovate.json's regex
+  # manager); a bump PR opens for review rather than automerging, same as
+  # the Compose pin, because the tool's own release notes are the review.
   actionlint:
-    name: Lint GitHub Actions workflows
+    name: Lint GitHub Actions workflows (actionlint + zizmor)
     needs: changes
     if: needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-24.04
@@ -754,15 +772,65 @@ jobs:
           persist-credentials: false
       - name: Install actionlint
         env:
+          # renovate: datasource=github-releases depName=rhysd/actionlint
           ACTIONLINT_VERSION: "1.7.12"
-          ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
         run: |
-          url="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          curl -fsSL -o actionlint.tar.gz "${url}"
-          echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum -c -
-          tar -xzf actionlint.tar.gz actionlint
-          rm actionlint.tar.gz
+          set -euo pipefail
+          base="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}"
+          asset="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL -o "${asset}" "${base}/${asset}"
+          curl -fsSL -o checksums.txt "${base}/actionlint_${ACTIONLINT_VERSION}_checksums.txt"
+          # The release's published checksum, not a literal copied into this
+          # file: a literal cannot move with the version, which is why the
+          # old one was never bumped. Same trade as install-compose-plugin.sh
+          # — catches a substituted download, not a compromised release.
+          grep " ${asset}$" checksums.txt | sha256sum --check --strict -
+          tar -xzf "${asset}" actionlint
+          rm "${asset}" checksums.txt
       - run: ./actionlint -color
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install zizmor (hash-pinned)
+        run: pip install --require-hashes -r requirements-dev.lock
+      - name: Audit workflows and actions with zizmor
+        # Workflows, the composite action, and the root action.yml. Exit is
+        # non-zero on any finding, informational included.
+        run: zizmor --no-progress .github/ action.yml
+
+  # Lints the Dockerfile. It has carried `# hadolint ignore=DL3008` since
+  # the apt-pinning exception was written down, but nothing ran hadolint,
+  # so the directive documented a lint that never happened. Installed from
+  # the GitHub Release binary and verified against the release's checksums
+  # file, the same way actionlint is above.
+  hadolint:
+    name: Lint Dockerfile
+    needs: changes
+    if: needs.changes.outputs.dockerfile == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install hadolint
+        env:
+          # renovate: datasource=github-releases depName=hadolint/hadolint
+          HADOLINT_VERSION: "2.15.1"
+        run: |
+          set -euo pipefail
+          base="https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}"
+          asset="hadolint-linux-x86_64"
+          curl -fsSL -o hadolint "${base}/${asset}"
+          curl -fsSL -o checksums.sha256 "${base}/checksums.sha256"
+          # The checksums file lists the asset in binary mode (`*name`);
+          # rename the entry to the file on disk and let sha256sum check it.
+          grep "${asset}$" checksums.sha256 | sed "s/${asset}$/hadolint/" | sha256sum --check --strict -
+          chmod +x hadolint
+          rm checksums.sha256
+      - run: ./hadolint Dockerfile
 
   # Fails the PR if any FROM in the Dockerfile pins a per-arch manifest
   # instead of a multi-arch OCI index. Multi-arch regressions otherwise
@@ -1347,6 +1415,7 @@ jobs:
       - no-ai-attribution
       - dependency-review
       - actionlint
+      - hadolint
       - dockerfile-digests
       - lockfiles
       - docker-smoke

@@ -13,6 +13,9 @@ permissions: {}
 jobs:
   pr-fuzzing:
     runs-on: ubuntu-24.04
+    # Fuzzer build plus a 120-second run; the rest is headroom for the
+    # base-image pull.
+    timeout-minutes: 15
     permissions:
       contents: read
     concurrency:

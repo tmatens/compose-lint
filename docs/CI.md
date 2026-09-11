@@ -63,7 +63,8 @@ before merging, so `main`'s own run is what proves the merged result.
 | `coverage`                | `pytest --cov` with `--cov-fail-under=80` — fails below 80% statement coverage repo-wide; on a PR, `diff-cover` also fails below 90% coverage of the lines that PR adds or changes (see note) |
 | `security`                | `bandit -r src/ -ll` (blocking) + `pip-audit` for dep CVEs (informational on PRs — see note) |
 | `dependency-review`       | Blocks PRs adding deps with known high-severity CVEs or disallowed licenses               |
-| `actionlint`              | Lints every workflow under `.github/workflows/` (embeds shellcheck for `run:` blocks)     |
+| `actionlint`              | Lints every workflow under `.github/workflows/`: actionlint (embeds shellcheck for `run:` blocks) and zizmor (template injection, cache poisoning, kept tokens, unpinned uses; exceptions in `.github/zizmor.yml`) |
+| `hadolint`                | Lints the Dockerfile with hadolint (only when the Dockerfile changes)                     |
 | `dockerfile-digests`      | Fails if any `FROM @sha256:` in the Dockerfile is a per-arch manifest instead of an index |
 | `docker-smoke`            | Builds `linux/amd64` **and `linux/arm64`** from the Dockerfile on native runners and runs each against fixtures (only when build inputs change) |
 | `action-smoke`            | Runs `./action.yml` against clean and insecure fixtures; asserts exit codes               |

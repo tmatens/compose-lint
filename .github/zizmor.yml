@@ -1,0 +1,12 @@
+# zizmor (https://docs.zizmor.sh) reads this path on its own. The audit
+# runs in ci.yml's `actionlint` job and fails on any finding, so every
+# exception lives here with its reason rather than as a silent flag.
+rules:
+  self-repository:
+    # Recommends GitHub's `uses: $/…` self-repository syntax (July 2026)
+    # over the `uses: ./` form. This repo has sixteen `./` references and
+    # tests/test_release_layer.py reasons about that form by name, so the
+    # move is a change of its own, not a lint fix. Disabled outright rather
+    # than ignored line by line so a new `./` reference does not fail CI in
+    # the meantime; re-enable when the migration lands.
+    disable: true
