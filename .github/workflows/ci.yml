@@ -728,6 +728,11 @@ jobs:
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
+      # comment-summary-in-pr needs this to post; without it the action
+      # only logged a hint and the summary never appeared. Read-only on a
+      # fork PR regardless, so the grant is inert exactly where it would
+      # be risky.
+      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
