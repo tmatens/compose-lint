@@ -629,8 +629,11 @@ jobs:
         run: |
           set -euo pipefail
           # Bot commits (Dependabot, Renovate, github-actions) can't add a
-          # Signed-off-by trailer from the Probot runtime. They're allow-listed.
-          bot_pattern='(dependabot|renovate|github-actions|mend)\[bot\]'
+          # Signed-off-by trailer from the Probot runtime. They're allow-listed
+          # by their noreply address, anchored end to end: the author *name*
+          # is whatever `git config user.name` says, so matching on it let
+          # anyone skip the gate by naming themselves after a bot.
+          bot_pattern='^[0-9]+\+(dependabot|renovate|github-actions|mend)\[bot\]@users\.noreply\.github\.com$'
           # Merge commits are skipped (--no-merges): they introduce no authored
           # content, so there is nothing for their author to certify. GitHub's
           # own "Update branch" button mints one with no trailer, and gating
@@ -646,7 +649,7 @@ jobs:
           # different fixes, so they get different output.
           report="$(mktemp)"
           while IFS=$'\t' read -r sha author_name author_email; do
-            if printf '%s' "${author_name}${author_email}" | grep -iqE "${bot_pattern}"; then
+            if printf '%s' "${author_email}" | grep -iqE "${bot_pattern}"; then
               continue
             fi
             expected="Signed-off-by: ${author_name} <${author_email}>"
