@@ -26,10 +26,12 @@ jobs:
         with:
           persist-credentials: false
 
+      # Read-only PAT: this job pulls and scans, never pushes. The write
+      # token is referenced only by the jobs that push or sync.
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          password: ${{ secrets.DOCKERHUB_READ_TOKEN }}
 
       # Full-severity sweep, ordered first so it also warms the Scout
       # CLI. `docker/scout-action` downloads its ~180 MB binary from the
