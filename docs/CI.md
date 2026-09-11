@@ -307,9 +307,14 @@ via `git verify-tag` — the cryptographic root of the release provenance
 chain. Every downstream job inherits the check via `needs:`.
 
 `release-gate` is the single human-in-the-loop gate: one approval on the
-`release` environment covers every channel. Per-channel environments
-(`pypi`, `dockerhub`) add a second required approval before each production
-publish.
+`release` environment covers every channel. The per-channel environments
+(`pypi`, `dockerhub`) carry no reviewer of their own. What they enforce is
+a deployment branch policy — only `v*` tags may enter them — so a job
+reaches a publishing credential only from a tag, and only after
+`verify-tag` has checked that tag's signature against
+`.github/allowed_signers`. The gate is the signed tag plus one approval;
+with a single maintainer, a second approval on the same run would be the
+same person clicking twice.
 
 `build` generates an SPDX SBOM (`sbom.spdx.json`) covering the wheel
 and sdist via `anchore/sbom-action`. `create-release` attaches it to
@@ -383,9 +388,12 @@ provenance chain. See `RELEASING.md`.
 ### `publish-channel.yml`
 
 Emergency escape hatch when one channel's smoke is broken and another
-must ship. Enter the tag and the channel (`pypi` or `docker`). Bypasses
-the shared `release-gate` but still requires the per-channel environment
-approval.
+must ship. Dispatch it **from the tag** (the environments admit `v*` tags
+only), then enter the tag and the channel (`pypi` or `docker`). Bypasses
+the shared `release-gate`. There is no approval click on this path: what
+remains is `verify-tag` — the tag must be signed by a key in
+`.github/allowed_signers` — and the environments' tags-only policy. The
+signature, not a click, is the control.
 
 Both paths re-apply the `verify-tag` check (annotated + reachable from
 `origin/main`) inline — the emergency route doesn't skip supply-chain

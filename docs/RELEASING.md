@@ -519,15 +519,21 @@ After approval, `publish` and `docker-publish` run in parallel.
   the publish environments admit `v*` tags only, so a run dispatched from
   `main` fails at the publish job with zero steps executed (the 2026-04-15
   run history shows exactly that). Then enter the tag and select the
-  channel. That workflow bypasses
-  the shared gate but still requires the per-channel environment approval
-  (`pypi` or `dockerhub`). Document why you used it in the GitHub Release
-  notes.
+  channel. That workflow bypasses the shared gate; what remains is
+  `verify-tag` (the tag must be signed by a key in
+  `.github/allowed_signers`) and the environments' tags-only policy. There
+  is no approval click on this path — the signed tag is the control.
+  Document why you used it in the GitHub Release notes.
 - **TestPyPI publish fails**: fix forward. Delete the tag locally and on
   origin (`git tag -d vX.Y.Z && git push origin :refs/tags/vX.Y.Z`),
   land the fix via PR, re-tag with the **same** version number, and push
   again. TestPyPI allows overwriting a yanked version on retry; real
-  PyPI does not, so always retry on TestPyPI first.
+  PyPI does not, so always retry on TestPyPI first. The `release tags`
+  ruleset blocks deleting or moving any `vX.Y.Z` tag; a repository admin
+  bypasses it, and the push is refused with the ruleset's name for anyone
+  else. Rewriting a release tag is deliberately an admin act, so if the
+  push is refused, that is the ruleset doing its job — not a transient
+  error to retry.
 - **A pre-gate job failed, but the artifact is fine** (a `testpypi-smoke`
   index-propagation flake is the usual case): re-run **the failed job**, not
   the workflow. Use **Actions → the run → Re-run failed jobs**, or
@@ -560,7 +566,8 @@ After approval, `publish` and `docker-publish` run in parallel.
   release and no GitHub Release is untraceable back to source.
 - **Release workflow ran but nothing published**: tags created via the
   GitHub API with `GITHUB_TOKEN` don't trigger downstream workflows.
-  Delete the tag and re-push it as a signed tag from your workstation
+  Delete the tag (the `release tags` ruleset makes this an admin-only
+  act, see above) and re-push it as a signed tag from your workstation
   (see "Tag and release" above).
 
 ## Credential scoping (open items)
