@@ -194,12 +194,14 @@ jobs:
         # subjects. Alias it per-artifact so the filename convention
         # (<artifact>.intoto.jsonl) matches Scorecard's pattern scan of
         # Release assets.
+        env:
+          BUNDLE_PATH: ${{ steps.provenance.outputs.bundle-path }}
         run: |
           mkdir -p provenance
           shopt -s nullglob
           for d in dist/*.whl dist/*.tar.gz; do
             base="$(basename "$d")"
-            cp "${{ steps.provenance.outputs.bundle-path }}" "provenance/${base}.intoto.jsonl"
+            cp "${BUNDLE_PATH}" "provenance/${base}.intoto.jsonl"
           done
           ls provenance/
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
