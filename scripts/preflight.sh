@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Run every gate a pull request faces, from this checkout, in one command.
 #
-# CI grades a PR on ten things — ruff, ruff format, mypy, the test suite,
-# the statement-coverage floor, patch coverage, and four checks on the commits
-# themselves (DCO trailer, no AI attribution, subject length, no Conventional
-# Commits prefix); a fifth, signing, is reported but recommended only. CONTRIBUTING lists them across four sections,
+# CI grades a PR on twelve things — ruff, ruff format, mypy, the test suite,
+# the statement-coverage floor, patch coverage, actionlint and zizmor over the
+# workflows, and four checks on the commits themselves (DCO trailer, no AI
+# attribution, subject length, no Conventional Commits prefix); a fifth, signing,
+# is reported but recommended only. CONTRIBUTING lists them across four sections,
 # and the pre-push hook that catches the commit ones is opt-in. In practice a
 # first PR here fails on one of the commit checks, not on code: of the last
 # seven external PRs, three lost a round to a Signed-off-by trailer that was
@@ -115,6 +116,50 @@ if [ "${quick}" -eq 0 ]; then
   gate "patch coverage (>= 90% of the lines you changed)" patch_coverage
 else
   printf '\n== pytest / coverage: skipped (--quick)\n'
+fi
+
+# ---- workflow gates (ci.yml: actionlint job) --------------------------------
+
+# The actionlint job lints .github/workflows/** with actionlint (it runs
+# ShellCheck over run: blocks itself) and with zizmor. Touching a workflow
+# and finding out
+# from CI is the same round-trip the commit gates below exist to avoid, and
+# actionlint on this repo is worse than silent: see the -ignore note below.
+#
+# Neither is fatal when absent. zizmor ships in requirements-dev.lock so a dev
+# venv has it; actionlint is a downloaded binary CI fetches per run, so a
+# contributor who has not installed it should not be blocked from preflighting
+# a change that touches no workflow at all.
+
+run_actionlint() {
+  # -ignore: actionlint 1.7.12 predates GitHub's `$/` self-repository syntax
+  # (July 2026) and rejects EVERY such `uses:` in this repo -- actions as "ref
+  # is missing", reusable-workflow calls as "not following the format". A bare
+  # `actionlint` here reports 11 failures on a clean tree, which reads as a
+  # broken repository rather than a stale linter. These are the same two
+  # patterns ci.yml passes; upstream is rhysd/actionlint#711. Drop them here
+  # and in ci.yml together when a release accepts the syntax.
+  actionlint -color \
+    -ignore 'specifying action "\$/[^"]*" in invalid format because ref is missing' \
+    -ignore 'reusable workflow call "\$/[^"]*" at "uses" is not following the format'
+}
+
+run_zizmor() {
+  zizmor --no-progress .github/ action.yml
+}
+
+if command -v actionlint >/dev/null 2>&1; then
+  gate "actionlint (workflows)" run_actionlint
+else
+  printf '\n== actionlint: skipped (not on PATH; CI still runs it)\n'
+  printf '  install a release binary: https://github.com/rhysd/actionlint/releases\n'
+  printf '  run it with the two -ignore flags in this script, not bare\n'
+fi
+
+if command -v zizmor >/dev/null 2>&1; then
+  gate "zizmor (workflows)" run_zizmor
+else
+  printf '\n== zizmor: skipped (not on PATH; it is in requirements-dev.lock)\n'
 fi
 
 # ---- commit gates (ci.yml: dco, no-ai-attribution; .githooks/pre-push) -----
