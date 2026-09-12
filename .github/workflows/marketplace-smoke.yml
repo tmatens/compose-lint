@@ -276,18 +276,31 @@ jobs:
             exit 1
           fi
 
-  # Scheduled runs have no PR to go red on. Without this the only signal
-  # for a weekly failure was an email to the workflow author, which is how
-  # a broken schedule stays broken. Downstream of every job so one report
-  # covers the whole run, and the only job holding issues: write.
+  # Neither unattended trigger has a PR to go red on. Without this the only
+  # signal was an email to the workflow author, which is how a broken run
+  # stays broken. Downstream of every job so one report covers the whole
+  # run, and the only job holding issues: write.
+  #
+  # The push leg matters as much as the schedule. A push here is the
+  # pin-bump merge, so this run is the end-to-end check on a release that
+  # has ALREADY shipped to PyPI, Docker Hub and GitHub Releases — there is
+  # no gate left to fail closed, and the next signal after a silent failure
+  # is a user's workflow breaking. It was covered only by whoever clicked
+  # merge happening to watch the run; that stopped being a person when the
+  # pin PR started automerging.
+  #
+  # workflow_dispatch is deliberately excluded: someone dispatched it and is
+  # watching the tab.
   report-failure:
-    name: Report scheduled failure
+    name: Report unattended failure
     needs:
       - pypi-propagated
       - marketplace-smoke
       - precommit-published-smoke
       - oneshot-runners-smoke
-    if: failure() && github.event_name == 'schedule'
+    if: >-
+      failure() && (github.event_name == 'schedule'
+      || github.event_name == 'push')
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     permissions:
@@ -295,3 +308,9 @@ jobs:
       issues: write
     steps:
       - uses: $/.github/actions/report-scheduled-failure
+        with:
+          trigger: ${{ github.event_name == 'push' && 'Post-release' || 'Scheduled' }}
+          note: >-
+            ${{ github.event_name == 'push'
+            && 'The post-release smoke did not pass, so the release that just published to PyPI, Docker Hub and GitHub Releases is unverified on the surfaces users actually consume. Publishing cannot be undone: triage toward a follow-up release, not a retry.'
+            || 'The weekly re-verification did not complete, so the published action, pre-commit hook and one-shot forms are unwatched.' }}
