@@ -990,6 +990,8 @@ jobs:
           Bumps the pin in \`.github/workflows/marketplace-smoke.yml\` **and** the copy-paste GitHub Action snippet in \`README.md\` — both use the \`@<sha> # vX.Y.Z\` form that CI cannot check pre-tag.
 
           **Merging this PR runs the Marketplace smoke test**: the workflow triggers on a push to \`main\` that touches its own file, so no manual dispatch is needed. Check that run's result against the new tag.
+
+          Auto-merge is armed, so this lands on its own once \`ci-ok\` is green -- no click needed. If that smoke then fails it opens an issue titled \`Post-release run failed: Marketplace smoke test\`; a green run is silent.
           EOF
           # Strip the 10-space indentation that the YAML block scalar requires.
           sed -i -E 's/^          //' /tmp/pr-body.md
@@ -998,6 +1000,39 @@ jobs:
             --head "${branch}" \
             --title "Bump marketplace-smoke pin to ${TAG}" \
             --body-file /tmp/pr-body.md
+
+          # Arm auto-merge: GitHub merges once `ci-ok` goes green, which is
+          # what a human was waiting for anyway. This PR opens strictly AFTER
+          # publish, docker-publish and create-release succeeded, so the
+          # merge gates nothing irreversible -- the release-gate environment
+          # approval upstream is the control, and it has already happened.
+          # The pinned SHA is `git rev-parse "${TAG}^{commit}"` from the step
+          # above, so "is this the right SHA" is true by construction rather
+          # than by inspection.
+          #
+          # Not failing the job when this does not take. The release has
+          # shipped by now; a red X here would say something is wrong with
+          # the release when the only thing wrong is that a follow-up PR
+          # needs a manual click. The warning and the step summary say which.
+          #
+          # Requires "Allow auto-merge" on the repository (Settings ->
+          # General). Without it `gh pr merge --auto` exits non-zero and this
+          # falls through to the warning.
+          if gh pr merge "${branch}" --auto --squash --delete-branch; then
+            echo "Auto-merge armed; GitHub will squash-merge once ci-ok is green."
+            {
+              echo ""
+              echo "Auto-merge is armed on the pin PR -- it lands on its own once \`ci-ok\` passes,"
+              echo "and that merge triggers the post-release marketplace smoke."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Could not arm auto-merge on the pin PR -- merge it by hand to trigger the post-release smoke. Check that 'Allow auto-merge' is enabled in Settings > General."
+            {
+              echo ""
+              echo "**Auto-merge could not be armed.** Merge the pin PR by hand; that merge is"
+              echo "what triggers the post-release marketplace smoke."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   # Move the floating Action major tag (uses: tmatens/compose-lint@v1) to
   # this release once everything above has published and verified. Only for
