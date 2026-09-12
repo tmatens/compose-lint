@@ -12,7 +12,7 @@
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12472/badge)](https://www.bestpractices.dev/projects/12472)
 [![Mentioned in Awesome Docker](https://awesome.re/mentioned-badge-flat.svg)](https://github.com/veggiemonk/awesome-docker#security)
 
-In a scan of 11,111 public Compose files on GitHub, **99% of the real-world files that lint had at least one security finding**, and more than one in four carries a literal credential. **[Read the *State of Docker Compose Security* report →](https://tmatens.github.io/compose-lint/state-of-compose/)**
+In a scan of 11,111 public Compose files on GitHub, **99% of real-world files had at least one security finding**, and more than one in four carried a literal credential. **[Read the *State of Docker Compose Security* report →](https://tmatens.github.io/compose-lint/state-of-compose/)**
 
 <!-- Demo GIF. Regenerate with scripts/demo/ — see scripts/demo/README.md. -->
 ![compose-lint scanning a docker-compose.yml with two services: under `service: watchtower`, a CRITICAL mounted Docker socket (CL-0001) with a box-drawing underline, fix block and reference URL, above a MEDIUM image pinned to a tag but not a digest (CL-0019); then under `service: db`, a HIGH plaintext credential (CL-0020) with `POSTGRES_PASSWORD: hunter2` underlined — then the FAIL verdict, and `compose-lint --explain CL-0001` reading the offline rule docs in its built-in pager: the title, severity derivation and references hold on the first page, the status line naming the controls — `CL-0001 · Space next · b back · q quit` — then a page-down continues into the doc, prompt still in place.](https://raw.githubusercontent.com/tmatens/compose-lint/main/docs/assets/demo.gif)
