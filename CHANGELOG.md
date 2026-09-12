@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The README says what a run reads in a dozen lines; the full account moved
+  to the docs site.** "What a run actually reads" had grown to six paragraphs
+  and four ADR citations, placed before the first example of output, and
+  "Compose compatibility" answered "does this work on my file?" with a list of
+  exceptions. Both read as reasons a run might not do what you expect. The
+  README now carries a short *Grades what actually deploys* section after
+  Example Output — merges what Compose merges, never reads outside the
+  project, a gap is exit 2 — with the one-line compatibility answer folded
+  in, and the Python requirement sits under Installation. The full text, ADR
+  links and the skipped-file shapes included, is the new
+  [What a run reads](docs/what-a-run-reads.md) page. Docs only; nothing the
+  tool does changed.
+
 ### Fixed
 
 - **A per-rule `reason:` written without `enabled: false` now says so.** The

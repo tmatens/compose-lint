@@ -50,6 +50,8 @@ pip install --require-hashes -r requirements.lock   # dependencies, hash-pinned
 pip install --no-deps compose-lint==0.28.0          # the tool, version-pinned
 ```
 
+Every pip path needs Python 3.11+; the Docker image is self-contained.
+
 **Docker** — [composelint/compose-lint](https://hub.docker.com/r/composelint/compose-lint)
 
 ```bash
@@ -95,12 +97,6 @@ Docker equivalent:
 docker run --rm -v "$(pwd):/src" composelint/compose-lint:0.28.0 docker-compose.prod.yml
 ```
 
-### Compose compatibility
-
-compose-lint targets the [Compose Specification](https://github.com/compose-spec/compose-spec) used by Compose v2 and v3. Compose v1 files (services declared at the top level) are skipped with a stderr note rather than failing the run — Docker [retired Compose v1 in 2023](https://www.docker.com/blog/new-docker-compose-v2-and-v1-deprecation/). Structural fragments (files containing only `volumes:` / `networks:` / `configs:` / `secrets:` / `x-*` keys, typically merged via `-f overlay.yml`) are skipped for the same reason, as is compose-lint's own `.compose-lint.yml` config if a glob happens to sweep it in. Genuinely unrecognised shapes still exit 2.
-
-Python 3.11+ is required for the pip install path; the Docker image is self-contained.
-
 ## Adopting on an existing repo
 
 Most established stacks don't start clean — in the [State of Compose
@@ -125,49 +121,6 @@ the entry and fix the issue. See
 [docs/configuration.md](https://github.com/tmatens/compose-lint/blob/main/docs/configuration.md#generating-a-starter-config)
 for the full behavior.
 
-## What a run actually reads
-
-compose-lint grades the configuration Compose actually runs, not just the
-file you name: the sibling `compose.override.yml` is merged, the sibling
-`.env` is resolved, `env_file:` targets are graded, `include:` and cross-file
-`extends:` are followed — and a part of the stack it *cannot* see is an error,
-never a silent pass.
-
-Everything it opens is a document the one you named routes it to, and every
-one of them has to resolve inside that file's own directory. Nothing outside
-the project is read, no matter what the document says, and no registry, daemon
-or image is consulted at all.
-
-**Overlays are merged.** `docker compose up` merges a `compose.override.yml`
-sitting beside the base file, with no flag and no opt-in, so compose-lint
-grades the merged pair: the run header names both documents, and each finding
-reports the file its evidence is written in
-([ADR-025](docs/adr/025-lint-the-merged-configuration.md)).
-`--no-merge-overrides` grades the base alone; `fix` only ever edits the file
-it is fixing.
-
-**A sibling `.env` is read, because Compose reads it**
-([ADR-026](docs/adr/026-read-the-sibling-env-file.md)). Its `COMPOSE_FILE`
-chooses the documents, exactly as it does for Compose, and `${VAR}`
-references resolve to what it supplies — `volumes: ["${MOUNT}:/data"]` with
-`MOUNT=/var/run/docker.sock` is graded as the control-socket mount it
-deploys. Two deliberate limits: values under `environment:` are never
-resolved from a `.env` (that is where secrets live), and the ambient shell
-environment is never read, so the same checkout lints the same on every
-machine. `--no-env` ignores env files entirely.
-
-**An `env_file:` is read too, and its keys are graded**
-([ADR-027](docs/adr/027-grade-env-file-where-the-document-routes-it.md)).
-Compose merges those files into the container's process environment, so a
-credential written there reaches every surface CL-0020 describes — moving a
-line out of `environment:` no longer silences CL-0020/CL-0021 without
-changing what deploys. Only those two rules read env files; a finding names
-the key and the file, **never the value**, and a path resolving outside the
-project directory is refused rather than read.
-
-**`include:` and cross-file `extends: {file: ...}` are followed when they stay inside the project** ([ADR-036](docs/adr/036-resolve-references-that-stay-inside-the-project.md)), under the same containment rule as `env_file:`: the referenced documents are read and merged, so hardening they declare counts and danger they declare is found. An include-only root — no services of its own, the monorepo idiom — is lintable rather than refused. Each document's own relative paths resolve against its own directory, and the merge order follows Compose's, which is not the one `-f a -f b` uses: the including file wins, and an earlier `include:` entry beats a later one.
-
-**Coverage gaps.** What is *not* followed is still an error rather than a quiet pass, because reporting clean over a partial view is the one failure mode a merge gate cannot have: a reference that leaves the project directory, is missing, is interpolated, is a cycle, or fails the bounded read. A gap means exit 2, a JSON `errors[]` entry, and a SARIF `toolExecutionNotifications` record, and the message says which of those it was. Lint the merged output (`docker compose config`) to cover everything, or pass `--allow-partial-coverage` to accept the gap and grade what is visible.
 ## How it compares
 
 | Tool | Compose security rules | Auto-fix | Scope | Zero config |
@@ -267,6 +220,35 @@ CRITICAL socket mount resolved four different ways (delete the service,
 re-architect it away, constrain it, or suppress it with the risk written
 down), two rules in genuine tension, and a stack that lints clean — see the
 [examples gallery](https://tmatens.github.io/compose-lint/examples/).
+
+## Grades what actually deploys
+
+For a single Compose file with no siblings, a run reads that file and nothing
+else. When there is more, compose-lint grades the configuration Compose would
+actually run, not just the file you named:
+
+- **It merges what Compose merges.** The sibling `compose.override.yml`, the
+  sibling `.env` (for `${VAR}` references and `COMPOSE_FILE`, never for
+  `environment:` values), `env_file:` targets, and `include:` / cross-file
+  `extends:` are all resolved, so a socket mount hidden behind a variable or
+  an override is graded as the mount it deploys.
+- **It never reads outside the project.** Every document has to resolve inside
+  the named file's own directory. The ambient shell environment is not read,
+  and no registry, daemon, or image is consulted, so the same checkout lints
+  the same on every machine.
+- **A part of the stack it cannot see is exit 2, not a silent pass.** A
+  reference that is missing, interpolated, or leaves the project is reported
+  as a coverage gap. Lint the `docker compose config` output to cover it, or
+  pass `--allow-partial-coverage` to grade what is visible.
+
+Any Compose Specification file works: one with a top-level `services:` key, or
+an `include:`-only root. Compose v1 files (services at the top level, retired
+by Docker in 2023) and structural fragments with no services are skipped with
+a stderr note rather than failed.
+
+Full detail, including the merge order and the flags that switch each source
+off (`--no-merge-overrides`, `--no-env`):
+[What a run reads](https://tmatens.github.io/compose-lint/what-a-run-reads/).
 
 ## Rules
 
@@ -400,7 +382,7 @@ planned work is on the [roadmap](https://tmatens.github.io/compose-lint/ROADMAP/
 |------|---------|
 | 0 | No findings at or above the `--fail-on` threshold |
 | 1 | One or more findings at or above the `--fail-on` threshold |
-| 2 | compose-lint couldn't run, or couldn't see the whole stack (invalid args, file not found, invalid Compose file, a rule crashed, or a coverage gap — see [What a run actually reads](#what-a-run-actually-reads)) |
+| 2 | compose-lint couldn't run, or couldn't see the whole stack (invalid args, file not found, invalid Compose file, a rule crashed, or a coverage gap — see [Grades what actually deploys](#grades-what-actually-deploys)) |
 
 The default threshold is `high` — medium and low findings don't fail CI unless you opt in:
 

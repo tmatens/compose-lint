@@ -86,6 +86,7 @@ nav:
   - Guides:
       - Configuration: configuration.md
       - "CLI reference": cli.md
+      - "What a run reads": what-a-run-reads.md
       - "Fixing findings": fix.md
       - "Forgejo Actions": forgejo.md
       - Severity levels: severity.md
