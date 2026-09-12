@@ -65,6 +65,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#725](https://github.com/tmatens/compose-lint/issues/725)).
 
   Thanks [@Shaisolaris](https://github.com/Shaisolaris) ([#795](https://github.com/tmatens/compose-lint/pull/795)).
+- **CL-0011's tier table sent `PERFMON` and `SYS_TIME` to the wrong rule at
+  the wrong severity.** The table on that page is the one surface spanning
+  the whole `cap_add` family — it is where a reader lands to learn why their
+  entry was graded as it was — and it still said CL-0027 flags both at
+  MEDIUM, from before they moved to CL-0028 at HIGH, while describing the
+  family as three rules when there are six. The page now matches what the
+  linter reports, and a test holds every cap rule's capability table and the
+  tier table to the code, so the family cannot drift from its own docs again
+  ([#835](https://github.com/tmatens/compose-lint/pull/835)). Docs and tests
+  only; no finding changed.
 
 ## [0.28.0] - 2026-09-08
 
