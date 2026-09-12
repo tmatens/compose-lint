@@ -61,9 +61,10 @@ The last command activates the repo's git hooks. The `pre-push` hook blocks a co
 ## Local quality checks
 
 One command runs every gate a PR faces — the four code gates below, both
-coverage gates, and the five checks on your commits (signature, DCO trailer,
-no AI attribution, subject length, no Conventional Commits prefix) — with the
-same commands CI uses, and prints one summary:
+coverage gates, actionlint and zizmor over the workflows, and the five checks
+on your commits (signature, DCO trailer, no AI attribution, subject length, no
+Conventional Commits prefix) — with the same commands CI uses, and prints one
+summary:
 
 ```bash
 scripts/preflight.sh            # everything CI checks; --quick skips the test suite
@@ -72,6 +73,15 @@ scripts/preflight.sh            # everything CI checks; --quick skips the test s
 A green preflight is a green PR. Run it before every push; the commit checks
 are where a first PR here usually stalls, and CI cannot tell you about them
 until a maintainer has approved the run.
+
+The workflow gates skip themselves when the tool is not installed, so they
+never block a change that touches no workflow. `zizmor` comes with the dev
+lock; `actionlint` is a [release binary](https://github.com/rhysd/actionlint/releases)
+CI downloads per run. **If you install it, invoke it through
+`scripts/preflight.sh` rather than bare:** the pinned release predates
+GitHub's `$/` self-repository syntax and reports a failure for every workflow
+in this repo, on a clean tree. The script passes the two `-ignore` patterns CI
+uses, so you see real findings only.
 
 The four code gates, if you want them individually:
 
