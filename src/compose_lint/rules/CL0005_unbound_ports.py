@@ -8,7 +8,11 @@ from typing import TYPE_CHECKING, Any
 
 from compose_lint._lines import split_lines
 from compose_lint._scalar import as_scalar_text
-from compose_lint._yaml_edit import is_anchored_or_merged, line_indent
+from compose_lint._yaml_edit import (
+    is_anchored_or_merged,
+    line_indent,
+    sequence_scalar_span,
+)
 from compose_lint.models import Finding, RuleMetadata, Severity, TextEdit
 from compose_lint.rules import BaseRule, register_rule
 
@@ -336,7 +340,7 @@ def _port_at_line(
 
 def _fix_short_syntax(source_lines: list[str], item_line: int) -> list[TextEdit] | None:
     """Edit a short-syntax (string) port scalar to bind ``127.0.0.1``."""
-    parsed = _scalar_span(source_lines[item_line - 1])
+    parsed = sequence_scalar_span(source_lines[item_line - 1])
     if parsed is None:
         return None
     scalar, scalar_col = parsed
@@ -497,41 +501,6 @@ def _host_ip_value_edit(raw_line: str, line_no: int) -> TextEdit | None:
     return TextEdit(
         line_no, val_col, line_no, val_col + len(token), "127.0.0.1", caveat=_CAVEAT
     )
-
-
-def _scalar_span(raw_line: str) -> tuple[str, int] | None:
-    """Return ``(scalar, col)`` for a block-sequence entry's scalar value.
-
-    ``col`` is the 1-indexed column where the scalar content begins (inside the
-    quote, if any). Strips a surrounding quote and a trailing ``# comment``.
-    Returns ``None`` when the line is not a plain ``- value`` entry.
-    """
-    line = raw_line.rstrip("\n")
-    idx = len(line) - len(line.lstrip(" "))
-    if idx >= len(line) or line[idx] != "-":
-        return None
-    idx += 1
-    if idx >= len(line) or line[idx] != " ":
-        return None  # need whitespace after the dash for a scalar entry
-    while idx < len(line) and line[idx] == " ":
-        idx += 1
-    if idx >= len(line):
-        return None
-
-    if line[idx] in ("'", '"'):
-        quote = line[idx]
-        close = line.find(quote, idx + 1)
-        if close == -1:
-            return None
-        return line[idx + 1 : close], idx + 2  # content starts past the quote
-    rest = line[idx:]
-    comment = rest.find(" #")
-    if comment != -1:
-        rest = rest[:comment]
-    scalar = rest.rstrip()
-    if not scalar:
-        return None
-    return scalar, idx + 1
 
 
 def _host_ip_span(scalar: str) -> tuple[int, int, str] | None:

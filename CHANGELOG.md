@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`fix` now remediates CL-0022.** A tmpfs entry that re-enables `exec` or
+  `suid` loses just those tokens — `/run:exec,size=64m` becomes
+  `/run:size=64m`, `/tmp:exec` becomes `/tmp` — in either the list or the
+  scalar `tmpfs:` spelling, with quoting and comments left as written. The
+  rule's `noexec,nosuid` default is the same "revert a guardrail" shape as the
+  CL-0009 and CL-0014 fixers, and the edit is labelled behavior-changing in
+  the dry run: a workload that genuinely executes from the mount fails once
+  the default is back, and that case wants a suppression with a reason. The
+  fixer refuses anchored or merged services, flow-style lists, `${VAR}` in the
+  entry, and any line that does not show the whole value
+  ([ADR-014 amendment](docs/adr/014-fix-remediation.md)).
+
 ### Changed
 
 - **The README is a fifth shorter, and what left it has a home.** It is the

@@ -575,3 +575,30 @@ whole file, writes nothing, prints the diff for diagnosis, and exits 2.
 - A new destructive code path exists. It is dry-run by default, hidden,
   warned-on, refusal-first, and corpus-gated — the mitigations are
   proportionate, and `apply_edits` centralizes the risk in one tested function.
+
+---
+
+## Amendment — CL-0022 joins the safe-rule set (2026-09-12)
+
+CL-0022 (tmpfs mount re-enables exec/suid) shipped after the Part 4 table was
+drawn, so it was never evaluated against the definition; its rule text said
+"no auto-fix: the option is set deliberately", which is the argument the
+table already rejects for `seccomp:unconfined` and `driver: none`. Evaluated
+now, it falls squarely in the *revert a guardrail* class: `noexec,nosuid` is
+the platform default on every tmpfs, the finding is an explicit opt-out, and
+deleting the `exec`/`suid` tokens restores the default with no compensating
+change. The edit is a single in-scalar rewrite determined entirely by the
+file, resolves the finding by construction, leaves a valid entry in either
+spelling (`/run:exec,size=64m` → `/run:size=64m`; `/tmp:exec` → `/tmp`), and
+raises no new finding. It is behavior-changing and carries the mandatory
+caveat.
+
+| Rule | Edit primitive | Runtime behavior | Caveat |
+|------|----------------|------------------|--------|
+| **CL-0022** tmpfs exec/suid | Remove the `exec`/`suid` tokens from the entry's option list | **Changes** — the mount is `noexec,nosuid` again; a workload that executes or setuids from it fails | **Required** |
+
+Refusals follow Part 6, plus one the in-scalar shape needs: the visible scalar
+on the finding's line must equal the parsed entry, so a wrapped or block scalar
+is never partially edited (the shape behind #508). The corpus gate applies as
+for every other fixer. The safe-rule set is now CL-0003, CL-0005, CL-0007,
+CL-0009, CL-0014, CL-0022 (CL-0015 retired under ADR-028).
