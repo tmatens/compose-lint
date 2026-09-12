@@ -338,6 +338,26 @@ recursion guard), so it would land with zero checks and sit blocked
 until someone closed and reopened it. Authoring it as the PAT user makes
 the required checks run automatically.
 
+The job then arms **auto-merge** on that PR, so it lands on its own once
+`ci-ok` is green. The merge gates nothing irreversible: the PR opens only
+after `publish`, `docker-publish` and `create-release` have all succeeded,
+so PyPI, Docker Hub and the GitHub Release are already permanent by the
+time it exists — the `release` environment approval upstream is the
+control, and it happened before any of that. The pinned SHA is
+`git rev-parse "${TAG}^{commit}"` computed in the job, so it is right by
+construction rather than by inspection. Auto-merge needs **Allow
+auto-merge** enabled on the repository; without it the step warns, the PR
+waits for a manual merge, and the release is otherwise unaffected — it is
+deliberately not a job failure, since the release has already shipped and
+a red X would misreport that.
+
+What this removes is a step that could be *forgotten*, which is the
+failure this job exists to prevent: v0.14.1 shipped with the README
+snippet still pinned to v0.14.0. What it does not remove is the check on
+the result — a post-release smoke failure now opens an issue (see
+`marketplace-smoke.yml` below), which is what made automerging safe to
+turn on.
+
 Merging that PR is what triggers `marketplace-smoke.yml` — deliberately,
 so the smoke runs against the release just cut. It also means the smoke
 runs minutes after the publish, inside the window where PyPI's JSON API
