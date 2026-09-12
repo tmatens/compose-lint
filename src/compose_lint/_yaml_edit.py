@@ -338,3 +338,79 @@ def delete_lines(
     no following line to anchor to).
     """
     return replace_lines(source_lines, first, last, "", caveat=caveat)
+
+
+def sequence_scalar_span(raw_line: str) -> tuple[str, int] | None:
+    """Return ``(scalar, col)`` for a block-sequence entry's scalar value.
+
+    ``col`` is the 1-indexed column where the scalar content begins (inside the
+    quote, if any). Strips a surrounding quote and a trailing ``# comment``.
+    Returns ``None`` when the line is not a plain ``- value`` entry.
+
+    Shared by the in-scalar fixers (CL-0005 ports, CL-0022 tmpfs options), which
+    edit *inside* a list item's text rather than replacing lines. The span is
+    what the line shows; a caller that needs the value to be whole on this line
+    (not a wrapped or block scalar) compares it against the parsed entry.
+    """
+    line = raw_line.rstrip("\n")
+    idx = len(line) - len(line.lstrip(" "))
+    if idx >= len(line) or line[idx] != "-":
+        return None
+    idx += 1
+    if idx >= len(line) or line[idx] != " ":
+        return None  # need whitespace after the dash for a scalar entry
+    while idx < len(line) and line[idx] == " ":
+        idx += 1
+    if idx >= len(line):
+        return None
+
+    if line[idx] in ("'", '"'):
+        quote = line[idx]
+        close = line.find(quote, idx + 1)
+        if close == -1:
+            return None
+        return line[idx + 1 : close], idx + 2  # content starts past the quote
+    rest = line[idx:]
+    comment = rest.find(" #")
+    if comment != -1:
+        rest = rest[:comment]
+    # `line[idx]` is a non-space, so the remainder is never blank here.
+    return rest.rstrip(), idx + 1
+
+
+def mapping_scalar_span(raw_line: str, key: str) -> tuple[str, int] | None:
+    """Return ``(scalar, col)`` for a ``key: value`` line's scalar value.
+
+    The mapping-entry counterpart of :func:`sequence_scalar_span`, for a key
+    whose value is written inline on the key's own line (``tmpfs: /run:exec``).
+    Same conventions: ``col`` is 1-indexed and points inside a surrounding
+    quote, a trailing ``# comment`` is stripped. Returns ``None`` when the line
+    does not start with ``key:`` followed by an inline scalar -- a block body
+    (``key:`` alone), a flow collection, or an anchor/alias are all refused
+    since the value is then not a plain scalar on this line.
+    """
+    line = raw_line.rstrip("\n")
+    body = line.lstrip(" ")
+    if not body.startswith(key + ":"):
+        return None
+    idx = len(line) - len(body) + len(key) + 1
+    if idx >= len(line) or line[idx] != " ":
+        return None  # `key:` with no inline value, or a longer key sharing the prefix
+    while idx < len(line) and line[idx] == " ":
+        idx += 1
+    if idx >= len(line):
+        return None
+    if line[idx] in ("'", '"'):
+        quote = line[idx]
+        close = line.find(quote, idx + 1)
+        if close == -1:
+            return None
+        return line[idx + 1 : close], idx + 2
+    if line[idx] in ("[", "{", "&", "*", "|", ">"):
+        return None  # flow collection, anchor/alias, or block scalar
+    rest = line[idx:]
+    comment = rest.find(" #")
+    if comment != -1:
+        rest = rest[:comment]
+    # `line[idx]` is a non-space, so the remainder is never blank here.
+    return rest.rstrip(), idx + 1
