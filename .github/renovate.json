@@ -90,13 +90,13 @@
       "enabled": false
     },
     {
-      "description": "Automerge low-risk routine updates once CI is green. Patch-level Python dep bumps, pinned-digest refreshes for GitHub Actions, and lockFileMaintenance go in without human review. Docker base images stay manual because the OCI manifest-list vs per-arch digest check (see MEMORY.md) is not mechanically verified in CI. minimumReleaseAge is the one human-shaped gate on that path: a release merges itself only after it has been public for three days, which is the window in which a compromised or broken upstream release is usually pulled or yanked. Hash-locked installs do not help here — they pin whatever release was current. The PR still opens at once; Renovate holds a renovate/stability-days check pending until the age passes, then automerge proceeds. Security PRs are unaffected: vulnerabilityAlerts defaults minimumReleaseAge to null, so an OSV fix still lands immediately.",
+      "description": "Automerge low-risk routine updates once CI is green. Patch-level Python dep bumps, pinned-digest refreshes for GitHub Actions, and lockFileMaintenance go in without human review. Docker base images stay manual because the OCI manifest-list vs per-arch digest check (see MEMORY.md) is not mechanically verified in CI. minimumReleaseAge is the one human-shaped gate on that path: a release merges itself only after it has been public for three days, which is the window in which a compromised or broken upstream release is usually pulled or yanked. Hash-locked installs do not help here — they pin whatever release was current. The PR still opens at once; Renovate holds a renovate/stability-days check pending until the age passes, then automerge proceeds. platformAutomerge is deliberately FALSE so that gate cannot be routed around: GitHub's native auto-merge lands a PR as soon as its REQUIRED checks pass, and the only required check here is ci-ok — renovate/stability-days is not one, so a platform-armed PR could merge inside the three days the option exists to enforce. Renovate merging on its own, after its own checks, is the behaviour this repo has always had (platform auto-merge was unavailable at repo level until the marketplace-pin job needed it), so this pins it rather than changes it. Security PRs are unaffected: vulnerabilityAlerts defaults minimumReleaseAge to null, so an OSV fix still lands immediately.",
       "matchManagers": ["pep621", "pip_requirements", "pip-compile", "github-actions"],
       "matchUpdateTypes": ["patch", "pin", "digest", "lockFileMaintenance"],
       "minimumReleaseAge": "3 days",
       "automerge": true,
       "automergeType": "pr",
-      "platformAutomerge": true
+      "platformAutomerge": false
     }
   ]
 }
