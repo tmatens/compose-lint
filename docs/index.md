@@ -52,6 +52,8 @@ reading here) in the terminal.
   with reasons, per-service overrides, severity threshold (`--fail-on`).
 - **[Severity levels](severity.md)** — how CRITICAL/HIGH/MEDIUM/LOW are
   assigned, and why severities are deliberately not inflated.
+- **[GitHub Action](github-action.md)** — inputs, SHA pin versus `v1`, and
+  why the `permissions:` block is part of the recipe.
 - **[Hardening walkthrough](hardening.md)** — taking a real Compose file from
   default to hardened, finding by finding.
 - **[CL-0006's capability guide](rules/CL-0006.md#determining-required-capabilities)**

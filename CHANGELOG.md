@@ -9,18 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **The README says what a run reads in a dozen lines; the full account moved
-  to the docs site.** "What a run actually reads" had grown to six paragraphs
-  and four ADR citations, placed before the first example of output, and
+- **The README is a fifth shorter, and what left it has a home.** It is the
+  landing page for someone deciding whether to run the tool, and it had grown
+  into a second copy of the docs: "What a run actually reads" was six
+  paragraphs and four ADR citations placed before the first example of output;
   "Compose compatibility" answered "does this work on my file?" with a list of
-  exceptions. Both read as reasons a run might not do what you expect. The
-  README now carries a short *Grades what actually deploys* section after
-  Example Output — merges what Compose merges, never reads outside the
-  project, a gap is exit 2 — with the one-line compatibility answer folded
-  in, and the Python requirement sits under Installation. The full text, ADR
-  links and the skipped-file shapes included, is the new
-  [What a run reads](docs/what-a-run-reads.md) page. Docs only; nothing the
-  tool does changed.
+  exceptions; the GitHub Actions section carried a SHA-pinning essay and a
+  `permissions:` tutorial; `fix`, `init`, configuration and the agent section
+  each restated their guide. Now: a short *Grades what actually deploys*
+  section after Example Output with the one-line compatibility answer folded
+  in; the Python requirement under Installation; *How it compares* moved down
+  beside Versioning, table only; and every trimmed section keeps its link.
+  Two docs pages are new — [What a run reads](docs/what-a-run-reads.md) holds
+  the full account, ADR links and skipped-file shapes included, and
+  [GitHub Action](docs/github-action.md) is the first user-facing page for the
+  action: every input, the SHA-versus-`v1` reasoning, and the `permissions:`
+  rationale, none of which had lived anywhere but the README. Docs only;
+  nothing the tool does changed.
 
 ### Fixed
 

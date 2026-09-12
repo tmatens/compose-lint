@@ -88,6 +88,7 @@ nav:
       - "CLI reference": cli.md
       - "What a run reads": what-a-run-reads.md
       - "Fixing findings": fix.md
+      - "GitHub Action": github-action.md
       - "Forgejo Actions": forgejo.md
       - Severity levels: severity.md
       - Hardening walkthrough: hardening.md
