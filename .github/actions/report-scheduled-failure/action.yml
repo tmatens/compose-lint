@@ -1,13 +1,25 @@
 name: 'Report scheduled failure'
 description: >
-  Open, or comment on, the issue for a scheduled workflow run that failed.
+  Open, or comment on, the issue for an unattended workflow run that failed.
   One issue per workflow (and matrix leg, if given), found by exact title,
   so a failure that repeats every night lands as comments on one thread
-  rather than a new issue each time. Scheduled runs have no PR to go red
+  rather than a new issue each time. An unattended run has no PR to go red
   on; without this the only signal is an email to the workflow author.
+  Scheduled runs are the common case and the default wording; `trigger`
+  covers the other kind, a run nobody is watching because automation, not a
+  person, set it off.
   First-party bash over `gh`; the calling job needs `issues: write`.
 
 inputs:
+  trigger:
+    description: >
+      What set the run off, as it should read in the issue title: "Scheduled
+      run failed: <workflow>". Kept in the title rather than the body so two
+      kinds of failure on one workflow stay two threads — a weekly flake and
+      a post-release break want separate triage, and this action dedupes by
+      exact title.
+    required: false
+    default: 'Scheduled'
   leg:
     description: >
       Matrix leg or other qualifier appended to the title in parentheses,
@@ -34,12 +46,13 @@ runs:
         GH_TOKEN: ${{ inputs.token }}
         GH_REPO: ${{ github.repository }}
         WORKFLOW: ${{ github.workflow }}
+        TRIGGER: ${{ inputs.trigger }}
         LEG: ${{ inputs.leg }}
         NOTE: ${{ inputs.note }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: |
         set -euo pipefail
-        title="Scheduled run failed: ${WORKFLOW}${LEG:+ (${LEG})}"
+        title="${TRIGGER} run failed: ${WORKFLOW}${LEG:+ (${LEG})}"
         body="- Workflow: **${WORKFLOW}**"
         if [ -n "${LEG}" ]; then
           body="${body}"$'\n'"- Matrix leg: **${LEG}**"

@@ -439,6 +439,15 @@ weekly on a schedule so a regression that develops *between* releases
 (a yanked dependency, a resolver change, a registry-side issue) is
 noticed before a user's workflow breaks.
 
+Both unattended triggers — the weekly cron and the post-release push —
+open an issue on failure via `report-failure`. The push leg is the one
+that matters most and was added last: by the time it runs, the release
+has already shipped to PyPI, Docker Hub and GitHub Releases, so there is
+no gate left to fail closed and nothing else would say so. It was
+covered only by whoever merged the pin PR happening to watch the run,
+which stopped being a person when that PR started automerging. A manual
+`workflow_dispatch` opens no issue: someone set it off and is watching.
+
 ### `forgejo-smoke.yml`
 
 Proves README's Forgejo Actions snippet — and its "Verified on Forgejo X,
@@ -540,6 +549,7 @@ condition.
 | Docker Scout CVE                    | Security → Code Scanning (`docker-scout` category)     |
 | Vulnerability with an available fix | Rolling issue labelled `fixable-vulns`                 |
 | Scheduled workflow failure          | Issue `Scheduled run failed: <workflow>` — one per workflow, repeat failures comment on it (`.github/actions/report-scheduled-failure`); plus the author email and red X |
+| Post-release smoke failure          | Issue `Post-release run failed: Marketplace smoke test` — same action, separate thread from the weekly one so a break in a shipped release is not triaged as a flake |
 | Renovate PR                         | Opens a PR tagged accordingly; patch, pin, digest and lock-maintenance bumps automerge once green **and** the release is three days old (`renovate/stability-days` stays pending until then) |
 
 The Security tab is the single pane of glass for everything except
