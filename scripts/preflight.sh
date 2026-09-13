@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Run every gate a pull request faces, from this checkout, in one command.
 #
-# CI grades a PR on twelve things — ruff, ruff format, mypy, the test suite,
+# CI grades a PR on eleven things — ruff, ruff format, mypy, the test suite,
 # the statement-coverage floor, patch coverage, actionlint and zizmor over the
-# workflows, and four checks on the commits themselves (DCO trailer, no AI
-# attribution, subject length, no Conventional Commits prefix); a fifth, signing,
-# is reported but recommended only. CONTRIBUTING lists them across four sections,
+# workflows, and three checks on the commits themselves (DCO trailer, no AI
+# attribution, subject conventions: under 72 characters and no Conventional
+# Commits prefix); a fourth, signing, is reported but recommended only. CONTRIBUTING lists them across four sections,
 # and the pre-push hook that catches the commit ones is opt-in. In practice a
 # first PR here fails on one of the commit checks, not on code: of the last
 # seven external PRs, three lost a round to a Signed-off-by trailer that was
@@ -162,7 +162,7 @@ else
   printf '\n== zizmor: skipped (not on PATH; it is in requirements-dev.lock)\n'
 fi
 
-# ---- commit gates (ci.yml: dco, no-ai-attribution; .githooks/pre-push) -----
+# ---- commit gates (ci.yml: dco, no-ai-attribution, commit-subjects; .githooks/pre-push)
 
 # Bot commits cannot sign or sign off; CI allow-lists them the same way.
 bot_pattern='(dependabot|renovate|github-actions|mend)\[bot\]'
@@ -238,10 +238,15 @@ commits_without_ai_attribution() {
 }
 
 commit_subjects() {
-  # CONTRIBUTING "Commit conventions": imperative subject under 72 characters,
-  # no Conventional Commits prefix. Reviewed by hand until now (#726).
-  local ok=1 sha subject
-  while IFS=$'\t' read -r sha subject; do
+  # Mirrors ci.yml's commit-subjects job: imperative subject under 72
+  # characters, no Conventional Commits prefix (CONTRIBUTING "Commit
+  # conventions"). Reviewed by hand until #726 lost a round to a prefix.
+  # Bot commits are skipped as in the other gates.
+  local ok=1 sha author_email subject
+  while IFS=$'\t' read -r sha author_email subject; do
+    if printf '%s' "${author_email}" | grep -iqE "${bot_pattern}"; then
+      continue
+    fi
     if [ "${#subject}" -ge 72 ]; then
       printf '  %s  subject is %d characters (limit 72): %s\n' "${sha:0:7}" "${#subject}" "${subject}"
       ok=0
@@ -250,7 +255,7 @@ commit_subjects() {
       printf '  %s  Conventional Commits prefix; use a plain imperative subject: %s\n' "${sha:0:7}" "${subject}"
       ok=0
     fi
-  done < <(git log --no-merges --format='%H%x09%s' "${range}")
+  done < <(git log --no-merges --format='%H%x09%ae%x09%s' "${range}")
   [ "${ok}" -eq 1 ]
 }
 

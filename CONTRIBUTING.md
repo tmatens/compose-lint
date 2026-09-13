@@ -237,7 +237,9 @@ the test that enforces it, or says that a reviewer does.
 - **One logical change per commit.** Rules, features, and refactors each get
   their own commit. Don't bundle unrelated changes.
 - **Imperative subject line, under 72 characters.** "Add CL-0011 rule for X",
-  not "Added CL-0011" or "CL-0011".
+  not "Added CL-0011" or "CL-0011". The length, and the no-prefix rule below,
+  are enforced by the `Commit subjects` CI check; `scripts/preflight.sh` runs
+  the same check before you push.
 - **Explain the *why* in the body, not just the *what*.** The diff already
   shows what changed; the commit message exists to explain the reason.
 - **Signing your commits is recommended, not required.** See

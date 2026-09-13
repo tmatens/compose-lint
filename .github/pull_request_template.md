@@ -57,8 +57,8 @@ Closes #
 ## Checklist
 
 <!-- Short on purpose. CI checks sign-off, the four local gates, AI
-     attribution, the rule surfaces and the severity matrix, and a reviewer
-     reads those off the checks tab — repeating them here only asks you to
+     attribution, commit subjects, the rule surfaces and the severity
+     matrix, and a reviewer reads those off the checks tab — repeating them here only asks you to
      agree with a check that has already run. What's left is what CI cannot
      see for itself. -->
 

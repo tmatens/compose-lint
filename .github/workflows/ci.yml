@@ -719,6 +719,59 @@ jobs:
           fi
           echo "No AI attribution trailers found in PR commits."
 
+  commit-subjects:
+    name: Commit subjects
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require imperative subjects under 72 characters, no Conventional Commits prefix
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # CONTRIBUTING "Commit conventions": imperative subject line under
+          # 72 characters, no Conventional Commits prefix. Until now this was
+          # reviewed by hand (#726 lost a round to a prefix) while
+          # scripts/preflight.sh already failed on it, so preflight was
+          # stricter than the PR it claims to predict. This job is the same
+          # check, so a green preflight and a green PR are the same thing in
+          # both directions. Merge commits are skipped as in the dco job:
+          # their subject is git's, not the contributor's. Bot commits are
+          # skipped by the same anchored noreply pattern the dco job uses:
+          # Renovate's digest-bump subjects run past 72 characters, and a
+          # red check here would hold every automerged update for a rule
+          # written for people.
+          bot_pattern='^[0-9]+\+(dependabot|renovate|github-actions|mend)\[bot\]@users\.noreply\.github\.com$'
+          report="$(mktemp)"
+          while IFS=$'\t' read -r sha author_email subject; do
+            if printf '%s' "${author_email}" | grep -iqE "${bot_pattern}"; then
+              continue
+            fi
+            if [ "${#subject}" -ge 72 ]; then
+              printf '  %s  subject is %d characters (limit 72): %s\n' "${sha}" "${#subject}" "${subject}" >> "${report}"
+            fi
+            if printf '%s' "${subject}" | grep -qiE '^(feat|fix|chore|docs|refactor|test|tests|ci|build|perf|style|revert)(\([^)]*\))?!?:'; then
+              printf '  %s  Conventional Commits prefix; use a plain imperative subject: %s\n' "${sha}" "${subject}" >> "${report}"
+            fi
+          done < <(git log --no-merges --format='%H%x09%ae%x09%s' "${BASE_SHA}..${HEAD_SHA}")
+          if [ -s "${report}" ]; then
+            echo "::error::Commit subjects that do not follow CONTRIBUTING.md \"Commit conventions\":"
+            while IFS= read -r line; do
+              echo "::error::${line}"
+            done < "${report}"
+            echo "::error::Subjects are imperative, under 72 characters, with no feat:/fix:/chore: prefix. Reword with 'git commit --amend' (or 'git rebase -i ${BASE_SHA}'), then re-push with --force-with-lease."
+            exit 1
+          fi
+          echo "All PR commit subjects follow the conventions."
+
   # Surfaces new dependencies introduced by a PR that carry known CVEs
   # or incompatible licenses — before pip-audit would catch them post-merge
   # against the dev lockfile. Run only on pull_request; the action requires
@@ -1428,6 +1481,7 @@ jobs:
       - changelog-gate
       - dco
       - no-ai-attribution
+      - commit-subjects
       - dependency-review
       - actionlint
       - hadolint
