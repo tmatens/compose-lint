@@ -6,7 +6,7 @@
 #
 # Base is digest-pinned per CLAUDE.md (Docker base images: digest-pin the
 # manifest-list index). Bump via Renovate.
-FROM ghcr.io/charmbracelet/vhs@sha256:9d5fc3dc0c160b0fb1d2212baff07e6bdf3fa9438c504a3237484567302fcf93
+FROM ghcr.io/charmbracelet/vhs@sha256:b1afb4f9d0d27000d5feb7e93882dc5b983574fc19462308ee1d94e843afc67d
 
 # Python deps (compose-lint + retime.py's pillow/numpy) are hash-pinned in
 # requirements.lock (uv-compiled from requirements.in; see README.md). The
