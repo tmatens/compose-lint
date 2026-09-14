@@ -62,7 +62,7 @@ RUN python3 -m venv /build-venv \
 # package to remove.
 
 # --- runtime stage: distroless Python, nonroot by default ---
-FROM gcr.io/distroless/python3-debian13:nonroot@sha256:f3d5ddc6c64a019fe520e7f005f2880be21e6afc461b10a3c15ef2e4edc71e33
+FROM gcr.io/distroless/python3-debian13:nonroot@sha256:8ee214843129f43e2ebf5e0ca9f2e4e6d8292143d1b8a6787f169b5898578884
 LABEL org.opencontainers.image.title="compose-lint" \
       org.opencontainers.image.description="Security-focused linter for Docker Compose files" \
       org.opencontainers.image.url="https://github.com/tmatens/compose-lint" \
