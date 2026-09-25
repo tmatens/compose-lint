@@ -39,7 +39,7 @@ The asymmetry is intentional. pre-commit hands the hook a filename-filtered list
 
 ## Generating a starter config
 
-Rather than hand-author the file from this page, run `compose-lint init` to turn a file's current findings into a `.compose-lint.yml` you then triage:
+Rather than hand-author the file from this page, run `compose-lint init` to turn a stack's current findings into a `.compose-lint.yml` you then triage:
 
 ```bash
 compose-lint init docker-compose.yml          # writes ./.compose-lint.yml
@@ -63,6 +63,7 @@ rules:
 - **Per-service, not global.** `init` never writes `enabled: false`; it names the exact services where each rule fired, so a service you add later still trips the rule instead of being silently uncovered.
 - **All severities are included** and annotated; review the CRITICAL and HIGH entries first and prefer fixing over suppressing.
 - **It refuses to overwrite an existing `.compose-lint.yml`** without `--force`, so a generated file can't clobber suppressions you've already triaged.
+- **It grades what `check` grades.** The sibling `compose.override.yml` is merged, the `.env` beside the file is consulted for `COMPOSE_FILE`, and every `env_file:` a service names is read — exactly as `check` does — so the baseline covers the findings the gate will actually see. `--no-merge-overrides` and `--no-env` narrow `init` the same way they narrow `check`; baseline with whichever flags you gate with.
 - **A clean file writes nothing** — `init` reports that there is nothing to suppress and exits 0.
 - Status goes to stderr; `init` takes a single `FILE` (no directory discovery).
 

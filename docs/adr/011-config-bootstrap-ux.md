@@ -162,3 +162,18 @@ were resolved at build time as follows:
   usual 0644 since `mkstemp` defaults to 0600.
 
 Stdout emission and `--merge` remain out of scope, as above.
+
+**Amendment (2026-09-24) — `init` plans its file the way `check` does:**
+
+The implementation note above had `init` share `load_compose` with `check`.
+That stopped being the same document once `check` began merging the sibling
+`compose.override.yml` ([ADR-025](025-lint-the-merged-configuration.md)),
+letting a `.env` select the documents ([ADR-026](026-read-the-sibling-env-file.md))
+and reading `env_file:` targets ([ADR-027](027-grade-env-file-where-the-document-routes-it.md)):
+`init` still read the raw file, so on any stack with an override the baseline
+it wrote missed the override's findings and `check --config <baseline>` stayed
+red — the opposite of what a baseline is for. `init` now plans and loads its
+single `FILE` through the same selection and merge path as `check`, and gained
+`--no-merge-overrides` / `--no-env` with `check`'s semantics so a gate that
+narrows its view can be baselined the same way. The single-`FILE` scope, the
+per-service encoding and the write contract are unchanged.
