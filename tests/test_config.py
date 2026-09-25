@@ -14,6 +14,7 @@ from compose_lint.config import (
     KNOWN_TOP_LEVEL_KEYS,
     ConfigError,
     load_config,
+    warn_unknown_excluded_services,
 )
 from compose_lint.models import Severity
 
@@ -32,6 +33,38 @@ class TestLoadConfig:
             assert overrides == {}
         finally:
             os.chdir(old_cwd)
+
+    def test_yaml_spelling_is_discovered(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The pre-commit hook excludes both spellings as config files, so a
+        # repo using `.yaml` had its policy skipped there and ignored here.
+        (tmp_path / ".compose-lint.yaml").write_text(
+            "rules:\n  CL-0001:\n    enabled: false\n"
+        )
+        monkeypatch.chdir(tmp_path)
+        disabled, _overrides, _excluded = load_config()
+        assert "CL-0001" in disabled
+
+    def test_both_spellings_present_uses_yml_and_warns(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        (tmp_path / ".compose-lint.yml").write_text(
+            "rules:\n  CL-0001:\n    enabled: false\n    reason: yml\n"
+        )
+        (tmp_path / ".compose-lint.yaml").write_text(
+            "rules:\n  CL-0001:\n    enabled: false\n    reason: yaml\n"
+        )
+        monkeypatch.chdir(tmp_path)
+        disabled, _overrides, _excluded = load_config()
+        assert disabled == {"CL-0001": "yml"}
+        assert (
+            "Warning: config: both .compose-lint.yml and .compose-lint.yaml exist; "
+            "using .compose-lint.yml"
+        ) in capsys.readouterr().err
 
     def test_disable_rule(self, tmp_path: Path) -> None:
         config = tmp_path / ".compose-lint.yml"
@@ -305,6 +338,24 @@ class TestStrictConfig:
         ):
             load_config(config, strict=True)
 
+    def test_severity_on_disabled_rule_raises(self, tmp_path: Path) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0002:\n    enabled: false\n    severity: low\n")
+        with pytest.raises(
+            ConfigError,
+            match="rule 'CL-0002' has a 'severity' but is disabled",
+        ):
+            load_config(config, strict=True)
+
+    def test_both_spellings_present_raises(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / ".compose-lint.yml").write_text("rules: {}\n")
+        (tmp_path / ".compose-lint.yaml").write_text("rules: {}\n")
+        monkeypatch.chdir(tmp_path)
+        with pytest.raises(ConfigError, match="both .compose-lint.yml and"):
+            load_config(strict=True)
+
     def test_valid_config_still_loads_under_strict(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -322,6 +373,67 @@ class TestStrictConfig:
         config.write_text("rules:\n  CL-001:\n    enabled: false\n")
         load_config(config)  # no raise
         assert "unknown rule id 'CL-001'" in capsys.readouterr().err
+
+
+class TestSeverityOnDisabledRule:
+    """`severity:` beside `enabled: false` is inert; say so, like a lone reason."""
+
+    def test_warns_and_names_the_rule(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0002:\n    enabled: false\n    severity: low\n")
+        disabled, overrides, _excluded = load_config(config)
+        assert "CL-0002" in disabled
+        # Still validated and kept, so re-enabling the rule needs no second edit.
+        assert overrides == {"CL-0002": Severity.LOW}
+        assert (
+            "Warning: config: rule 'CL-0002' has a 'severity' but is disabled; "
+            "the override has no effect"
+        ) in capsys.readouterr().err
+
+    def test_severity_on_an_enabled_rule_stays_quiet(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0002:\n    enabled: true\n    severity: low\n")
+        load_config(config)
+        assert capsys.readouterr().err == ""
+
+    def test_invalid_severity_on_a_disabled_rule_is_still_an_error(
+        self, tmp_path: Path
+    ) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text(
+            "rules:\n  CL-0002:\n    enabled: false\n    severity: extreme\n"
+        )
+        with pytest.raises(ConfigError, match="Invalid severity 'extreme'"):
+            load_config(config)
+
+
+class TestUnknownExcludedService:
+    """The post-scan diagnostic: a name no linted file defines (ADR-010)."""
+
+    def test_warns_by_default(self, capsys: pytest.CaptureFixture[str]) -> None:
+        warn_unknown_excluded_services({"CL-0003": {"ghost": None}}, {"web"})
+        assert (
+            "Warning: config: exclude_services for CL-0003 references unknown "
+            "service 'ghost'"
+        ) in capsys.readouterr().err
+
+    def test_raises_under_strict(self) -> None:
+        with pytest.raises(ConfigError, match="unknown service 'ghost'"):
+            warn_unknown_excluded_services(
+                {"CL-0003": {"ghost": None}}, {"web"}, strict=True
+            )
+
+    def test_a_known_name_stays_quiet_even_under_strict(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        warn_unknown_excluded_services(
+            {"CL-0003": {"web": "why"}}, {"web"}, strict=True
+        )
+        assert capsys.readouterr().err == ""
 
 
 class TestExcludeServices:

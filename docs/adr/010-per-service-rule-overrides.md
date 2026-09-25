@@ -28,7 +28,7 @@ rules:
 
 - Global `enabled: false` wins. If a rule is globally disabled, per-service overrides are ignored (all findings are already suppressed).
 - Global `severity:` override applies uniformly; per-service severity overrides are out of scope for v0.4 (YAGNI — issue #5 only asks for exclusion).
-- Unknown service names in `exclude_services` produce a warning on stderr, not an error. Compose files are edited independently of config; a stale entry shouldn't break the linter.
+- Unknown service names in `exclude_services` produce a warning on stderr, not an error. Compose files are edited independently of config; a stale entry shouldn't break the linter. *Amended:* under `--strict-config` the warning is promoted to an error like every other config diagnostic, since a pipeline that opted into strictness wants a stale name to fail rather than scroll past; the default is unchanged.
 
 **Alternatives rejected:**
 

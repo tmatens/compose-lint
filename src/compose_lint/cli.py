@@ -21,7 +21,13 @@ from compose_lint._env_file import ENV_FILENAME
 from compose_lint._output import emit, emit_block
 from compose_lint._selection import Selection, plan_documents
 from compose_lint._service_env import describe_unread, resolve_env_files
-from compose_lint.config import ConfigError, load_config
+from compose_lint.config import (
+    CONFIG_FILENAMES,
+    ConfigError,
+    discover_config_path,
+    load_config,
+    warn_unknown_excluded_services,
+)
 from compose_lint.config_emit import render_config
 from compose_lint.engine import filter_findings, run_rules
 from compose_lint.explain import UnknownRuleError, load_rule_doc, normalize_rule_id
@@ -197,12 +203,23 @@ def _report_parse_error(filepath: str, exc: FileNotFoundError | ComposeError) ->
     return reason
 
 
+def _config_name(explicit: str | None, effective: Path | None) -> str | None:
+    """How a suppression reason names the config the run read.
+
+    An explicit ``--config`` keeps the user's own spelling: rendering it
+    through ``Path`` turns ``other/ci.yml`` into ``other\\ci.yml`` on
+    Windows. With no ``--config``, the discovered file's bare name.
+    """
+    if explicit:
+        return explicit
+    return effective.name if effective is not None else None
+
+
 def _effective_config_path(explicit: str | None) -> Path | None:
     """Return the config file path that will be used, or None if no config."""
     if explicit:
         return Path(explicit)
-    p = Path(".compose-lint.yml")
-    return p if p.exists() else None
+    return discover_config_path()
 
 
 def _note_no_config_in_effect() -> None:
@@ -224,8 +241,8 @@ def _note_no_config_in_effect() -> None:
     read at all.
     """
     emit(
-        f"Note: no .compose-lint.yml found in '{Path.cwd()}' — all rules are "
-        "enabled and no suppressions are in effect."
+        f"Note: no {' or '.join(CONFIG_FILENAMES)} found in '{Path.cwd()}' — "
+        "all rules are enabled and no suppressions are in effect."
     )
 
 
@@ -326,8 +343,9 @@ def _add_check_subparser(
         default=False,
         help=(
             "treat config diagnostics (unknown/typo'd rule id, unknown key, an "
-            "inert reason) as errors instead of stderr warnings, so a malformed "
-            "config fails loudly rather than silently disabling the wrong rule"
+            "inert reason or severity, a stale exclude_services name) as errors "
+            "instead of stderr warnings, so a malformed config fails loudly "
+            "rather than silently disabling the wrong rule"
         ),
     )
     check.add_argument(
@@ -441,7 +459,7 @@ def _add_fix_subparser(
         default=False,
         help=(
             "treat config diagnostics (unknown/typo'd rule id, unknown key, an "
-            "inert reason) as errors instead of stderr warnings"
+            "inert reason or severity) as errors instead of stderr warnings"
         ),
     )
 
@@ -992,7 +1010,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             excluded_services=excluded_services,
             on_error=_record_rule_error,
             env_files=service_env_files,
-            config_path=args.config,
+            config_path=_config_name(args.config, config_path),
         )
         # Also on the single-file path: a resolved cross-file `extends:` puts
         # lines from another document into this one's map, so a finding can be
@@ -1052,13 +1070,19 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         if failing:
             has_errors = True
 
-    for rule_id, services_map in excluded_services.items():
-        for service_name in services_map:
-            if service_name not in seen_services:
-                emit(
-                    f"Warning: exclude_services for {rule_id} references "
-                    f"unknown service '{service_name}'"
-                )
+    config_errors: list[tuple[str, str]] = []
+    try:
+        warn_unknown_excluded_services(
+            excluded_services, seen_services, strict=args.strict_config
+        )
+    except ConfigError as e:
+        # Raised after the scan, so `_exit_2_with_envelope` is the wrong
+        # shape: the findings are already collected, and a JSON or SARIF
+        # consumer should get them beside the error rather than an envelope
+        # with nothing else in it. It rides the run-error channel instead
+        # (ADR-015), which is also what makes the exit 2 below.
+        emit(f"Error: {e}")
+        config_errors.append(("", str(e)))
 
     # Coverage gaps ride the same structured channel as parse errors — JSON
     # `errors[]`, SARIF `toolExecutionNotifications`, exit 2 — but are counted
@@ -1074,7 +1098,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     # closed the alerts instead of reporting itself. ADR-015 exists so a run
     # that could not complete says so in the machine output, not only on a
     # channel a gate does not read.
-    run_errors = parse_errors + coverage_errors + rule_errors
+    run_errors = parse_errors + coverage_errors + rule_errors + config_errors
 
     if args.output_format == "text":
         if len(args.files) > 1:
@@ -1123,7 +1147,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     if has_errors and config_path is None:
         _note_no_config_in_effect()
 
-    if run_errors:  # parse errors, coverage gaps, and crashed rules
+    if run_errors:  # parse errors, coverage gaps, crashed rules, strict config
         sys.exit(2)
     sys.exit(1 if has_errors else 0)
 
@@ -1306,6 +1330,10 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
     }
 
     only = _validated_only(args.only, strict=args.strict_config)
+    # The suppression reason names the file actually read, which with no
+    # --config may be a discovered .compose-lint.yaml rather than the .yml
+    # the engine defaults to.
+    fix_config_name = _config_name(args.config, _effective_config_path(args.config))
     had_error = False
     # Whether any file had a fix applied or offered — see the note below.
     touched = False
@@ -1359,7 +1387,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             disabled_rules=disabled_rules,
             severity_overrides=severity_overrides,
             excluded_services=excluded_services,
-            config_path=args.config,
+            config_path=fix_config_name,
         )
 
         # A finding's line knows which document it came from. Only the ones

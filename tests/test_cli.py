@@ -682,8 +682,181 @@ class TestCLI:
         assert "unknown service 'does-not-exist'" in result.stderr
         assert "CL-0003" in result.stderr
 
+    def test_exclude_services_unknown_service_exit_follows_findings(
+        self, tmp_path: Path
+    ) -> None:
+        # Not strict: the stale name warns, the rule stays on, and the exit
+        # code is whatever the findings say (here 1, the CRITICAL is live).
+        compose = tmp_path / "docker-compose.yml"
+        compose.write_text(_PRIVILEGED)
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0002:\n    exclude_services:\n      - ghost\n")
+        result = run_cli("--config", str(config), "--format", "json", str(compose))
+        assert result.returncode == 1
+        assert "Warning: config: exclude_services for CL-0002" in result.stderr
+        log = json.loads(result.stdout)
+        assert log["errors"] == []
+        assert [
+            f["suppressed"] for f in log["findings"] if f["rule_id"] == "CL-0002"
+        ] == [False]
+
+    def test_strict_config_promotes_unknown_service_to_exit_2(
+        self, tmp_path: Path
+    ) -> None:
+        # The diagnostic is raised after the scan, so the machine document
+        # still carries the findings, with the error beside them (ADR-015).
+        compose = tmp_path / "docker-compose.yml"
+        compose.write_text(_PRIVILEGED)
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0002:\n    exclude_services:\n      - ghost\n")
+        result = run_cli(
+            "--strict-config", "--config", str(config), "--format", "json", str(compose)
+        )
+        assert result.returncode == 2
+        assert "Error: config: exclude_services for CL-0002" in result.stderr
+        log = json.loads(result.stdout)
+        assert [e["message"] for e in log["errors"]] == [
+            "config: exclude_services for CL-0002 references unknown service 'ghost'"
+        ]
+        assert any(f["rule_id"] == "CL-0002" for f in log["findings"])
+
+    def test_severity_on_disabled_rule_warns_and_does_not_regrade(
+        self, tmp_path: Path
+    ) -> None:
+        compose = tmp_path / "docker-compose.yml"
+        compose.write_text(_PRIVILEGED)
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0002:\n    enabled: false\n    severity: low\n")
+        result = run_cli("--config", str(config), "--format", "json", str(compose))
+        # Suppressed, so nothing fails the gate; the inert key changes no exit.
+        assert result.returncode == 0
+        assert (
+            "Warning: config: rule 'CL-0002' has a 'severity' but is disabled"
+            in result.stderr
+        )
+        [finding] = [
+            f
+            for f in json.loads(result.stdout)["findings"]
+            if f["rule_id"] == "CL-0002"
+        ]
+        assert finding["suppressed"] is True
+        assert finding["severity"] == "critical"
+        assert "severity_overridden_from" not in finding
+
+    def test_strict_config_promotes_severity_on_disabled_rule(
+        self, tmp_path: Path
+    ) -> None:
+        compose = tmp_path / "docker-compose.yml"
+        compose.write_text(_PRIVILEGED)
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0002:\n    enabled: false\n    severity: low\n")
+        result = run_cli("--strict-config", "--config", str(config), str(compose))
+        assert result.returncode == 2
+        assert "has a 'severity' but is disabled" in result.stderr
+
+    def test_yaml_config_spelling_is_discovered(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        compose = tmp_path / "docker-compose.yml"
+        compose.write_text(_PRIVILEGED)
+        (tmp_path / ".compose-lint.yaml").write_text(
+            "rules:\n  CL-0002:\n    enabled: false\n    reason: yaml\n"
+        )
+        monkeypatch.chdir(tmp_path)
+        result = run_cli("--format", "json", str(compose))
+        assert result.returncode == 0
+        [finding] = [
+            f
+            for f in json.loads(result.stdout)["findings"]
+            if f["rule_id"] == "CL-0002"
+        ]
+        assert finding["suppression_reason"] == "yaml"
+        assert "Warning" not in result.stderr
+
+    def test_default_reason_names_a_discovered_yaml_config(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """The default reason names the file that was read, not the .yml default."""
+        from compose_lint import cli
+
+        compose = tmp_path / "docker-compose.yml"
+        compose.write_text(_PRIVILEGED)
+        (tmp_path / ".compose-lint.yaml").write_text(
+            "rules:\n  CL-0002:\n    enabled: false\n"
+        )
+        monkeypatch.chdir(tmp_path)
+        capsys.readouterr()
+        with pytest.raises(SystemExit):
+            cli.main(["check", "--format", "json", compose.name])
+        [finding] = [
+            f
+            for f in json.loads(capsys.readouterr().out)["findings"]
+            if f["rule_id"] == "CL-0002"
+        ]
+        assert finding["suppression_reason"] == "disabled in .compose-lint.yaml"
+
+    def test_fix_reads_a_discovered_yaml_config(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`fix` honours the .yaml spelling too: a disabled rule is not fixed."""
+        from compose_lint import cli
+
+        compose = tmp_path / "docker-compose.yml"
+        compose.write_text(_FIXABLE_LOGGING)
+        monkeypatch.chdir(tmp_path)
+        capsys.readouterr()
+        with pytest.raises(SystemExit) as exc:
+            cli.main(["fix", compose.name])
+        assert exc.value.code == 0
+        # CL-0014's edit drops the `driver: none` line.
+        assert "-      driver: none" in capsys.readouterr().out
+
+        (tmp_path / ".compose-lint.yaml").write_text(
+            "rules:\n  CL-0014:\n    enabled: false\n"
+        )
+        with pytest.raises(SystemExit) as exc:
+            cli.main(["fix", compose.name])
+        assert exc.value.code == 0
+        assert "-      driver: none" not in capsys.readouterr().out
+
+    def test_both_config_spellings_pick_yml_and_warn(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        compose = tmp_path / "docker-compose.yml"
+        compose.write_text(_PRIVILEGED)
+        (tmp_path / ".compose-lint.yml").write_text(
+            "rules:\n  CL-0002:\n    enabled: false\n    reason: yml\n"
+        )
+        (tmp_path / ".compose-lint.yaml").write_text(
+            "rules:\n  CL-0002:\n    enabled: false\n    reason: yaml\n"
+        )
+        monkeypatch.chdir(tmp_path)
+        result = run_cli("--format", "json", str(compose))
+        assert result.returncode == 0
+        [finding] = [
+            f
+            for f in json.loads(result.stdout)["findings"]
+            if f["rule_id"] == "CL-0002"
+        ]
+        assert finding["suppression_reason"] == "yml"
+        assert (
+            "Warning: config: both .compose-lint.yml and .compose-lint.yaml exist; "
+            "using .compose-lint.yml"
+        ) in result.stderr
+
+        strict = run_cli("--strict-config", "--format", "json", str(compose))
+        assert strict.returncode == 2
+        assert "Error: config: both .compose-lint.yml and" in strict.stderr
+
 
 _BARE_SERVICE = "services:\n  web:\n    image: nginx:1.27\n"
+_PRIVILEGED = "services:\n  app:\n    image: myapp:1.0\n    privileged: true\n"
 
 
 class TestFixSubcommand:
