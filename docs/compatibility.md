@@ -11,7 +11,11 @@ contract those rules implement.
 From `1.0.0` onward, the following are **stable** and change only under the
 SemVer rules below:
 
-- **CLI surface** — subcommands, flags, and their documented behavior.
+- **CLI surface** — subcommands, flags, and their documented behavior,
+  including the environment variables the CLI reads: `NO_COLOR`, `FORCE_COLOR`,
+  `PAGER`, `NO_PAGER` and `TERM`, with the semantics
+  [cli.md](cli.md#color) states
+  ([ADR-037](adr/037-environment-variables-are-cli-surface.md)).
 - **Exit codes** — the `0` / `1` / `2` contract ([ADR-006](adr/006-exit-codes.md))
   and the default `--fail-on` threshold.
 - **Config schema** — the `.compose-lint.yml` keys and their semantics
@@ -132,7 +136,7 @@ field, rule, or supported Python version is slated for removal:
    the relevant doc, in the release that introduces the deprecation.
 2. **Warn at runtime** — where the deprecated surface is user-invoked (a flag, a
    config key, the interpreter the tool is running on), emit a one-line
-   `warning:` to **stderr** when it is used, naming the replacement. Warnings
+   `Warning:` to **stderr** when it is used, naming the replacement. Warnings
    never change exit codes or stdout.
 3. **Grace period** — the deprecated surface keeps working for **at least one
    MINOR release** after the announcement.
@@ -158,7 +162,7 @@ Two things are never reused or quietly repurposed:
   the 1.0 sweep and is currently `{CL-0014}`; every rule admitted on
   evidence still needs refutation. A config referencing a retired ID still loads:
   the override simply has no rule to apply. It is reported the same way a
-  typo'd ID is — `warning: config: unknown rule id 'CL-XXXX'` — which
+  typo'd ID is — `Warning: config: unknown rule id 'CL-XXXX'` — which
   `--strict-config` promotes to an error, so a strict CI pipeline does
   fail on one. Distinguishing "retired" from "mistyped" needs the retired
   set to be known to the tool rather than only to its tests; until it is,

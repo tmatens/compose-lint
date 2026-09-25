@@ -8,6 +8,7 @@ auto-detects the Compose file. The authoritative help is `compose-lint --help`
 compose-lint [check] [OPTIONS] [FILE ...]   Lint files (default; bare invocation works)
 compose-lint fix [OPTIONS] [FILE ...]       Auto-remediate auto-fixable findings
 compose-lint init [OPTIONS] FILE            Generate a starter .compose-lint.yml
+compose-lint --version                      Show version and exit (top level only)
 
 check options:
   --format {text,json,sarif}   Output format (default: text)
@@ -20,9 +21,10 @@ check options:
                                could not be followed, instead of failing (exit 2)
   --no-merge-overrides         Lint each file alone instead of merging the
                                `compose.override.yml` Compose merges beside it
-  --no-env                     Ignore a `.env` sitting beside the Compose file,
-                               which Compose reads for COMPOSE_FILE and for
-                               `${VAR}` values
+  --no-env                     Ignore the env files beside the Compose file: the
+                               sibling `.env` (which Compose reads for COMPOSE_FILE
+                               and `${VAR}` values) and every `env_file:` a service
+                               names, which leaves CL-0020/CL-0021 blind to them
   --config PATH                Path to config file (default: .compose-lint.yml,
                                then .compose-lint.yaml, in the working directory)
   --strict-config              Treat config diagnostics (unknown rule id or key, inert reason
@@ -30,24 +32,26 @@ check options:
   --explain CL-XXXX            Print the full documentation for a single rule
                                (through a pager on an interactive terminal)
   --no-pager                   Print --explain output directly, bypassing the pager
-  --version                    Show version and exit
+  --version                    Show version and exit (`compose-lint --version`; not
+                               accepted after the `check` subcommand)
 
 fix options:
   --apply                      Write fixes in place (default: print a dry-run diff)
   --only CL-XXXX               Restrict fixes to the named rule(s); repeatable
   --no-merge-overrides         Fix each file alone instead of merging the
                                `compose.override.yml` Compose merges beside it
-  --no-env                     Ignore a `.env` sitting beside the Compose file
+  --no-env                     Ignore the sibling `.env` and every `env_file:`
   --config PATH                Path to config file (suppressions are honored)
   --strict-config              Treat config diagnostics (unknown rule id or key, inert reason
-                               or severity) as errors, not warnings
+                               or severity) and an `--only` id that names no rule
+                               as errors, not warnings
 
 init options:
   -o, --output PATH            Where to write the config (default: .compose-lint.yml)
   --force                      Overwrite an existing config file
   --no-merge-overrides         Baseline the file alone instead of merging the
                                `compose.override.yml` Compose merges beside it
-  --no-env                     Ignore a `.env` sitting beside the Compose file
+  --no-env                     Ignore the sibling `.env` and every `env_file:`
 ```
 
 `init` grades its `FILE` exactly as `check` grades it — the sibling override
@@ -56,11 +60,26 @@ the suppressions it writes are the findings `check` will report. Baseline
 with the same `--no-merge-overrides` / `--no-env` you gate with, or the two
 disagree.
 
+`--explain CL-XXXX` prints one rule's documentation and exits. It refuses a
+`FILE` argument and `--format json` or `--format sarif` (exit 2): there is
+nothing to lint and no machine form of the doc. Every other `check` option is
+accepted and ignored, including `--config`, which is not read. `--no-pager`
+without `--explain` does nothing.
+
+Values are case-insensitive wherever the CLI takes a fixed set or a rule id:
+`--fail-on HIGH`, `--format JSON`, `--explain cl-0001` and `--only cl-0007`
+all work. Rule ids used as keys in `.compose-lint.yml` are matched exactly, as
+written, because they are keys in a document you author; `cl-0001:` there is
+reported as an unknown rule id.
+
 ## Color
 
-Color is on when stdout is a terminal. Set `NO_COLOR` to disable it (even on a
-terminal) or `FORCE_COLOR` to force it through a pipe — e.g. into `less -R` or a
-CI log that renders ANSI.
+Color is on when stdout is a terminal. Set `NO_COLOR` to any non-empty value to
+disable it (even on a terminal); it wins over everything. `FORCE_COLOR`, when
+set, overrides terminal detection: `0` or `false` turns color off, and any other
+value, the empty string included, turns it on. That is the convention of
+[no-color.org](https://no-color.org) and of Node's `supports-color`. Use it to
+keep color through a pipe, e.g. into `less -R` or a CI log that renders ANSI.
 
 ## Pager
 
@@ -69,8 +88,8 @@ CI log that renders ANSI.
 one screen prints and exits with no pager interaction. The default pager
 labels its controls in the status line (`CL-XXXX · Space next · b back ·
 q quit`) instead of less's bare `:`; a custom `PAGER` keeps its own prompt. `PAGER` selects a
-different pager; `--no-pager`, a non-empty `NO_PAGER`, or `TERM=dumb`
-disables paging; a pager binary that isn't installed falls back to a plain
+different pager, and a blank `PAGER` disables paging; so do `--no-pager`, a
+non-empty `NO_PAGER`, and an unset or `dumb` `TERM`; a pager binary that isn't installed falls back to a plain
 dump. Piped or redirected output never pages and is byte-identical to the
 pre-pager behavior, so scripts and CI need no changes. The findings report
 itself never pages.
@@ -78,7 +97,8 @@ itself never pages.
 ## End of options
 
 `--` marks the end of options: everything after it is a file path, never a
-flag. That matters to any integration that assembles a command line from
+flag, and never a subcommand — `compose-lint -- init` lints a file named
+`init`. That matters to any integration that assembles a command line from
 repository content. The pre-commit hook ships `args: [--]` because pre-commit
 builds the command as `entry + args + filenames` — without the separator, a
 repository directory named `--config=cfgdir` holding a `compose.yml` arrives
