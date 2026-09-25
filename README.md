@@ -272,7 +272,7 @@ Findings are rated **LOW**, **MEDIUM**, **HIGH**, or **CRITICAL**. Each rule's s
 
 ## Configuration
 
-Create `.compose-lint.yml` to disable rules, exclude specific services, or adjust severity:
+Create `.compose-lint.yml` (or `.compose-lint.yaml`) to disable rules, exclude specific services, or adjust severity:
 
 ```yaml
 rules:

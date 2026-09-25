@@ -24,7 +24,7 @@ import pytest
 from tests._cli_env import cli_env
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-NOTICE = "no .compose-lint.yml found"
+NOTICE = "no .compose-lint.yml or .compose-lint.yaml found"
 
 _INSECURE = "services:\n  app:\n    image: myapp:1.0\n    privileged: true\n"
 _CLEAN = (
@@ -83,6 +83,15 @@ def test_a_passing_check_stays_quiet(tmp_path: Path) -> None:
 
 def test_a_config_that_was_found_stays_quiet(stack: Path) -> None:
     (stack / ".compose-lint.yml").write_text(
+        'rules:\n  CL-0002:\n    enabled: false\n    reason: "test"\n',
+        encoding="utf-8",
+    )
+    proc = _run("check", "docker-compose.yml", cwd=stack)
+    assert NOTICE not in proc.stderr
+
+
+def test_a_yaml_spelled_config_that_was_found_stays_quiet(stack: Path) -> None:
+    (stack / ".compose-lint.yaml").write_text(
         'rules:\n  CL-0002:\n    enabled: false\n    reason: "test"\n',
         encoding="utf-8",
     )

@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stderr is not read. Still one input per flag: there is no generic `args`
   pass-through, so the inputs table stays the whole of the action's contract.
 
+- **`.compose-lint.yaml` is discovered.** A run with no `--config` looks for
+  `.compose-lint.yml` first and then `.compose-lint.yaml` in the working
+  directory. The pre-commit hook already excluded both spellings as config
+  files, so a repository using the second one had its policy skipped by the
+  hook and ignored by the linter at once, every suppression silently absent.
+  When both exist, `.compose-lint.yml` is used and a warning says so, promoted
+  to an error by `--strict-config`. The "no config found" note names both
+  spellings; `compose-lint init` still writes `.compose-lint.yml`.
+
 ### Changed
 
 - **`init` baselines the document `check` grades.** `check` merges the
@@ -44,6 +53,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   did: `--format JSON` and `--format Sarif` are accepted. `--help` still lists
   the lowercase spellings, and an unknown format is still a usage error
   (exit 2).
+
+- **`--strict-config` fails on two more inert configurations.** A `severity:`
+  on a rule that also has `enabled: false` never took effect — a disabled
+  rule's findings are all suppressed and a suppressed finding is not
+  re-graded — and said nothing, unlike the lone `reason:` that 0.29.0 started
+  reporting. It now warns the same way, naming the rule id. And the warning
+  for an `exclude_services` name no linted file defines, which bypassed the
+  strict promotion the other config diagnostics had, now goes through it:
+  under `--strict-config` `check` exits 2, with the error in JSON `errors[]`
+  and the SARIF notifications beside the findings it collected. Without the
+  flag nothing changes but the new warning line (and a `config:` prefix on
+  the existing one, matching its siblings). A strict CI pipeline can
+  therefore newly go red on a disabled rule carrying a severity override or
+  on a stale service name — that is what the flag is for, and it is why this
+  is a MINOR bump and not a patch.
 
 ### Fixed
 

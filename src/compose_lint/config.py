@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
@@ -11,6 +11,9 @@ from compose_lint._output import emit
 from compose_lint._safe_read import read_text_bounded
 from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Severity
+
+if TYPE_CHECKING:
+    from collections.abc import Collection
 
 # Top-level keys the config schema defines today (docs/configuration.md).
 # Anything else is almost certainly a typo or a misplaced CLI flag (e.g. a
@@ -27,6 +30,15 @@ KNOWN_TOP_LEVEL_KEYS = frozenset({"rules"})
 # separate diagnostic in `_parse_rules` (issue #723).
 _KNOWN_RULE_KEYS = frozenset({"enabled", "reason", "severity", "exclude_services"})
 
+# The file names an implicit run (no `--config`) looks for in the working
+# directory, in precedence order. `.yml` has been the documented name from the
+# start; `.yaml` is accepted because the pre-commit hook already excluded both
+# spellings as config files, so a repository using the second one had its
+# policy skipped by the hook and ignored by the linter at once — every
+# suppression silently absent, with nothing naming why. When both exist the
+# first wins and `_read_raw_config` says so.
+CONFIG_FILENAMES: tuple[str, ...] = (".compose-lint.yml", ".compose-lint.yaml")
+
 
 class ConfigError(Exception):
     """Raised when a config file is invalid."""
@@ -35,12 +47,12 @@ class ConfigError(Exception):
 def _warn(message: str, strict: bool = False) -> None:
     """Emit a config diagnostic — a stderr warning, or a hard error under strict.
 
-    Mirrors the CLI's unknown-service warning (ADR-010): a misconfiguration that
-    silently weakens a security control should be visible, but config and
-    Compose files evolve independently, so by default it must not hard-fail the
-    run. Under strict-config (``--strict-config``, #380) the same diagnostics are
-    raised as ``ConfigError`` instead, so a typo'd rule id or key fails loudly
-    rather than silently no-op'ing where stderr may be suppressed.
+    A misconfiguration that silently weakens a security control should be
+    visible, but config and Compose files evolve independently, so by default
+    it must not hard-fail the run (ADR-010). Under strict-config
+    (``--strict-config``, #380) the same diagnostics are raised as
+    ``ConfigError`` instead, so a typo'd rule id or key fails loudly rather
+    than silently no-op'ing where stderr may be suppressed.
 
     Every call site carries a ``# diag: <slug>`` comment naming the bullet that
     documents it in ``docs/configuration.md``; ``tests/test_config_surfaces.py``
@@ -49,6 +61,21 @@ def _warn(message: str, strict: bool = False) -> None:
     if strict:
         raise ConfigError(message)
     emit(f"Warning: {message}")
+
+
+def discover_config_path() -> Path | None:
+    """Return the config file an implicit run would read, or None.
+
+    Pure: the both-spellings warning belongs to ``load_config``, which knows
+    whether the run is strict, so the CLI can ask this a second time — to
+    decide whether a failing run had any config in effect — without the
+    warning printing twice.
+    """
+    for name in CONFIG_FILENAMES:
+        path = Path(name)
+        if path.exists():
+            return path
+    return None
 
 
 def _known_rule_ids() -> set[str]:
@@ -126,19 +153,21 @@ def load_config(
     path: str | Path | None = None,
     strict: bool = False,
 ) -> tuple[dict[str, str | None], dict[str, Severity], ExcludedServices]:
-    """Load a .compose-lint.yml config file.
+    """Load a .compose-lint.yml (or .compose-lint.yaml) config file.
 
     Returns a tuple of (disabled_rules, severity_overrides, excluded_services).
     disabled_rules maps rule ID to an optional reason string.
     excluded_services maps rule ID to a mapping of service name to optional
     per-service reason (see ADR-010).
-    If path is None, looks for .compose-lint.yml in the current directory.
-    If no config file is found, returns empty defaults.
+    If path is None, looks for the names in CONFIG_FILENAMES in the current
+    directory, in that order; when more than one exists the first is used and
+    a diagnostic says so. If no config file is found, returns empty defaults.
     When strict is True, config diagnostics that are normally warnings (unknown
-    top-level key, unknown/typo'd rule id, unknown rule key) are raised as
-    ConfigError instead (#380).
+    top-level key, unknown/typo'd rule id, unknown rule key, an inert reason or
+    severity, both config spellings present) are raised as ConfigError instead
+    (#380).
     """
-    data = _read_raw_config(path)
+    data = _read_raw_config(path, strict)
     if data is None:
         return {}, {}, {}
 
@@ -168,7 +197,9 @@ def load_config(
     return _parse_rules(data.get("rules", {}), strict)
 
 
-def _read_raw_config(path: str | Path | None) -> dict[str, Any] | None:
+def _read_raw_config(
+    path: str | Path | None, strict: bool = False
+) -> dict[str, Any] | None:
     """Read and parse a config file to a mapping, or None when there is none.
 
     Returns None when no config file is found (implicit path) or the file is
@@ -180,9 +211,20 @@ def _read_raw_config(path: str | Path | None) -> dict[str, Any] | None:
         if not config_path.exists():
             raise ConfigError(f"Config file not found: {path}")
     else:
-        config_path = Path(".compose-lint.yml")
-        if not config_path.exists():
+        present = [p for p in map(Path, CONFIG_FILENAMES) if p.exists()]
+        if not present:
             return None
+        if len(present) > 1:
+            # Two policy files side by side is almost always one being edited
+            # while the other is the one in force; a reader has no way to
+            # tell which the linter honoured unless it says.
+            # diag: both-config-spellings
+            _warn(
+                f"config: both {' and '.join(CONFIG_FILENAMES)} exist; "
+                f"using {present[0]}",
+                strict,
+            )
+        config_path = present[0]
 
     try:
         # A committed symlink to a FIFO or /dev/zero passes `.exists()` and
@@ -307,6 +349,20 @@ def _parse_rules(
             if severity_text is None:
                 raise ConfigError(f"Config for rule '{rule_id}': 'severity' is empty")
             overrides[rule_id] = _parse_severity(severity_text)
+            if rule_id in disabled:
+                # The engine never re-grades a suppressed finding (a disabled
+                # rule's findings are all suppressed), so the key is inert —
+                # the same shape as a lone `reason:` above, and the same
+                # silence: a reader sees a rule re-tuned to LOW and does not
+                # see that it is off. The value is still validated, and kept,
+                # so re-enabling the rule later takes effect without a second
+                # edit.
+                # diag: severity-on-disabled-rule
+                _warn(
+                    f"config: rule '{rule_id}' has a 'severity' but is disabled; "
+                    "the override has no effect",
+                    strict,
+                )
 
         if "exclude_services" in rule_config:
             excluded[rule_id] = _parse_exclude_services(
@@ -314,6 +370,33 @@ def _parse_rules(
             )
 
     return disabled, overrides, excluded
+
+
+def warn_unknown_excluded_services(
+    excluded: ExcludedServices,
+    seen_services: Collection[str],
+    strict: bool = False,
+) -> None:
+    """Flag an ``exclude_services`` name no linted file defines (ADR-010).
+
+    The one config diagnostic that cannot be raised on load: whether a name is
+    stale is known only once every file has been read, so the CLI calls this
+    after the scan. A stale name is the same class of fault as a typo'd rule
+    id — an exclusion the author believes is in effect and is not, because
+    the service was renamed or never existed under that spelling. By default
+    it warns, because config and Compose files evolve independently and a
+    rename must not break the linter; under strict it raises like the rest,
+    and the CLI carries that onto the machine channel and exits 2.
+    """
+    for rule_id, services_map in excluded.items():
+        for service_name in services_map:
+            if service_name not in seen_services:
+                # diag: unknown-excluded-service
+                _warn(
+                    f"config: exclude_services for {rule_id} references "
+                    f"unknown service '{service_name}'",
+                    strict,
+                )
 
 
 def _parse_exclude_services(rule_id: str, value: Any) -> dict[str, str | None]:

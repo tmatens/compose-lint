@@ -1,6 +1,6 @@
 # Configuration
 
-compose-lint reads `.compose-lint.yml` from the current working directory by default. Use `--config PATH` to point at a different file.
+compose-lint reads `.compose-lint.yml` from the current working directory by default, and `.compose-lint.yaml` when that name is absent. If both exist, `.compose-lint.yml` is used and a stderr warning says so (an error under `--strict-config`, see [Validation](#validation)) — two policy files side by side is almost always one being edited while the other is in force. Use `--config PATH` to point at a different file. `compose-lint init` writes `.compose-lint.yml`.
 
 > **Running in Docker: mount the directory, not the file.** The image's working directory is `/src`, so the config has to be *inside* it:
 >
@@ -99,6 +99,12 @@ lines can take a CRITICAL below the default gate — so it is reported:
 
 Re-stating a rule's own severity records nothing, because nothing changed.
 
+`severity:` and `enabled: false` on the same rule do not combine: a disabled
+rule's findings are all suppressed, and a suppressed finding is never
+re-graded, so the `severity:` is inert. compose-lint warns rather than
+silently keeping one of the two (see [Validation](#validation)); the value is
+still checked and kept, so re-enabling the rule later needs no second edit.
+
 **Duplicate keys are rejected.** Listing the same rule twice is a config error
 rather than a last-wins merge: a policy file that disables a rule "with a
 reason" and then re-enables it further down reads, to a human, as the first
@@ -129,7 +135,7 @@ Excluded services still produce **SUPPRESSED** findings, with the per-service re
 
 ### Behaviour
 
-- **Exact-match** service names. Unknown names produce a stderr warning but do not error, since Compose files and config evolve independently.
+- **Exact-match** service names. A name that no linted file defines warns on stderr and is an error under `--strict-config`; by default it does not change the exit code, since Compose files and config evolve independently and a rename must not break the linter. The check runs after the scan, because only then is the set of services known.
 - **Global `enabled: false` wins** over per-service exclusions: if a rule is disabled globally, every service is suppressed regardless of `exclude_services`.
 - **No inline suppression syntax** — there is no `# compose-lint: disable` comment form. Suppressions are tracked in config so reviewers can audit them.
 
@@ -141,12 +147,15 @@ A `.compose-lint.yml` that silently fails to take effect is a security risk — 
 - **Unknown top-level keys warn.** Only `rules` is recognized at the top level. A misplaced CLI flag (e.g. a top-level `fail_on:`) or any other key warns instead of being ignored. This is also the path a leftover `profiles:` block now takes — the profile-enrichment preview was withdrawn in 0.15.0 ([ADR-019](adr/019-withdraw-security-profile-catalog.md)), so the key is simply unrecognized and warns like any other. <!-- diag: unknown-top-level-key -->
 - **Unknown per-rule keys warn.** Inside a rule block, only `enabled`, `reason`, `severity`, and `exclude_services` are recognized. A typo'd `severty:` warns. <!-- diag: unknown-per-rule-key -->
 - **A `reason` without `enabled: false` warns.** Inside a rule block, `reason` is the justification that goes with a suppression. On its own it suppresses nothing — the rule stays on and still fails the build — so a lone `reason:` warns and names the rule id. <!-- diag: reason-without-enabled-false -->
+- **A `severity` on a disabled rule warns.** `enabled: false` suppresses every finding the rule produces, and a suppressed finding is never re-graded, so the `severity:` beside it has no effect. The warning names the rule id; the value is still validated. <!-- diag: severity-on-disabled-rule -->
+- **An `exclude_services` name no linted file defines warns.** Checked once every file has been read, so a service that was renamed, or never existed under that spelling, is not silently left uncovered by an exclusion the config appears to grant. <!-- diag: unknown-excluded-service -->
+- **Both config spellings present warns.** When `.compose-lint.yml` and `.compose-lint.yaml` both exist in the working directory, `.compose-lint.yml` is used and the other is ignored; the warning says which one was read. <!-- diag: both-config-spellings -->
 - **`enabled` must be a real boolean.** A quoted `'false'`, `0`, or any non-boolean is a **hard error** (exit 2), not a silent no-op that would leave the rule on. YAML's boolean keywords (`true`/`false`, `yes`/`no`, `on`/`off`) all parse to a real boolean and work as expected.
 - **A blank section is empty, not an error.** In YAML a key with no value is `null`, so `rules:`, a blank per-rule block, and a blank `exclude_services:` are read as the empty mapping — exactly as if you had written `{}`. Stubbing a section out is a normal thing to do, not a typo, so the blank value itself does not warn. Every *other* wrong type stays a hard error: `rules: hello` and `exclude_services: 5` still exit 2.
 
 Warnings never change the exit code; only the hard errors above do.
 
-Pass **`--strict-config`** to `check` or `fix` to promote every warning above (unknown rule id, unknown top-level or per-rule key, an inert `reason:`) to a hard error (exit 2). Use it in CI, or wherever stderr is redirected, so a typo can't silently disable the wrong rule.
+Pass **`--strict-config`** to `check` or `fix` to promote every warning above (unknown rule id, unknown top-level or per-rule key, an inert `reason:` or `severity:`, both config spellings present, and — in `check` — an `exclude_services` name no linted file defines) to a hard error (exit 2). Use it in CI, or wherever stderr is redirected, so a typo can't silently disable the wrong rule. The unknown-service error is raised after the scan, so `--format json` and `--format sarif` still carry the findings, with the error in `errors[]` / `toolExecutionNotifications`.
 
 ## Output formats
 

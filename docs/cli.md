@@ -23,8 +23,10 @@ check options:
   --no-env                     Ignore a `.env` sitting beside the Compose file,
                                which Compose reads for COMPOSE_FILE and for
                                `${VAR}` values
-  --config PATH                Path to config file (default: .compose-lint.yml)
-  --strict-config              Treat config diagnostics (unknown rule id or key, inert reason) as errors, not warnings
+  --config PATH                Path to config file (default: .compose-lint.yml,
+                               then .compose-lint.yaml, in the working directory)
+  --strict-config              Treat config diagnostics (unknown rule id or key, inert reason
+                               or severity, stale exclude_services name) as errors, not warnings
   --explain CL-XXXX            Print the full documentation for a single rule
                                (through a pager on an interactive terminal)
   --no-pager                   Print --explain output directly, bypassing the pager
@@ -37,7 +39,8 @@ fix options:
                                `compose.override.yml` Compose merges beside it
   --no-env                     Ignore a `.env` sitting beside the Compose file
   --config PATH                Path to config file (suppressions are honored)
-  --strict-config              Treat config diagnostics (unknown rule id or key, inert reason) as errors, not warnings
+  --strict-config              Treat config diagnostics (unknown rule id or key, inert reason
+                               or severity) as errors, not warnings
 
 init options:
   -o, --output PATH            Where to write the config (default: .compose-lint.yml)
