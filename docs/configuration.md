@@ -183,15 +183,18 @@ JSON output is a versioned envelope (see [ADR-015](adr/015-machine-readable-outp
     }
   ],
   "errors": [
-    { "file": "broken.yml", "message": "missing 'services' key" }
-  ]
+    { "file": "broken.yml", "message": "missing 'services' key", "kind": "parse" }
+  ],
+  "warnings": []
 }
 ```
 
 - `version` is the envelope schema version. New top-level fields are added without bumping it; a bump signals a breaking change.
 - `findings[]` carries one object per finding. `file` names the document the evidence is written in and `line` is a line **within that document** — the two always agree. `severity` is one of `critical`, `high`, `medium`, `low`. `rule_id` is an **opaque string**: match exact values, never the `CL-XXXX` pattern ([compatibility.md](compatibility.md)).
 - Four keys are conditional, present only on the branch that produces them: `suppression_reason` (a suppressed finding whose config gave a reason), `severity_overridden_from` (the config regraded it), `graded_file` (a merged or `env_file:` run, where the graded document differs from `file`), and `source_file` (a deprecated alias of `file`, kept for consumers written against schema 1).
-- `errors[]` lists files that failed to parse (exit 2). Files skipped as not-applicable (Compose v1 / fragments / a compose-lint config, [ADR-013](adr/013-missing-services-key.md)) are not errors and do not appear here.
+- `line` is `null` when no line in `file` names the offending key — a finding inherited through a same-file `extends:` from another service. `fix` is `null` when a rule has no guidance to give. Both keys are always present.
+- `errors[]` lists the conditions that made the run exit 2, and `warnings[]` the ones reported without failing it. Both are always present, and each entry is `{file, message, kind}`. `kind` is a closed set you can filter on instead of parsing `message`: `parse` (a file could not be read or parsed), `coverage_gap` (an `include:` or cross-file `extends:` could not be followed), `rule_crash` (a rule raised), and `run` (not about one file: no Compose files found, a configuration error). A `run` entry has `file: ""`. Today `warnings[]` carries coverage gaps accepted with `--allow-partial-coverage`, which used to leave no machine-readable trace. Files skipped as not-applicable (Compose v1 / fragments / a compose-lint config, [ADR-013](adr/013-missing-services-key.md)) are neither and do not appear.
+- Every exit-2 path writes the envelope, except the two that fail before a format is known: an argument the parser rejects, and an `--explain` error.
 
 !!! note "Schema 2 changed what `file` means"
 

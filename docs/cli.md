@@ -150,8 +150,9 @@ number worth adjusting in a report.
 
 **Parse `--format json`, never the text output.** JSON is a versioned envelope
 ([ADR-015](adr/015-machine-readable-output-contract.md)): a top-level
-`version`, a `tool` block, `findings`, and `errors` carrying the files that
-failed to parse. New
+`version`, a `tool` block, `findings`, and the `errors` and `warnings`
+channels, each entry tagged with a `kind` (see
+[configuration.md](configuration.md#json)). New
 top-level fields are additive and do not bump `version`, so a consumer can read
 what it knows and ignore the rest. Text output is for humans and is not a
 contract — its banner, summaries and verdict go to stdout only in text mode, so

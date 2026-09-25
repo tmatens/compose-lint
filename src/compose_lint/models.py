@@ -44,6 +44,45 @@ class Severity(enum.Enum):
         return ranks[self]
 
 
+class DiagnosticKind(enum.Enum):
+    """What kind of thing a run-level diagnostic reports (ADR-015).
+
+    A closed set, carried verbatim as ``kind`` on every JSON ``errors[]`` /
+    ``warnings[]`` entry and as ``descriptor.id`` on every SARIF
+    ``toolExecutionNotification``. A consumer that wants "fail only on gaps"
+    matches this field; before it existed the only option was to regex the
+    message text, which made prose a de-facto API -- the failure ADR-024
+    removed from results. Each value is assigned where the condition is
+    detected, never inferred from the message.
+    """
+
+    # A file that could not be read or parsed as a Compose document.
+    PARSE = "parse"
+    # An `include:` or cross-file `extends:` that could not be followed, so
+    # part of the stack was never linted (exit 2, unless waived).
+    COVERAGE_GAP = "coverage_gap"
+    # A rule (or its fixer) raised; its findings for that document are missing.
+    RULE_CRASH = "rule_crash"
+    # Run-level, not about one file: no Compose files found, a configuration
+    # error, output truncation. `Diagnostic.file` is "" for these.
+    RUN = "run"
+
+
+@dataclass(frozen=True)
+class Diagnostic:
+    """One entry on the machine-readable error or warning channel.
+
+    ``file`` is the document the diagnostic is about, or ``""`` for a
+    run-level one -- that empty string is contract, not a placeholder: JSON
+    consumers see ``file: ""`` and SARIF omits ``locations`` entirely rather
+    than resolving the empty path to the working directory.
+    """
+
+    file: str
+    message: str
+    kind: DiagnosticKind
+
+
 @dataclass(frozen=True)
 class RuleMetadata:
     """Metadata describing a lint rule."""

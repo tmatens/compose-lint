@@ -42,12 +42,12 @@ was invisible in JSON, with exit code 2 the only signal.
   | field | type | meaning |
   |-------|------|---------|
   | `file` | string | the document the evidence is written in |
-  | `line` | integer | 1-indexed line **within `file`** |
+  | `line` | integer or null | 1-indexed line **within `file`**; null when no line there names the key (see amendment) |
   | `rule_id` | string | **opaque** — match exact values, never the `CL-\d{4}` shape (see [compatibility.md](../compatibility.md)) |
   | `severity` | string | one of `critical`, `high`, `medium`, `low` — a closed set |
   | `service` | string | the Compose service the finding is about |
   | `message` | string | what is wrong |
-  | `fix` | string | how to fix it |
+  | `fix` | string or null | how to fix it; null when a rule has none |
   | `references` | array of string | authoritative sources |
   | `suppressed` | boolean | whether config suppressed it |
 
@@ -110,3 +110,43 @@ today it is a clarification of surface no consumer was promised. It keeps a
 future rule source with foreign ids (shellcheck's `SC####`,
 [ADR-007](007-shellcheck-integration.md)) an additive MINOR rather than a
 breaking-change argument.
+
+**Amendment (pre-1.0 freeze): diagnostic kinds, a warning channel, nullable
+fields.** Four additions and clarifications, made before the freeze because
+each would cost a MAJOR afterwards or leave the frozen shape ambiguous.
+
+- *`kind` on every diagnostic.* `errors[]` entries gain `kind`, a closed set:
+  `parse`, `coverage_gap`, `rule_crash`, `run`. It is assigned where the
+  condition is detected, never inferred from the message. Before it, a consumer
+  that wanted "fail on a gap but not on a parse error" had to match message
+  text, which made prose a de-facto API: the failure
+  [ADR-024](024-finding-identity-is-not-prose.md) removed from results. SARIF
+  carries the same string as each notification's `descriptor.id`, resolved
+  against a `notifications` catalogue in the driver. `descriptor` was chosen
+  over `properties` because it is the typed, resolvable place the format
+  provides for a notification's category.
+- *`warnings[]`.* Same element shape as `errors[]`, always present, for
+  conditions reported without failing the run. A coverage gap accepted with
+  `--allow-partial-coverage` used to leave JSON and SARIF exactly as if there
+  had been no gap. It now lands here, and in SARIF as a `level: "warning"`
+  notification that leaves `executionSuccessful` true. This is also the
+  machine-readable channel the compatibility policy relies on to announce a new
+  gap condition one release before enforcing it
+  ([ADR-036](036-resolve-references-that-stay-inside-the-project.md)).
+- *Run-level entries.* `kind: run` entries (no Compose files found, a
+  configuration error, output truncation) have `file: ""`. That empty string is
+  contract, not a placeholder. In SARIF such a notification carries no
+  `locations` at all. It previously resolved the empty path to the working
+  directory and reported a directory as the failing artifact. A truncated SARIF
+  document now reports its truncation once; the CLI and the formatter each used
+  to add a notification with different text.
+- *Nullable `line` and `fix`.* Both were documented as non-null but have always
+  been nullable in code and pinned so by tests. `line` is null for a finding
+  inherited through a same-file `extends:` from another service, when no line
+  in `file` names the offending key. Declaring it now is a clarification;
+  after 1.0 it would be a loosening of a typed field under
+  [ADR-030](030-the-policy-is-part-of-the-contract.md).
+
+`kind` and `warnings` are additive, so `version` does not change. Every exit-2
+path writes the envelope except the two that fail before an output format is
+known: an argument the parser rejects, and an `--explain` error.

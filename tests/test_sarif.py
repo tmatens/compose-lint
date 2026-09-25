@@ -16,7 +16,13 @@ from compose_lint.formatters.sarif import (
     build_sarif_log,
     format_findings,
 )
-from compose_lint.models import Finding, Severity, TextEdit
+from compose_lint.models import (
+    Diagnostic,
+    DiagnosticKind,
+    Finding,
+    Severity,
+    TextEdit,
+)
 
 FIXTURES = Path(__file__).parent / "compose_files"
 SARIF_SCHEMA_PATH = Path(__file__).parent / "fixtures" / "sarif-schema-2.1.0.json"
@@ -447,7 +453,7 @@ class TestSarifSchemaCompliance:
     def test_log_with_parse_errors_validates(self, tmp_path: Path) -> None:
         log = build_sarif_log(
             format_findings([_sample_finding()], "test.yml"),
-            parse_errors=[("broken.yml", "could not parse")],
+            errors=[Diagnostic("broken.yml", "could not parse", DiagnosticKind.PARSE)],
         )
         self._validate(log, tmp_path)
 
@@ -618,7 +624,10 @@ class TestArtifactUri:
         try:
             results = format_findings([f], str(target), fixes=[(f, [edit])])
             fix_uri = results[0]["fixes"][0]["artifactChanges"][0]["artifactLocation"]
-            log = build_sarif_log(results, parse_errors=[(str(target), "broken")])
+            log = build_sarif_log(
+                results,
+                errors=[Diagnostic(str(target), "broken", DiagnosticKind.PARSE)],
+            )
         finally:
             os.chdir(cwd)
         assert fix_uri == {"uri": "stack/compose.yml", "uriBaseId": "SRCROOT"}

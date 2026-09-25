@@ -29,6 +29,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to an error by `--strict-config`. The "no config found" note names both
   spellings; `compose-lint init` still writes `.compose-lint.yml`.
 
+- **Every JSON and SARIF diagnostic says what kind it is, and an accepted
+  coverage gap leaves a trace.** `errors[]` entries gain `kind`, one of
+  `parse`, `coverage_gap`, `rule_crash` or `run`, so a pipeline that wants to
+  fail on a gap but not on a parse error filters a field instead of matching
+  message text. SARIF carries the same value as each notification's
+  `descriptor.id`, resolved against a notification catalogue in the driver. A
+  new `warnings[]` array, always present and shaped like `errors[]`, holds
+  conditions reported without failing the run: today, a coverage gap accepted
+  with `--allow-partial-coverage`, which used to leave JSON and SARIF exactly
+  as if the whole stack had been read. SARIF reports it as a `level: warning`
+  notification and keeps `executionSuccessful` true. This is also the channel
+  the compatibility policy relies on to announce a new gap condition one
+  release before it is enforced. Both fields are additive, so the envelope
+  `version` is unchanged ([ADR-015](docs/adr/015-machine-readable-output-contract.md)).
+
 ### Changed
 
 - **`init` baselines the document `check` grades.** `check` merges the
@@ -120,6 +135,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still said "or pass `--allow-partial-coverage` to accept it". The warning
   keeps the merged-output route and drops the flag; the error without the
   flag is unchanged.
+
+- **A run-level SARIF notification no longer names the working directory as
+  its artifact.** "No Compose files found", a configuration error, and output
+  truncation are not about any one file, but the empty path was resolved into
+  the current directory's URI. Those notifications now carry no location, and
+  JSON keeps `file: ""` for them, which is now documented.
+
+- **A truncated SARIF document reports the truncation once.** The CLI and the
+  formatter each added a notification for the same event, with different text.
+
+- **The JSON contract documents `line` and `fix` as nullable.** Both have always
+  been `null` in some cases, a `line` on a finding inherited through a
+  same-file `extends:` for one, but ADR-015 typed them as always present
+  values. Docs only; no output changed.
 
 ## [0.29.0] - 2026-09-12
 
