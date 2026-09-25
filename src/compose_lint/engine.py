@@ -31,6 +31,7 @@ def run_rules(
     excluded_services: dict[str, dict[str, str | None]] | None = None,
     on_error: Callable[[str, str, Exception], None] | None = None,
     env_files: Mapping[str, ServiceEnvFiles] | None = None,
+    config_path: str | None = None,
 ) -> list[Finding]:
     """Run all registered rules against the parsed Compose data.
 
@@ -46,6 +47,11 @@ def run_rules(
     values in the parsed document that nobody wrote there, and would expose
     them to every rule rather than the two that grade them.
 
+    ``config_path`` is the config file the suppressions were read from, as the
+    user named it. It goes into the default ``suppression_reason`` so JSON and
+    SARIF point an auditor at the file that was actually read rather than at
+    the conventional ``.compose-lint.yml``, which is what it defaults to.
+
     A rule that raises is isolated rather than allowed to abort the whole
     run: the failure is reported via ``on_error`` (defaulting to a stderr
     diagnostic) and the engine continues with the next service and rule. The
@@ -57,6 +63,7 @@ def run_rules(
     overrides = severity_overrides or {}
     excluded = excluded_services or {}
     report_error = on_error if on_error is not None else _default_rule_error
+    config_name = config_path or ".compose-lint.yml"
     findings: list[Finding] = []
 
     rule_classes = get_registered_rules()
@@ -108,13 +115,11 @@ def run_rules(
                     finding = replace(
                         finding,
                         suppressed=True,
-                        suppression_reason=reason or "disabled in .compose-lint.yml",
+                        suppression_reason=reason or f"disabled in {config_name}",
                     )
                 elif service_name in rule_excluded:
                     reason = rule_excluded[service_name]
-                    default = (
-                        f"excluded for service '{service_name}' in .compose-lint.yml"
-                    )
+                    default = f"excluded for service '{service_name}' in {config_name}"
                     finding = replace(
                         finding,
                         suppressed=True,

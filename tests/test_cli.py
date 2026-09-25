@@ -177,6 +177,84 @@ class TestCLI:
         assert result.returncode == 2
         assert "no compose files found" in result.stderr.lower()
 
+    def test_end_of_options_ends_subcommand_detection(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Everything after `--` is a file path, never a flag (docs/cli.md). The
+        # shim used to scan past it, so `-- init` routed to `init` (a usage
+        # error) and `-- check` to `check` with no file (discovery of the cwd).
+        monkeypatch.chdir(tmp_path)
+        for name in ("check", "fix", "init"):
+            result = run_cli("--", name)
+            assert result.returncode == 2, name
+            assert f"{name}: file not found" in result.stderr, name
+            assert "required" not in result.stderr, name
+            assert "no compose files found" not in result.stderr.lower(), name
+
+    def test_option_value_is_not_read_as_a_subcommand(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # `--config fix compose.yml` is a check with a config named `fix`. The
+        # shim used to take `fix`, the first token without a dash, as the
+        # subcommand, and `fix` then rejected `--format`.
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "fix").write_text("rules:\n  CL-0002:\n    enabled: false\n")
+        result = run_cli(
+            "--config",
+            "fix",
+            "--format",
+            "json",
+            str(FIXTURES / "insecure_privileged.yml"),
+        )
+        assert result.returncode in (0, 1), result.stderr
+        findings = json.loads(result.stdout)["findings"]
+        assert any(
+            f["rule_id"] == "CL-0002" and f.get("suppression_reason") for f in findings
+        )
+
+    def test_format_choice_folds_case(self) -> None:
+        # `--fail-on HIGH` already folds case; `--format JSON` was rejected.
+        target = str(FIXTURES / "insecure_privileged.yml")
+        as_json = run_cli("--format", "JSON", target)
+        assert as_json.returncode == 1, as_json.stderr
+        assert json.loads(as_json.stdout)["findings"]
+        as_sarif = run_cli("--format", "Sarif", target)
+        assert as_sarif.returncode == 1, as_sarif.stderr
+        assert json.loads(as_sarif.stdout)["runs"]
+
+    def test_unknown_format_is_still_a_usage_error(self) -> None:
+        result = run_cli("--format", "xml", str(FIXTURES / "insecure_privileged.yml"))
+        assert result.returncode == 2
+        assert "invalid format: 'xml'" in result.stderr
+        assert "text, json, sarif" in result.stderr
+
+    def test_help_lists_format_choices_in_lowercase(self) -> None:
+        result = run_cli("check", "--help")
+        assert "--format {text,json,sarif}" in result.stdout
+
+    def test_default_suppression_reason_names_the_config_passed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The default reason said `.compose-lint.yml` under `--config other/ci.yml`
+        # too, sending an auditor reading the JSON to a file that was never read.
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "other").mkdir()
+        (tmp_path / "other" / "ci.yml").write_text(
+            "rules:\n  CL-0002:\n    enabled: false\n"
+        )
+        result = run_cli(
+            "--config",
+            "other/ci.yml",
+            "--format",
+            "json",
+            str(FIXTURES / "insecure_privileged.yml"),
+        )
+        reasons = {
+            f["rule_id"]: f.get("suppression_reason")
+            for f in json.loads(result.stdout)["findings"]
+        }
+        assert reasons["CL-0002"] == "disabled in other/ci.yml"
+
     def test_verbose_and_quiet_are_mutually_exclusive(self) -> None:
         result = run_cli("-v", "-q", str(FIXTURES / "insecure_socket.yml"))
         assert result.returncode == 2

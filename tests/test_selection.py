@@ -258,3 +258,20 @@ class TestNamedWithoutEnv:
     def test_a_non_canonical_name_gets_no_overlay(self, project: Path) -> None:
         selection = plan_documents([str(project / "compose.prod.yml")])
         assert [os_name(p) for p in selection.groups[0].paths] == ["compose.prod.yml"]
+
+
+class TestNamedSpellings:
+    """Two spellings of one file are one document."""
+
+    def test_dot_dot_spellings_collapse_to_one_document(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # `Path.absolute()` does not collapse `..`, so from inside dir1 these
+        # two spellings keyed differently and the file was graded twice, every
+        # finding reported twice.
+        dir1 = tmp_path / "dir1"
+        dir1.mkdir()
+        write(dir1, "compose.yml", BASE)
+        monkeypatch.chdir(dir1)
+        selection = plan_documents(["compose.yml", "../dir1/compose.yml"])
+        assert [g.primary for g in selection.groups] == ["compose.yml"]

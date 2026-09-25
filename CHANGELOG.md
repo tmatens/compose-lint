@@ -40,6 +40,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stack with an override or an `env_file:`, and nothing it wrote before is
   written differently.
 
+- **`--format` folds case**, as `--fail-on`, `--only` and `--explain` already
+  did: `--format JSON` and `--format Sarif` are accepted. `--help` still lists
+  the lowercase spellings, and an unknown format is still a usage error
+  (exit 2).
+
 ### Fixed
 
 - **`fix` exits 2, not 1 with a traceback, when it cannot run.** A missing
@@ -65,6 +70,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   And `sarif-file` pointing into a directory that did not exist yet exited 2
   even on a clean file; the directory is created now, after the
   workspace-containment check, which is unchanged.
+
+- **`--` now ends subcommand detection.** The argv shim that decides whether
+  the first positional is `check`, `fix` or `init` scanned past `--`, so
+  `compose-lint -- init` routed to `init` and failed for want of a FILE, and
+  `compose-lint -- check` linted the working directory — against the
+  documented contract that everything after `--` is a file path. The shim
+  also read an option's value as a candidate: `--config fix compose.yml`
+  ran `fix`. Both are `check` now, on a file named `init`/`check` and with a
+  config named `fix` respectively
+  ([ADR-011](docs/adr/011-config-bootstrap-ux.md)).
+
+- **The default `suppression_reason` names the config that was read.** Under
+  `--config other/ci.yml`, JSON `suppression_reason` and SARIF
+  `justification` said `disabled in .compose-lint.yml`, sending an auditor
+  to a file the run never opened. Without `--config` the text is unchanged.
+
+- **One file named two ways is graded once.** File identity did not collapse
+  `..`, so `compose.yml ../dir1/compose.yml` from inside `dir1` produced
+  every finding twice. Paths are normalised lexically; symlinks are still
+  not followed, per ADR-023.
+
+- **An accepted coverage gap no longer tells you to accept it.** With
+  `--allow-partial-coverage` the gap is a warning, and its closing sentence
+  still said "or pass `--allow-partial-coverage` to accept it". The warning
+  keeps the merged-output route and drops the flag; the error without the
+  flag is unchanged.
 
 ## [0.29.0] - 2026-09-12
 

@@ -124,7 +124,7 @@ Cons:
 
 ## Implementation notes (non-binding)
 
-- `cli.py`: convert `_build_parser` to use `add_subparsers(dest="command")`. Register `check` (current behavior) and `init`. An argv shim prepends `check` when the first non-flag token is neither a known subcommand nor starts with `-`, preserving bare-invocation compatibility.
+- `cli.py`: convert `_build_parser` to use `add_subparsers(dest="command")`. Register `check` (current behavior) and `init`. An argv shim prepends `check` when the first positional token is not a known subcommand, preserving bare-invocation compatibility. Two tokens are not candidates: anything after `--` (the documented end of options — everything after it is a file path, so `compose-lint -- init` lints a file named `init`), and the value of an option that takes one (`--config fix compose.yml` is a `check` with a config named `fix`). The set of value-taking options is derived from the parsers, not listed by hand; an abbreviated long option (`--conf fix`, which argparse accepts) is outside it, so only the spelled-out option protects its value.
 - `--format`, `--fail-on`, `--config`, `--skip-suppressed` belong to `check` only. `--config` may later belong to `init` for merge support; deferred.
 - `init` flags (v1): `-o PATH` (default `.compose-lint.yml`), `--force` (overwrite allowed), positional `FILE`.
 - `init` shares `load_compose` and the engine with `check`, then hands findings to a config-emitter module. Place it under `src/compose_lint/config_emit.py` or similar; do **not** put it in `formatters/` — it does not satisfy the `format(findings) -> str` contract (it needs the full service list and rule metadata).
