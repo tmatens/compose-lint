@@ -50,7 +50,6 @@ from compose_lint.parser import (
     ComposeError,
     ComposeFileError,
     ComposeNotApplicableError,
-    load_compose,
     load_compose_full,
     load_merged,
     merge_patched,
@@ -76,7 +75,7 @@ if TYPE_CHECKING:
     from compose_lint._merge import Merged
 
 
-def _plan(args: argparse.Namespace) -> Selection:
+def _plan(args: argparse.Namespace, files: list[str] | None = None) -> Selection:
     """Decide which documents this run grades, and say how it decided.
 
     Running `docker compose up` with no `-f` loads the base file *and* a sibling
@@ -90,9 +89,13 @@ def _plan(args: argparse.Namespace) -> Selection:
     The notes are stderr-only and never touch the exit code. What was read and
     what it selected is the declared input ADR-023 clause 2 requires; a run that
     silently changed its own file set would be the undeclared kind.
+
+    ``files`` defaults to ``args.files``; ``init`` passes its single ``FILE``
+    so the one document it baselines is planned exactly as ``check`` would
+    plan it (ADR-011 amendment).
     """
     selection = plan_documents(
-        args.files,
+        args.files if files is None else files,
         read_env_files=not args.no_env,
         merge_overrides=not args.no_merge_overrides,
     )
@@ -124,6 +127,23 @@ def _note_env_not_read(selection: Selection) -> None:
             f"note: {path} was not read (--no-env), so it selected no documents "
             "and supplied no values."
         )
+
+
+def _why_merged(overlays: list[str], *, selected_by_env: bool) -> str:
+    """The reason a run merged ``overlays``, for the note that announces it.
+
+    The reason is not decoration. "Compose merges it automatically" is true
+    of a discovered override and false of a COMPOSE_FILE list, and stating the
+    wrong one is how the pre-ADR-026 report justified reading a file Compose
+    never loaded.
+    """
+    if selected_by_env:
+        return f"because COMPOSE_FILE in {ENV_FILENAME} selects them"
+    return (
+        "because Compose merges "
+        + ("them" if len(overlays) > 1 else "it")
+        + " automatically"
+    )
 
 
 def _attribute_sources(findings: list[Finding], primary: str) -> list[Finding]:
@@ -212,6 +232,41 @@ def _subcommands() -> set[str]:
     return {"check", "fix", "init"}
 
 
+def _add_document_selection_flags(parser: argparse.ArgumentParser) -> None:
+    """Add the two flags that change *which documents* a command grades.
+
+    One definition for ``check``, ``fix`` and ``init``, because the three must
+    agree: a baseline written by ``init`` is only useful if it describes the
+    document ``check`` grades, so whatever narrows one must narrow the other
+    the same way and under the same name.
+    """
+    parser.add_argument(
+        "--no-merge-overrides",
+        action="store_true",
+        default=False,
+        help=(
+            "lint each file on its own instead of merging the "
+            "'compose.override.yml' Compose would merge beside it. The merged "
+            "view is what actually runs, so this is only right when the base "
+            "file is deliberately graded in isolation"
+        ),
+    )
+    parser.add_argument(
+        "--no-env",
+        action="store_true",
+        default=False,
+        help=(
+            "ignore the env files beside the Compose file: the sibling '.env' "
+            "and every 'env_file:' a service names. Compose reads the '.env' "
+            "to choose which documents to load (COMPOSE_FILE), so this "
+            "reproduces the previous file selection exactly -- including "
+            "merging an override that COMPOSE_FILE would have suppressed -- "
+            "and leaves CL-0020 and CL-0021 blind to any credential an "
+            "'env_file:' supplies"
+        ),
+    )
+
+
 def _add_check_subparser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
@@ -277,31 +332,7 @@ def _add_check_subparser(
             "partial view; with it, the gap is reported on stderr only"
         ),
     )
-    check.add_argument(
-        "--no-merge-overrides",
-        action="store_true",
-        default=False,
-        help=(
-            "lint each file on its own instead of merging the "
-            "'compose.override.yml' Compose would merge beside it. The merged "
-            "view is what actually runs, so this is only right when the base "
-            "file is deliberately graded in isolation"
-        ),
-    )
-    check.add_argument(
-        "--no-env",
-        action="store_true",
-        default=False,
-        help=(
-            "ignore the env files beside the Compose file: the sibling '.env' "
-            "and every 'env_file:' a service names. Compose reads the '.env' "
-            "to choose which documents to load (COMPOSE_FILE), so this "
-            "reproduces the previous file selection exactly -- including "
-            "merging an override that COMPOSE_FILE would have suppressed -- "
-            "and leaves CL-0020 and CL-0021 blind to any credential an "
-            "'env_file:' supplies"
-        ),
-    )
+    _add_document_selection_flags(check)
     verbosity = check.add_mutually_exclusive_group()
     verbosity.add_argument(
         "-v",
@@ -376,31 +407,7 @@ def _add_fix_subparser(
         default=False,
         help="write fixes in place instead of printing a dry-run diff",
     )
-    fix.add_argument(
-        "--no-merge-overrides",
-        action="store_true",
-        default=False,
-        help=(
-            "lint each file on its own instead of merging the "
-            "'compose.override.yml' Compose would merge beside it. The merged "
-            "view is what actually runs, so this is only right when the base "
-            "file is deliberately graded in isolation"
-        ),
-    )
-    fix.add_argument(
-        "--no-env",
-        action="store_true",
-        default=False,
-        help=(
-            "ignore the env files beside the Compose file: the sibling '.env' "
-            "and every 'env_file:' a service names. Compose reads the '.env' "
-            "to choose which documents to load (COMPOSE_FILE), so this "
-            "reproduces the previous file selection exactly -- including "
-            "merging an override that COMPOSE_FILE would have suppressed -- "
-            "and leaves CL-0020 and CL-0021 blind to any credential an "
-            "'env_file:' supplies"
-        ),
-    )
+    _add_document_selection_flags(fix)
     fix.add_argument(
         "--only",
         action="append",
@@ -437,10 +444,13 @@ def _add_init_subparser(
         help="generate a starter .compose-lint.yml from a file's findings",
         description=(
             "Generate a starter .compose-lint.yml from the findings in a single "
-            "Compose file. Every finding becomes a per-service exclude_services "
-            "entry with a placeholder reason for you to triage — replace it with "
-            "a real justification or delete the entry and fix the issue. Refuses "
-            "to overwrite an existing config without --force."
+            "Compose file, graded the way check grades it: merged with the "
+            "'compose.override.yml' beside it and with its env files read, so "
+            "the suppressions it writes are the findings check will report. "
+            "Every finding becomes a per-service exclude_services entry with a "
+            "placeholder reason for you to triage — replace it with a real "
+            "justification or delete the entry and fix the issue. Refuses to "
+            "overwrite an existing config without --force."
         ),
     )
     init.add_argument(
@@ -448,6 +458,7 @@ def _add_init_subparser(
         metavar="FILE",
         help="Docker Compose file to analyze",
     )
+    _add_document_selection_flags(init)
     init.add_argument(
         "-o",
         "--output",
@@ -681,6 +692,10 @@ _FIX_GAP_REMEDY = (
     "What was not seen was not fixed. Lint the merged output "
     "(docker compose config) to cover the gap."
 )
+_INIT_GAP_REMEDY = (
+    "What was not seen got no suppression, and check will refuse the same gap. "
+    "Lint the merged output (docker compose config) to cover it."
+)
 
 
 def _report_coverage_gaps(
@@ -841,17 +856,8 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                 # this warns without touching the exit code. What it must never
                 # do is stay silent: the findings below describe a document that
                 # is not the file named in the report.
-                # The reason is not decoration. "Compose merges it
-                # automatically" is true of a discovered override and false of a
-                # COMPOSE_FILE list, and stating the wrong one is how the
-                # pre-ADR-026 report justified reading a file Compose never
-                # loaded.
-                why = (
-                    f"because COMPOSE_FILE in {ENV_FILENAME} selects them"
-                    if merge_reason.get(filepath)
-                    else "because Compose merges "
-                    + ("them" if len(overlays) > 1 else "it")
-                    + " automatically"
+                why = _why_merged(
+                    overlays, selected_by_env=bool(merge_reason.get(filepath))
                 )
                 emit(
                     f"warning: {filepath}: merged {', '.join(overlays)} before "
@@ -1453,9 +1459,31 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
     artifact lands on disk. Exit 0 on a successful write (or when there is
     nothing to suppress), 2 on usage/parse error or overwrite-without-force —
     findings are the input here, not the failure signal.
+
+    The file is planned and loaded the way ``check`` plans and loads it: the
+    sibling override is merged (ADR-025), the ``.env`` may select the
+    documents (ADR-026), and ``env_file:`` targets are read (ADR-027). A
+    baseline that graded the raw file left ``check`` red on the first stack
+    with an override, which is the opposite of what a baseline is for.
     """
+    # A named file is never dropped (ADR-026 §4), so the plan has exactly one
+    # group; its primary may differ from FILE when COMPOSE_FILE orders the
+    # project differently, in which case the note above says so.
+    (group,) = _plan(args, [args.file]).groups
+    use_env = not args.no_env
     try:
-        data, lines = load_compose(args.file)
+        if group.overlays:
+            merged = load_merged(list(group.paths), use_env=use_env)
+            data, lines, gaps = merged.data, merged.lines, merged.gaps
+            overlays = list(group.overlays)
+            why = _why_merged(overlays, selected_by_env=group.selected_by_env)
+            emit(
+                f"note: {group.primary}: merged {', '.join(overlays)} before "
+                f"linting, {why}. Suppressions describe the combined configuration."
+            )
+        else:
+            loaded = load_compose_full(group.primary, use_env=use_env)
+            data, lines, gaps = loaded.data, loaded.lines, loaded.gaps
     except ComposeNotApplicableError as e:
         # v1 / fragment file: skipped, not an error (ADR-013). Nothing to lint,
         # so nothing to bootstrap. Must precede the ComposeError clause below —
@@ -1466,7 +1494,19 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
         _report_parse_error(args.file, e)
         sys.exit(2)
 
-    findings = run_rules(data, lines)
+    # Not the gate (that is `check`), so a gap is reported and not fatal, as
+    # `fix` does — but it is said, because a suppression cannot be written for
+    # a finding that was never seen.
+    _report_coverage_gaps(group.primary, gaps, fatal=False, remedy=_INIT_GAP_REMEDY)
+    service_env_files = (
+        resolve_env_files(data, Path(group.primary).absolute().parent)
+        if use_env
+        else {}
+    )
+    for note in describe_unread(service_env_files):
+        emit(f"note: {group.primary}: {note}")
+
+    findings = run_rules(data, lines, env_files=service_env_files)
     if not findings:
         emit(
             f"{args.file}: no findings; nothing to suppress, not writing {args.output}"

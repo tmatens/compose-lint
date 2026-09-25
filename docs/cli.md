@@ -42,7 +42,16 @@ fix options:
 init options:
   -o, --output PATH            Where to write the config (default: .compose-lint.yml)
   --force                      Overwrite an existing config file
+  --no-merge-overrides         Baseline the file alone instead of merging the
+                               `compose.override.yml` Compose merges beside it
+  --no-env                     Ignore a `.env` sitting beside the Compose file
 ```
+
+`init` grades its `FILE` exactly as `check` grades it — the sibling override
+merged, the `.env` consulted for `COMPOSE_FILE`, every `env_file:` read — so
+the suppressions it writes are the findings `check` will report. Baseline
+with the same `--no-merge-overrides` / `--no-env` you gate with, or the two
+disagree.
 
 ## Color
 
@@ -122,9 +131,9 @@ with a `reason`, which flows through to `suppression_reason` in JSON,
 `justification` in SARIF, and after `SUPPRESSED` in text — the suppressed
 finding is still reported, so a suppression stays visible rather than
 disappearing. There are no inline suppression comments, and no comment syntax
-to guess at. `compose-lint init` generates a baseline config from a file's
-current findings, as per-service `exclude_services` entries with placeholder
-reasons to replace. Deleting the offending service to clear a finding is not a
+to guess at. `compose-lint init` generates a baseline config from the findings `check`
+reports for a file — the merged stack, override and env files included — as
+per-service `exclude_services` entries with placeholder reasons to replace. Deleting the offending service to clear a finding is not a
 fix; neither is a global `enabled: false` where the finding is about one
 service.
 

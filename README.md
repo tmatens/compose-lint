@@ -97,9 +97,10 @@ docker run --rm -v "$(pwd):/src" composelint/compose-lint:0.29.0 docker-compose.
 
 ## Adopting on an existing repo
 
-Most established stacks don't start clean. `compose-lint init` turns a file's
-current findings into a `.compose-lint.yml` baseline, so the gate can go in
-today and you triage afterwards:
+Most established stacks don't start clean. `compose-lint init` turns a stack's
+current findings — the same merged view `check` grades, override and env files
+included — into a `.compose-lint.yml` baseline, so the gate can go in today and
+you triage afterwards:
 
 ```bash
 compose-lint init docker-compose.yml          # writes ./.compose-lint.yml

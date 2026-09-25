@@ -20,6 +20,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stderr is not read. Still one input per flag: there is no generic `args`
   pass-through, so the inputs table stays the whole of the action's contract.
 
+### Changed
+
+- **`init` baselines the document `check` grades.** `check` merges the
+  sibling `compose.override.yml` ([ADR-025](docs/adr/025-lint-the-merged-configuration.md)),
+  lets the `.env` select the documents ([ADR-026](docs/adr/026-read-the-sibling-env-file.md))
+  and reads every `env_file:` ([ADR-027](docs/adr/027-grade-env-file-where-the-document-routes-it.md));
+  `init` still read the single file raw. On any stack
+  with an override the baseline it wrote missed the override's findings — a
+  `pid: host` or a socket mount added in the overlay — and the very next
+  `check --config .compose-lint.yml` stayed red, which is the one thing a
+  baseline exists to prevent. `init` now plans and loads its `FILE` through
+  the same path as `check`, so the suppressions it writes are the findings
+  `check` will report, and it announces the merge on stderr the way `check`
+  does. It also gained `--no-merge-overrides` and `--no-env`, with `check`'s
+  meaning, so a gate that narrows its view can be baselined with the same
+  flags. This is a MINOR change under the documented policy that reading more
+  of the stack is not a break: `init` emits more entries than before on a
+  stack with an override or an `env_file:`, and nothing it wrote before is
+  written differently.
+
 ### Fixed
 
 - **`fix` exits 2, not 1 with a traceback, when it cannot run.** A missing
