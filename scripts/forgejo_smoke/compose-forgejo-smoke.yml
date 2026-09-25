@@ -20,7 +20,7 @@
 # digest>`; scripts/forgejo_smoke_bump.py refuses a per-arch digest.
 services:
   forgejo:
-    image: codeberg.org/forgejo/forgejo:16.0.4@sha256:a3e33d03e771d3e58b27de5573c3a25dc4f670583a6724c1878a6d0bbecf3556
+    image: codeberg.org/forgejo/forgejo:16.0.5@sha256:cf5f5ae6acf2ababca0ee3d255705b83a47f35b25e07fc931d694d60664053fe
     environment:
       # Headless install: lock the installer and configure via env.
       FORGEJO__security__INSTALL_LOCK: "true"
@@ -40,7 +40,7 @@ services:
     networks: [forgejo-smoke]
 
   runner:
-    image: data.forgejo.org/forgejo/runner:13.1.0@sha256:c4af85fd9f0dd03788676a534781a87c71aa2c6a37737143e017eb94d4312952
+    image: data.forgejo.org/forgejo/runner:13.2.0@sha256:ca3d5eea46004789a175d1369eec6829d3ea9bfbe2011a06625b4bdaa55f7552
     # root so the runner can use the host Docker socket on the CI runner.
     user: root
     depends_on: [forgejo]
