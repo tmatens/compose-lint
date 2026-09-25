@@ -27,6 +27,8 @@ from typing import Any
 import pytest
 import yaml
 
+from tests._execdir import require_exec
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VENV_BIN = REPO_ROOT / ".venv" / "bin"
 
@@ -87,7 +89,7 @@ def _run_step(
         )
     script = _step(name)["run"]
     if extra_path is not None:
-        _require_exec(extra_path)
+        require_exec(extra_path)
     path = f"{VENV_BIN}:{os.environ.get('PATH', '')}"
     if extra_path is not None:
         path = f"{extra_path}:{path}"
@@ -114,30 +116,6 @@ def _run_step(
         timeout=180,
     )
     return proc.returncode, proc.stdout, proc.stderr
-
-
-def _require_exec(shim_dir: Path) -> None:
-    """Skip when ``shim_dir`` cannot execute files (a ``noexec`` tmpdir).
-
-    PATH resolution silently passes over a non-executable entry, so on a
-    host with ``/tmp`` mounted ``noexec`` the *real* tool runs instead of
-    the shim. For the pip shim that meant a live network install replacing
-    the editable checkout with a published compose-lint — corrupting every
-    subsequent test run in a way that reads like source breakage (#595).
-    Never fall through: probe an exec here and skip with the remedy.
-    """
-    probe = shim_dir / "exec-probe"
-    probe.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
-    probe.chmod(0o755)
-    try:
-        subprocess.run([str(probe)], check=True, timeout=10)
-    except OSError:
-        pytest.skip(
-            f"{shim_dir} cannot execute files (noexec tmpdir?) — set TMPDIR "
-            "to an exec-capable directory, see CONTRIBUTING.md"
-        )
-    finally:
-        probe.unlink()
 
 
 def _outputs(path: Path) -> dict[str, str]:
@@ -505,7 +483,7 @@ def test_install_retries_a_lagging_index(ws: Path, outputs: Path) -> None:
     behaviour makes the normal case.
     """
     shim_dir, log = _failing_pip_shim(ws, fail_times=2)
-    _require_exec(shim_dir)
+    require_exec(shim_dir)
     rc, _out, _err = _run_step(
         "Install compose-lint", {"CL_VERSION": ""}, ws, outputs, extra_path=shim_dir
     )
@@ -522,7 +500,7 @@ def test_install_gives_up_naming_index_propagation(ws: Path, outputs: Path) -> N
     occurrence read as a regression instead of a propagation delay.
     """
     shim_dir, log = _failing_pip_shim(ws, fail_times=99)
-    _require_exec(shim_dir)
+    require_exec(shim_dir)
     rc, out, err = _run_step(
         "Install compose-lint",
         {"CL_VERSION": "0.0.0"},

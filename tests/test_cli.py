@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from tests._execdir import require_exec
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -1424,6 +1426,11 @@ class TestExplainPagerOnTTY:
 
     @pytest.fixture
     def fake_pager(self, tmp_path: Path) -> tuple[str, Path]:
+        # Guard every test taking this fixture, not just the one that goes
+        # red. On a `noexec` TMPDIR the pager cannot run, so the four
+        # `not marker.exists()` bypass assertions below would pass
+        # vacuously and quietly stop testing the bypass logic at all.
+        require_exec(tmp_path)
         marker = tmp_path / "pager-ran"
         script = tmp_path / "fake-pager.sh"
         script.write_text(f"#!/bin/sh\ntouch {marker}\nexec cat\n")
