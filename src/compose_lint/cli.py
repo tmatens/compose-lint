@@ -42,7 +42,7 @@ from compose_lint.fix import (
 )
 from compose_lint.formatters.json import build_json_log
 from compose_lint.formatters.json import format_findings as format_json
-from compose_lint.formatters.sarif import MAX_SARIF_RESULTS, build_sarif_log
+from compose_lint.formatters.sarif import build_sarif_log, truncation_notice
 from compose_lint.formatters.sarif import format_findings as format_sarif
 from compose_lint.formatters.text import (
     format_aggregate_summary,
@@ -51,7 +51,7 @@ from compose_lint.formatters.text import (
     format_verdict,
 )
 from compose_lint.formatters.text import format_findings as format_text
-from compose_lint.models import Finding, Severity
+from compose_lint.models import Diagnostic, DiagnosticKind, Finding, Severity
 from compose_lint.parser import (
     ComposeError,
     ComposeFileError,
@@ -786,8 +786,8 @@ _INIT_GAP_REMEDY = (
 
 def _report_coverage_gaps(
     filepath: str, gaps: tuple[str, ...], *, fatal: bool, remedy: str
-) -> list[tuple[str, str]]:
-    """Report parts of ``filepath`` that were not linted; return them if fatal.
+) -> list[Diagnostic]:
+    """Report parts of ``filepath`` that were not linted; return each as a diagnostic.
 
     A coverage gap used to be a stderr warning, which is the one channel no
     machine consumer reads: the verdict, the exit code, JSON ``errors`` and
@@ -796,10 +796,16 @@ def _report_coverage_gaps(
     shipped deployment model is a merge gate, "I could not see all of it" has
     to reach the same channels as "I found something".
 
-    Returned entries join the parse-error channel, so they surface as JSON
-    ``errors[]`` and SARIF ``toolExecutionNotifications`` and force exit 2.
-    With ``--allow-partial-coverage`` the gap is stated on stderr and the run
-    is graded on what could be seen.
+    Every gap is returned, tagged ``coverage_gap``, whether or not it is
+    fatal; the caller decides the channel. Fatal ones join the error channel,
+    so they surface as JSON ``errors[]`` and SARIF ``toolExecutionNotifications``
+    and force exit 2. With ``--allow-partial-coverage`` the gap is stated on
+    stderr, the run is graded on what could be seen, and the gap still
+    reaches the machine output — JSON ``warnings[]``, a ``level: warning``
+    notification — because a waived gap that leaves no trace is
+    indistinguishable from full coverage to anything that reads the artifact
+    (ADR-015). It is also the channel the compatibility policy names for
+    announcing a new gap condition one release before it is enforced.
 
     ``remedy`` is the caller's closing sentence, so the advice names only
     what that command can actually do.
@@ -816,7 +822,10 @@ def _report_coverage_gaps(
     label = "Error" if fatal else "Warning"
     for message in messages:
         emit(f"{label}: {filepath}: {message}")
-    return [(filepath, message) for message in messages] if fatal else []
+    return [
+        Diagnostic(filepath, message, DiagnosticKind.COVERAGE_GAP)
+        for message in messages
+    ]
 
 
 def _exit_2_with_envelope(args: argparse.Namespace, message: str) -> NoReturn:
@@ -837,10 +846,14 @@ def _exit_2_with_envelope(args: argparse.Namespace, message: str) -> NoReturn:
     # AttributeError one line later, which exited 1 with a traceback on every
     # pre-scan failure of `fix` from 0.25.0 to 0.29.0.
     output_format = getattr(args, "output_format", "text")
+    # Run-level: there is no file to name, and `""` is the documented way of
+    # saying so (ADR-015). SARIF omits `locations` for it rather than turning
+    # the empty path into the working directory.
+    failure = [Diagnostic("", message, DiagnosticKind.RUN)]
     if output_format == "json":
-        _stdout_print(json.dumps(build_json_log([], [("", message)]), indent=2))
+        _stdout_print(json.dumps(build_json_log([], failure), indent=2))
     elif output_format == "sarif":
-        _stdout_print(json.dumps(build_sarif_log([], [("", message)]), indent=2))
+        _stdout_print(json.dumps(build_sarif_log([], failure), indent=2))
     sys.exit(2)
 
 
@@ -925,9 +938,10 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     all_json: list[dict[str, object]] = []
     all_sarif: list[dict[str, object]] = []
     all_file_findings: list[tuple[list[Finding], str]] = []
-    parse_errors: list[tuple[str, str]] = []
-    coverage_errors: list[tuple[str, str]] = []
-    rule_errors: list[tuple[str, str]] = []
+    parse_errors: list[Diagnostic] = []
+    coverage_errors: list[Diagnostic] = []
+    coverage_warnings: list[Diagnostic] = []
+    rule_errors: list[Diagnostic] = []
     has_errors = False
     seen_services: set[str] = set()
 
@@ -961,11 +975,17 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             continue
         except (FileNotFoundError, ComposeError) as e:
             error_path = e.path if isinstance(e, ComposeFileError) else filepath
-            parse_errors.append((error_path, _report_parse_error(filepath, e)))
+            parse_errors.append(
+                Diagnostic(
+                    error_path, _report_parse_error(filepath, e), DiagnosticKind.PARSE
+                )
+            )
             continue
 
         gap_is_fatal = not args.allow_partial_coverage
-        coverage_errors.extend(
+        # A waived gap is still reported, on the non-fatal channel.
+        gap_channel = coverage_errors if gap_is_fatal else coverage_warnings
+        gap_channel.extend(
             _report_coverage_gaps(
                 filepath,
                 gaps,
@@ -999,7 +1019,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                 f"rule {rule_id} failed on service '{service_name}': "
                 f"{type(exc).__name__}: {exc}"
             )
-            rule_errors.append((_filepath, msg))
+            rule_errors.append(Diagnostic(_filepath, msg, DiagnosticKind.RULE_CRASH))
             emit(f"Error: {_filepath}: {msg}")
 
         findings = run_rules(
@@ -1039,7 +1059,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                 # Parsed above, but unreadable before this second read (deleted,
                 # unmounted, permission change). Record it and move on so one bad
                 # file can't abort the rest of the batch.
-                parse_errors.append((filepath, str(e)))
+                parse_errors.append(Diagnostic(filepath, str(e), DiagnosticKind.PARSE))
                 emit(f"Error: {filepath}: {e}")
                 continue
             try:
@@ -1058,8 +1078,14 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                 # file and keep going: SARIF is serialized once for the whole
                 # batch, so letting this escape would destroy every *other*
                 # file's findings too (VULN-017 consequence c).
+                # A fixer is part of its rule, so this is a rule crash, not a
+                # parse failure: the document parsed, the rule's code did not
+                # hold up. It stays in `parse_errors` only for the text
+                # verdict's count; the machine channels see the kind.
                 msg = f"could not compute fixes: {e}"
-                parse_errors.append((filepath, msg))
+                parse_errors.append(
+                    Diagnostic(filepath, msg, DiagnosticKind.RULE_CRASH)
+                )
                 emit(f"Error: {filepath}: {msg}")
                 continue
             all_sarif.extend(format_sarif(findings, filepath, fixes=fixes))
@@ -1070,7 +1096,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         if failing:
             has_errors = True
 
-    config_errors: list[tuple[str, str]] = []
+    config_errors: list[Diagnostic] = []
     try:
         warn_unknown_excluded_services(
             excluded_services, seen_services, strict=args.strict_config
@@ -1082,7 +1108,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         # with nothing else in it. It rides the run-error channel instead
         # (ADR-015), which is also what makes the exit 2 below.
         emit(f"Error: {e}")
-        config_errors.append(("", str(e)))
+        config_errors.append(Diagnostic("", str(e), DiagnosticKind.RUN))
 
     # Coverage gaps ride the same structured channel as parse errors — JSON
     # `errors[]`, SARIF `toolExecutionNotifications`, exit 2 — but are counted
@@ -1099,6 +1125,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     # that could not complete says so in the machine output, not only on a
     # channel a gate does not read.
     run_errors = parse_errors + coverage_errors + rule_errors + config_errors
+    truncation: Diagnostic | None = None
 
     if args.output_format == "text":
         if len(args.files) > 1:
@@ -1121,23 +1148,21 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         # bare `NaN`/`Infinity` tokens, which RFC 8259 forbids and strict parsers
         # reject. The formatter already coerces `service` to str, so this guards
         # any future numeric field; the same applies to the SARIF dump below.
-        json_log = build_json_log(all_json, run_errors)
+        json_log = build_json_log(all_json, run_errors, coverage_warnings)
         _stdout_print(json.dumps(json_log, indent=2, allow_nan=False))
     elif args.output_format == "sarif":
-        if len(all_sarif) > MAX_SARIF_RESULTS:
-            # The document below reports the truncation itself; record it here
-            # too so the run exits 2. A gate must not read "success" from an
-            # artifact that is knowingly incomplete.
-            omitted = len(all_sarif) - MAX_SARIF_RESULTS
-            message = (
-                f"SARIF output truncated to {MAX_SARIF_RESULTS} findings "
-                f"({omitted} omitted) to stay within the size a consumer will "
-                "accept; use --format json for the complete set"
-            )
-            run_errors = [*run_errors, ("", message)]
-            emit(f"Error: {message}")
+        # The document reports its own truncation (one notification, owned by
+        # the formatter that truncates); this side only says so on stderr and
+        # exits 2, because a gate must not read "success" from an artifact
+        # that is knowingly incomplete. It used to be recorded twice.
+        truncation = truncation_notice(len(all_sarif))
+        if truncation is not None:
+            emit(f"Error: {truncation.message}")
         sarif_log = build_sarif_log(
-            all_sarif, run_errors, severity_overrides=severity_overrides
+            all_sarif,
+            run_errors,
+            severity_overrides=severity_overrides,
+            warnings=coverage_warnings,
         )
         _stdout_print(json.dumps(sarif_log, indent=2, allow_nan=False))
 
@@ -1147,7 +1172,9 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     if has_errors and config_path is None:
         _note_no_config_in_effect()
 
-    if run_errors:  # parse errors, coverage gaps, crashed rules, strict config
+    # Parse errors, coverage gaps, crashed rules, a strict config error, or a
+    # truncated SARIF document.
+    if run_errors or truncation is not None:
         sys.exit(2)
     sys.exit(1 if has_errors else 0)
 

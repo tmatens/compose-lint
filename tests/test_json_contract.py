@@ -35,16 +35,16 @@ import pytest
 from compose_lint import __version__
 from compose_lint.formatters.json import SCHEMA_VERSION, build_json_log
 from compose_lint.formatters.json import format_findings as format_json
-from compose_lint.models import Finding, Severity
+from compose_lint.models import Diagnostic, DiagnosticKind, Finding, Severity
 from tests._cli_env import cli_env
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # The frozen surface. Editing either of these constants is the deliberate act
 # the contract exists to require.
-ENVELOPE_KEYS = {"version", "tool", "findings", "errors"}
+ENVELOPE_KEYS = {"version", "tool", "findings", "errors", "warnings"}
 TOOL_KEYS = {"name", "version"}
-ERROR_KEYS = {"file", "message"}
+ERROR_KEYS = {"file", "message", "kind"}
 
 FINDING_KEYS = {
     "file",
@@ -156,7 +156,8 @@ def test_envelope_value_types_are_pinned() -> None:
     """A consumer indexes on these types, not only on the names."""
     log = build_json_log(
         format_json([_plain()], "compose.yml"),
-        parse_errors=[("broken.yml", "Invalid YAML")],
+        errors=[Diagnostic("broken.yml", "Invalid YAML", DiagnosticKind.PARSE)],
+        warnings=[Diagnostic("c.yml", "gap", DiagnosticKind.COVERAGE_GAP)],
     )
 
     assert isinstance(log["version"], str), _RULE
@@ -167,6 +168,11 @@ def test_envelope_value_types_are_pinned() -> None:
     assert isinstance(errors, list)
     assert set(errors[0]) == ERROR_KEYS, _RULE
     assert all(isinstance(v, str) for v in errors[0].values()), _RULE
+    assert isinstance(log["warnings"], list), _RULE
+    warnings = log["warnings"]
+    assert isinstance(warnings, list)
+    assert set(warnings[0]) == ERROR_KEYS, _RULE
+    assert all(isinstance(v, str) for v in warnings[0].values()), _RULE
 
 
 def test_finding_key_set_is_exact_with_no_optional_branch_taken() -> None:
@@ -284,7 +290,8 @@ def test_the_envelope_round_trips_through_json() -> None:
     """The contract is about the serialised document, not the Python dict."""
     log = build_json_log(
         format_json([_plain(), _suppressed(), _regraded(), _from_overlay()], "c.yml"),
-        parse_errors=[("broken.yml", "Invalid YAML")],
+        errors=[Diagnostic("broken.yml", "Invalid YAML", DiagnosticKind.PARSE)],
+        warnings=[Diagnostic("c.yml", "gap", DiagnosticKind.COVERAGE_GAP)],
     )
     reloaded = json.loads(json.dumps(log, allow_nan=False))
 
@@ -315,7 +322,7 @@ SARIF_RUN_KEYS = {
     "originalUriBaseIds",
     "taxonomies",
 }
-SARIF_DRIVER_KEYS = {"name", "version", "informationUri", "rules"}
+SARIF_DRIVER_KEYS = {"name", "version", "informationUri", "rules", "notifications"}
 SARIF_RESULT_KEYS = {
     "ruleId",
     "ruleIndex",

@@ -7,7 +7,9 @@ from typing import TYPE_CHECKING
 from compose_lint import __version__
 
 if TYPE_CHECKING:
-    from compose_lint.models import Finding
+    from collections.abc import Sequence
+
+    from compose_lint.models import Diagnostic, Finding
 
 # Envelope schema version (ADR-015). Bumped only on a breaking change to the
 # output shape; additive top-level fields do not bump it.
@@ -73,25 +75,37 @@ def format_findings(findings: list[Finding], filepath: str) -> list[dict[str, ob
     return results
 
 
+def _diagnostics(entries: Sequence[Diagnostic] | None) -> list[dict[str, str]]:
+    return [
+        {"file": d.file, "message": d.message, "kind": d.kind.value}
+        for d in (entries or [])
+    ]
+
+
 def build_json_log(
     findings: list[dict[str, object]],
-    parse_errors: list[tuple[str, str]] | None = None,
+    errors: Sequence[Diagnostic] | None = None,
+    warnings: Sequence[Diagnostic] | None = None,
 ) -> dict[str, object]:
     """Wrap findings in the top-level JSON output envelope (ADR-015).
 
     The envelope exists so run-level metadata can be added over time without
     breaking consumers: new top-level fields are additive and never change
-    ``version``. ``parse_errors`` entries ``(filepath, message)`` surface files
-    that could not be parsed (exit 2), mirroring the SARIF invocation
-    notifications; ADR-013 "not applicable" skips are not included.
+    ``version``. ``errors`` are the conditions that make the run exit 2 -- a
+    file that could not be parsed, a coverage gap, a crashed rule, a run-level
+    failure -- mirroring the SARIF invocation notifications; ADR-013 "not
+    applicable" skips are not included. ``warnings`` are the same shape for
+    conditions that were reported but did not fail the run, today a coverage
+    gap waived by ``--allow-partial-coverage``. Both lists are always present.
+
+    Each entry carries ``kind``, a closed set
+    (:class:`~compose_lint.models.DiagnosticKind`) a consumer filters on
+    instead of parsing the message. A run-level entry has ``file: ""``.
     """
-    errors = [
-        {"file": filepath, "message": message}
-        for filepath, message in (parse_errors or [])
-    ]
     return {
         "version": SCHEMA_VERSION,
         "tool": {"name": "compose-lint", "version": __version__},
         "findings": findings,
-        "errors": errors,
+        "errors": _diagnostics(errors),
+        "warnings": _diagnostics(warnings),
     }

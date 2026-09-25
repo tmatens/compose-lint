@@ -16,7 +16,7 @@ from compose_lint.attack import (
     RULE_TECHNIQUES,
     all_techniques,
 )
-from compose_lint.models import Severity
+from compose_lint.models import Diagnostic, DiagnosticKind, Severity
 from compose_lint.rules import get_registered_rules
 
 if TYPE_CHECKING:
@@ -210,6 +210,98 @@ _SARIF_LEVEL: dict[Severity, str] = {
     Severity.MEDIUM: "warning",
     Severity.LOW: "note",
 }
+
+
+# The tool's notification catalogue (SARIF §3.19.24). Each
+# toolExecutionNotification names one of these through `descriptor.id`, so the
+# closed set of `DiagnosticKind` values reaches SARIF as the same strings the
+# JSON envelope's `kind` carries. A `descriptor` reference is what the format
+# provides for "which category of notification is this" — `properties` would
+# also have held the value, but it is an untyped bag a consumer cannot resolve
+# — and the spec expects the reference to resolve to a descriptor in the
+# driver, hence the catalogue rather than a bare id (ADR-015).
+_NOTIFICATION_DESCRIPTORS: list[dict[str, Any]] = [
+    {
+        "id": DiagnosticKind.PARSE.value,
+        "shortDescription": {
+            "text": "A file could not be read or parsed as a Compose document."
+        },
+    },
+    {
+        "id": DiagnosticKind.COVERAGE_GAP.value,
+        "shortDescription": {
+            "text": (
+                "An include: or cross-file extends: could not be followed, so "
+                "part of the stack was not linted."
+            )
+        },
+    },
+    {
+        "id": DiagnosticKind.RULE_CRASH.value,
+        "shortDescription": {
+            "text": (
+                "A rule raised while checking a service; its findings for "
+                "that document are missing."
+            )
+        },
+    },
+    {
+        "id": DiagnosticKind.RUN.value,
+        "shortDescription": {
+            "text": (
+                "A run-level condition: no Compose files found, a "
+                "configuration error, or output truncation."
+            )
+        },
+    },
+]
+
+
+def truncation_notice(total_results: int) -> Diagnostic | None:
+    """The run-level diagnostic a truncated SARIF document carries, or None.
+
+    Owned here because the truncation is: :func:`build_sarif_log` is what
+    drops results past :data:`MAX_SARIF_RESULTS`, so it is what says so in
+    the document. The CLI calls this too, for the stderr line and the exit
+    code, and passes nothing extra to the log — the same event used to be
+    recorded twice, once by each side with different wording.
+    """
+    omitted = total_results - MAX_SARIF_RESULTS
+    if omitted <= 0:
+        return None
+    return Diagnostic(
+        file="",
+        message=(
+            f"SARIF output truncated to {MAX_SARIF_RESULTS} of {total_results} "
+            f"findings ({omitted} omitted) to stay within the size a consumer "
+            "will accept; re-run with --format json for the complete set"
+        ),
+        kind=DiagnosticKind.RUN,
+    )
+
+
+def _notification(diagnostic: Diagnostic, level: str) -> dict[str, Any]:
+    """One ``toolExecutionNotification``.
+
+    A run-level diagnostic (``file == ""``) carries no ``locations`` at all.
+    ``_artifact_location("")`` used to resolve the empty path to the working
+    directory and report the run's failure as if a directory were the broken
+    artifact; there is no artifact, so nothing is said about one.
+    """
+    notification: dict[str, Any] = {
+        "level": level,
+        "descriptor": {"id": diagnostic.kind.value},
+        "message": {"text": diagnostic.message},
+    }
+    if diagnostic.file:
+        notification["locations"] = [
+            {
+                "physicalLocation": {
+                    "artifactLocation": _artifact_location(diagnostic.file),
+                },
+            },
+        ]
+    return notification
 
 
 def _build_attack_taxonomy() -> tuple[dict[str, Any], dict[str, int]]:
@@ -482,14 +574,20 @@ def format_findings(
 
 def build_sarif_log(
     all_results: list[dict[str, Any]],
-    parse_errors: list[tuple[str, str]] | None = None,
+    errors: Sequence[Diagnostic] | None = None,
     severity_overrides: dict[str, Severity] | None = None,
+    warnings: Sequence[Diagnostic] | None = None,
 ) -> dict[str, Any]:
     """Build a complete SARIF log object.
 
-    parse_errors entries (filepath, message) become invocation
-    toolExecutionNotifications so SARIF consumers (GitHub code scanning)
-    can report files that were skipped during the run.
+    ``errors`` become ``level: error`` invocation toolExecutionNotifications
+    and mark the invocation unsuccessful, so SARIF consumers (GitHub code
+    scanning) can report files that were skipped during the run. ``warnings``
+    — a coverage gap waived by ``--allow-partial-coverage`` — become
+    ``level: warning`` notifications and leave ``executionSuccessful`` alone.
+    Each notification names its :class:`~compose_lint.models.DiagnosticKind`
+    in ``descriptor.id``, resolved against the driver's notification
+    catalogue.
 
     ``severity_overrides`` (from ``.compose-lint.yml``) are resolved into the
     rule descriptors so their advertised severity matches the per-result level
@@ -505,45 +603,19 @@ def build_sarif_log(
     # no alerts at all. Truncating and saying so keeps the artifact usable and
     # keeps the gate honest; silently shipping something the consumer will drop
     # is the same false-clean as producing nothing.
-    truncated = max(0, len(all_results) - MAX_SARIF_RESULTS)
-    results = all_results[:MAX_SARIF_RESULTS] if truncated else all_results
+    truncation = truncation_notice(len(all_results))
+    results = all_results[:MAX_SARIF_RESULTS] if truncation else all_results
 
     working_dir_uri = _working_dir_uri()
     invocation: dict[str, Any] = {
-        "executionSuccessful": not parse_errors and not truncated,
+        "executionSuccessful": not errors and truncation is None,
         "workingDirectory": {"uri": working_dir_uri},
     }
     notifications: list[dict[str, Any]] = []
-    if truncated:
-        notifications.append(
-            {
-                "level": "error",
-                "message": {
-                    "text": (
-                        f"Reported {MAX_SARIF_RESULTS} of "
-                        f"{len(all_results)} findings: the rest were omitted to "
-                        "keep this document under the size a SARIF consumer "
-                        "will accept. Re-run with --format json for the "
-                        "complete set."
-                    )
-                },
-            }
-        )
-    if parse_errors:
-        notifications.extend(
-            {
-                "level": "error",
-                "message": {"text": message},
-                "locations": [
-                    {
-                        "physicalLocation": {
-                            "artifactLocation": _artifact_location(filepath),
-                        },
-                    },
-                ],
-            }
-            for filepath, message in parse_errors
-        )
+    if truncation is not None:
+        notifications.append(_notification(truncation, "error"))
+    notifications.extend(_notification(d, "error") for d in (errors or []))
+    notifications.extend(_notification(d, "warning") for d in (warnings or []))
     if notifications:
         invocation["toolExecutionNotifications"] = notifications
 
@@ -558,6 +630,7 @@ def build_sarif_log(
                         "version": __version__,
                         "informationUri": ("https://github.com/tmatens/compose-lint"),
                         "rules": rules,
+                        "notifications": _NOTIFICATION_DESCRIPTORS,
                     },
                 },
                 "taxonomies": [taxonomy],
