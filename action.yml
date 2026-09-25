@@ -6,11 +6,17 @@ branding:
 
 inputs:
   files:
-    description: "Space-separated list of Compose files to lint"
+    description: >-
+      Whitespace-separated list of Compose files to lint. Each entry is a
+      literal path, not a glob: `*` and `?` are passed through unexpanded.
+      Use `pattern` for globs.
     required: false
     default: ""
   pattern:
-    description: "Glob pattern to find Compose files (e.g., '**/docker-compose*.yml')"
+    description: >-
+      Glob matched against the file NAME (e.g., 'docker-compose*.yml'),
+      searched recursively under the checkout. It cannot contain '/' — use
+      `files` for paths.
     required: false
     default: ""
   fail-on:
@@ -25,16 +31,37 @@ inputs:
     description: "Hide suppressed findings from output"
     required: false
     default: "false"
+  allow-partial-coverage:
+    description: >-
+      Pass `--allow-partial-coverage`: downgrade a coverage gap (an
+      `include:` or cross-file `extends:` that could not be followed) from
+      exit 2 to a warning.
+    required: false
+    default: "false"
+  strict-config:
+    description: >-
+      Pass `--strict-config`: promote config-file warnings (unknown rule id,
+      unknown key, inert `reason:`) to a hard error.
+    required: false
+    default: "false"
   quiet:
-    description: "Text output: one line per finding (no fix block or excerpt)"
+    description: >-
+      Text output: one line per finding (no fix block or excerpt). Mutually
+      exclusive with `verbose`; setting both fails the job before linting.
     required: false
     default: "false"
   verbose:
-    description: "Text output: repeat the fix block and reference on every finding"
+    description: >-
+      Text output: repeat the fix block and reference on every finding.
+      Mutually exclusive with `quiet`; setting both fails the job before
+      linting.
     required: false
     default: "false"
   sarif-file:
-    description: "Path to write SARIF output (enables GitHub Code Scanning upload)"
+    description: >-
+      Path to write SARIF output (enables GitHub Code Scanning upload). Must
+      stay inside the workspace; a parent directory that does not exist yet
+      is created.
     required: false
     default: ""
   version:
@@ -149,11 +176,28 @@ runs:
               exit 2
               ;;
           esac
+          # Each entry is a literal path. Without `set -f` the unquoted
+          # expansion also ran pathname expansion, so `*.yml` quietly became
+          # whatever matched in the checkout (or stayed literal when nothing
+          # did) — an undocumented second discovery mechanism. `pattern` is
+          # the input for globs.
+          set -f
           for f in $CL_FILES; do
             printf '%s\0' "$f" >> "$LIST_FILE"
             COUNT=$((COUNT + 1))
           done
+          set +f
         elif [ -n "$CL_PATTERN" ]; then
+          # -name matches the file NAME, so a slash can never match: the
+          # documented example used to be `**/docker-compose*.yml`, which
+          # found nothing and failed the job as "No Compose files found".
+          # Refuse the shape loudly instead.
+          case "$CL_PATTERN" in
+            */*)
+              echo "::error::pattern matches file names only and cannot contain '/': use files: for paths"
+              exit 2
+              ;;
+          esac
           # -name takes a literal glob; we never eval the pattern as shell.
           # -print0 keeps paths intact through newlines and spaces, which the
           # previous `tr '\n' ' '` join destroyed.
@@ -181,6 +225,8 @@ runs:
         CL_CONFIG: ${{ inputs.config }}
         CL_FAIL_ON: ${{ inputs.fail-on }}
         CL_SKIP_SUPPRESSED: ${{ inputs.skip-suppressed }}
+        CL_ALLOW_PARTIAL_COVERAGE: ${{ inputs.allow-partial-coverage }}
+        CL_STRICT_CONFIG: ${{ inputs.strict-config }}
         CL_QUIET: ${{ inputs.quiet }}
         CL_VERBOSE: ${{ inputs.verbose }}
         CL_SARIF_FILE: ${{ inputs.sarif-file }}
@@ -203,6 +249,14 @@ runs:
           exit 2
         fi
 
+        # The CLI's argparse group makes these mutually exclusive, and its
+        # bare usage error carries no `::error` annotation and exits 2 — the
+        # same code as a coverage gap. Refuse the combination here, in words.
+        if [ "$CL_QUIET" = "true" ] && [ "$CL_VERBOSE" = "true" ]; then
+          echo "::error::quiet and verbose are mutually exclusive"
+          exit 2
+        fi
+
         mapfile -d '' -t TARGET_FILES < "$CL_LIST_FILE"
 
         ARGS=()
@@ -212,6 +266,12 @@ runs:
         ARGS+=(--fail-on "$CL_FAIL_ON")
         if [ "$CL_SKIP_SUPPRESSED" = "true" ]; then
           ARGS+=(--skip-suppressed)
+        fi
+        if [ "$CL_ALLOW_PARTIAL_COVERAGE" = "true" ]; then
+          ARGS+=(--allow-partial-coverage)
+        fi
+        if [ "$CL_STRICT_CONFIG" = "true" ]; then
+          ARGS+=(--strict-config)
         fi
         if [ "$CL_QUIET" = "true" ]; then
           ARGS+=(--quiet)
@@ -236,10 +296,35 @@ runs:
           # value destroy a file anywhere the runner could write — including
           # outside the checkout — whether or not the lint itself succeeded.
           WORKSPACE="$(cd "${GITHUB_WORKSPACE:-$PWD}" && pwd -P)"
-          SARIF_DIR="$(cd "$(dirname "$CL_SARIF_FILE")" 2>/dev/null && pwd -P)" || {
-            echo "::error::sarif-file directory does not exist: $CL_SARIF_FILE"
-            exit 2
-          }
+          # The parent directory need not exist yet, but it is created only
+          # after the containment check below has passed. That check needs a
+          # physical path, so resolve the nearest existing ancestor with
+          # `pwd -P` and carry the not-yet-existing tail lexically. A `..`
+          # in that tail is refused: it would climb back out of whatever the
+          # check approved once the directories exist.
+          SARIF_PARENT="$(dirname "$CL_SARIF_FILE")"
+          SARIF_TAIL=""
+          while [ ! -d "$SARIF_PARENT" ]; do
+            SEGMENT="$(basename "$SARIF_PARENT")"
+            case "$SEGMENT" in
+              ..)
+                echo "::error::sarif-file: a directory that does not exist yet cannot contain '..': $CL_SARIF_FILE"
+                exit 2
+                ;;
+              .) ;;
+              *) SARIF_TAIL="${SEGMENT}/${SARIF_TAIL}" ;;
+            esac
+            SARIF_NEXT="$(dirname "$SARIF_PARENT")"
+            if [ "$SARIF_NEXT" = "$SARIF_PARENT" ]; then
+              echo "::error::sarif-file directory cannot be created: $CL_SARIF_FILE"
+              exit 2
+            fi
+            SARIF_PARENT="$SARIF_NEXT"
+          done
+          SARIF_DIR="$(cd "$SARIF_PARENT" && pwd -P)"
+          if [ -n "$SARIF_TAIL" ]; then
+            SARIF_DIR="$SARIF_DIR/${SARIF_TAIL%/}"
+          fi
           SARIF_PATH="$SARIF_DIR/$(basename "$CL_SARIF_FILE")"
           case "$SARIF_PATH" in
             "$WORKSPACE"/*) ;;
@@ -248,6 +333,10 @@ runs:
               exit 2
               ;;
           esac
+          mkdir -p "$SARIF_DIR" || {
+            echo "::error::sarif-file directory could not be created: $SARIF_DIR"
+            exit 2
+          }
 
           # Write to a temporary file and move it into place only once it
           # holds a complete document. Redirecting straight at the target

@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -173,6 +175,8 @@ def _lint(ws: Path, outputs: Path, **env: str) -> tuple[int, str, str]:
         "CL_CONFIG": "",
         "CL_FAIL_ON": "high",
         "CL_SKIP_SUPPRESSED": "false",
+        "CL_ALLOW_PARTIAL_COVERAGE": "false",
+        "CL_STRICT_CONFIG": "false",
         "CL_QUIET": "false",
         "CL_VERBOSE": "false",
         "CL_SARIF_FILE": "",
@@ -317,6 +321,8 @@ def test_a_failed_sarif_run_leaves_no_truncated_artifact(
         "CL_CONFIG": "",
         "CL_FAIL_ON": "high",
         "CL_SKIP_SUPPRESSED": "false",
+        "CL_ALLOW_PARTIAL_COVERAGE": "false",
+        "CL_STRICT_CONFIG": "false",
         "CL_QUIET": "false",
         "CL_VERBOSE": "false",
         "CL_SARIF_FILE": str(sarif),
@@ -533,8 +539,6 @@ def test_install_gives_up_naming_index_propagation(ws: Path, outputs: Path) -> N
 
 def test_the_default_pin_matches_the_package_version() -> None:
     """Drift here would ship an action that installs a different linter."""
-    import re
-
     from compose_lint import __version__
 
     script = _step("Install compose-lint")["run"]
@@ -543,3 +547,227 @@ def test_the_default_pin_matches_the_package_version() -> None:
     assert match.group(1) == __version__, (
         f"action.yml pins {match.group(1)}, package is {__version__}"
     )
+
+
+# --- The inputs table is the contract users read --------------------------
+
+
+def _documented_inputs() -> dict[str, str]:
+    """Input name -> default, as docs/github-action.md's table states them."""
+    doc = (REPO_ROOT / "docs" / "github-action.md").read_text(encoding="utf-8")
+    rows = re.findall(r"^\| `([a-z-]+)` \| `([^`]*)` \|", doc, flags=re.MULTILINE)
+    assert rows, "no inputs table found in docs/github-action.md"
+    return dict(rows)
+
+
+def test_docs_inputs_table_matches_action_yml() -> None:
+    """Every input, with its default, in both places and nowhere else."""
+    action_inputs = _action()["inputs"]
+    documented = _documented_inputs()
+    assert set(documented) == set(action_inputs), (
+        f"documented {sorted(documented)} vs action.yml {sorted(action_inputs)}"
+    )
+    for name, spec in action_inputs.items():
+        expected = spec["default"] or '""'
+        assert documented[name] == expected, (
+            f"{name}: docs say default {documented[name]!r}, action.yml {expected!r}"
+        )
+
+
+# --- files: is literal, pattern: is a name glob ---------------------------
+
+
+def test_files_entries_are_not_glob_expanded(ws: Path, outputs: Path) -> None:
+    """`files:` is a list of literal paths; `pattern:` is the input for globs.
+
+    The unquoted `for f in $CL_FILES` also ran pathname expansion, so `*.yml`
+    became whatever matched in the checkout — an undocumented second
+    discovery mechanism that worked by accident.
+    """
+    (ws / "a.yml").write_text(_INSECURE, encoding="utf-8")
+    (ws / "b.yml").write_text(_INSECURE, encoding="utf-8")
+    rc, out, err = _discover(ws, outputs, CL_FILES="*.yml")
+    assert rc == 0, out + err
+    recorded = _outputs(outputs)
+    assert recorded["count"] == "1"
+    entries = Path(recorded["list-file"]).read_bytes().split(b"\0")[:-1]
+    assert entries == [b"*.yml"], entries
+
+
+def test_a_pattern_containing_a_slash_is_refused(ws: Path, outputs: Path) -> None:
+    """`find -name` matches the file name, so a slash can never match.
+
+    The documented example used to be `**/docker-compose*.yml`, which found
+    nothing and failed the job as "No Compose files found" — true, and
+    useless. Say what is wrong instead of running the search.
+    """
+    (ws / "docker-compose.yml").write_text(_INSECURE, encoding="utf-8")
+    rc, out, err = _discover(ws, outputs, CL_PATTERN="**/docker-compose*.yml")
+    assert rc == 2
+    assert "cannot contain '/'" in (out + err)
+    assert _outputs(outputs) == {}, "discovery must not have run"
+
+
+def test_a_name_glob_matches_recursively(ws: Path, outputs: Path) -> None:
+    nested = ws / "stacks" / "web"
+    nested.mkdir(parents=True)
+    (nested / "docker-compose.prod.yml").write_text(_INSECURE, encoding="utf-8")
+    rc, out, err = _discover(ws, outputs, CL_PATTERN="docker-compose*.yml")
+    assert rc == 0, out + err
+    recorded = _outputs(outputs)
+    assert recorded["count"] == "1"
+    entries = Path(recorded["list-file"]).read_bytes().split(b"\0")[:-1]
+    assert entries == [b"./stacks/web/docker-compose.prod.yml"], entries
+
+
+# --- Flags reach both invocations -----------------------------------------
+
+
+def _argv_logging_shim(ws: Path) -> tuple[Path, Path]:
+    """A ``compose-lint`` that records each argv, then runs the real one."""
+    shim_dir = ws / "argvshim"
+    shim_dir.mkdir(exist_ok=True)
+    log = ws / "argv.log"
+    log.write_text("", encoding="utf-8")
+    # Resolve the real binary on the PATH the step itself gets, so this works
+    # wherever the suite runs: a local .venv, or CI's interpreter-level install
+    # where there is no .venv at all.
+    real = shutil.which(
+        "compose-lint", path=f"{VENV_BIN}{os.pathsep}{os.environ.get('PATH', '')}"
+    )
+    if real is None:
+        pytest.skip("compose-lint is not installed on PATH")
+    shim = shim_dir / "compose-lint"
+    shim.write_text(
+        f'#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> {log}\nexec {real} "$@"\n',
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    return shim_dir, log
+
+
+def _lint_with_shim(
+    ws: Path, outputs: Path, listed: str, **env: str
+) -> tuple[int, str, str, list[str]]:
+    shim_dir, log = _argv_logging_shim(ws)
+    base = {
+        "CL_CONFIG": "",
+        "CL_FAIL_ON": "high",
+        "CL_SKIP_SUPPRESSED": "false",
+        "CL_ALLOW_PARTIAL_COVERAGE": "false",
+        "CL_STRICT_CONFIG": "false",
+        "CL_QUIET": "false",
+        "CL_VERBOSE": "false",
+        "CL_SARIF_FILE": "",
+        "CL_ALLOW_NO_FILES": "false",
+        "CL_COUNT": "1",
+        "CL_LIST_FILE": listed,
+    }
+    base.update(env)
+    rc, out, err = _run_step("Run compose-lint", base, ws, outputs, extra_path=shim_dir)
+    return rc, out, err, log.read_text(encoding="utf-8").splitlines()
+
+
+def test_new_inputs_exist_and_default_off() -> None:
+    inputs = _action()["inputs"]
+    for name in ("allow-partial-coverage", "strict-config"):
+        assert name in inputs, f"{name} is not an input"
+        assert inputs[name]["default"] == "false", f"{name} must default to off"
+
+
+@pytest.mark.parametrize(
+    ("env_name", "flag"),
+    [
+        ("CL_ALLOW_PARTIAL_COVERAGE", "--allow-partial-coverage"),
+        ("CL_STRICT_CONFIG", "--strict-config"),
+    ],
+)
+def test_flag_inputs_reach_both_invocations(
+    ws: Path, outputs: Path, env_name: str, flag: str
+) -> None:
+    """The text run sets the verdict, the SARIF re-run writes the artifact.
+
+    A flag that reached only one of them would grade and report different
+    stacks — `--allow-partial-coverage` in particular changes the exit code.
+    """
+    (ws / "docker-compose.yml").write_text(_INSECURE, encoding="utf-8")
+    _discover(ws, outputs)
+    listed = _outputs(outputs)["list-file"]
+
+    rc, _out, _err, calls = _lint_with_shim(
+        ws, outputs, listed, CL_SARIF_FILE="results.sarif", **{env_name: "true"}
+    )
+    assert rc == 1
+    assert len(calls) == 2, calls
+    assert all(flag in call.split() for call in calls), calls
+
+    rc, _out, _err, calls = _lint_with_shim(
+        ws, outputs, listed, CL_SARIF_FILE="results.sarif", **{env_name: "false"}
+    )
+    assert rc == 1
+    assert len(calls) == 2, calls
+    assert not any(flag in call.split() for call in calls), calls
+
+
+# --- quiet and verbose are mutually exclusive -----------------------------
+
+
+def test_quiet_with_verbose_is_refused_before_linting(ws: Path, outputs: Path) -> None:
+    """The CLI's argparse group rejects the pair with a bare usage error.
+
+    That is exit 2 with no `::error` annotation — the same code as a coverage
+    gap — so the action names the conflict itself, before invoking anything.
+    """
+    (ws / "docker-compose.yml").write_text(_INSECURE, encoding="utf-8")
+    _discover(ws, outputs)
+    listed = _outputs(outputs)["list-file"]
+    rc, out, err, calls = _lint_with_shim(
+        ws, outputs, listed, CL_QUIET="true", CL_VERBOSE="true"
+    )
+    assert rc == 2
+    assert "quiet and verbose are mutually exclusive" in (out + err)
+    assert calls == [], "compose-lint must not have been invoked"
+
+
+# --- sarif-file may name a directory that does not exist yet --------------
+
+
+def test_sarif_parent_directory_is_created(ws: Path, outputs: Path) -> None:
+    (ws / "docker-compose.yml").write_text(_INSECURE, encoding="utf-8")
+    _discover(ws, outputs)
+    listed = _outputs(outputs)["list-file"]
+    sarif = ws / "reports" / "compose lint" / "results.sarif"
+
+    rc, out, err = _lint(
+        ws, outputs, CL_COUNT="1", CL_LIST_FILE=listed, CL_SARIF_FILE=str(sarif)
+    )
+    assert rc == 1, out + err
+    assert sarif.exists() and sarif.stat().st_size > 0
+    json.loads(sarif.read_text(encoding="utf-8"))
+    assert _outputs(outputs).get("sarif-written") == "true"
+
+
+def test_sarif_traversal_through_a_missing_directory_is_refused(
+    ws: Path, outputs: Path
+) -> None:
+    """Creating the directory must not open a route past the containment check.
+
+    The check resolves the nearest *existing* ancestor physically and carries
+    the rest lexically; a `..` in that rest would climb back out once the
+    directories exist, so it is refused — and nothing is created.
+    """
+    (ws / "docker-compose.yml").write_text(_INSECURE, encoding="utf-8")
+    _discover(ws, outputs)
+    listed = _outputs(outputs)["list-file"]
+    rc, out, err = _lint(
+        ws,
+        outputs,
+        CL_COUNT="1",
+        CL_LIST_FILE=listed,
+        CL_SARIF_FILE="newdir/../../escaped.sarif",
+    )
+    assert rc == 2
+    assert "cannot contain '..'" in (out + err)
+    assert not (ws / "newdir").exists()
+    assert not (ws.parent / "escaped.sarif").exists()
+    assert _outputs(outputs).get("sarif-written") != "true"
