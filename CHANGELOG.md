@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`fix` exits 2, not 1 with a traceback, when it cannot run.** A missing
+  or unreadable `--config`, a `--strict-config` violation, or no Compose file
+  to find all crashed `fix` with an `AttributeError` and exit 1 — the
+  "findings at threshold" code — from 0.25.0 to 0.29.0, because the pre-scan
+  failure path that also emits `check`'s machine envelope read a `--format`
+  that `fix` does not have. `fix --strict-config` was therefore unusable as
+  a CI gate. `fix` now exits 2 with the `Error:` line on stderr and nothing
+  on stdout, as ADR-006 and its own `--help` say.
+
 ## [0.29.0] - 2026-09-12
 
 ### Added
