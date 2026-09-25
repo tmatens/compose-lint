@@ -69,6 +69,20 @@ def _severity_type(value: str) -> Severity:
         ) from None
 
 
+_FORMAT_CHOICES = ("text", "json", "sarif")
+
+
+def _format_type(value: str) -> str:
+    """Parse an output-format name, folding case the way ``--fail-on`` does."""
+    folded = value.lower()
+    if folded in _FORMAT_CHOICES:
+        return folded
+    choices = ", ".join(_FORMAT_CHOICES)
+    raise argparse.ArgumentTypeError(
+        f"invalid format: '{value}' (choose from {choices})"
+    )
+
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -288,9 +302,10 @@ def _add_check_subparser(
     )
     check.add_argument(
         "--format",
-        choices=["text", "json", "sarif"],
+        type=_format_type,
         default="text",
         dest="output_format",
+        metavar="{" + ",".join(_FORMAT_CHOICES) + "}",
         help="output format (default: text)",
     )
     check.add_argument(
@@ -492,22 +507,69 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _normalize_argv(argv: list[str]) -> list[str]:
+def _value_options(parser: argparse.ArgumentParser) -> frozenset[str]:
+    """Option strings, across every subcommand, that consume the next token.
+
+    Derived from the parsers rather than listed by hand, so adding a
+    ``--flag VALUE`` to any subcommand cannot quietly reintroduce the
+    misrouting the argv shim guards against.
+    """
+    options: set[str] = set()
+    pending = [parser]
+    while pending:
+        current = pending.pop()
+        for action in current._actions:  # noqa: SLF001 - argparse has no public walk
+            if isinstance(action, argparse._SubParsersAction):  # noqa: SLF001
+                pending.extend(action.choices.values())
+            elif action.option_strings and action.nargs != 0:
+                options.update(action.option_strings)
+    return frozenset(options)
+
+
+def _first_positional(argv: list[str], value_options: frozenset[str]) -> str | None:
+    """The first token that could be a subcommand, or None if there is none.
+
+    ``--`` ends the search: by the documented contract everything after it is
+    a path. The value of an option that takes one (``--config PATH``) is
+    skipped, so ``--config fix`` reads as a path for ``--config``, not as the
+    ``fix`` subcommand. An option with its value attached (``--config=fix``)
+    is a single dash-prefixed token and needs no skipping.
+    """
+    tokens = iter(argv)
+    for token in tokens:
+        if token == "--":
+            return None
+        if token in value_options:
+            next(tokens, None)
+            continue
+        if token.startswith("-"):
+            continue
+        return token
+    return None
+
+
+def _normalize_argv(argv: list[str], value_options: frozenset[str]) -> list[str]:
     """Rewrite ``argv`` so bare invocations route to the ``check`` subcommand.
 
     Preserves the pre-subcommand CLI: ``compose-lint <file>``,
     ``compose-lint -q``, and ``compose-lint --explain CL-XXXX`` keep working as
     ``check``. An explicit subcommand (``check ...``) is left untouched, as is a
     flag-only invocation of a global flag (``--version``, ``--help``) so the
-    top-level parser handles it. The heuristic keys off the first non-flag
-    token, mirroring ADR-011's implementation note.
+    top-level parser handles it. The heuristic keys off the first positional
+    token, mirroring ADR-011's implementation note, and stops at ``--`` — so
+    ``compose-lint -- init`` lints a file named ``init`` rather than routing to
+    ``init``, and ``--config fix compose.yml`` is a ``check`` with a config
+    named ``fix``. Known limit: an abbreviated long option (``--conf fix``,
+    which argparse accepts) is not in ``value_options``, so only the
+    spelled-out option protects its value.
     """
     if not argv:
         return ["check"]
-    first_positional = next((tok for tok in argv if not tok.startswith("-")), None)
+    first_positional = _first_positional(argv, value_options)
     if first_positional in _subcommands():
         return argv
-    if first_positional is None and _GLOBAL_FLAGS.intersection(argv):
+    before_end_of_options = argv[: argv.index("--")] if "--" in argv else argv
+    if first_positional is None and _GLOBAL_FLAGS.intersection(before_end_of_options):
         return argv
     return ["check", *argv]
 
@@ -662,7 +724,7 @@ def main(argv: list[str] | None = None) -> NoReturn:
     raw = sys.argv[1:] if argv is None else argv
     try:
         parser = _build_parser()
-        args = parser.parse_args(_normalize_argv(raw))
+        args = parser.parse_args(_normalize_argv(raw, _value_options(parser)))
         _dispatch(args)
     except BrokenPipeError as exc:
         # Raised by a `print` when the reader closed early (`| head`).
@@ -687,6 +749,12 @@ def main(argv: list[str] | None = None) -> NoReturn:
 _CHECK_GAP_REMEDY = (
     "Lint the merged output (docker compose config) to cover the gap, or pass "
     "--allow-partial-coverage to accept it."
+)
+# Once the flag is passed the gap is accepted, and repeating the offer told
+# users to do what they had just done. The merged-output route still applies:
+# accepting a gap is not the same as closing it.
+_CHECK_GAP_ACCEPTED_REMEDY = (
+    "Lint the merged output (docker compose config) to cover the gap."
 )
 _FIX_GAP_REMEDY = (
     "What was not seen was not fixed. Lint the merged output "
@@ -878,12 +946,15 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             parse_errors.append((error_path, _report_parse_error(filepath, e)))
             continue
 
+        gap_is_fatal = not args.allow_partial_coverage
         coverage_errors.extend(
             _report_coverage_gaps(
                 filepath,
                 gaps,
-                fatal=not args.allow_partial_coverage,
-                remedy=_CHECK_GAP_REMEDY,
+                fatal=gap_is_fatal,
+                remedy=_CHECK_GAP_REMEDY
+                if gap_is_fatal
+                else _CHECK_GAP_ACCEPTED_REMEDY,
             )
         )
         for note in unresolved_mount_sources(data):
@@ -921,6 +992,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             excluded_services=excluded_services,
             on_error=_record_rule_error,
             env_files=service_env_files,
+            config_path=args.config,
         )
         # Also on the single-file path: a resolved cross-file `extends:` puts
         # lines from another document into this one's map, so a finding can be
@@ -1287,6 +1359,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             disabled_rules=disabled_rules,
             severity_overrides=severity_overrides,
             excluded_services=excluded_services,
+            config_path=args.config,
         )
 
         # A finding's line knows which document it came from. Only the ones

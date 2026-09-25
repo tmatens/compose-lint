@@ -229,6 +229,34 @@ def test_opting_out_keeps_the_gap_out_of_the_structured_errors(
     assert json.loads(capsys.readouterr().out)["errors"] == []
 
 
+def test_a_fatal_gap_offers_the_opt_out(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = _write(tmp_path / "compose.yml", _gap_body("include"))
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["check", str(target)])
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "Error:" in err
+    assert "--allow-partial-coverage to accept it" in err
+
+
+def test_an_accepted_gap_does_not_offer_the_flag_again(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The warning used to tell users to pass the flag they had just passed."""
+    target = _write(tmp_path / "compose.yml", _gap_body("include"))
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["check", "--allow-partial-coverage", str(target)])
+    assert exc.value.code == 0
+    err = capsys.readouterr().err
+    warning = next(line for line in err.splitlines() if line.startswith("Warning:"))
+    assert "docker compose config" in warning
+    assert "--allow-partial-coverage" not in warning
+
+
 def test_fix_reports_the_gap_without_failing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

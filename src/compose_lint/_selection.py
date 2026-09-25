@@ -119,8 +119,14 @@ class Selection:
 
 
 def _key(path: str | Path) -> str:
-    """A stable identity for a path, so the same file is not graded twice."""
-    return str(Path(path).absolute())
+    """A stable identity for a path, so the same file is not graded twice.
+
+    Lexical only: ``..`` and ``.`` segments are collapsed so ``compose.yml``
+    and ``../dir1/compose.yml`` named from inside ``dir1`` are one document,
+    but symlinks are not followed — ADR-023 keys everything a run does off
+    the path as written, and ``resolve()`` would change that.
+    """
+    return os.path.normpath(Path(path).absolute())
 
 
 def plan_documents(
