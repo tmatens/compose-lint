@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The Action passes `--allow-partial-coverage` and `--strict-config`
+  through.** Two boolean inputs, `allow-partial-coverage` and
+  `strict-config`, both off by default, reach both linter invocations — the
+  text run that sets the verdict and the SARIF re-run that writes the
+  artifact. The [compatibility policy](docs/compatibility.md) names
+  `--allow-partial-coverage` as the only way to clear a coverage gap, and the
+  primary CI surface had no way to pass it; `--strict-config` is the flag the
+  [configuration guide](docs/configuration.md) recommends for CI, where
+  stderr is not read. Still one input per flag: there is no generic `args`
+  pass-through, so the inputs table stays the whole of the action's contract.
+
 ### Fixed
 
 - **`fix` exits 2, not 1 with a traceback, when it cannot run.** A missing
@@ -17,6 +30,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that `fix` does not have. `fix --strict-config` was therefore unusable as
   a CI gate. `fix` now exits 2 with the `Error:` line on stderr and nothing
   on stdout, as ADR-006 and its own `--help` say.
+
+- **Four Action inputs now behave the way their documentation says.**
+  `files:` is a list of literal paths, but the unquoted expansion also ran
+  bash's pathname expansion, so a `*` in the value silently became a second
+  discovery mechanism; it no longer expands (`pattern` is the input for
+  globs). `pattern:` is a `find -name` glob matched against the file *name*,
+  so the documented example `'**/docker-compose*.yml'` could never match and
+  failed the job as "No Compose files found"; the example is
+  `'docker-compose*.yml'` now, and a pattern containing `/` is refused with an
+  `::error` before the search runs. `quiet: true` with `verbose: true`
+  surfaced as the CLI's bare usage error — exit 2 with no annotation, the same
+  code as a coverage gap; the action refuses the pair by name before linting.
+  And `sarif-file` pointing into a directory that did not exist yet exited 2
+  even on a clean file; the directory is created now, after the
+  workspace-containment check, which is unchanged.
 
 ## [0.29.0] - 2026-09-12
 

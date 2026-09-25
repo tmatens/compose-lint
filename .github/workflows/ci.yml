@@ -1169,13 +1169,16 @@ jobs:
       # `upload-sarif: false` keeps the Code Scanning upload out of the
       # smoke: this job holds no `security-events: write` (fork PRs never
       # can), and fixture findings must not land in the repo's alerts.
+      # The target sits in a directory that does not exist yet: the action
+      # creates it (after its workspace-containment check) instead of
+      # failing the job on a clean file.
       - name: SARIF file is written without uploading
         id: sarif
         uses: $/
         with:
           files: tests/smoke/sarif-shape.yml
           fail-on: critical
-          sarif-file: smoke-results.sarif
+          sarif-file: smoke-out/smoke-results.sarif
           upload-sarif: "false"
           version: latest
 
@@ -1184,11 +1187,11 @@ jobs:
           SARIF_WRITTEN: ${{ steps.sarif.outputs.sarif-written }}
         run: |
           set -euo pipefail
-          if [ ! -s smoke-results.sarif ]; then
-            echo "::error::smoke-results.sarif is missing or empty"
+          if [ ! -s smoke-out/smoke-results.sarif ]; then
+            echo "::error::smoke-out/smoke-results.sarif is missing or empty"
             exit 1
           fi
-          python3 -c 'import json; json.load(open("smoke-results.sarif"))'
+          python3 -c 'import json; json.load(open("smoke-out/smoke-results.sarif"))'
           if [ "$SARIF_WRITTEN" != "true" ]; then
             echo "::error::sarif-written output was '$SARIF_WRITTEN', expected 'true'"
             exit 1
@@ -1213,6 +1216,53 @@ jobs:
         run: |
           echo "::error::Expected rejection of a files list containing a newline, got '${{ steps.newline.outcome }}'"
           exit 1
+
+      # `pattern` is a `find -name` glob, matched against the file name, so
+      # a slash can never match; the action refuses it before searching
+      # rather than reporting "No Compose files found" over a typo.
+      - name: Pattern containing a slash must be refused
+        id: slash-pattern
+        continue-on-error: true
+        uses: $/
+        with:
+          pattern: "**/docker-compose*.yml"
+          version: latest
+
+      - name: Assert slash-pattern run failed
+        if: steps.slash-pattern.outcome != 'failure'
+        run: |
+          echo "::error::Expected rejection of a pattern containing '/', got '${{ steps.slash-pattern.outcome }}'"
+          exit 1
+
+      # The CLI rejects the pair with a bare usage error (exit 2, no
+      # annotation); the action names the conflict itself before linting.
+      - name: quiet together with verbose must be refused
+        id: quiet-verbose
+        continue-on-error: true
+        uses: $/
+        with:
+          files: tests/smoke/clean.yml
+          quiet: "true"
+          verbose: "true"
+          version: latest
+
+      - name: Assert quiet+verbose run failed
+        if: steps.quiet-verbose.outcome != 'failure'
+        run: |
+          echo "::error::Expected rejection of quiet together with verbose, got '${{ steps.quiet-verbose.outcome }}'"
+          exit 1
+
+      # Both flag pass-throughs on the clean fixture. Neither has anything to
+      # act on there (no coverage gap to accept, no config to validate), so a
+      # green run proves what this job exists to prove: the published CLI
+      # accepts every flag the source action emits.
+      - name: Coverage and strict-config flags are accepted
+        uses: $/
+        with:
+          files: tests/smoke/clean.yml
+          allow-partial-coverage: "true"
+          strict-config: "true"
+          version: latest
 
   # The pre-commit arm of the integration-surface smoke set. `action-smoke`
   # covers action.yml, `docker-smoke` the image, publish.yml's `testpypi-smoke`
