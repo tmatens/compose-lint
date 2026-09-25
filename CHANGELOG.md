@@ -97,6 +97,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The pre-commit hook no longer hands the linter YAML files that merely
+  start with "compose".** Its filename filter matched `compose` followed by
+  anything, so `compose2.yml`, `composed.yml` or `composer.yml` reached the
+  linter, which rejects a non-Compose file with exit 2 and failed the hook on
+  every commit until the repository added an `exclude:`. A separator (`.`,
+  `-` or `_`) is now required after `compose` or `docker-compose`, completing
+  the narrowing started for
+  [#465](https://github.com/tmatens/compose-lint/issues/465). Every real
+  variant is still selected, nested ones included: `compose.prod.yml`,
+  `compose-dev.yaml`, `compose_staging.yml`, `docker-compose.override.yml`.
+  Coverage this drops: a Compose file named without a separator, such as
+  `compose2.yml`, is no longer linted by the hook; rename it or list it in
+  your hook's `files:`.
+
 - **Several docs described flags and inputs differently from the tool.**
   `docs/cli.md` did not say `--version` works only at the top level, and said
   `--no-env` ignores only the sibling `.env`, not every `env_file:`; it now

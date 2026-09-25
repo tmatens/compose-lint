@@ -16,5 +16,10 @@
   args: [--]
   language: python
   types: [yaml]
-  files: (^|/)(docker-)?compose[^/]*\.ya?ml$
+  # A separator must follow `compose`, so every real variant (compose.prod.yml,
+  # compose-dev.yaml, compose_staging.yml, docker-compose.override.yml) is
+  # selected but a YAML file that merely starts with those letters
+  # (compose2.yml, composed.yml) is not handed to the linter, which rejects a
+  # non-Compose file with exit 2 and fails the hook on every commit.
+  files: (^|/)(docker-)?compose([._-][^/]*)?\.ya?ml$
   exclude: (^|/)\.?compose-lint\.ya?ml$
