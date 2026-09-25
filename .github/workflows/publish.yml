@@ -451,13 +451,32 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_READ_TOKEN }}
-      - name: Scan for vulnerabilities (Docker Scout)
+      # `docker/scout-action` downloads its ~180 MB CLI from the
+      # docker/scout-action release on first use in a job and reuses it
+      # for every later step, and the `@actions/tool-cache` download it
+      # uses does not retry 4xx. A transient 403 there failed this gate
+      # during the 0.30.0 release before any scanning happened — the same
+      # failure that killed scout-scan.yml run 142, which is why that
+      # workflow warms the CLI this way.
+      #
+      # Splitting the scan in two keeps the gate fail-closed while making
+      # the retry unambiguous. This step sets `exit-code: false`, so it
+      # can only fail on the download, never on a finding; the gate step
+      # below then runs against a warm CLI, so a failure there is a real
+      # critical CVE. Retrying the download is not the same as retrying
+      # the verdict, and only the first is done here.
+      - name: Warm the Scout CLI and write the SARIF
+        id: sweep
+        continue-on-error: true
         uses: docker/scout-action@7c6b6c3f7844478ace1ffd4e7aef649053d1f87d # v1.24.0
         with:
           command: cves
           image: local://composelint/compose-lint:scout
+          # Keep `only-severities: critical` in step with the gate below,
+          # so the SARIF this uploads stays exactly what it was before the
+          # split — this changes the retry behavior, not the Security tab.
           only-severities: critical
-          exit-code: true
+          exit-code: false
           sarif-file: scout-results.sarif
           # Honor the OpenVEX document for this release. Smoke scans the
           # locally-built image, which has no registry manifest for Scout
@@ -473,13 +492,45 @@ jobs:
           # safe because the document is also cosign-attested to the
           # image manifest. See ADR-012.
           vex-author: .*
+
+      # One retry, for the transient-download case described above.
+      # Deliberately no `continue-on-error`: if the download fails twice
+      # the release should fail loudly rather than gate on a scan that
+      # never ran.
+      - name: Retry after a failed Scout CLI download
+        if: steps.sweep.outcome == 'failure'
+        uses: docker/scout-action@7c6b6c3f7844478ace1ffd4e7aef649053d1f87d # v1.24.0
+        with:
+          command: cves
+          image: local://composelint/compose-lint:scout
+          only-severities: critical
+          exit-code: false
+          sarif-file: scout-results.sarif
+          vex-location: .vex/compose-lint.openvex.json
+          vex-author: .*
+
+      # The gate. The CLI is warm by this point, so this step cannot fail
+      # on the binary download; a non-zero exit is a real critical finding
+      # and must block the release. No `sarif-file` — the scan above
+      # already wrote it, and a gate that exits non-zero should not
+      # overwrite the artifact the upload below depends on.
+      - name: Fail the release on a critical CVE
+        uses: docker/scout-action@7c6b6c3f7844478ace1ffd4e7aef649053d1f87d # v1.24.0
+        with:
+          command: cves
+          image: local://composelint/compose-lint:scout
+          only-severities: critical
+          exit-code: true
+          # Same OpenVEX document and author override as the scan above.
+          vex-location: .vex/compose-lint.openvex.json
+          vex-author: .*
+
       # `always()` is gated on the SARIF existing so a Scout CLI download
-      # failure surfaces as one error instead of cascading into a second
-      # ("Path does not exist") plus a CodeQL CONFIGURATION_ERROR. The
-      # scan step still writes the file when it exits non-zero on a real
-      # critical, so that upload is unaffected. Deliberately no retry
-      # here, unlike the scheduled scans: this is a release gate and
-      # should fail closed for a human to re-run.
+      # that fails twice surfaces as one error instead of cascading into a
+      # second ("Path does not exist") plus a CodeQL CONFIGURATION_ERROR.
+      # `hashFiles` still uploads when the gate step fails on a genuine
+      # critical — the scan above wrote the file already — and skips only
+      # when no scan produced one.
       - name: Upload Scout results to GitHub Security
         if: always() && hashFiles('scout-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
