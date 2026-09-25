@@ -731,9 +731,14 @@ def _exit_2_with_envelope(args: argparse.Namespace, message: str) -> NoReturn:
     (ADR-015).
     """
     emit(f"Error: {message}")
-    if args.output_format == "json":
+    # `fix` has no --format, so its namespace has no output_format: it reports
+    # on stderr only, and its exit 2 must come from here and not from an
+    # AttributeError one line later, which exited 1 with a traceback on every
+    # pre-scan failure of `fix` from 0.25.0 to 0.29.0.
+    output_format = getattr(args, "output_format", "text")
+    if output_format == "json":
         _stdout_print(json.dumps(build_json_log([], [("", message)]), indent=2))
-    elif args.output_format == "sarif":
+    elif output_format == "sarif":
         _stdout_print(json.dumps(build_sarif_log([], [("", message)]), indent=2))
     sys.exit(2)
 

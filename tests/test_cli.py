@@ -21,11 +21,12 @@ FIXTURES = Path(__file__).parent / "compose_files"
 
 
 def run_cli(
-    *args: str, env_extra: dict[str, str] | None = None
+    *args: str, env_extra: dict[str, str] | None = None, cwd: Path | None = None
 ) -> subprocess.CompletedProcess[str]:
     """Run compose-lint CLI as a subprocess."""
     return subprocess.run(
         [sys.executable, "-m", "compose_lint", *args],
+        cwd=cwd,
         capture_output=True,
         text=True,
         # The CLI guarantees UTF-8 output; decoding with the locale (cp1252 on
@@ -1063,6 +1064,44 @@ class TestFixOnlyValidation:
         result = run_cli("fix", "--only", "banana", "--strict-config", str(f))
         assert result.returncode == 2
         assert "names no rule" in result.stderr
+
+
+class TestFixPreScanFailures:
+    """`fix` exits 2 on a pre-scan failure, the same as `check` (ADR-006).
+
+    Both branches route through the helper that also emits the machine
+    envelope for `check`. `fix` has no `--format`, so from 0.25.0 to 0.29.0
+    the helper raised AttributeError there and every pre-scan failure of
+    `fix` exited 1 with a traceback: the "findings at threshold" code, for
+    "could not run". `fix --strict-config` was therefore unusable as a gate.
+    """
+
+    def test_no_compose_files_found_exits_2(self, tmp_path: Path) -> None:
+        result = run_cli("fix", cwd=tmp_path)
+        assert result.returncode == 2, result.stderr
+        assert "no Compose files found" in result.stderr
+        assert "Traceback" not in result.stderr
+        assert result.stdout == ""
+
+    def test_missing_config_exits_2(self, tmp_path: Path) -> None:
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(_FIXABLE_LOGGING)
+        result = run_cli("fix", "--config", str(tmp_path / "nope.yml"), str(f))
+        assert result.returncode == 2, result.stderr
+        assert "nope.yml" in result.stderr
+        assert "Traceback" not in result.stderr
+        assert result.stdout == ""
+
+    def test_strict_config_violation_exits_2(self, tmp_path: Path) -> None:
+        f = tmp_path / "docker-compose.yml"
+        f.write_text(_FIXABLE_LOGGING)
+        cfg = tmp_path / "ci.yml"
+        cfg.write_text("rules:\n  CL-9999:\n    enabled: false\n")
+        result = run_cli("fix", "--strict-config", "--config", str(cfg), str(f))
+        assert result.returncode == 2, result.stderr
+        assert "CL-9999" in result.stderr
+        assert "Traceback" not in result.stderr
+        assert result.stdout == ""
 
 
 class TestPagerResolution:
