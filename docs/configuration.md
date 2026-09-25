@@ -22,14 +22,15 @@ compose.yml   compose.yaml   docker-compose.yml   docker-compose.yaml
 
 Finding none is an error (exit 2), not a pass — a gate reporting success over an unlinted repository is the one outcome this tool must never produce.
 
-**The pre-commit hook is deliberately broader.** It selects any path matching `(^|/)(docker-)?compose[^/]*\.ya?ml$` — so `compose.prod.yml`, `docker-compose.override.yml` and `stack/compose.yml` are linted by the hook and *not* by a bare `compose-lint` run:
+**The pre-commit hook is deliberately broader.** It selects any path matching `(^|/)(docker-)?compose([._-][^/]*)?\.ya?ml$` — a name that is `compose` or `docker-compose`, optionally followed by `.`, `-` or `_` and a suffix — so `compose.prod.yml`, `docker-compose.override.yml` and `stack/compose.yml` are linted by the hook and *not* by a bare `compose-lint` run:
 
 | path | `compose-lint` / GitHub Action | pre-commit hook |
 | --- | --- | --- |
 | `compose.yml` | linted | linted |
 | `compose.prod.yml` | not found | linted |
-| `docker-compose.override.yml` | not found | linted |
+| `docker-compose.override.yml` | merged into `docker-compose.yml` when that exists | linted |
 | `stack/compose.yml` | not found | linted |
+| `compose2.yml`, `composed.yml` | not found | skipped: no separator after `compose` |
 
 The asymmetry is intentional. pre-commit hands the hook a filename-filtered list of files you actually changed, so matching broadly is useful and safe. A bare `compose-lint` has no such list and must not guess which of a repository's YAML files are Compose files.
 

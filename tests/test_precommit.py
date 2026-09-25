@@ -39,9 +39,22 @@ TEST_DATA = [
     ("compose.yml", True),
     ("foo/docker-compose.yml", True),
     ("foo/bar/compose.yml", True),
-    # Environment-specific suffixes still match.
+    # Environment-specific suffixes still match, with any of the three
+    # separators.
     ("foo/bar/baz/compose-test.yml", True),
     ("foo/bar/baz/docker-compose-test.yaml", True),
+    ("compose.prod.yml", True),
+    ("compose_staging.yml", True),
+    ("compose.override.yml", True),
+    ("docker-compose.override.yml", True),
+    # A name that only starts with "compose" is not a Compose file. Before the
+    # separator was required these reached the linter, which rejects
+    # non-Compose YAML with exit 2, so the hook failed on every commit.
+    ("compose2.yml", False),
+    ("composed.yml", False),
+    ("composer.yml", False),
+    ("docker-composer.yaml", False),
+    ("foo/composes.yml", False),
 ]
 
 
