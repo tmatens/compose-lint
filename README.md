@@ -323,7 +323,7 @@ prints a unified diff and writes nothing.
 ```bash
 compose-lint fix docker-compose.yml            # preview the diff, write nothing
 compose-lint fix --apply docker-compose.yml    # write the fixes in place
-compose-lint fix --only CL-0007 --apply .      # restrict to one rule
+compose-lint fix --only CL-0007 --apply docker-compose.yml  # one rule only
 ```
 
 Context-dependent findings (capability lists, socket mounts) are reported for

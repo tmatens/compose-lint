@@ -41,7 +41,9 @@ inputs:
   strict-config:
     description: >-
       Pass `--strict-config`: promote config-file warnings (unknown rule id,
-      unknown key, inert `reason:`) to a hard error.
+      unknown key, an inert `reason:` or `severity:`, a stale
+      `exclude_services` name, both config spellings present) to a hard
+      error.
     required: false
     default: "false"
   quiet:

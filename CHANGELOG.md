@@ -46,6 +46,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The environment variables the CLI reads are part of the stable surface.**
+  `NO_COLOR`, `FORCE_COLOR`, `PAGER`, `NO_PAGER` and `TERM` were documented but
+  not covered by the compatibility policy, so whether changing one was a PATCH
+  or a MAJOR was open. From 1.0 they follow the same rules as flags, with the
+  edge cases now written down: `FORCE_COLOR=0` or `false` turns color off and an
+  empty `FORCE_COLOR` turns it on; a blank `PAGER` disables paging. The same
+  amendment corrects the deprecation-warning prefix the policy quotes to the
+  `Warning:` the tool prints, and records that the deprecated JSON `source_file`
+  alias stays until 2.0
+  ([ADR-037](docs/adr/037-environment-variables-are-cli-surface.md)). Docs only.
+
 - **`init` baselines the document `check` grades.** `check` merges the
   sibling `compose.override.yml` ([ADR-025](docs/adr/025-lint-the-merged-configuration.md)),
   lets the `.env` select the documents ([ADR-026](docs/adr/026-read-the-sibling-env-file.md))
@@ -85,6 +96,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is a MINOR bump and not a patch.
 
 ### Fixed
+
+- **Several docs described flags and inputs differently from the tool.**
+  `docs/cli.md` did not say `--version` works only at the top level, and said
+  `--no-env` ignores only the sibling `.env`, not every `env_file:`; it now
+  also states what `--explain` refuses and ignores, which CLI values are
+  case-insensitive, and that `--` ends subcommand detection. The Action guide
+  claimed empty `files` and `pattern` meant CLI discovery, which does not read
+  `COMPOSE_FILE` from a `.env`; it now says so, along with `files` winning over
+  `pattern` and booleans needing the exact string `"true"`. The configuration
+  guide now documents the `x-` and `<<:` keys the loader has accepted since
+  0.25.0, and its `init` sample matches what `init` writes. The README's
+  one-rule `fix` example passed a directory, which exits 2.
 
 - **`fix` exits 2, not 1 with a traceback, when it cannot run.** A missing
   or unreadable `--config`, a `--strict-config` violation, or no Compose file
