@@ -35,7 +35,10 @@ from __future__ import annotations
 
 import posixpath
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 __all__ = ["Document", "Merged", "SourcedLine", "merge_documents", "merge_values"]
 
@@ -336,17 +339,22 @@ def merge_values(
 
     ``memo`` collapses repeated work on anchor-shared subtrees. YAML aliases
     make the document a DAG, not a tree, so without it a subtree reachable by
-    *n* paths is re-merged once per path — an 805-byte file took 5.4s. It is
-    only safe when no recorder is active: provenance is path-dependent, and a
-    cached subtree would report whichever path reached it first.
+    *n* paths is re-merged once per path — an 805-byte file took 5.4s.
+
+    With a recorder as well, a subtree records its provenance the first time it
+    is merged and nothing below its own key on a later hit. That is the same
+    bargain the parser's line map strikes for a shared subtree (its deeper lines
+    exist only under the first path that reached it), so no line is lost that
+    the map had, and the work stays linear. Only the in-file ``extends:`` merge
+    passes both; a caller wanting every path recorded passes no memo.
     """
-    if memo is not None and rec is None and not _directed(over_side):
+    if memo is not None and not _directed(over_side):
         cache_key = (id(base), id(over), field_name)
         cached = memo.get(cache_key)
         if cached is not None:
             return cached
         result = _merge_uncached(
-            base, over, field_name, base_side, over_side, out_path, None, memo
+            base, over, field_name, base_side, over_side, out_path, rec, memo
         )
         memo[cache_key] = result
         return result
@@ -821,27 +829,73 @@ def merge_service_from(
     return merged, rec.lines, rec.sources
 
 
-def merge_extended(
+# The document an in-file `extends:` merges within, as a recorder sees it. A
+# line this document wrote comes back a plain int; one that arrived from another
+# file (an `include:` or a cross-file base) keeps that file as its source.
+_THIS_DOCUMENT = "\0this-document"
+
+
+def merge_extended(  # noqa: PLR0913
     base_value: Any,
     child_value: Any,
     *,
     child_path: str,
+    base_path: str = "",
+    base_lines: Mapping[str, int] | None = None,
+    child_lines: Mapping[str, int] | None = None,
     resets: frozenset[str] = frozenset(),
     overrides: frozenset[str] = frozenset(),
     memo: dict[tuple[int, int, str], Any] | None = None,
-) -> Any:
+) -> tuple[Any, dict[str, int]]:
     """Merge a child service onto the service it ``extends:`` in the same file.
 
     ``resets`` and ``overrides`` are the document's ``!reset``/``!override``
     paths; the ones under ``child_path`` apply, exactly as they do to an
-    overlay. No provenance is recorded: the child keeps the document's own
-    line map.
+    overlay.
+
+    Returns the merged value and its lines under ``child_path``, recorded the
+    way an overlay's are: an append merge moves every index, so the child's own
+    ``cap_add[0]`` is not the merged list's first item, and an inherited key the
+    child never wrote has no line of the child's at all (#881). ``base_lines``
+    and ``child_lines`` are the two services' own entries — only theirs, since
+    re-keying a subtree scans every line it is given.
     """
-    child = Document(path="", data={}, lines={}, resets=resets, overrides=overrides)
-    return merge_values(
+    rec = _Recorder()
+    base_doc = _this_document(base_lines or {})
+    child_doc = _this_document(child_lines or {}, resets=resets, overrides=overrides)
+    merged = merge_values(
         base_value,
         child_value,
-        over_side=_Side(child_value, child, child_path),
+        base_side=_Side(base_value, base_doc, base_path),
+        over_side=_Side(child_value, child_doc, child_path),
         out_path=child_path,
+        rec=rec,
         memo=memo,
+    )
+    lines: dict[str, int] = {
+        path: int(line) if getattr(line, "source", None) == _THIS_DOCUMENT else line
+        for path, line in rec.lines.items()
+    }
+    return merged, lines
+
+
+def _this_document(
+    lines: Mapping[str, int],
+    *,
+    resets: frozenset[str] = frozenset(),
+    overrides: frozenset[str] = frozenset(),
+) -> Document:
+    """A line map as a recorder input, keeping each line's own source file."""
+    sources = {
+        path: source
+        for path, line in lines.items()
+        if (source := getattr(line, "source", None)) is not None
+    }
+    return Document(
+        path=_THIS_DOCUMENT,
+        data={},
+        lines=dict(lines),
+        resets=resets,
+        overrides=overrides,
+        sources=sources or None,
     )
