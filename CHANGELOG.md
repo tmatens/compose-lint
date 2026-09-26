@@ -45,6 +45,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A finding a service inherits through `extends:` points at the line that
+  wrote it.** An append merge moves every index, so a child inheriting
+  `cap_add: [SYS_ADMIN]` had its CL-0024 finding reported on its own harmless
+  `- CHOWN` line, and an inherited key the child never wrote had no line at
+  all. Both now name the base's line. With correct lines, `fix` refuses any
+  edit outside the finding's own service, so an inherited value is fixed once
+  where it is written, instead of editing the base once per child. CL-0009 also
+  counts only the `security_opt` entries a service wrote itself, so it no
+  longer deletes a child's only entry because the base contributes a
+  legitimate one.
+
 - **The text verdict says `⚠ ERROR` when a rule crashed or the config was
   refused.** Both exit 2, but the verdict line read `✓ PASS` (or `✗ FAIL`),
   so a CI log's last line contradicted the exit code, for example under

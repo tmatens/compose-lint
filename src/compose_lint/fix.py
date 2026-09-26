@@ -345,6 +345,69 @@ def _coordinate_security_opt(
     return _FixUnit([*cl0003, *cl0009], [edit], caveat_rule_id="CL-0009")
 
 
+def _within_own_service(
+    units: list[_FixUnit],
+    lines: Mapping[str, int],
+    source_lines: list[str],
+    manual: list[Finding],
+    notes: list[str],
+) -> list[_FixUnit]:
+    """Refuse every unit with an edit outside its findings' own service block.
+
+    A fixer locates its edit by the finding's line, and a finding a service
+    inherits through ``extends:`` carries the line that wrote the value — the
+    base's (#881). Editing there on the child's behalf changes the base and
+    every other service extending it: with two children, CL-0005 prefixed the
+    base's port with ``127.0.0.1:`` three times over. The base's own finding
+    fixes the value where it is written, so the child's is left to it.
+
+    One guard here instead of one per fixer, so a fixer added later is covered
+    without having to know about ``extends:``. An insertion at the start of the
+    line after the block (a key appended to the service's end) is inside it.
+    """
+    blocks: dict[str, tuple[int, int] | None] = {}
+
+    def block(service: str) -> tuple[int, int] | None:
+        if service not in blocks:
+            key_line = lines.get(f"services.{service}")
+            blocks[service] = (
+                block_span(source_lines, key_line)
+                if key_line is not None and 1 <= key_line <= len(source_lines)
+                else None
+            )
+        return blocks[service]
+
+    def inside(edit: TextEdit, bounds: tuple[int, int] | None) -> bool:
+        if bounds is None:
+            return False
+        first, last = bounds
+        if edit.start_line < first:
+            return False
+        # Columns are 1-indexed: (last + 1, 1) is the start of the next line.
+        return edit.end_line <= last or (
+            edit.end_line == last + 1 and edit.end_col == 1
+        )
+
+    kept: list[_FixUnit] = []
+    for unit in units:
+        services = {finding.service for finding in unit.findings}
+        if all(
+            inside(edit, block(service)) for service in services for edit in unit.edits
+        ):
+            kept.append(unit)
+            continue
+        manual.extend(unit.findings)
+        for finding in unit.findings:
+            note = (
+                f"{finding.rule_id} on '{finding.service}': the fix would edit "
+                "outside this service's own block, where the value is written "
+                "and inherited from (extends:); it is fixed there"
+            )
+            if note not in notes:
+                notes.append(note)
+    return kept
+
+
 def _dominant_newline(text: str) -> str:
     """The line ending spliced-in fix text should use: the file's dominant one.
 
@@ -486,6 +549,8 @@ def collect_edits(
             )
             if note not in notes:
                 notes.append(note)
+
+    units = _within_own_service(units, lines, source_lines, manual, notes)
 
     starts = line_starts(text)
 

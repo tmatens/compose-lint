@@ -813,8 +813,49 @@ def _merge_extends(
     return over
 
 
+def _lines_by_service(
+    lines: Mapping[str, int], services: Mapping[Any, Any]
+) -> dict[str, dict[str, int]]:
+    """Split the line map into each service's own entries, in one pass.
+
+    A service name can contain `.` or `[`, so the name is the first prefix of
+    the path that is a declared service, not whatever precedes the first dot.
+    """
+    names = {name for name in services if isinstance(name, str)}
+    grouped: dict[str, dict[str, int]] = {}
+    for path, line in lines.items():
+        if not path.startswith("services."):
+            continue
+        rest = path[len("services.") :]
+        cuts = [i for i, ch in enumerate(rest) if ch in ".["] + [len(rest)]
+        for cut in cuts:
+            if rest[:cut] in names:
+                grouped.setdefault(rest[:cut], {})[path] = line
+                break
+    return grouped
+
+
+def _merged_service_lines(
+    child_path: str, own: Mapping[str, int], recorded: Mapping[str, int]
+) -> dict[str, int]:
+    """The child's lines after the merge: recorded, except its own plain keys.
+
+    The recorder seeds a key both services write with the base's line, which is
+    right for an overlay (the base is the file being fixed) and wrong here: the
+    child's ``cap_add:`` is on the child's line. A path through a sequence
+    index keeps the recorded line, because the index itself moved.
+    """
+    merged = dict(own)
+    merged.update(recorded)
+    for path, line in own.items():
+        if "[" not in path[len(child_path) :]:
+            merged[path] = line
+    return merged
+
+
 def _resolve_in_file_extends(
     data: dict[str, Any],
+    lines: dict[str, int] | None = None,
     *,
     resets: frozenset[str] = frozenset(),
     overrides: frozenset[str] = frozenset(),
@@ -848,18 +889,31 @@ def _resolve_in_file_extends(
     fixers refuse to edit either side of an ``extends`` relationship (a text
     edit could create a post-merge duplicate Docker rejects), and that refusal
     keys on the ``extends`` marker still being present.
+
+    ``lines``, when given, is updated in place so an inherited item names the
+    line that wrote it (#881). An append merge moves every index — the child's
+    ``cap_add[0]`` is the base's first entry once merged — and an inherited key
+    the child never wrote had no line at all. A child's own mapping keys keep
+    the child's lines, since that is where an edit to them belongs; the fix
+    engine refuses any edit outside the finding's own service block, so a
+    child's inherited finding is never fixed by editing the base.
     """
     services = data.get("services")
     if not isinstance(services, dict):
         return []
+    by_service = _lines_by_service(lines, services) if lines is not None else {}
+    resolved_lines: dict[str, dict[str, int]] = {}
     resolved: dict[str, Any] = {}
     # Two services that are one aliased mapping merge once. YAML aliases make
     # the document a DAG, and re-merging a shared subtree per path was
     # exponential (tests/test_resource_bounds.py).
-    memo: dict[tuple[int, int], Any] = {}
+    memo: dict[tuple[int, int], tuple[Any, dict[str, int]]] = {}
     # Shared by every merge below, for subtrees reached by more than one path.
     subtree_memo: dict[tuple[int, int, str], Any] = {}
     refused: dict[tuple[str, str], list[str]] = {}
+
+    def _lines_of(name: str) -> dict[str, int]:
+        return resolved_lines.get(name, by_service.get(name, {}))
 
     def _resolve(name: str, stack: tuple[str, ...]) -> Any:
         if name in resolved:
@@ -895,23 +949,42 @@ def _resolve_in_file_extends(
             resolved[name] = cfg
             return cfg
         parent = _resolve(target, (*stack, name))
+        child_path = f"services.{name}"
         key = (id(parent), id(cfg))
-        merged = memo.get(key)
-        if merged is None:
-            merged = merge_extended(
+        cached = memo.get(key)
+        if cached is None:
+            merged, recorded = merge_extended(
                 parent,
                 cfg,
-                child_path=f"services.{name}",
+                child_path=child_path,
+                base_path=f"services.{target}",
+                base_lines=_lines_of(target),
+                child_lines=by_service.get(name, {}),
                 resets=resets,
                 overrides=overrides,
                 memo=subtree_memo,
             )
-            memo[key] = merged
+            # Relative to the child, so another child that is the same aliased
+            # mapping extending the same base reuses them under its own name.
+            memo[key] = (
+                merged,
+                {path[len(child_path) :]: line for path, line in recorded.items()},
+            )
+        else:
+            merged, relative = cached
+            recorded = {child_path + rest: line for rest, line in relative.items()}
+        if lines is not None:
+            resolved_lines[name] = _merged_service_lines(
+                child_path, by_service.get(name, {}), recorded
+            )
         resolved[name] = merged
         return merged
 
     for name in list(services):
         services[name] = _resolve(name, ())
+    if lines is not None:
+        for service_lines in resolved_lines.values():
+            lines.update(service_lines)
 
     gaps = []
     for (target, reason), children in refused.items():
@@ -2167,6 +2240,7 @@ def _loads_full(  # noqa: PLR0913
         gaps.extend(
             _resolve_in_file_extends(
                 data,
+                lines,
                 resets=reset_paths,
                 overrides=override_paths,
                 skip=already_resolved,
