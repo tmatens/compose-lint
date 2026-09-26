@@ -55,6 +55,67 @@ def normalize_security_opt(opt: Any) -> str:
     return text.strip().lower().replace("=", ":", 1)
 
 
+# The spellings Go's `strconv.ParseBool` accepts, lower-cased to match
+# `normalize_security_opt`. Moby parses a `no-new-privileges` value with it.
+_PARSEBOOL_TRUE = frozenset({"1", "t", "true"})
+_PARSEBOOL_FALSE = frozenset({"0", "f", "false"})
+
+
+def no_new_privileges_effective(security_opt: list[Any]) -> bool:
+    """Whether the container starts with ``no-new-privileges`` set.
+
+    Moby's ``parseSecurityOpt`` assigns the flag once per entry, in list order,
+    so the last entry naming it wins: ``[no-new-privileges:true,
+    no-new-privileges:false]`` — what ``extends:`` produces when a child
+    un-hardens its base, since Compose concatenates the two lists — starts
+    with the flag off. The value is read with ``strconv.ParseBool``, so ``1``
+    and ``t`` set it as surely as ``true``. The bare form sets it.
+
+    A value ParseBool refuses makes Docker refuse the container, so it changes
+    nothing here.
+    """
+    effective = False
+    for opt in security_opt:
+        key, sep, value = normalize_security_opt(opt).partition(":")
+        if key != "no-new-privileges":
+            continue
+        if not sep or value in _PARSEBOOL_TRUE:
+            effective = True
+        elif value in _PARSEBOOL_FALSE:
+            effective = False
+    return effective
+
+
+def disabled_profile_indexes(security_opt: list[Any]) -> list[int]:
+    """Indexes of the entries that leave a security profile disabled.
+
+    ``seccomp`` and ``apparmor`` are assigned once per entry in list order, so
+    the last entry for each key is the profile the container runs with:
+    ``[seccomp:unconfined, seccomp:builtin]`` is filtered and the reverse is
+    not. When the last entry for a key is a disable, every disable for that
+    key is returned, because removing only the last would promote the one
+    before it.
+
+    ``label`` options accumulate rather than overwrite, and SELinux's
+    ``InitLabels`` disables labelling if ``disable`` appears among them at
+    all, so every ``label:disable`` is returned wherever it sits.
+    """
+    normalized = [normalize_security_opt(opt) for opt in security_opt]
+    last: dict[str, str] = {}
+    for opt in normalized:
+        key, sep, _ = opt.partition(":")
+        if sep and key in ("seccomp", "apparmor"):
+            last[key] = opt
+    indexes = []
+    for i, opt in enumerate(normalized):
+        if opt not in DISABLED_SECURITY_PROFILES:
+            continue
+        key = opt.partition(":")[0]
+        if key == "label" or last.get(key) in DISABLED_SECURITY_PROFILES:
+            indexes.append(i)
+    return indexes
+
+
 # One entry is enough: a run processes one document at a time, and the fix
 # engine's verification re-parse produces a new dict (a new id) rather than
 # mutating this one. The document is kept alive by the cache, so the id cannot

@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`/dev/nbd*`), MTD flash (`/dev/mtdblock*`) and legacy IDE (`/dev/hd*`)
   node families.
 
+- **`security_opt`, numeric `user:` and namespace modes are graded as Docker
+  applies them.** CL-0003 and CL-0009 checked whether an entry was present
+  anywhere in `security_opt`. Docker applies the list in order, so CL-0003
+  missed a service whose base set `no-new-privileges:true` and whose
+  `extends:` child set it false, and CL-0009 flagged
+  `[seccomp:unconfined, seccomp:builtin]`, which runs filtered. The last
+  entry for `no-new-privileges`, `seccomp` and `apparmor` now decides;
+  `label:disable` still counts wherever it appears, because label options
+  accumulate. CL-0003 reads the value with Go's `ParseBool` spellings, so
+  `no-new-privileges:1` is no longer flagged as unset. CL-0018 treats
+  `"000"`, `"+0"` and `"-0"` as root, as runc does. CL-0010 compares `pid`
+  and `ipc` case-sensitively, because Docker rejects `pid: HOST` outright.
+
 - **A relative `secrets:` or `configs:` `file:` is resolved like a bind
   source.** Outside Swarm that entry is a read-only bind of the host file, and
   Compose resolves a relative `file:` against the compose file's directory, so

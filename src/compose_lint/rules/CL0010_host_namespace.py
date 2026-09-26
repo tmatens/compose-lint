@@ -90,7 +90,10 @@ class HostNamespaceRule(BaseRule):
             raw = as_scalar_text(service_config.get(key, ""))
             if raw is None:
                 continue
-            if raw.lower() == value:
+            # Case-sensitive, as the daemon is: `pid: HOST` and `ipc: HOST`
+            # are refused ("invalid PID mode: HOST"), so the container never
+            # starts sharing anything.
+            if raw == value:
                 yield Finding(
                     rule_id="CL-0010",
                     severity=Severity.HIGH,
