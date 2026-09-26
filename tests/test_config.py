@@ -514,8 +514,10 @@ class TestExcludeServices:
             load_config(config)
 
     def test_invalid_list_entry(self, tmp_path: Path) -> None:
+        # A bare `42` is a service name the parser accepts (#888); a mapping
+        # is not a name at all.
         config = tmp_path / ".compose-lint.yml"
-        config.write_text("rules:\n  CL-0003:\n    exclude_services:\n      - 42\n")
+        config.write_text("rules:\n  CL-0003:\n    exclude_services:\n      - {a: b}\n")
         with pytest.raises(ConfigError, match="service name strings"):
             load_config(config)
 
@@ -626,3 +628,72 @@ def test_a_bare_unknown_top_level_key_still_warns(tmp_path: Path) -> None:
     config.write_text("rulez: {}\n", encoding="utf-8")
     with pytest.raises(ConfigError, match="unknown top-level key"):
         load_config(config, strict=True)
+
+
+class TestNonStringServiceNames:
+    """A service key the parser keeps as source text can be excluded (#888)."""
+
+    @pytest.mark.parametrize("name", ["2048", "yes", "0x10", "null", "1.5"])
+    def test_list_form_keeps_the_source_text(self, tmp_path: Path, name: str) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text(
+            f"rules:\n  CL-0002:\n    exclude_services:\n      - {name}\n"
+        )
+        _disabled, _overrides, excluded = load_config(config)
+        assert excluded == {"CL-0002": {name: None}}
+
+    def test_mapping_form_keeps_the_source_text(self, tmp_path: Path) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text(
+            'rules:\n  CL-0002:\n    exclude_services:\n      2048: "not needed"\n'
+        )
+        _disabled, _overrides, excluded = load_config(config)
+        assert excluded == {"CL-0002": {"2048": "not needed"}}
+
+    def test_quoted_and_bare_spellings_are_one_name(self, tmp_path: Path) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text(
+            "rules:\n  CL-0002:\n    exclude_services:\n"
+            '      2048: a\n      "2048": b\n'
+        )
+        with pytest.raises(ConfigError, match="duplicate"):
+            load_config(config)
+
+    def test_other_values_keep_their_types(self, tmp_path: Path) -> None:
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text(
+            "rules:\n  CL-0002:\n    enabled: false\n  CL-0003:\n    severity: low\n"
+        )
+        disabled, overrides, _excluded = load_config(config)
+        assert "CL-0002" in disabled
+        assert overrides == {"CL-0003": Severity.LOW}
+
+    def test_a_numeric_service_is_suppressed_end_to_end(self, tmp_path: Path) -> None:
+        from compose_lint.engine import run_rules
+        from compose_lint.parser import load_compose
+
+        compose = tmp_path / "compose.yml"
+        compose.write_text(
+            "services:\n  2048:\n    image: alpine:3.20\n    privileged: true\n"
+        )
+        config = tmp_path / ".compose-lint.yml"
+        config.write_text("rules:\n  CL-0002:\n    exclude_services:\n      - 2048\n")
+        disabled, overrides, excluded = load_config(config)
+        data, lines = load_compose(compose)
+        findings = run_rules(data, lines, disabled, overrides, excluded)
+        cl0002 = [f for f in findings if f.rule_id == "CL-0002"]
+        assert cl0002 and all(f.suppressed for f in cl0002)
+
+
+def test_an_unhashable_config_key_is_a_config_error(tmp_path: Path) -> None:
+    config = tmp_path / ".compose-lint.yml"
+    config.write_text("rules:\n  ? [a]\n  : b\n")
+    with pytest.raises(ConfigError, match="unhashable"):
+        load_config(config)
+
+
+def test_a_merge_key_in_the_config_still_merges(tmp_path: Path) -> None:
+    config = tmp_path / ".compose-lint.yml"
+    config.write_text("x: &off\n  enabled: false\nrules:\n  CL-0002:\n    <<: *off\n")
+    disabled, _overrides, _excluded = load_config(config)
+    assert "CL-0002" in disabled

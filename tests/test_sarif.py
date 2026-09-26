@@ -270,14 +270,20 @@ class TestSarifDescriptorFixes:
         rules = log["runs"][0]["tool"]["driver"]["rules"]
         return next(r for r in rules if r["id"] == rule_id)
 
-    def test_helpuri_omitted_for_cis_only_rule(self) -> None:
-        # A rule whose only reference is CIS prose, not a URI (issue #279 S-a).
-        # CL-0012 was the original subject; it was dropped, and CL-0016 is now
-        # the CIS-prose-only rule.
-        rule = self._rule(build_sarif_log([]), "CL-0016")
-        assert "helpUri" not in rule
+    @pytest.mark.parametrize("rule_id", ["CL-0016", "CL-0017"])
+    def test_a_cis_only_rule_links_its_docs_page(self, rule_id: str) -> None:
+        # Its only reference is CIS prose, not a URI (issue #279 S-a), so the
+        # descriptor links the rule's published page instead of nothing (#888).
+        rule = self._rule(build_sarif_log([]), rule_id)
+        assert rule["helpUri"] == (
+            f"https://tmatens.github.io/compose-lint/rules/{rule_id}/"
+        )
         # The prose still appears in help.text.
         assert "CIS" in rule["help"]["text"]
+
+    def test_every_rule_has_a_helpuri(self) -> None:
+        rules = build_sarif_log([])["runs"][0]["tool"]["driver"]["rules"]
+        assert [r["id"] for r in rules if "helpUri" not in r] == []
 
     def test_helpuri_is_a_uri_when_available(self) -> None:
         # CL-0001's first reference is an OWASP URL.
