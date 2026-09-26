@@ -18,6 +18,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`fix` and `init` no longer write after a rule crashed, and `init -o`
+  cannot overwrite its own input.** A rule that raised held `check` at exit 2,
+  but `fix --apply` applied the other rules' fixes and `init` wrote a baseline
+  missing that rule's findings, both exiting 0. Both now write nothing for
+  that file and exit 2, as on a parse error. `init -o` refuses a path that is
+  one of the files it read (the named file, an overlay, or an `include:` or
+  `extends:` document), `--force` or not; `init compose.yml -o compose.yml
+  --force` used to replace the Compose file with the baseline.
+
+- **Documented where compose-lint and Compose disagree.** A tab before a
+  comment, a multi-document file, and a bare `=` value are deployed by
+  Compose but refused by compose-lint's YAML parser with exit 2. They are
+  now listed as known limitations that fail closed. `docs/ASSURANCE.md` now
+  describes the one subprocess (the `--explain` pager, whose argv comes only
+  from `PAGER` or the built-in default), lists the environment as an input,
+  and states what CI's Bandit run actually checks.
+
 - **A referenced file's name can no longer forge report lines, and a broken
   stderr no longer costs the report.** The text report's `in:` line printed
   the name of an `extends:`/`include:` file raw, so a crafted name with a

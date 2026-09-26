@@ -935,3 +935,40 @@ def test_render_diff_escapes_a_lone_cr_but_not_crlf_endings() -> None:
     out = render_file_diff("f.yml", original, patched, [])
     assert 'b: "x\\u000d' in out, out  # the lone CR stays visible
     assert "1\\u000d" not in out and "2\\u000d" not in out, out
+
+
+# --- #892: a crashed rule means the sweep was incomplete --------------------
+
+_FIXABLE = "services:\n  w:\n    image: n:1\n    logging:\n      driver: none\n"
+
+
+@pytest.mark.parametrize("apply", [True, False])
+def test_fix_writes_nothing_when_a_rule_crashed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], apply: bool
+) -> None:
+    """`check` holds at exit 2 on a crash; `fix` wrote the file and exited 0."""
+    from compose_lint import cli
+    from tests.test_init_write_path import crashing_rule
+
+    target = tmp_path / "docker-compose.yml"
+    target.write_text(_FIXABLE, encoding="utf-8")
+    argv = ["fix", str(target)] + (["--apply"] if apply else [])
+    with crashing_rule(), pytest.raises(SystemExit) as exc:
+        cli.main(argv)
+    assert exc.value.code == 2
+    assert target.read_text(encoding="utf-8") == _FIXABLE
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "CL-CRASH" in captured.err
+    assert "no fixes computed" in captured.err
+
+
+def test_fix_still_applies_when_no_rule_crashed(tmp_path: Path) -> None:
+    from compose_lint import cli
+
+    target = tmp_path / "docker-compose.yml"
+    target.write_text(_FIXABLE, encoding="utf-8")
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["fix", str(target), "--apply"])
+    assert exc.value.code == 0
+    assert target.read_text(encoding="utf-8") != _FIXABLE

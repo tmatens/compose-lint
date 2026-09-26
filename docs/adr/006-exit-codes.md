@@ -10,7 +10,7 @@
 - Matches Hadolint's `--failure-threshold` and KICS's severity-mapped exit codes.
 - Default behavior is strict (fail on high/critical) but teams can relax with `--fail-on critical` or tighten with `--fail-on low`.
 - Exit 2 for file/config errors distinguishes "your compose file has issues" from "compose-lint itself couldn't run."
-- A rule that raises is isolated rather than aborting the run (the failure is reported to stderr and the sweep continues), and maps to exit 2 for the same reason: it means compose-lint itself couldn't complete the analysis, not that the file failed the lint. This keeps a crash from being silently truncated mid-sweep or mistaken for a clean exit-1 findings result.
+- A rule that raises is isolated rather than aborting the run (the failure is reported to stderr and the sweep continues), and maps to exit 2 for the same reason: it means compose-lint itself couldn't complete the analysis, not that the file failed the lint. This keeps a crash from being silently truncated mid-sweep or mistaken for a clean exit-1 findings result. The same holds for `fix` and `init`, whose writes are decided by that sweep: a crash there writes nothing for that file and exits 2, as a parse error does.
 - Exit 0 means "no findings at or above the threshold", not "Docker Compose would run
   this project". compose-lint is not a schema validator, and two ordinary shapes make
   the difference visible: `env_file: [missing.env]` and an unset `${VAR:?required}`

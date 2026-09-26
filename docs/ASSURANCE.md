@@ -23,7 +23,10 @@ a daemon.
 subcommand that writes to an input is `fix --apply`, which rewrites the
 file in place via an atomic swap — dry-run is the default, and every apply
 is guarded by a re-parse and a verify-apply pass ([ADR-014](adr/014-fix-remediation.md)).
-`init` also writes, but to `.compose-lint.yml` rather than to an input.
+`init` also writes, but to `.compose-lint.yml` rather than to an input, and
+it refuses an `-o` that resolves to one of the files it read, `--force` or
+not. Neither `fix --apply` nor `init` writes anything in a run where a rule
+crashed, because the sweep that decides what to write was incomplete.
 
 ## Trust boundaries
 
@@ -33,6 +36,7 @@ is guarded by a re-parse and a verify-apply pass ([ADR-014](adr/014-fix-remediat
 │  - Compose YAML file │ ─────────────▶ │   - Parser (engine)  │
 │  - Config YAML file  │                │   - Rule predicates  │
 │  - CLI args          │                │   - Formatters       │
+│  - Environment       │                │                      │
 └──────────────────────┘                └──────────┬───────────┘
                                                    │
                                                    │  text / JSON / SARIF
@@ -45,7 +49,12 @@ is guarded by a re-parse and a verify-apply pass ([ADR-014](adr/014-fix-remediat
 ```
 
 There is exactly one untrusted boundary: the YAML and config files the
-user hands the tool, plus CLI argument strings. Everything else — the
+user hands the tool, plus CLI argument strings and the environment. The
+environment variables compose-lint reads are CLI surface
+([ADR-037](adr/037-environment-variables-are-cli-surface.md)); the one that
+names a program is `PAGER`, which `--explain` runs on an interactive terminal
+([ADR-034](adr/034-explain-pages-on-a-tty.md)). It is the invoking user's own
+setting, never a value from a Compose or config file. Everything else — the
 Python interpreter, the venv, the rule implementations, the runtime
 image — is trusted by construction (pinned, signed, reproducible).
 
@@ -99,7 +108,7 @@ Common Python-level weakness classes and their mitigations:
 | Weakness class                                       | Mitigation                                                                  |
 |------------------------------------------------------|------------------------------------------------------------------------------|
 | Unsafe deserialization (CWE-502)                     | `yaml.SafeLoader` everywhere; custom loader asserts subclass at import time. |
-| Command injection / shell-out (CWE-78, CWE-77)       | Product code calls no subprocess, no `os.system`. Bandit enforces.           |
+| Command injection / shell-out (CWE-78, CWE-77)       | One subprocess: `--explain` on an interactive terminal pipes the rule's doc to a pager through `subprocess.Popen` with an argv list and no shell ([ADR-034](adr/034-explain-pages-on-a-tty.md)). The argv comes only from `$PAGER` (split with `shlex`) or the built-in `less` default, never from Compose or config content; the doc text goes to its stdin. No `os.system`, no `shell=True`. CI runs Bandit at medium severity and above (`-ll`), which does not report the low-severity notices on that call. |
 | Path traversal on input (CWE-22)                     | Two classes of path. **User-supplied targets** (argv, `--config`) are read as given, and written only by `fix --apply` / `init`. **Document-supplied paths** — `env_file:` targets and `COMPOSE_FILE` entries ([ADR-026](adr/026-read-the-sibling-env-file.md), [ADR-027](adr/027-grade-env-file-where-the-document-routes-it.md)) — *are* constructed from untrusted content, and are gated twice: a lexical containment test on what the path says, then a containment test on what it resolves to, so a symlink cannot escape the project. Both are read-only. |
 | Resource exhaustion (CWE-400)                        | Iterative parser traversals; byte, scan-length, merge-pair and service-count caps (`_limits.py`); ClusterFuzzLite runs as a continuous gate. |
 | Type confusion in rule predicates                    | `mypy --strict` on every commit; rules receive plain types only (AGENTS.md). |

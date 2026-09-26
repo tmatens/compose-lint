@@ -9,6 +9,7 @@ policy, the one file where "do not modify" is a security decision, even though
 
 from __future__ import annotations
 
+import contextlib
 import os
 import stat
 import subprocess
@@ -26,7 +27,7 @@ from compose_lint.models import Finding, Severity
 from tests._cli_env import cli_env
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -345,3 +346,96 @@ class TestInitGradesTheMergedStack:
         _, _, excluded = load_config(tmp_path / "baseline.yml")
         assert "CL-0002" in excluded, excluded  # privileged, from compose.prod.yml
         assert "CL-0010" not in excluded, excluded  # pid: host, from the override
+
+
+# --- #892: a crashed rule, and an -o that names an input --------------------
+
+
+@contextlib.contextmanager
+def crashing_rule() -> Iterator[None]:
+    """Register one extra rule that raises on every service, beside the real ones."""
+    from compose_lint.models import RuleMetadata
+    from compose_lint.rules import BaseRule, _registry
+
+    class _CrashingRule(BaseRule):
+        @property
+        def metadata(self) -> RuleMetadata:
+            return RuleMetadata(
+                id="CL-CRASH",
+                name="Crashing rule",
+                description="Always raises",
+                severity=Severity.HIGH,
+            )
+
+        def check(self, *_: object) -> Iterator[Finding]:
+            raise RuntimeError("synthetic crash")
+            yield  # pragma: no cover - makes this a generator
+
+    saved = list(_registry)
+    _registry.append(_CrashingRule)
+    try:
+        yield
+    finally:
+        _registry.clear()
+        _registry.extend(saved)
+
+
+def test_init_writes_no_baseline_when_a_rule_crashed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The crashed rule's own finding would be missing from the baseline."""
+    target = tmp_path / "docker-compose.yml"
+    target.write_text(_INSECURE, encoding="utf-8")
+    config = tmp_path / ".compose-lint.yml"
+    with crashing_rule(), pytest.raises(SystemExit) as exc:
+        cli.main(["init", str(target), "-o", str(config)])
+    assert exc.value.code == 2
+    assert not config.exists()
+    err = capsys.readouterr().err
+    assert "CL-CRASH" in err
+    assert "no baseline written" in err
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_init_refuses_an_output_that_is_its_own_input(
+    tmp_path: Path, force: bool
+) -> None:
+    target = tmp_path / "compose.yml"
+    target.write_text(_INSECURE, encoding="utf-8")
+    args = ["init", "compose.yml", "-o", "compose.yml"] + (["--force"] if force else [])
+    proc = _run(args, tmp_path)
+    assert proc.returncode == 2, proc.stderr
+    assert "one of the files it read" in proc.stderr
+    assert target.read_text(encoding="utf-8") == _INSECURE
+
+
+def test_init_refuses_an_output_that_is_an_included_file(tmp_path: Path) -> None:
+    part = tmp_path / "part.yml"
+    part.write_text(_INSECURE, encoding="utf-8")
+    root = tmp_path / "compose.yml"
+    root.write_text("include:\n  - part.yml\n", encoding="utf-8")
+    proc = _run(["init", "compose.yml", "-o", "part.yml", "--force"], tmp_path)
+    assert proc.returncode == 2, proc.stderr
+    assert part.read_text(encoding="utf-8") == _INSECURE
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symlinks need privilege")
+def test_init_refuses_an_output_linked_to_its_input(tmp_path: Path) -> None:
+    target = tmp_path / "compose.yml"
+    target.write_text(_INSECURE, encoding="utf-8")
+    (tmp_path / "alias.yml").symlink_to(target)
+    proc = _run(["init", "compose.yml", "-o", "alias.yml", "--force"], tmp_path)
+    assert proc.returncode == 2, proc.stderr
+    assert target.read_text(encoding="utf-8") == _INSECURE
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_init_still_writes_a_new_output_path(tmp_path: Path, force: bool) -> None:
+    target = tmp_path / "compose.yml"
+    target.write_text(_INSECURE, encoding="utf-8")
+    args = ["init", "compose.yml", "-o", "baseline.yml"] + (
+        ["--force"] if force else []
+    )
+    proc = _run(args, tmp_path)
+    assert proc.returncode == 0, proc.stderr
+    assert "CL-0002" in (tmp_path / "baseline.yml").read_text(encoding="utf-8")

@@ -111,3 +111,25 @@ root. Three shapes are skipped with a stderr note rather than failing the run:
 
 A skipped file contributes no findings and does not change the exit code.
 Genuinely unrecognised shapes still exit 2.
+
+### YAML that Compose accepts and compose-lint refuses
+
+compose-lint parses with PyYAML, and three shapes that Docker Compose 5.5.0
+deploys are refused by that parser. Each one fails closed: the file is
+reported as invalid YAML with exit 2, which `--fail-on` does not gate, so it
+can hold a pipeline red but never reports a clean pass over a file it did not
+read.
+
+- **A tab as the whitespace before a comment**: `privileged: true<TAB># note`.
+  Compose treats the tab as separating whitespace; PyYAML stops at it. Use a
+  space before the `#`.
+- **More than one document in a file**: a `---` line followed by a second
+  document. Compose merges the documents, later ones winning; compose-lint
+  expects exactly one. Split them into files and lint them together, or lint
+  `docker compose config` output.
+- **A bare `=` as a value**: `A: =`. Compose reads it as the string `"="`;
+  PyYAML resolves it to a YAML 1.1 type it cannot construct. Quote it:
+  `A: "="`.
+
+The stability rules for lifting one of these are in
+[Compatibility](compatibility.md#yaml-compose-accepts-that-compose-lint-refuses).

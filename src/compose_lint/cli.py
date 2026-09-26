@@ -90,7 +90,7 @@ def _format_type(value: str) -> str:
 
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable, Mapping
 
     from compose_lint._merge import Merged
 
@@ -1418,6 +1418,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             emit(f"Error: {filepath}: {e}")
             had_error = True
             continue
+        crashed = _CrashRecorder(filepath)
         findings = run_rules(
             data,
             lines,
@@ -1425,7 +1426,17 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             severity_overrides=severity_overrides,
             excluded_services=excluded_services,
             config_path=fix_config_name,
+            on_error=crashed,
         )
+        if crashed:
+            # The same treatment as a parse error: exit 2, nothing written, the
+            # rest of the batch still runs. A crashed rule is a sweep that did
+            # not finish (ADR-006), and `check` already holds on it; writing
+            # the fixes the other rules found, and exiting 0, told a gate the
+            # file was handled when part of it was never graded.
+            emit(f"Error: {filepath}: a rule failed; no fixes computed or written")
+            had_error = True
+            continue
 
         # A finding's line knows which document it came from. Only the ones
         # written in *this* file can be edited here: its line is a line in this
@@ -1588,6 +1599,51 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
     sys.exit(2 if had_error else 0)
 
 
+class _CrashRecorder:
+    """An ``on_error`` for :func:`run_rules` that reports and remembers a crash.
+
+    Truthy once any rule has raised, so a write path can refuse on it.
+    """
+
+    def __init__(self, filepath: str) -> None:
+        self._filepath = filepath
+        self._count = 0
+
+    def __call__(self, rule_id: str, service_name: str, exc: Exception) -> None:
+        self._count += 1
+        emit(
+            f"Error: {self._filepath}: rule {rule_id} failed on service "
+            f"'{service_name}': {type(exc).__name__}: {exc}"
+        )
+
+    def __bool__(self) -> bool:
+        return self._count > 0
+
+
+def _is_an_input(
+    out_path: Path, paths: Iterable[str], lines: Mapping[str, object]
+) -> bool:
+    """Whether ``out_path`` is the same file as one a load read.
+
+    The named files, plus every document ``include:`` or ``extends:`` merged
+    in, which the line map records as each line's source. ``samefile`` rather
+    than a path comparison, so a symlink or a hard link to an input counts.
+    """
+    if not out_path.exists():
+        return False
+    inputs = {*paths}
+    inputs.update(
+        str(source)
+        for line in lines.values()
+        if (source := getattr(line, "source", None)) is not None
+    )
+    for candidate in inputs:
+        with contextlib.suppress(OSError):
+            if os.path.samefile(out_path, candidate):
+                return True
+    return False
+
+
 def _run_init(args: argparse.Namespace) -> NoReturn:
     """Run the `init` operation (ADR-011).
 
@@ -1644,7 +1700,14 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
     for note in describe_unread(service_env_files):
         emit(f"note: {group.primary}: {note}")
 
-    findings = run_rules(data, lines, env_files=service_env_files)
+    crashed = _CrashRecorder(group.primary)
+    findings = run_rules(data, lines, env_files=service_env_files, on_error=crashed)
+    if crashed:
+        # A baseline is a suppression for every finding, so the crashed rule's
+        # findings would be the ones missing — and the next `check`, which
+        # holds at exit 2 on the same crash, is where that surfaces.
+        emit(f"Error: {group.primary}: a rule failed; no baseline written")
+        sys.exit(2)
     if not findings:
         emit(
             f"{args.file}: no findings; nothing to suppress, not writing {args.output}"
@@ -1652,6 +1715,14 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
         sys.exit(0)
 
     out_path = Path(args.output)
+    if _is_an_input(out_path, group.paths, lines):
+        # Before the --force check, because --force means "replace my config",
+        # not "replace my Compose file": `init compose.yml -o compose.yml
+        # --force` wrote the baseline over the file it had just read.
+        emit(
+            f"Error: {out_path} is one of the files it read; choose another output path"
+        )
+        sys.exit(2)
     # Refuse only when we would actually write: a parse error or a clean file
     # above already exited, so reaching here means there is a config to land.
     # Protect deliberate human suppression decisions from a silent clobber.
