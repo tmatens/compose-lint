@@ -25,6 +25,8 @@ Two levels, because the sinks differ:
 
 from __future__ import annotations
 
+import contextlib
+import os
 import re
 import sys
 from typing import TextIO
@@ -33,7 +35,11 @@ from typing import TextIO
 # C0/C1 controls — ANSI/escape-sequence injection, including the ESC and CSI
 # introducers — plus DEL, and the bidirectional and zero-width formatting
 # characters that visually reorder or hide text (e.g. U+202E RIGHT-TO-LEFT
-# OVERRIDE rendering a malicious tag as a benign one). Built from hex so no
+# OVERRIDE rendering a malicious tag as a benign one). The bidi entries are
+# Unicode's whole `Bidi_Control` set; the invisible ones are the
+# `Default_Ignorable_Code_Point`s that render as nothing at all in a terminal.
+# Hand-maintained rather than derived from `unicodedata`, which exposes neither
+# property. Built from hex so no
 # invisible literals live in source. Tab and newline are excluded here and
 # handled by the two functions below, which differ only in whether a newline is
 # structural at that sink.
@@ -41,11 +47,16 @@ _UNSAFE_RANGES = (
     (0x00, 0x08),
     (0x0B, 0x1F),
     (0x7F, 0x9F),
+    (0xAD, 0xAD),  # SOFT HYPHEN
+    (0x061C, 0x061C),  # ARABIC LETTER MARK (Bidi_Control)
+    (0x180E, 0x180E),  # MONGOLIAN VOWEL SEPARATOR
     (0x200B, 0x200F),
     (0x202A, 0x202E),
     (0x2060, 0x2064),
     (0x2066, 0x206F),
     (0xFEFF, 0xFEFF),
+    (0xFFF9, 0xFFFB),  # interlinear annotation controls
+    (0xE0000, 0xE007F),  # tag characters
 )
 
 
@@ -59,7 +70,10 @@ _UNSAFE_LINE_CHARS = _pattern("\n")
 
 
 def _escape(match: re.Match[str]) -> str:
-    return f"\\u{ord(match.group()):04x}"
+    code = ord(match.group())
+    # Past the BMP a four-digit `\u` would read as a shorter code point
+    # followed by a digit, so those take Python's eight-digit form.
+    return f"\\U{code:08x}" if code > 0xFFFF else f"\\u{code:04x}"
 
 
 def sanitize(text: str) -> str:
@@ -109,7 +123,7 @@ def emit(message: str, *, stream: TextIO | None = None) -> None:
     body = sanitize(message)
     first, *rest = body.split("\n")
     lines = [first] + [_CONTINUATION_INDENT + line for line in rest]
-    print("\n".join(lines), file=stream if stream is not None else sys.stderr)
+    _write_diagnostic("\n".join(lines) + "\n", stream)
 
 
 def emit_block(text: str) -> None:
@@ -118,4 +132,43 @@ def emit_block(text: str) -> None:
     Line structure is preserved because it is the message; everything that
     could redraw the terminal is escaped.
     """
-    print(sanitize(text), end="", file=sys.stderr)
+    _write_diagnostic(sanitize(text), None)
+
+
+def _write_diagnostic(text: str, stream: TextIO | None) -> None:
+    """Write to stderr if it can be written, and otherwise drop the text.
+
+    Stdout carries the report and stderr only narrates it, so losing stderr
+    must not cost the report. Two ways it did:
+
+    * Started with fd 2 closed, CPython sets ``sys.stderr`` to ``None``, and
+      ``print(file=None)`` means *stdout* — every note landed after the closing
+      brace of the JSON or SARIF document on stdout.
+    * A stderr that fails on write (a full disk, a reader that went away)
+      raised out of the first note, before the report was printed, and exited
+      120: outside ADR-006's codes, with nothing on stdout.
+
+    The flush is inside the guard because a buffered failure otherwise
+    surfaces at interpreter shutdown, where it becomes that same exit 120.
+    """
+    target = stream if stream is not None else sys.stderr
+    if target is None:
+        return
+    try:
+        target.write(text)
+        target.flush()
+    except (OSError, ValueError):
+        _discard_stderr(target)
+
+
+def _discard_stderr(target: TextIO) -> None:
+    """Point a failed stderr at the null device so no later write can fail.
+
+    The same move as ``cli._discard_stdout``: the interpreter flushes stderr
+    once more at exit, outside any handler, so the descriptor itself has to
+    stop failing for the chosen exit code to stand.
+    """
+    with contextlib.suppress(AttributeError, OSError, ValueError):
+        null = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(null, target.fileno())
+        os.close(null)

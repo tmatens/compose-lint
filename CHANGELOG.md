@@ -18,6 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A referenced file's name can no longer forge report lines, and a broken
+  stderr no longer costs the report.** The text report's `in:` line printed
+  the name of an `extends:`/`include:` file raw, so a crafted name with a
+  newline and an escape sequence could print a fake `✓ PASS` verdict. Losing
+  stderr now drops only the notes: a closed stderr used to send them onto
+  stdout after the closing brace of the JSON or SARIF document, and a stderr
+  that failed on write exited 120 with nothing on stdout. The sanitizer also
+  escapes the rest of Unicode's bidi controls (U+061C) and the invisible
+  characters it missed (soft hyphen, U+180E, U+FFF9–FFFB, tag characters);
+  code points past U+FFFF are shown as `\UXXXXXXXX`.
+
 - **A small file can no longer build gigabytes before it is graded.** A YAML
   merge key copies its anchor into every mapping that uses it, and a bare
   alias makes a whole service from one token, so files far under the 8 MB

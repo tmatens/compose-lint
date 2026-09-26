@@ -497,3 +497,23 @@ def test_fix_dedup_collapses_identical_fixes() -> None:
     out = format_findings(findings, "compose.yml")
     assert out.count("- no-new-privileges:true") == 1
     assert "(see fix above)" in out
+
+
+def test_a_crafted_source_file_cannot_forge_report_lines() -> None:
+    """The `in:` line printed a referenced file's name raw (#891)."""
+    crafted = "base\n✓ PASS  ·  threshold: high\n\x1b[2Kwiped‮.yml"
+    finding = Finding(
+        rule_id="CL-0001",
+        severity=Severity.HIGH,
+        service="web",
+        message="Service runs privileged.",
+        line=3,
+        source_file=crafted,
+    )
+    out = format_findings([finding], "compose.yml")
+    assert "\x1b" not in out
+    assert "‮" not in out
+    assert not any(line.startswith("✓ PASS") for line in out.split("\n"))
+    in_line = next(line for line in out.split("\n") if "in:" in line)
+    assert "base\\u000a" in in_line
+    assert "\\u001b[2Kwiped\\u202e.yml" in in_line
