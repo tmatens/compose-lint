@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or fails on its findings; the warning says which values were not graded.
   These refusals used to reach stderr only.
 
+### Changed
+
+- **A suppression without a reason no longer gets one invented.** JSON's
+  `suppression_reason` and SARIF's `justification` were filled with
+  `disabled in .compose-lint.yml` or `excluded for service '…' in …` when
+  the config gave no reason, so a consumer checking that every suppression
+  carries a written justification always passed. They are now present only
+  when the config gave a reason, as ADR-015 and ADR-010 already specified.
+  The text report keeps the descriptive wording.
+
 ### Fixed
 
 - **The text verdict says `⚠ ERROR` when a rule crashed or the config was

@@ -110,7 +110,15 @@ class Finding:
     fix: str | None = None
     references: list[str] = field(default_factory=list)
     suppressed: bool = False
+    # The reason the config wrote, and nothing else: JSON's
+    # `suppression_reason` and SARIF's `justification` are present only when
+    # a person gave one (ADR-015), so an auditor can tell a written reason
+    # from none.
     suppression_reason: str | None = None
+    # How the finding came to be suppressed, for the human report: "disabled
+    # in <config>" or "excluded for service 'x' in <config>". Never serialized
+    # as a reason; it used to be substituted for a missing one.
+    suppressed_by: str | None = None
     # The rule's own severity, recorded when `.compose-lint.yml` re-graded this
     # finding. `enabled: false` and `exclude_services` both leave a visible
     # record (a SUPPRESSED marker and a reason); `severity:` left none, so a

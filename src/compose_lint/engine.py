@@ -48,9 +48,10 @@ def run_rules(
     them to every rule rather than the two that grade them.
 
     ``config_path`` is the config file the suppressions were read from, as the
-    user named it. It goes into the default ``suppression_reason`` so JSON and
-    SARIF point an auditor at the file that was actually read rather than at
-    the conventional ``.compose-lint.yml``, which is what it defaults to.
+    user named it. It goes into ``suppressed_by`` so the text report points a
+    reader at the file that was actually read rather than at the conventional
+    ``.compose-lint.yml``, which is what it defaults to. ``suppression_reason``
+    carries only a reason the config wrote (ADR-015).
 
     A rule that raises is isolated rather than allowed to abort the whole
     run: the failure is reported via ``on_error`` (defaulting to a stderr
@@ -111,19 +112,20 @@ def run_rules(
                 # A rule that is globally disabled is never also labeled with a
                 # narrower "excluded for service X" reason.
                 if is_suppressed:
-                    reason = disabled[rule_id]
                     finding = replace(
                         finding,
                         suppressed=True,
-                        suppression_reason=reason or f"disabled in {config_name}",
+                        suppression_reason=disabled[rule_id] or None,
+                        suppressed_by=f"disabled in {config_name}",
                     )
                 elif service_name in rule_excluded:
-                    reason = rule_excluded[service_name]
-                    default = f"excluded for service '{service_name}' in {config_name}"
                     finding = replace(
                         finding,
                         suppressed=True,
-                        suppression_reason=reason or default,
+                        suppression_reason=rule_excluded[service_name] or None,
+                        suppressed_by=(
+                            f"excluded for service '{service_name}' in {config_name}"
+                        ),
                     )
                 findings.append(finding)
 
