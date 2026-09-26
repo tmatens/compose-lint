@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from compose_lint._env_file import read_env
+from compose_lint._limits import MAX_MERGED_PAIRS, MAX_SERVICES
 from compose_lint._lines import find_ambiguous_break
 from compose_lint._merge import (
     Document,
@@ -273,6 +274,9 @@ class LineLoader(yaml.SafeLoader):
         # single file needs no record of it — but a merge does: `!override`
         # replaces the other document's value instead of merging with it.
         self._overrides: dict[int, set[str]] = {}
+        # Pairs the document's merge keys have copied so far (see
+        # `_limits.MAX_MERGED_PAIRS`).
+        self._merged_pairs = 0
 
 
 def _mapping_key(loader: LineLoader, key_node: yaml.Node) -> Any:
@@ -309,7 +313,7 @@ def _reject_duplicate_keys(loader: LineLoader, node: yaml.MappingNode) -> None:
     """
     seen: set[Any] = set()
     for key_node, _value_node in node.value:
-        if key_node.tag == "tag:yaml.org,2002:merge":
+        if key_node.tag == _MERGE_TAG:
             continue  # the `<<` merge directive, not a data key
         key = _mapping_key(loader, key_node)
         try:
@@ -326,13 +330,28 @@ def _reject_duplicate_keys(loader: LineLoader, node: yaml.MappingNode) -> None:
         seen.add(key)
 
 
+_MERGE_TAG = "tag:yaml.org,2002:merge"
 _RESET_TAG = "!reset"
 _OVERRIDE_TAG = "!override"
 
 
 def _construct_mapping(loader: LineLoader, node: yaml.MappingNode) -> dict[Any, Any]:
     _reject_duplicate_keys(loader, node)
+    merge_keys = sum(1 for key_node, _ in node.value if key_node.tag == _MERGE_TAG)
+    written = len(node.value) - merge_keys
     loader.flatten_mapping(node)
+    if merge_keys:
+        # Counted before the dict below is built: the pairs are still node
+        # references here, and the gigabyte is the dict and line-map entry each
+        # copied pair becomes.
+        loader._merged_pairs += len(node.value) - written
+        if loader._merged_pairs > MAX_MERGED_PAIRS:
+            raise ComposeError(
+                "Not linted: this document's '<<:' merge keys copy more than "
+                f"{MAX_MERGED_PAIRS} key/value pairs into the mappings that use "
+                "them, so it was not built or graded. The limit is far above "
+                "any real Compose file."
+            )
     mapping: dict[Any, Any] = {}
     line_map: dict[str, int] = {}
     for key_node, value_node in node.value:
@@ -1905,6 +1924,25 @@ def load_compose_full(path: str | Path, *, use_env: bool = True) -> Loaded:
     )
 
 
+def _check_service_count(document: dict[Any, Any], *, folded: bool = False) -> None:
+    """Refuse a document declaring more than ``MAX_SERVICES`` services.
+
+    Run on each document as parsed, and again on one whose ``include:`` files
+    have been folded in, so a stack cannot pass by spreading them across files.
+    """
+    services = document.get("services")
+    if not isinstance(services, dict):
+        return
+    count = sum(1 for name in services if isinstance(name, str))
+    if count > MAX_SERVICES:
+        where = " once its 'include:' files are folded in" if folded else ""
+        raise ComposeError(
+            f"Not linted: this document declares more than {MAX_SERVICES} "
+            f"services{where}, so it was not graded. The limit is far above any "
+            "real Compose file."
+        )
+
+
 def _loads_full(  # noqa: PLR0913
     content: str,
     base_dir: Path | None = None,
@@ -2015,6 +2053,7 @@ def _loads_full(  # noqa: PLR0913
     # a bare `loads()` with no directory has nothing to resolve against.
     resolving_includes = base_dir is not None and project_dir is not None
     _validate_compose(raw, merging=merging, include_resolvable=resolving_includes)
+    _check_service_count(raw)
 
     # The post-parse passes recurse too, and the guard above covered only the
     # parse. A 2000-deep `extends:` chain, or a self-referential
@@ -2102,6 +2141,7 @@ def _loads_full(  # noqa: PLR0913
                 prefix=prefix,
             )
             gaps.extend(include_gaps)
+            _check_service_count(data, folded=True)
         # Cross-file bases merge before the in-file pass, so a service that
         # inherits from another service in this document inherits what that
         # service itself pulled in from elsewhere — the order Compose resolves

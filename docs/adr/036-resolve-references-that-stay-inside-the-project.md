@@ -100,6 +100,11 @@ principle is kept; the precedent is amended.
    recursion guard and bounded reader. A cycle or an exceeded cap is a coverage
    gap. A `compose.override.yml` or `.env` beside an *included* file is **not**
    merged: override discovery stays a property of the primary file.
+   These caps bound expansion *across* files. What one document constructs
+   is bounded separately, in `_limits.py` (`MAX_MERGED_PAIRS`,
+   `MAX_SERVICES`), and the service cap also applies to the stack once
+   its `include:` files are folded in. Exceeding either refuses the document
+   rather than leaving a gap, because nothing of it was built to grade.
 5. **Interpolation for an included file layers the two environments**, project
    over own. *Amended from the original decision, which said an included file
    uses its own directory; measurement said otherwise.* Its own `.env` **is**

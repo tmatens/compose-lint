@@ -18,6 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A small file can no longer build gigabytes before it is graded.** A YAML
+  merge key copies its anchor into every mapping that uses it, and a bare
+  alias makes a whole service from one token, so files far under the 8 MB
+  read cap cost 1.1 GB (2,000 keys merged into 2,000 services, 122 KB) and
+  1.6 GB plus 587 MB of JSON (90,000 aliased services). A document whose
+  merge keys copy more than 65,536 pairs, or that declares more than 4,096
+  services, directly or once its `include:` files are folded in, is now
+  refused with the reason and exit 2, like an oversized file. The largest
+  real files measured use 968 merged pairs and 64 services.
+
 - **Brace matching, `.env` comments and names scan in linear time.** A value
   of unclosed `${` was rescanned to its end from every brace (27 s for a
   64 KB `.env` value, 0.43 s per capped document scalar), an unquoted value
