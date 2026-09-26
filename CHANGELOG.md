@@ -32,6 +32,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `"000"`, `"+0"` and `"-0"` as root, as runc does. CL-0010 compares `pid`
   and `ipc` case-sensitively, because Docker rejects `pid: HOST` outright.
 
+- **`extends:` honours `!reset` and `!override`, and resolves an included
+  service once.** A child that un-hardened itself (`cap_drop: !reset []`,
+  `security_opt: !override [...]`) was graded as if it still inherited the
+  hardening, and one that narrowed a grant (`cap_add: !override [CHOWN]`)
+  was flagged for the base's `SYS_ADMIN`. Both the in-file and cross-file
+  merges now apply the child's directives as overlays already did. A service
+  that an included document declares with `extends:` is no longer resolved a
+  second time against the including project's directory, which reported a
+  false coverage gap or merged a like-named file Compose never reads. A
+  volume or device mount now replaces the inherited one when their container
+  paths differ only by a trailing `/`, `.` or `//`.
+
+- **An in-file `extends:` that cannot be followed is a coverage gap.** A
+  target the file does not declare, or a chain that loops, was silently
+  ignored and the service graded on its own; Compose refuses both. It now
+  exits 2 like the cross-file form, and `--allow-partial-coverage` accepts
+  it.
+
 - **CL-0005 reads ports with Docker's grammar, and CL-0026 reads memory
   with Compose's.** A short-syntax port is now split on its last two colons,
   as Docker's parser splits it, so an unbracketed IPv6 wildcard

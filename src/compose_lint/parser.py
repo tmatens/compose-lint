@@ -16,8 +16,8 @@ from compose_lint._merge import (
     Merged,
     SourcedLine,
     merge_documents,
+    merge_extended,
     merge_service_from,
-    merge_values,
 )
 from compose_lint._safe_read import (
     OutsideProjectError,
@@ -794,16 +794,36 @@ def _merge_extends(
     return over
 
 
-def _resolve_in_file_extends(data: dict[str, Any]) -> None:
+def _resolve_in_file_extends(
+    data: dict[str, Any],
+    *,
+    resets: frozenset[str] = frozenset(),
+    overrides: frozenset[str] = frozenset(),
+    skip: frozenset[str] = frozenset(),
+) -> list[str]:
     """Merge in-file ``extends`` targets into each service, in place.
 
-    A service can inherit another's config via ``extends``. compose-lint reads
-    files only, so it resolves the *in-file* forms — ``extends: <name>`` and
-    ``extends: {service: <name>}`` — by merging the recursively-resolved target
-    into the child. Without this, a child inheriting hardening is flagged for
-    missing it and one inheriting a dangerous key is not flagged at all (issue
-    #517). Cross-file ``extends: {file: ...}`` needs I/O we do not do and is
-    left unresolved.
+    A service can inherit another's config via ``extends``. This resolves the
+    *in-file* forms — ``extends: <name>`` and ``extends: {service: <name>}`` —
+    by merging the recursively-resolved target into the child. Without this, a
+    child inheriting hardening is flagged for missing it and one inheriting a
+    dangerous key is not flagged at all (issue #517). Cross-file
+    ``extends: {file: ...}`` is :func:`_resolve_cross_file_extends`'s.
+
+    The merge is the one overlays use, so it honours the child's ``!reset`` and
+    ``!override`` (``resets``/``overrides``, this document's tagged paths) as
+    Compose does: ``cap_drop: !reset []`` removes the inherited hardening, and
+    ``cap_add: !override [CHOWN]`` replaces the base's grant instead of adding
+    to it.
+
+    ``skip`` names services that arrived already resolved — from an included
+    document, which resolved its own ``extends:`` against its own directory.
+    They are still usable as a base; they are not merged again.
+
+    Returns one coverage-gap message per target that cannot be followed.
+    Compose refuses a missing target and a cycle outright, per file (measured
+    on Compose 5.5.0: an overlay cannot extend a service another ``-f`` file
+    declares), so neither is a quiet pass here.
 
     The child's ``extends`` key is intentionally *kept* after merging: the
     fixers refuse to edit either side of an ``extends`` relationship (a text
@@ -812,15 +832,20 @@ def _resolve_in_file_extends(data: dict[str, Any]) -> None:
     """
     services = data.get("services")
     if not isinstance(services, dict):
-        return
+        return []
     resolved: dict[str, Any] = {}
-    memo: dict[tuple[int, int, str], Any] = {}
+    # Two services that are one aliased mapping merge once. YAML aliases make
+    # the document a DAG, and re-merging a shared subtree per path was
+    # exponential (tests/test_resource_bounds.py).
+    memo: dict[tuple[int, int], Any] = {}
+    refused: dict[tuple[str, str], list[str]] = {}
 
     def _resolve(name: str, stack: tuple[str, ...]) -> Any:
         if name in resolved:
             return resolved[name]
         cfg = services[name]
-        if not isinstance(cfg, dict):
+        if not isinstance(cfg, dict) or name in skip:
+            resolved[name] = cfg
             return cfg
         ext = cfg.get("extends")
         target: str | None = None
@@ -830,26 +855,51 @@ def _resolve_in_file_extends(data: dict[str, Any]) -> None:
             service = ext.get("service")
             if isinstance(service, str):
                 target = service
-        if (
-            target is None
-            or target not in services
-            or not isinstance(services[target], dict)
-            or name in stack  # cycle — stop rather than recurse forever
-        ):
+        if target is None:
+            resolved[name] = cfg
+            return cfg
+        if target not in services:
+            refused.setdefault(
+                (target, f"this file declares no service '{target}'"), []
+            ).append(name)
+            resolved[name] = cfg
+            return cfg
+        if target == name or target in stack:
+            refused.setdefault(
+                (target, "the chain returns to a service it already inherited"), []
+            ).append(name)
+            resolved[name] = cfg
+            return cfg
+        if not isinstance(services[target], dict):
             resolved[name] = cfg
             return cfg
         parent = _resolve(target, (*stack, name))
-        # Compose resolves `extends:` with the same field-specific merge it uses
-        # for multi-file overlays (verified against `docker compose config` in
-        # tests/test_merge_semantics.py), so both go through one table. The
-        # previous concatenate-every-sequence merge reported a CRITICAL socket
-        # mount against a child that had replaced it at the same mount point.
-        merged = merge_values(parent, cfg, memo=memo)  # keeps child's `extends` marker
+        key = (id(parent), id(cfg))
+        merged = memo.get(key)
+        if merged is None:
+            merged = merge_extended(
+                parent,
+                cfg,
+                child_path=f"services.{name}",
+                resets=resets,
+                overrides=overrides,
+            )
+            memo[key] = merged
         resolved[name] = merged
         return merged
 
     for name in list(services):
         services[name] = _resolve(name, ())
+
+    gaps = []
+    for (target, reason), children in refused.items():
+        listed = ", ".join(repr(child) for child in sorted(set(children)))
+        gaps.append(
+            f"'extends: {target}' was not merged because {reason}, so {listed} "
+            f"{'was' if len(set(children)) == 1 else 'were'} graded without the "
+            "inherited base."
+        )
+    return gaps
 
 
 # Compose follows `extends:` chains as deep as an author writes them, and since
@@ -1075,11 +1125,12 @@ def _resolve_includes(  # noqa: PLR0913
     depth: int,
     chain: tuple[str, ...],
     prefix: tuple[str, ...],
-) -> tuple[dict[str, Any], dict[str, int], list[str]]:
+) -> tuple[dict[str, Any], dict[str, int], list[str], frozenset[str]]:
     """Fold every resolvable ``include:`` into this document.
 
-    Returns the merged document, its line map and one message per reference
-    that stayed a coverage gap.
+    Returns the merged document, its line map, one message per reference
+    that stayed a coverage gap, and the services whose ``extends:`` an
+    included document already resolved.
 
     **The fold runs backwards, and that is not a mistake.** Measured against
     Compose 5.5.0 with two included files declaring the same service:
@@ -1111,7 +1162,7 @@ def _resolve_includes(  # noqa: PLR0913
     """
     entries = _include_entries(data)
     if not entries:
-        return data, lines, []
+        return data, lines, [], frozenset()
 
     gaps: list[str] = []
     resolved: list[Document] = []
@@ -1199,11 +1250,33 @@ def _resolve_includes(  # noqa: PLR0913
             resolved.append(_folded(documents))
 
     if not resolved:
-        return data, lines, gaps
+        return data, lines, gaps, frozenset()
+
+    # A service an included document declares with `extends:` arrived already
+    # merged, against that document's own directory and `!reset` paths. The
+    # including document's `extends:` passes must not resolve it a second time
+    # — against *this* directory, where the base file is missing (a false gap)
+    # or is a different file (a merge Compose never makes). Unless the
+    # including document names its own `extends:` for it, which then wins.
+    own = data.get("services")
+    own_services = own if isinstance(own, dict) else {}
+    already: set[str] = set()
+    for document in resolved:
+        included = document.data.get("services")
+        if not isinstance(included, dict):
+            continue
+        for name, config in included.items():
+            mine = own_services.get(name)
+            if (
+                isinstance(config, dict)
+                and "extends" in config
+                and not (isinstance(mine, dict) and "extends" in mine)
+            ):
+                already.add(str(name))
 
     primary = Document(path=str(document_path), data=data, lines=lines)
     merged = merge_documents([*reversed(resolved), primary])
-    return merged.data, merged.lines, gaps
+    return merged.data, merged.lines, gaps, frozenset(already)
 
 
 def _carried_sources(lines: dict[str, int]) -> dict[str, str] | None:
@@ -1246,6 +1319,9 @@ def _resolve_cross_file_extends(
     depth: int,
     chain: tuple[tuple[str, str], ...],
     prefix: tuple[str, ...],
+    resets: frozenset[str] = frozenset(),
+    overrides: frozenset[str] = frozenset(),
+    skip: frozenset[str] = frozenset(),
 ) -> list[str]:
     """Merge every resolvable cross-file ``extends:`` base into ``data``.
 
@@ -1283,9 +1359,20 @@ def _resolve_cross_file_extends(
     # better than one. Two services failing for *different* reasons still get a
     # line each, which is the distinction the grouping has to keep.
     refused: dict[tuple[str, str], list[str]] = {}
-    child_doc = Document(path=str(document_path), data=data, lines=lines)
+    # The child's `!reset` and `!override` paths go with it: without them the
+    # merge kept hardening the child deleted, and concatenated a grant the
+    # child replaced.
+    child_doc = Document(
+        path=str(document_path),
+        data=data,
+        lines=lines,
+        resets=resets,
+        overrides=overrides,
+    )
 
     for name in list(services):
+        if name in skip:
+            continue
         ref = _extends_file_ref(services[name])
         if ref is None:
             continue
@@ -1983,8 +2070,9 @@ def _loads_full(  # noqa: PLR0913
         # the presence rules missed configuration that was. Each included
         # document was fully resolved in its own recursive load, so the fold
         # itself is a plain document merge with nothing left to re-resolve.
+        already_resolved: frozenset[str] = frozenset()
         if resolving_includes and project_dir is not None and base_dir is not None:
-            data, lines, include_gaps = _resolve_includes(
+            data, lines, include_gaps, already_resolved = _resolve_includes(
                 data,
                 lines,
                 document_path=document_path or base_dir,
@@ -2015,9 +2103,19 @@ def _loads_full(  # noqa: PLR0913
                     depth=depth,
                     chain=chain,
                     prefix=prefix,
+                    resets=reset_paths,
+                    overrides=override_paths,
+                    skip=already_resolved,
                 )
             )
-        _resolve_in_file_extends(data)
+        gaps.extend(
+            _resolve_in_file_extends(
+                data,
+                resets=reset_paths,
+                overrides=override_paths,
+                skip=already_resolved,
+            )
+        )
         if "include" in data and "services" not in data:
             # Deferred from `_validate_compose`, and only for the document that
             # deferral applied to: an include-only file whose references could
