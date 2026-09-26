@@ -107,6 +107,17 @@ meanings and no code is added. The reasoning is recorded in
 also decided that a reference resolving inside the project directory should be
 read rather than refused.
 
+### YAML Compose accepts that compose-lint refuses
+
+Three YAML shapes Compose deploys are refused as invalid YAML with exit 2: a
+tab before a comment, a multi-document file, and a bare `=` value (listed in
+[What a run reads](what-a-run-reads.md#yaml-that-compose-accepts-and-compose-lint-refuses)).
+They are known parser limitations, not a contract: each fails closed and
+never passes a file unread. Lifting one is a MINOR, for the same reason as
+retiring a gap: it can only turn exit 2 into a verdict, but that verdict can
+carry findings that were invisible before, which is the new-findings class
+above.
+
 ### Alert identity
 
 SARIF results carry `partialFingerprints`, which is what GitHub Code Scanning
