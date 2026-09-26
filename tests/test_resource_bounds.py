@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from compose_lint._limits import MAX_SUBSTITUTED_LEN
+from compose_lint._limits import MAX_MERGED_PAIRS, MAX_SERVICES, MAX_SUBSTITUTED_LEN
 from compose_lint._lines import split_lines
 from compose_lint._safe_read import MAX_FILE_BYTES, UnsafeFileError, read_text_bounded
 from compose_lint._scalar import as_scalar_text
@@ -523,3 +523,83 @@ def test_the_linear_scanners_match_the_old_ones() -> None:
         for start, char in enumerate(value):
             if char == "{":
                 assert _matching_brace(value, start) == forward_count(value, start)
+
+
+# --- #889: what one small document may construct --------------------------
+#
+# Byte size bounds what is read, not what it builds. A merge key copies its
+# anchor's pairs into every mapping that uses it, and a bare alias makes a
+# whole service out of one token, so a file far under MAX_FILE_BYTES could
+# cost a gigabyte. Both caps refuse the document rather than grade part of it.
+
+
+def _merge_fanout(n: int) -> str:
+    keys = "".join(f"  x-k{i}: v\n" for i in range(n))
+    services = "".join(
+        f"  s{j}:\n    <<: *common\n    image: alpine\n" for j in range(n)
+    )
+    return f"x-common: &common\n{keys}services:\n{services}"
+
+
+def test_a_merge_key_fanout_is_refused_before_it_is_built() -> None:
+    """N keys merged into N services: 2,000 of each was 122 KB and 1.1 GB."""
+    start = time.perf_counter()
+    with pytest.raises(ComposeError, match=f"more than {MAX_MERGED_PAIRS}"):
+        loads(_merge_fanout(2000))
+    assert time.perf_counter() - start < 3
+
+
+def test_merge_keys_at_the_cap_still_load() -> None:
+    per_service = 16
+    services = MAX_MERGED_PAIRS // per_service
+    source = (
+        "x-common: &common\n"
+        + "".join(f"  k{i}: v\n" for i in range(per_service))
+        + "services:\n"
+        + "".join(f"  s{j}:\n    <<: *common\n" for j in range(services))
+    )
+    data, _ = loads(source)
+    assert len(data["services"]) == services
+
+
+def test_an_alias_fanout_of_services_is_refused() -> None:
+    """90,000 `sN: *base` lines: 1.6 MB of input, 1.6 GB and 587 MB of JSON."""
+    source = (
+        "x-base: &base\n  image: alpine\n  privileged: true\nservices:\n"
+        + "".join(f"  s{j}: *base\n" for j in range(MAX_SERVICES + 1))
+    )
+    with pytest.raises(ComposeError, match=f"more than {MAX_SERVICES} services"):
+        loads(source)
+
+
+def test_services_at_the_cap_still_load() -> None:
+    source = "x-base: &base\n  image: alpine\nservices:\n" + "".join(
+        f"  s{j}: *base\n" for j in range(MAX_SERVICES)
+    )
+    data, _ = loads(source)
+    assert len(data["services"]) == MAX_SERVICES
+
+
+def test_included_services_count_toward_the_cap(tmp_path: Path) -> None:
+    """Each file under the cap, the folded stack over it."""
+    from compose_lint.parser import load_compose
+
+    half = MAX_SERVICES // 2 + 1
+    for name in ("a", "b"):
+        (tmp_path / f"{name}.yml").write_text(
+            "services:\n"
+            + "".join(f"  {name}{j}:\n    image: alpine\n" for j in range(half)),
+            encoding="utf-8",
+        )
+    root = tmp_path / "compose.yml"
+    root.write_text("include:\n  - a.yml\n  - b.yml\n", encoding="utf-8")
+    with pytest.raises(ComposeError, match="once its 'include:' files are folded in"):
+        load_compose(root)
+
+
+def test_the_cli_refuses_a_fanout_with_exit_2(tmp_path: Path) -> None:
+    target = tmp_path / "compose.yml"
+    target.write_text(_merge_fanout(300), encoding="utf-8")
+    proc = _run(["check", "--format", "json", str(target)], tmp_path)
+    assert proc.returncode == 2, proc.stderr
+    assert f"more than {MAX_MERGED_PAIRS}" in proc.stdout
