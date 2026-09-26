@@ -46,6 +46,14 @@ CIS_REF = (
 # no cap_add for CL-0030 to see, so dropping the device here would leave the
 # upstream-default case ungraded.
 _DANGEROUS_DEVICE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    # A directory source is walked by Docker, which maps every device node
+    # beneath it. The node patterns below are all anchored one level down, so
+    # the directory itself (normalized, so no trailing slash) needs its own row.
+    (re.compile(r"^/dev$"), "/dev — every host device node, every disk included"),
+    (
+        re.compile(r"^/dev/(mapper|disk|md)$"),
+        "whole block-device directory — every node beneath it",
+    ),
     (re.compile(r"^/dev/sd[a-z]"), "/dev/sd* — SCSI/SATA block device"),
     (re.compile(r"^/dev/nvme"), "/dev/nvme* — NVMe block device"),
     (re.compile(r"^/dev/vd[a-z]"), "/dev/vd* — virtio block device (KVM, Proxmox)"),
@@ -65,6 +73,13 @@ _DANGEROUS_DEVICE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^/dev/mapper/"), "/dev/mapper/* — device mapper symlink"),
     (re.compile(r"^/dev/zfs$"), "/dev/zfs — ZFS pool control device"),
     (re.compile(r"^/dev/rbd"), "/dev/rbd* — Ceph RBD block device"),
+    (re.compile(r"^/dev/zd\d"), "/dev/zd* — ZFS zvol block device"),
+    (re.compile(r"^/dev/zvol/"), "/dev/zvol/* — ZFS zvol symlink"),
+    (re.compile(r"^/dev/nbd\d"), "/dev/nbd* — network block device"),
+    (re.compile(r"^/dev/mtdblock"), "/dev/mtdblock* — MTD flash block device"),
+    # Anchored at the end, unlike /dev/sd[a-z]: "hd" plus a letter is also the
+    # start of names like /dev/hdmi0 that are not disks.
+    (re.compile(r"^/dev/hd[a-z]\d*$"), "/dev/hd* — legacy IDE block device"),
     (re.compile(r"^/dev/kmsg$"), "/dev/kmsg — kernel log buffer read/inject"),
 ]
 
@@ -72,7 +87,9 @@ _DANGEROUS_DEVICE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 def _extract_host_device(device: Any) -> str | None:
     """Extract and normalize the host device path from a device mapping.
 
-    Format: ``/dev/host:/dev/container[:permissions]``, or just ``/dev/host``.
+    Short syntax is ``/dev/host:/dev/container[:permissions]``, or just
+    ``/dev/host``. Long syntax is a mapping whose ``source`` is the host path,
+    which is the form `docker compose config` itself renders.
 
     The path is normalized before the patterns below see it. Every pattern is
     anchored at ``^/dev/``, so the raw form let equivalent spellings through:
@@ -81,9 +98,15 @@ def _extract_host_device(device: Any) -> str | None:
     none of the sixteen patterns. `normalize_host_path` is the collapsing the
     repo already owns and already applies to bind sources.
     """
-    if not isinstance(device, str):
+    if isinstance(device, dict):
+        source = device.get("source")
+        if not isinstance(source, str):
+            return None
+        host = source
+    elif isinstance(device, str):
+        host = device.split(":")[0]
+    else:
         return None
-    host = device.split(":")[0]
     return normalize_host_path(host) if host else host
 
 
