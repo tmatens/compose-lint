@@ -573,13 +573,12 @@ def format_findings(
             props["severityOverriddenFrom"] = f.severity_overridden_from.value
 
         if f.suppressed:
-            result["suppressions"] = [
-                {
-                    "kind": "external",
-                    "justification": f.suppression_reason
-                    or "disabled in .compose-lint.yml",
-                },
-            ]
+            suppression: dict[str, str] = {"kind": "external"}
+            # SARIF's `justification` is optional; one the tool wrote itself
+            # is indistinguishable from a person's (ADR-015, #888).
+            if f.suppression_reason is not None:
+                suppression["justification"] = f.suppression_reason
+            result["suppressions"] = [suppression]
 
         results.append(result)
 

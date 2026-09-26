@@ -210,9 +210,7 @@ class TestCLI:
         )
         assert result.returncode in (0, 1), result.stderr
         findings = json.loads(result.stdout)["findings"]
-        assert any(
-            f["rule_id"] == "CL-0002" and f.get("suppression_reason") for f in findings
-        )
+        assert any(f["rule_id"] == "CL-0002" and f["suppressed"] for f in findings)
 
     def test_format_choice_folds_case(self) -> None:
         # `--fail-on HIGH` already folds case; `--format JSON` was rejected.
@@ -238,7 +236,9 @@ class TestCLI:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # The default reason said `.compose-lint.yml` under `--config other/ci.yml`
-        # too, sending an auditor reading the JSON to a file that was never read.
+        # too, sending an auditor to a file that was never read. Since #888 the
+        # machine output carries no invented reason at all, and the text report
+        # is where the default wording lives.
         monkeypatch.chdir(tmp_path)
         (tmp_path / "other").mkdir()
         (tmp_path / "other" / "ci.yml").write_text(
@@ -251,11 +251,21 @@ class TestCLI:
             "json",
             str(FIXTURES / "insecure_privileged.yml"),
         )
-        reasons = {
-            f["rule_id"]: f.get("suppression_reason")
+        [finding] = [
+            f
             for f in json.loads(result.stdout)["findings"]
-        }
-        assert reasons["CL-0002"] == "disabled in other/ci.yml"
+            if f["rule_id"] == "CL-0002"
+        ]
+        assert finding["suppressed"] is True
+        assert "suppression_reason" not in finding
+        text = run_cli(
+            "--config",
+            "other/ci.yml",
+            "--verbose",
+            str(FIXTURES / "insecure_privileged.yml"),
+            env_extra={"NO_COLOR": "1"},
+        )
+        assert "reason: disabled in other/ci.yml" in text.stdout
 
     def test_verbose_and_quiet_are_mutually_exclusive(self) -> None:
         result = run_cli("-v", "-q", str(FIXTURES / "insecure_socket.yml"))
@@ -798,7 +808,10 @@ class TestCLI:
             for f in json.loads(capsys.readouterr().out)["findings"]
             if f["rule_id"] == "CL-0002"
         ]
-        assert finding["suppression_reason"] == "disabled in .compose-lint.yaml"
+        assert "suppression_reason" not in finding
+        with pytest.raises(SystemExit):
+            cli.main(["check", "--verbose", compose.name])
+        assert "reason: disabled in .compose-lint.yaml" in capsys.readouterr().out
 
     def test_fix_reads_a_discovered_yaml_config(
         self,
@@ -1623,3 +1636,27 @@ def test_a_strict_config_error_is_not_a_pass_verdict(tmp_path: Path) -> None:
     verdict = result.stdout.rstrip().splitlines()[-1]
     assert verdict.startswith("⚠ ERROR"), verdict
     assert "config error" in verdict
+
+
+def test_suppression_reason_appears_only_when_the_config_gave_one(
+    tmp_path: Path,
+) -> None:
+    """ADR-015: present when suppressed *and the config gave a reason* (#888)."""
+    (tmp_path / "compose.yml").write_text(
+        "services:\n  app:\n    image: alpine:3.20\n    privileged: true\n"
+        "    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".compose-lint.yml").write_text(
+        "rules:\n"
+        "  CL-0001:\n    enabled: false\n"
+        "  CL-0002:\n    exclude_services:\n      - app\n"
+        "  CL-0003:\n    enabled: false\n    reason: legacy image\n",
+        encoding="utf-8",
+    )
+    result = run_cli("check", "--format", "json", "compose.yml", cwd=tmp_path)
+    by_rule = {f["rule_id"]: f for f in json.loads(result.stdout)["findings"]}
+    assert "suppression_reason" not in by_rule["CL-0001"]
+    assert "suppression_reason" not in by_rule["CL-0002"]
+    assert by_rule["CL-0003"]["suppression_reason"] == "legacy image"
+    assert all(by_rule[r]["suppressed"] for r in ("CL-0001", "CL-0002", "CL-0003"))

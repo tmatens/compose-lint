@@ -83,14 +83,17 @@ class TestRunRules:
         findings = run_rules(data, {}, disabled_rules={"CL-TEST": None})
         assert len(findings) == 1
         assert findings[0].suppressed is True
-        assert findings[0].suppression_reason == "disabled in .compose-lint.yml"
+        # No reason in the config, so none is invented (ADR-015, #888).
+        assert findings[0].suppression_reason is None
+        assert findings[0].suppressed_by == "disabled in .compose-lint.yml"
 
     def test_default_reasons_name_the_config_that_was_read(self) -> None:
         data = {"services": {"web": {"test_flag": True}, "worker": {"test_flag": True}}}
         disabled = run_rules(
             data, {}, disabled_rules={"CL-TEST": None}, config_path="other/ci.yml"
         )
-        assert {f.suppression_reason for f in disabled} == {"disabled in other/ci.yml"}
+        assert {f.suppressed_by for f in disabled} == {"disabled in other/ci.yml"}
+        assert {f.suppression_reason for f in disabled} == {None}
         excluded = run_rules(
             data,
             {},
@@ -100,9 +103,10 @@ class TestRunRules:
         by_service = {f.service: f for f in excluded}
         assert by_service["web"].suppressed is False
         assert (
-            by_service["worker"].suppression_reason
+            by_service["worker"].suppressed_by
             == "excluded for service 'worker' in other/ci.yml"
         )
+        assert by_service["worker"].suppression_reason is None
 
     def test_disabled_rule_with_reason(self) -> None:
         data = {"services": {"web": {"test_flag": True}}}
@@ -172,7 +176,9 @@ class TestRunRules:
         )
         assert len(findings) == 1
         assert findings[0].suppressed is True
-        assert "worker" in (findings[0].suppression_reason or "")
+        # ADR-010 list form: suppressed, no justification emitted (#888).
+        assert findings[0].suppression_reason is None
+        assert "worker" in (findings[0].suppressed_by or "")
 
     def test_excluded_service_only_affects_named_service(self) -> None:
         data = {
@@ -201,7 +207,8 @@ class TestRunRules:
         )
         assert len(findings) == 1
         assert findings[0].suppressed is True
-        assert findings[0].suppression_reason == "disabled in .compose-lint.yml"
+        assert findings[0].suppression_reason is None
+        assert findings[0].suppressed_by == "disabled in .compose-lint.yml"
 
     def test_excluded_service_with_severity_override(self) -> None:
         """Severity overrides apply before suppression tagging."""

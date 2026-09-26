@@ -334,7 +334,11 @@ def format_findings(
 
         for f in sorted(group, key=_finding_sort_key):
             if f.suppressed:
-                reason = f.suppression_reason or "disabled in .compose-lint.yml"
+                reason = (
+                    f.suppression_reason
+                    or f.suppressed_by
+                    or "disabled in .compose-lint.yml"
+                )
                 line_label = str(f.line) if f.line else "?"
                 marker = _colorize(
                     _SUPPRESSED_LABEL.ljust(_LABEL_WIDTH), _SUPPRESSED_COLOR

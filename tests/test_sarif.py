@@ -688,3 +688,30 @@ def test_each_tier_lands_in_its_github_band(
         f"{severity.value} maps to {value}, outside GitHub's "
         f"{low}-{high} band for that tier"
     )
+
+
+class TestSuppressionJustification:
+    """`justification` is the config's reason, or absent (ADR-015, #888)."""
+
+    @staticmethod
+    def _result(reason: str | None) -> dict:
+        finding = Finding(
+            rule_id="CL-0001",
+            severity=Severity.HIGH,
+            service="web",
+            message="m",
+            line=3,
+            suppressed=True,
+            suppression_reason=reason,
+            suppressed_by="disabled in .compose-lint.yml",
+        )
+        [result] = format_findings([finding], "compose.yml")
+        return result
+
+    def test_a_given_reason_is_the_justification(self) -> None:
+        assert self._result("vendored image")["suppressions"] == [
+            {"kind": "external", "justification": "vendored image"}
+        ]
+
+    def test_no_reason_means_no_justification(self) -> None:
+        assert self._result(None)["suppressions"] == [{"kind": "external"}]

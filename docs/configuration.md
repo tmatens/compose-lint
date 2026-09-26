@@ -89,6 +89,11 @@ rules:
 - **JSON**: `suppression_reason` field on each finding.
 - **SARIF**: `suppressions[].justification` (recognized by GitHub Code Scanning).
 
+With no `reason`, JSON has no `suppression_reason` key and the SARIF
+suppression has no `justification`, so a present reason always means a person
+wrote one. The text report still says where the suppression came from
+(`disabled in .compose-lint.yml`).
+
 `severity:` re-grades a rule's findings rather than suppressing them, and it
 leaves its own record so a reader can tell a re-graded finding from one the rule
 declared that way. Re-grading is the quietest way to neutralise a rule — three
