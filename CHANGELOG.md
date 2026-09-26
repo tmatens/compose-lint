@@ -251,6 +251,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resolves outside through a directory symlink is refused too, and a `.env`
   line containing a NUL byte is skipped. See GHSA-6wcv-rj3c-mhv3.
 
+- **Text from a Compose file can no longer issue CI workflow commands.**
+  The report prints service names, env keys and source lines, and the GitHub
+  Actions runner acts on `##[...]` anywhere in a line and `::...::` at the
+  start of one. Inside the Action, a Compose file could forge annotations,
+  fold the verdict out of sight, or mask log text. The Action now brackets
+  each compose-lint run with a random `stop-commands` token, and the text
+  report escapes both openers (also covering Azure Pipelines). See
+  GHSA-6f4g-xm8v-pgv6.
+
 ## [0.30.0] - 2026-09-25
 
 ### Added

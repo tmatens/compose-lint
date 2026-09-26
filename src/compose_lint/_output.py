@@ -76,13 +76,29 @@ def _escape(match: re.Match[str]) -> str:
     return f"\\U{code:08x}" if code > 0xFFFF else f"\\u{code:04x}"
 
 
+# CI log parsers treat some printable text as commands. GitHub Actions and
+# Azure Pipelines run `##[command]` found anywhere in a line, and GitHub also
+# runs `::command::` at the start of a line, after any indentation, which is
+# where `emit` puts a diagnostic's continuation lines. A Compose file's own
+# strings are printed in the report, so each opening is broken with the same
+# visible escape the control characters get.
+_LEGACY_COMMAND = re.compile(r"##\[")
+_LINE_COMMAND = re.compile(r"^([ \t]*):(?=:)", re.MULTILINE)
+
+
+def _defuse_commands(text: str) -> str:
+    text = _LEGACY_COMMAND.sub("##\\\\u005b", text)
+    return _LINE_COMMAND.sub("\\1\\\\u003a", text)
+
+
 def sanitize(text: str) -> str:
     """Render terminal-unsafe code points as visible ``\\uXXXX`` escapes.
 
     Newlines and tabs survive, so multi-line content (fix guidance, a unified
-    diff) keeps its layout. Clean text is returned unchanged.
+    diff) keeps its layout. Clean text is returned unchanged. CI workflow
+    command openers (``##[`` and a line-leading ``::``) are escaped too.
     """
-    return _UNSAFE_OUTPUT_CHARS.sub(_escape, text)
+    return _defuse_commands(_UNSAFE_OUTPUT_CHARS.sub(_escape, text))
 
 
 def sanitize_line(text: str) -> str:
@@ -94,7 +110,7 @@ def sanitize_line(text: str) -> str:
     which is how a service name could forge a finding against another file or a
     ``✓ PASS`` verdict.
     """
-    return _UNSAFE_LINE_CHARS.sub(_escape, text)
+    return _defuse_commands(_UNSAFE_LINE_CHARS.sub(_escape, text))
 
 
 # Continuation lines are indented so nothing after an embedded newline can sit

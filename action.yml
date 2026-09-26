@@ -282,11 +282,23 @@ runs:
           ARGS+=(--verbose)
         fi
 
+        # compose-lint prints text taken from the Compose files it grades
+        # (service names, env keys, source lines), and the runner treats text
+        # in a step's output as workflow commands: `##[...]` anywhere in a
+        # line, `::cmd::` at its start. A file in a pull request could forge
+        # annotations, fold the verdict out of sight, or reach the deprecated
+        # `set-output`. `stop-commands` with a fresh, unguessable token turns
+        # command processing off while compose-lint runs; it is GitHub's
+        # documented control for printing untrusted text.
+        STOP_TOKEN="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
+
         # `--` terminates the option namespace, so a repository file named
         # `--config=evil/compose.yml` arrives as a path instead of installing
         # an attacker-authored policy.
         TEXT_EXIT=0
+        echo "::stop-commands::${STOP_TOKEN}"
         compose-lint "${ARGS[@]}" -- "${TARGET_FILES[@]}" || TEXT_EXIT=$?
+        echo "::${STOP_TOKEN}::"
 
         # When a SARIF artifact is requested, re-run in SARIF mode. The first
         # run prints human-readable output to the job log and sets the exit
@@ -347,8 +359,12 @@ runs:
           # empty result set as if the scan had been clean.
           SARIF_TMP="$(mktemp "${RUNNER_TEMP:-/tmp}/compose-lint-sarif.XXXXXX")"
           SARIF_EXIT=0
+          # stdout goes to the file, but diagnostics on stderr still reach the
+          # log and can quote the document, so this run is bracketed too.
+          echo "::stop-commands::${STOP_TOKEN}"
           compose-lint --format sarif "${ARGS[@]}" -- "${TARGET_FILES[@]}" \
             > "$SARIF_TMP" || SARIF_EXIT=$?
+          echo "::${STOP_TOKEN}::"
 
           if [ ! -s "$SARIF_TMP" ]; then
             rm -f "$SARIF_TMP"
