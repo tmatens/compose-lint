@@ -15,9 +15,12 @@ import os
 import stat
 from typing import TYPE_CHECKING
 
+import pytest
+
 from compose_lint._env_file import (
     MAX_ENV_BYTES,
     EnvFile,
+    env_read_failure,
     parse_env,
     parse_env_file,
     read_env,
@@ -26,8 +29,6 @@ from compose_lint._env_file import (
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import pytest
 
 
 def values(text: str, wanted: list[str] | None = None) -> dict[str, str]:
@@ -180,6 +181,13 @@ class TestDivergesFromCompose:
         assert parsed.values == {"K": "v"}
         assert parsed.skipped_lines == (1,)
 
+    def test_a_line_with_a_nul_is_skipped(self) -> None:
+        """No dotenv file has a NUL; `/proc/self/environ` is NUL-separated, and
+        parsed as one line it put every variable into a single value."""
+        parsed = parse_env("A=1\x00B=2\x00C=3\nK=v\n")
+        assert parsed.values == {"K": "v"}
+        assert parsed.skipped_lines == (1,)
+
     def test_a_redefinition_that_fails_clears_the_earlier_value(self) -> None:
         """Nothing downstream should read a value the file went on to replace."""
         parsed = parse_env("K=good\nK=${UNKNOWN}")
@@ -271,6 +279,68 @@ class TestReadEnv:
         parsed = read_env(tmp_path, ["K"])
         assert parsed is not None
         assert parsed.values == {"K": "v"}
+
+
+class TestReadEnvContainment:
+    """GHSA-6wcv-rj3c-mhv3: a committed `.env` symlink is spelled like a file
+    in the project while pointing anywhere on the runner."""
+
+    def _outside(self, tmp_path: Path) -> Path:
+        outside = tmp_path / "outside.env"
+        outside.write_text("K=from-outside\n", encoding="utf-8", newline="")
+        project = tmp_path / "project"
+        project.mkdir()
+        return project
+
+    def test_a_symlink_out_of_the_project_is_treated_as_absent(
+        self, tmp_path: Path
+    ) -> None:
+        project = self._outside(tmp_path)
+        (project / ".env").symlink_to(tmp_path / "outside.env")
+        assert read_env(project) is None
+
+    def test_the_refusal_is_named(self, tmp_path: Path) -> None:
+        project = self._outside(tmp_path)
+        (project / ".env").symlink_to(tmp_path / "outside.env")
+        assert env_read_failure(project) == (
+            "it resolves outside the project directory"
+        )
+
+    def test_a_symlink_inside_the_project_is_read(self, tmp_path: Path) -> None:
+        (tmp_path / "shared.env").write_text("K=v\n", encoding="utf-8", newline="")
+        (tmp_path / ".env").symlink_to(tmp_path / "shared.env")
+        parsed = read_env(tmp_path)
+        assert parsed is not None
+        assert parsed.values == {"K": "v"}
+        assert env_read_failure(tmp_path) is None
+
+    def test_within_bounds_the_link_not_the_directory(self, tmp_path: Path) -> None:
+        """An included file's `.env` may link elsewhere in the same project.
+        Without `within`, the file's own directory is the bound."""
+        sub = tmp_path / "sub"
+        sub.mkdir()
+        (tmp_path / "shared.env").write_text("K=v\n", encoding="utf-8", newline="")
+        (sub / ".env").symlink_to(tmp_path / "shared.env")
+
+        parsed = read_env(sub, within=tmp_path)
+        assert parsed is not None
+        assert parsed.values == {"K": "v"}
+        assert read_env(sub) is None
+
+    @pytest.mark.skipif(not os.path.exists("/proc/self/environ"), reason="needs procfs")
+    def test_a_link_to_the_process_environment_is_not_read(
+        self, tmp_path: Path
+    ) -> None:
+        """The advisory's worst case, at the reader. The failure message never
+        prints what was read, so a regression cannot copy a CI runner's
+        environment into the log. That the linked values reach a report is
+        shown end to end in ``test_env_input_reach.py``."""
+        (tmp_path / ".env").symlink_to("/proc/self/environ")
+        if read_env(tmp_path) is not None:
+            pytest.fail("the process environment was read as a .env", pytrace=False)
+        assert env_read_failure(tmp_path) == (
+            "it resolves outside the project directory"
+        )
 
 
 class TestEnvFile:

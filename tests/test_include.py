@@ -849,3 +849,72 @@ def test_project_directory_moves_the_env_lookup_with_it(tmp_path: Path) -> None:
 
     data = load_compose_full(target).data
     assert data["services"]["sidecar"]["image"] == "nginx:fallback"
+
+
+# --- GHSA-6wcv-rj3c-mhv3: the entry's .env stays inside the project ---------
+
+
+def _tagged_sidecar(tmp_path: Path) -> None:
+    _write(
+        tmp_path / "sub" / "compose.yml",
+        "services:\n  sidecar:\n    image: nginx:${TAG:-fallback}\n",
+    )
+
+
+def test_a_project_directory_linked_out_of_the_project_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The name passes the lexical check; the directory it links to does not.
+    The entry falls back to its file's own directory, which has no `.env`."""
+    outside = tmp_path.parent / f"{tmp_path.name}-outside"
+    _write(outside / ".env", "TAG=from-outside\n")
+    _tagged_sidecar(tmp_path)
+    (tmp_path / "linked").symlink_to(outside, target_is_directory=True)
+    target = _project(
+        tmp_path,
+        "include:\n  - path: sub/compose.yml\n    project_directory: linked\n",
+    )
+
+    data = load_compose_full(target).data
+    assert data["services"]["sidecar"]["image"] == "nginx:fallback"
+
+
+def test_a_project_directory_linked_inside_the_project_is_honoured(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path / "parts" / ".env", "TAG=from-parts\n")
+    _tagged_sidecar(tmp_path)
+    (tmp_path / "linked").symlink_to(tmp_path / "parts", target_is_directory=True)
+    target = _project(
+        tmp_path,
+        "include:\n  - path: sub/compose.yml\n    project_directory: linked\n",
+    )
+
+    data = load_compose_full(target).data
+    assert data["services"]["sidecar"]["image"] == "nginx:from-parts"
+
+
+def test_an_included_files_env_linked_out_of_the_project_is_not_read(
+    tmp_path: Path,
+) -> None:
+    outside = tmp_path.parent / f"{tmp_path.name}-outside.env"
+    outside.write_text("TAG=from-outside\n", encoding="utf-8")
+    _tagged_sidecar(tmp_path)
+    (tmp_path / "sub" / ".env").symlink_to(outside)
+    target = _project(tmp_path, "include:\n  - sub/compose.yml\n")
+
+    data = load_compose_full(target).data
+    assert data["services"]["sidecar"]["image"] == "nginx:fallback"
+
+
+def test_an_included_files_env_may_link_elsewhere_in_the_project(
+    tmp_path: Path,
+) -> None:
+    """Bounded by the project, not by the included file's directory."""
+    _write(tmp_path / "config" / "shared.env", "TAG=from-shared\n")
+    _tagged_sidecar(tmp_path)
+    (tmp_path / "sub" / ".env").symlink_to(tmp_path / "config" / "shared.env")
+    target = _project(tmp_path, "include:\n  - sub/compose.yml\n")
+
+    data = load_compose_full(target).data
+    assert data["services"]["sidecar"]["image"] == "nginx:from-shared"
