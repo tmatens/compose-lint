@@ -30,6 +30,8 @@ from compose_lint._yaml_edit import (
     normalize_security_opt,
     opens_block_body,
     replace_lines,
+    sequence_scalar_span,
+    value_is_shared,
 )
 
 if TYPE_CHECKING:
@@ -288,15 +290,44 @@ def _coordinate_security_opt(
         return None
 
     # Map each parsed item to its (single, scalar) source line so the disable
-    # test uses the resolved value (quotes resolved). A count mismatch means an
-    # item we cannot place on one line — refuse rather than guess.
+    # test uses the resolved value (quotes resolved). More item lines than
+    # items means an item we cannot place on one line — refuse rather than
+    # guess.
     item_lines = [i for i in range(so_line, last) if _is_seq_item(source_lines[i])]
-    if len(item_lines) != len(security_opt):
+    if len(item_lines) > len(security_opt):
         return None
+    own = security_opt[: len(item_lines)]
+    if len(own) < len(security_opt):
+        # A merged run: an overlay appended to this list, base first, so this
+        # file's items are the leading part and the rest is the other file's
+        # to keep. Rewriting only these is the whole of the coordinated edit.
+        # Without this the coordinator bailed on the count, and the per-finding
+        # fixers left behind collided on every run, so the file never
+        # converged (#886). Each line has to show the item it is matched to.
+        for idx, opt in zip(item_lines, own, strict=True):
+            shown = sequence_scalar_span(source_lines[idx])
+            if shown is None or normalize_security_opt(
+                shown[0]
+            ) != normalize_security_opt(opt):
+                return None
+        if any(
+            normalize_security_opt(opt).startswith("no-new-privileges")
+            for opt in security_opt[len(own) :]
+        ):
+            return None  # the other file decides no-new-privileges; not ours
+        if not any(
+            normalize_security_opt(opt) in DISABLED_SECURITY_PROFILES for opt in own
+        ):
+            return None  # the disables are the other file's to remove
     kept: list[str] = []
-    for idx, opt in zip(item_lines, security_opt, strict=True):
+    for idx, opt in zip(item_lines, own, strict=True):
         value = normalize_security_opt(opt)
         if value in DISABLED_SECURITY_PROFILES:
+            if "$" in source_lines[idx]:
+                # The line interpolates: it is a disable only under the default
+                # this run assumed, and another environment may ship something
+                # else there. Deleting it is not a known-safe edit (ADR-014).
+                return None
             continue  # a disable CL-0009 removes
         if value.startswith("no-new-privileges"):
             # e.g. `no-new-privileges:false`: appending the true form would
@@ -437,8 +468,24 @@ def collect_edits(
         edits = rules_by_id[finding.rule_id].fix(finding, data, lines, text)
         if edits:
             units.append(_FixUnit([finding], edits, caveat_rule_id=finding.rule_id))
-        else:
-            manual.append(finding)
+            continue
+        manual.append(finding)
+        # A refusal the count cannot explain: the key is one value shared with
+        # another key through an anchor, so no edit to it is this finding's
+        # alone. One note per service and key, however many findings share it.
+        for written in sorted(rules_by_id[finding.rule_id].fix_writes_keys()):
+            key_line = lines.get(f"services.{finding.service}.{written}")
+            if key_line is None or not 1 <= key_line <= len(source_lines):
+                continue
+            if not value_is_shared(source_lines[key_line - 1]):
+                continue
+            note = (
+                f"{finding.rule_id} on '{finding.service}': '{written}' is shared "
+                "through a YAML anchor, so an edit would change every service "
+                "using it; fix it by hand"
+            )
+            if note not in notes:
+                notes.append(note)
 
     starts = line_starts(text)
 

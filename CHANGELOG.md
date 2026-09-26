@@ -30,6 +30,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per key: a service that collected one fix was exempt wholesale, so an
   anchor edit reached a service whose finding on that list was excluded.
 
+- **`fix` refuses interpolated deletions, and stops getting stuck.** CL-0014
+  deleted a `logging:` block whose driver was `${LOG_DRIVER:-none}`, and
+  CL-0009 deleted a `- ${SECCOMP_OPT:-seccomp:unconfined}` item. Each is a
+  finding only under the default, so both are now refused. A full-line
+  comment after a `security_opt` item no longer blocks the item's removal.
+  On a merged run, the coordinated `security_opt` rewrite now edits this
+  file's own items instead of bailing on the merged count, which left a file
+  half-fixed and refusing on every later run. A list refused because it is
+  shared through an anchor now says so. The setuid, setgid and sticky bits
+  a fix drops are documented as dropped.
+
 - **An `env_file:` in an included document is read from beside that
   document.** It was read from beside the including file, where it usually
   does not exist, so a credential Compose deploys from it was never graded.

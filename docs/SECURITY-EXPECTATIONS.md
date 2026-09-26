@@ -28,7 +28,8 @@ pipeline, this is the page to read.
    (the default command) only reads its inputs. The `fix` command is
    dry-run by default — it prints a unified diff and writes nothing;
    only `fix --apply` rewrites in place, via an atomic swap that
-   preserves permission bits. It applies only mechanically unambiguous
+   preserves the read, write and execute bits (setuid, setgid and sticky
+   are dropped rather than handed to the new inode). It applies only mechanically unambiguous
    edits, never touches suppressed findings, and re-parses and re-lints
    every change before writing. That guarantee covers the *edit*, not
    the *outcome*: a fix can still change how your stack behaves, and

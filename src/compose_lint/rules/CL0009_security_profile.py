@@ -39,12 +39,19 @@ def _item_is_multiline(source_lines: list[str], item_line: int) -> bool:
     multi-line, and deleting only its first line would orphan the continuation
     into the previous entry (issue #508).
     """
-    marker_indent = line_indent(source_lines[item_line - 1])
+    item = source_lines[item_line - 1]
+    marker_indent = line_indent(item)
     nxt = item_line  # 0-based index of the line after the 1-based item_line
     if nxt >= len(source_lines):
         return False
     following = source_lines[nxt]
     if not following.strip():
+        return False
+    value = item.strip()[1:].strip()
+    if following.lstrip().startswith("#") and not value.startswith(("|", ">")):
+        # A `#` ends a plain or quoted scalar, so a deeper comment line is a
+        # comment, not the value's continuation. Inside a block scalar body it
+        # would be content, which the indicator check keeps.
         return False
     return line_indent(following) > marker_indent
 
@@ -208,6 +215,11 @@ class SecurityProfileRule(BaseRule):
             # would leave an orphaned continuation that silently merges into the
             # previous entry (issue #508); refuse and leave it for the user.
             if _item_is_multiline(source_lines, item_line):
+                return None
+            if "$" in source_lines[item_line - 1]:
+                # Interpolated: a disable only under the default this run
+                # assumed; another environment may ship a different value on
+                # this line, so deleting it is not a known-safe edit.
                 return None
             return [delete_lines(source_lines, item_line, item_line, caveat=_CAVEAT)]
         # legit_remaining == 0: emptying the block would leave CL-0003 to
