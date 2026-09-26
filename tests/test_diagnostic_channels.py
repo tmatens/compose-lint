@@ -256,10 +256,13 @@ def test_truncation_is_reported_exactly_once(
     code, doc = _run(
         ["check", "--format", "sarif", "compose.yml"], tmp_path, monkeypatch, capsys
     )
-    assert code == 2
+    # Non-fatal since #888: the findings were all graded, so the exit code is
+    # --fail-on's (nothing here reaches `high`) and the run succeeded.
+    assert code == 0
     assert len(doc["runs"][0]["results"]) == 1
-    assert doc["runs"][0]["invocations"][0]["executionSuccessful"] is False
+    assert doc["runs"][0]["invocations"][0]["executionSuccessful"] is True
     [notification] = _notifications(doc)
+    assert notification["level"] == "warning"
     assert notification["descriptor"] == {"id": "run"}
     assert "locations" not in notification
     assert "truncated" in notification["message"]["text"]

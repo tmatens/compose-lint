@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A truncated SARIF log no longer changes the exit code.** Past 5,000
+  results the SARIF log is cut so GitHub Code Scanning accepts it. That used
+  to exit 2 and set `executionSuccessful: false`, so one file under one
+  `--fail-on` passed as JSON or text and failed as SARIF. Truncation is now a
+  warning notification (and a `Warning:` line on stderr), and the exit code
+  follows `--fail-on` in every format.
+
 - **A suppression without a reason no longer gets one invented.** JSON's
   `suppression_reason` and SARIF's `justification` were filled with
   `disabled in .compose-lint.yml` or `excluded for service '…' in …` when

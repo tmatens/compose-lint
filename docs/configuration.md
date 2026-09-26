@@ -208,4 +208,4 @@ JSON output is a versioned envelope (see [ADR-015](adr/015-machine-readable-outp
 
 ### SARIF
 
-`--format sarif` emits a SARIF 2.1.0 log for GitHub Code Scanning. Parse failures appear as `invocations[].toolExecutionNotifications`; suppressed findings use the native `suppressions[]` array with the reason in `justification`.
+`--format sarif` emits a SARIF 2.1.0 log for GitHub Code Scanning. Parse failures appear as `invocations[].toolExecutionNotifications`; suppressed findings use the native `suppressions[]` array with the reason in `justification`. A log holds at most 5,000 results, because GitHub Code Scanning rejects a larger file outright; past that, the rest are dropped with a warning notification, and the exit code still reflects every finding. Use `--format json` for the complete set.
