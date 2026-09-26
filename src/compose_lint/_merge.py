@@ -340,23 +340,32 @@ def merge_values(
     only safe when no recorder is active: provenance is path-dependent, and a
     cached subtree would report whichever path reached it first.
     """
-    if memo is not None and rec is None:
+    if memo is not None and rec is None and not _directed(over_side):
         cache_key = (id(base), id(over), field_name)
         cached = memo.get(cache_key)
         if cached is not None:
             return cached
-        result = merge_values(
-            base,
-            over,
-            field_name=field_name,
-            base_side=base_side,
-            over_side=over_side,
-            out_path=out_path,
-            rec=None,
-            memo=None,
+        result = _merge_uncached(
+            base, over, field_name, base_side, over_side, out_path, None, memo
         )
         memo[cache_key] = result
         return result
+    return _merge_uncached(
+        base, over, field_name, base_side, over_side, out_path, rec, memo
+    )
+
+
+def _merge_uncached(  # noqa: PLR0913
+    base: Any,
+    over: Any,
+    field_name: str,
+    base_side: _Side | None,
+    over_side: _Side | None,
+    out_path: str,
+    rec: _Recorder | None,
+    memo: dict[tuple[int, int, str], Any] | None,
+) -> Any:
+    """:func:`merge_values` without the cache lookup, memo passed to children."""
 
     # A mapping merges key-by-key, recursively, whatever it sits under.
     # A service with no body (`web:` in an overlay) parses as None and means
@@ -368,7 +377,9 @@ def merge_values(
         return base
 
     if isinstance(base, dict) and isinstance(over, dict):
-        return _merge_mappings(base, over, base_side, over_side, out_path, rec)
+        return _merge_mappings(
+            base, over, base_side, over_side, out_path, rec, memo=memo
+        )
 
     if isinstance(base, list) and isinstance(over, list):
         return _merge_sequences(
@@ -392,13 +403,33 @@ def merge_values(
     return over
 
 
-def _merge_mappings(
+def _directed(side: _Side | None) -> bool:
+    """Whether a ``!reset``/``!override`` sits at or under ``side``'s path.
+
+    The merge of such a subtree depends on where it is, so it cannot be shared
+    through the memo with the same pair of values reached by another path.
+    """
+    if side is None:
+        return False
+    tagged = side.doc.resets | side.doc.overrides
+    if not tagged:
+        return False
+    prefix = side.path
+    return any(
+        path == prefix or path.startswith((f"{prefix}.", f"{prefix}["))
+        for path in tagged
+    )
+
+
+def _merge_mappings(  # noqa: PLR0913
     base: dict[str, Any],
     over: dict[str, Any],
     base_side: _Side | None,
     over_side: _Side | None,
     out_path: str,
     rec: _Recorder | None,
+    *,
+    memo: dict[tuple[int, int, str], Any] | None = None,
 ) -> dict[str, Any]:
     merged = dict(base)
 
@@ -444,6 +475,9 @@ def _merge_mappings(
             # which is the file the key is written in.
             if rec is not None and base_side is not None:
                 rec.take(child_out, _child(base_side, key))
+            # The memo is threaded down, not only held at the top: YAML aliases
+            # make the document a DAG, and a nested subtree reached by many
+            # paths was re-merged once per path — exponential in alias depth.
             merged[key] = merge_values(
                 base[key],
                 value,
@@ -452,6 +486,7 @@ def _merge_mappings(
                 over_side=over_child,
                 out_path=child_out,
                 rec=rec,
+                memo=memo,
             )
         else:
             merged[key] = value
@@ -793,6 +828,7 @@ def merge_extended(
     child_path: str,
     resets: frozenset[str] = frozenset(),
     overrides: frozenset[str] = frozenset(),
+    memo: dict[tuple[int, int, str], Any] | None = None,
 ) -> Any:
     """Merge a child service onto the service it ``extends:`` in the same file.
 
@@ -807,4 +843,5 @@ def merge_extended(
         child_value,
         over_side=_Side(child_value, child, child_path),
         out_path=child_path,
+        memo=memo,
     )
