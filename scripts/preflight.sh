@@ -111,7 +111,44 @@ patch_coverage() {
   python .github/scripts/patch-coverage.py --base-sha "${base}" --fail-under 90
 }
 
+# A few tests write a script into their tmp_path and assert on whether
+# something ran it: the Action's pip shim, a fake $PAGER. On a host that mounts
+# /tmp noexec (CIS-recommended hardening) they cannot run, so
+# tests/_execdir.require_exec() skips them, and preflight passed with less
+# coverage than CI while the skips hid in `-rs` output (#880). Point pytest at a
+# directory that can execute instead, so a local run checks what CI checks. The
+# guard stays as the backstop for a bare `pytest`.
+can_exec_in() {
+  local probe rc
+  probe="$(mktemp "$1/preflight-exec.XXXXXX" 2>/dev/null)" || return 1
+  printf '#!/bin/sh\nexit 0\n' > "${probe}"
+  chmod +x "${probe}"
+  rc=0
+  "${probe}" 2>/dev/null || rc=$?
+  rm -f "${probe}"
+  return "${rc}"
+}
+
+exec_tmpdir() {
+  local system="${TMPDIR:-/tmp}" local_dir="${PWD}/.pytest-tmp"
+  if can_exec_in "${system}"; then
+    return 0
+  fi
+  mkdir -p "${local_dir}"
+  if can_exec_in "${local_dir}"; then
+    export TMPDIR="${local_dir}"
+    printf 'note: %s cannot execute files (noexec); running tests with TMPDIR=%s\n' \
+      "${system}" "${local_dir}"
+    return 0
+  fi
+  printf 'WARNING: neither %s nor %s can execute files; the tests that run a\n' \
+    "${system}" "${local_dir}"
+  printf '         script from their tmp_path will SKIP, so this run covers less\n'
+  printf '         than CI. Set TMPDIR to an exec-capable directory (CONTRIBUTING.md).\n'
+}
+
 if [ "${quick}" -eq 0 ]; then
+  exec_tmpdir
   gate "pytest + coverage floor (>= 80% statement)" coverage_run
   gate "patch coverage (>= 90% of the lines you changed)" patch_coverage
 else

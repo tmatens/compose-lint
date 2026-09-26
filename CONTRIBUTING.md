@@ -118,9 +118,12 @@ mark it `# pragma: no cover` with a comment saying why, rather than dropping
 the threshold. A PR that changes only docs, tests or metadata has no
 measurable line and passes.
 
-On hosts where `/tmp` is mounted `noexec` (hardened containers), point
-pytest's temp directory somewhere executable first — the action-contract
-tests run shim executables from it and will skip otherwise:
+On hosts where `/tmp` is mounted `noexec` (hardened containers), a few
+tests cannot run: they execute a script they wrote to their temp directory
+(the Action's `pip` shim, a fake `$PAGER`), and they skip rather than report
+a false result. `scripts/preflight.sh` detects this and points `TMPDIR` at a
+gitignored `.pytest-tmp/` in the checkout, so it runs them as CI does. Running
+`pytest` directly, point its temp directory somewhere executable yourself:
 
 ```bash
 TMPDIR=$HOME/.pytest-tmp pytest --basetemp=$HOME/.pytest-tmp/bt

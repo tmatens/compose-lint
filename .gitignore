@@ -36,6 +36,8 @@ ENV/
 
 # Testing / coverage
 .pytest_cache/
+# scripts/preflight.sh's TMPDIR when the system temp dir is noexec (#880)
+.pytest-tmp/
 .coverage
 # `parallel = true` writes one data file per process; the patch-coverage
 # gate and CONTRIBUTING's local recipe both ask for the XML report.
