@@ -247,3 +247,83 @@ class TestAdditionalBlockFamilies:
     def test_near_misses_are_not_flagged(self) -> None:
         for device in ("/dev/zero", "/dev/hdmi0", "/dev/hidraw0", "/dev/mtd0"):
             assert _device_findings(f'      - "{device}:{device}"\n') == [], device
+
+
+class TestDeviceCgroupRules:
+    """`device_cgroup_rules:` opens the gate `devices:` does (#882).
+
+    Each case mirrors a measured one: at Docker's defaults a block rule with `r`
+    plus `mknod` read the host disk; dropping MKNOD stopped it unless a `/dev`
+    bind mount supplied the node; `m` alone read nothing.
+    """
+
+    def _findings(self, body: str) -> list:
+        text = "services:\n  app:\n    image: busybox:1.37\n" + body
+        data, lines = loads(text)
+        rule = DangerousDevicesRule()
+        return list(rule.check("app", data["services"]["app"], data, lines))
+
+    def test_a_block_rule_at_default_caps_is_flagged(self) -> None:
+        [finding] = self._findings('    device_cgroup_rules: ["b 8:* rwm"]\n')
+        assert finding.rule_id == "CL-0016"
+        assert finding.severity.value == "critical"
+        assert finding.evidence == "b 8:*"
+        assert finding.line == 4
+
+    def test_a_dynamic_major_is_flagged(self) -> None:
+        # NVMe sat on major 259 on the host this was measured on.
+        [finding] = self._findings('    device_cgroup_rules: ["b 259:0 r"]\n')
+        assert finding.evidence == "b 259:0"
+
+    def test_every_device_and_wildcard_major_are_flagged(self) -> None:
+        findings = self._findings('    device_cgroup_rules: ["a *:* rwm", "b *:* w"]\n')
+        assert [f.evidence for f in findings] == ["a *:*", "b *:*"]
+
+    def test_mknod_only_access_is_not_flagged(self) -> None:
+        assert self._findings('    device_cgroup_rules: ["b 8:* m"]\n') == []
+
+    def test_character_rules_are_not_claimed(self) -> None:
+        assert self._findings('    device_cgroup_rules: ["c 1:11 rw"]\n') == []
+
+    def test_whitespace_is_normalized_and_access_left_out(self) -> None:
+        [finding] = self._findings('    device_cgroup_rules: ["  b  8:*   r "]\n')
+        assert finding.evidence == "b 8:*"
+
+    def test_a_rule_docker_would_refuse_is_skipped(self) -> None:
+        assert self._findings('    device_cgroup_rules: ["b 8 rwm"]\n') == []
+
+    def test_dropping_mknod_leaves_the_rule_inert(self) -> None:
+        for drop in ("MKNOD", "CAP_MKNOD", "ALL"):
+            body = f'    device_cgroup_rules: ["b 8:* r"]\n    cap_drop: [{drop}]\n'
+            assert self._findings(body) == [], drop
+
+    def test_adding_mknod_back_makes_it_reachable_again(self) -> None:
+        body = (
+            '    device_cgroup_rules: ["b 8:* r"]\n'
+            "    cap_drop: [ALL]\n    cap_add: [MKNOD]\n"
+        )
+        assert len(self._findings(body)) == 1
+
+    def test_a_dev_bind_mount_supplies_the_node_without_mknod(self) -> None:
+        for mount in ("/dev:/dev", "/dev/nvme0n1:/dev/disk"):
+            body = (
+                '    device_cgroup_rules: ["b 259:* r"]\n'
+                "    cap_drop: [ALL]\n"
+                f"    volumes:\n      - {mount}\n"
+            )
+            assert len(self._findings(body)) == 1, mount
+
+    def test_an_unrelated_bind_mount_does_not(self) -> None:
+        body = (
+            '    device_cgroup_rules: ["b 8:* r"]\n'
+            "    cap_drop: [ALL]\n"
+            "    volumes:\n      - /srv/data:/data\n"
+        )
+        assert self._findings(body) == []
+
+    def test_devices_and_a_rule_are_reported_separately(self) -> None:
+        findings = self._findings(
+            "    devices:\n      - /dev/sda:/dev/sda\n"
+            '    device_cgroup_rules: ["b 8:* rwm"]\n'
+        )
+        assert sorted(f.evidence for f in findings) == ["/dev/sda", "b 8:*"]

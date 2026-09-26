@@ -384,7 +384,7 @@ frequency for precision against deeply dangerous configurations, and a zero-hit
 run does not mean the rule is broken.
 
 - **CL-0014** — `logging.driver: none`
-- **CL-0016** — `devices:` mapping a sensitive host device (e.g. `/dev/mem`, `/dev/kmem`)
+- **CL-0016** — `devices:` mapping a host disk (e.g. `/dev/sda`, `/dev/nvme0n1`), or a `device_cgroup_rules:` entry opening a block major
 - **CL-0017** — `volumes:` using `:rshared` (shared mount propagation)
 - **CL-0022** — `tmpfs` mount passing `exec` or `suid` (re-enabling Docker's default `noexec,nosuid`)
 
