@@ -169,6 +169,9 @@ def _discard_stderr(target: TextIO) -> None:
     stop failing for the chosen exit code to stand.
     """
     with contextlib.suppress(AttributeError, OSError, ValueError):
+        fd = target.fileno()
         null = os.open(os.devnull, os.O_WRONLY)
-        os.dup2(null, target.fileno())
-        os.close(null)
+        try:
+            os.dup2(null, fd)
+        finally:
+            os.close(null)

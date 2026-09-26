@@ -1660,3 +1660,40 @@ def test_suppression_reason_appears_only_when_the_config_gave_one(
     assert "suppression_reason" not in by_rule["CL-0002"]
     assert by_rule["CL-0003"]["suppression_reason"] == "legacy image"
     assert all(by_rule[r]["suppressed"] for r in ("CL-0001", "CL-0002", "CL-0003"))
+
+
+@pytest.mark.skipif(not Path("/proc/self/fd").is_dir(), reason="needs /proc/self/fd")
+def test_discard_stdout_leaks_no_null_fd(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The /dev/null descriptor was left open when fileno() raised (CodeQL)."""
+    from compose_lint import cli
+
+    class _NoFd:
+        def fileno(self) -> int:
+            raise ValueError("I/O operation on closed file")
+
+    monkeypatch.setattr(sys, "stdout", _NoFd())
+    before = len(os.listdir("/proc/self/fd"))
+    for _ in range(20):
+        cli._discard_stdout()
+    assert len(os.listdir("/proc/self/fd")) == before
+
+
+def test_discard_stdout_points_the_descriptor_at_null(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from compose_lint import cli
+
+    sink = tmp_path / "stdout"
+    fd = os.open(sink, os.O_WRONLY | os.O_CREAT, 0o600)
+
+    class _Stream:
+        def fileno(self) -> int:
+            return fd
+
+    monkeypatch.setattr(sys, "stdout", _Stream())
+    try:
+        cli._discard_stdout()
+        os.write(fd, b"after")
+    finally:
+        os.close(fd)
+    assert sink.read_bytes() == b""

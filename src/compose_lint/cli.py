@@ -622,9 +622,14 @@ def _discard_stdout() -> None:
     underlying file descriptor is what makes the chosen exit code stick.
     """
     with contextlib.suppress(AttributeError, OSError, ValueError):
+        # Asked before opening, and closed in `finally`: a stream with no
+        # descriptor, or a failed dup2, left the /dev/null descriptor open.
+        fd = sys.stdout.fileno()
         null = os.open(os.devnull, os.O_WRONLY)
-        os.dup2(null, sys.stdout.fileno())
-        os.close(null)
+        try:
+            os.dup2(null, fd)
+        finally:
+            os.close(null)
 
 
 def _abort_on_write_failure(exc: OSError) -> NoReturn:
