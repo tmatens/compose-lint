@@ -621,15 +621,13 @@ def _discard_stdout() -> None:
     and exits **120** — overriding whatever code we chose. Replacing the
     underlying file descriptor is what makes the chosen exit code stick.
     """
-    with contextlib.suppress(AttributeError, OSError, ValueError):
-        # Asked before opening, and closed in `finally`: a stream with no
-        # descriptor, or a failed dup2, left the /dev/null descriptor open.
-        fd = sys.stdout.fileno()
-        null = os.open(os.devnull, os.O_WRONLY)
-        try:
-            os.dup2(null, fd)
-        finally:
-            os.close(null)
+    # `with open` rather than os.open/os.close: the /dev/null handle is closed on
+    # every path, including a stream with no descriptor or a failed dup2.
+    with (
+        contextlib.suppress(AttributeError, OSError, ValueError),
+        open(os.devnull, "wb") as null,
+    ):
+        os.dup2(null.fileno(), sys.stdout.fileno())
 
 
 def _abort_on_write_failure(exc: OSError) -> NoReturn:

@@ -1684,16 +1684,15 @@ def test_discard_stdout_points_the_descriptor_at_null(
     from compose_lint import cli
 
     sink = tmp_path / "stdout"
-    fd = os.open(sink, os.O_WRONLY | os.O_CREAT, 0o600)
+    # The descriptor is owned by a `with` handle so it is closed on every path.
+    with sink.open("wb") as handle:
+        fd = handle.fileno()
 
-    class _Stream:
-        def fileno(self) -> int:
-            return fd
+        class _Stream:
+            def fileno(self) -> int:
+                return fd
 
-    monkeypatch.setattr(sys, "stdout", _Stream())
-    try:
+        monkeypatch.setattr(sys, "stdout", _Stream())
         cli._discard_stdout()
         os.write(fd, b"after")
-    finally:
-        os.close(fd)
     assert sink.read_bytes() == b""

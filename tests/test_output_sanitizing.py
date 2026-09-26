@@ -323,25 +323,24 @@ def test_a_failing_stderr_is_pointed_at_the_null_device(tmp_path: Path) -> None:
     from compose_lint._output import emit
 
     sink = tmp_path / "stderr"
-    fd = os.open(sink, os.O_WRONLY | os.O_CREAT, 0o600)
+    # The descriptor is owned by a `with` handle so it is closed on every path.
+    with sink.open("wb") as handle:
+        fd = handle.fileno()
 
-    class _Full:
-        def write(self, _text: str) -> int:
-            raise OSError(28, "No space left on device")
+        class _Full:
+            def write(self, _text: str) -> int:
+                raise OSError(28, "No space left on device")
 
-        def flush(self) -> None:  # pragma: no cover - write raises first
-            pass
+            def flush(self) -> None:  # pragma: no cover - write raises first
+                pass
 
-        def fileno(self) -> int:
-            return fd
+            def fileno(self) -> int:
+                return fd
 
-    try:
         emit("Note: lost", stream=_Full())  # type: ignore[arg-type]
         # The descriptor now writes to the null device, so the interpreter's
         # shutdown flush cannot fail and override the exit code.
         os.write(fd, b"after")
-    finally:
-        os.close(fd)
     assert sink.read_bytes() == b""
 
 
