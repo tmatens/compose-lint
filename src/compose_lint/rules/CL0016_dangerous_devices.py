@@ -51,11 +51,15 @@ _DANGEROUS_DEVICE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # A directory source is walked by Docker, which maps every device node
     # beneath it. The node patterns below are all anchored one level down, so
     # the directory itself (normalized, so no trailing slash) needs its own row.
+    #
+    # Only /dev itself. The walk maps real nodes and skips symlinks, and
+    # /dev/disk, /dev/mapper and /dev/md hold (almost) nothing else: measured
+    # on two hosts (#913), `--device /dev/disk` is refused outright ("not a
+    # device node") and `--device /dev/mapper` maps only `control`, whose
+    # ioctls need CAP_SYS_ADMIN (CL-0024). A symlink named *directly* is
+    # resolved and does grant the disk, which is why the rows below keep
+    # `/dev/disk/`, `/dev/mapper/` and `/dev/md/`.
     (re.compile(r"^/dev$"), "/dev — every host device node, every disk included"),
-    (
-        re.compile(r"^/dev/(mapper|disk|md)$"),
-        "whole block-device directory — every node beneath it",
-    ),
     (re.compile(r"^/dev/sd[a-z]"), "/dev/sd* — SCSI/SATA block device"),
     (re.compile(r"^/dev/nvme"), "/dev/nvme* — NVMe block device"),
     (re.compile(r"^/dev/vd[a-z]"), "/dev/vd* — virtio block device (KVM, Proxmox)"),

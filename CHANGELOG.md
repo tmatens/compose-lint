@@ -45,6 +45,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CL-0016 no longer flags `/dev/disk`, `/dev/mapper` or `/dev/md` as whole
+  directories, and CL-0005 no longer flags an empty long-syntax `host_ip`.**
+  Docker's device directory walk skips symlinks, which is all these
+  directories hold: measured, `devices: [/dev/disk]` is refused outright and
+  `devices: [/dev/mapper]` maps only `control`, so neither grants a disk. A
+  symlink named directly, such as `/dev/disk/by-id/...`, is still flagged, and so
+  is `/dev` itself. An empty, null or non-string `host_ip:` is a file Compose
+  refuses to start, so there is no publish to grade.
+
 - **CL-0016 reads `device_cgroup_rules:`.** A rule like `b 8:* rwm` opens
   the same device-cgroup gate as `devices: [/dev/sda]`, and at Docker's
   defaults the container creates the node itself with `mknod` and reads the
