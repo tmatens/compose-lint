@@ -9,6 +9,7 @@ from compose_lint._yaml_edit import (
     is_anchored_or_merged,
     mapping_scalar_span,
     sequence_scalar_span,
+    value_is_shared,
 )
 from compose_lint.models import Finding, RuleMetadata, Severity, TextEdit
 from compose_lint.rules import BaseRule, register_rule
@@ -201,6 +202,13 @@ class TmpfsInsecureOptionsRule(BaseRule):
             entry: Any = tmpfs
             parsed = mapping_scalar_span(raw_line, "tmpfs")
         elif isinstance(tmpfs, list):
+            # `tmpfs: &t` / `tmpfs: *t`: a list shared with another service
+            # through an anchor, so an edit to its line changes both.
+            tmpfs_line = lines.get(f"services.{service}.tmpfs")
+            if tmpfs_line is None or not 1 <= tmpfs_line <= n:
+                return None
+            if value_is_shared(source_lines[tmpfs_line - 1]):
+                return None
             entry = _entry_at_line(tmpfs, lines, service, item_line)
             parsed = sequence_scalar_span(raw_line)
         else:

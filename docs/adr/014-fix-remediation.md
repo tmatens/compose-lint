@@ -449,9 +449,18 @@ Until then, treat `fix` like an internal tool that happens to ship in the wheel.
 
 - The finding's service inherits via merge key (`<<:`) or YAML anchor/alias, so
   the edit's correct target (anchor vs. service) is ambiguous.
+- The key holding the edited list is itself anchored or an alias
+  (`ports: &p`, `ports: *p`): the list is one value shared by every key that
+  names it, so an edit to its one line changes all of them, and two findings
+  resolving to that line splice the same edit twice. A tag such as
+  `ports: !override` is not shared and is still edited.
+- The value on a long-syntax entry's first line continues onto the next line:
+  a key inserted after that line lands between the value and its
+  continuation.
+- Two fixers want overlapping regions, or insert the same text at the same
+  point (the tell of two findings resolving to one physical line).
 - The relevant block is in flow style (`security_opt: [...]`,
   `ports: ["8080:80"]`) and the minimal edit isn't unambiguous.
-- Two fixers want overlapping regions.
 - `${VAR}` interpolation sits inside the span to be edited (the resolved value
   is unknown; CL-0005's port host could be a variable).
 
@@ -481,9 +490,14 @@ each in turn — the first three at apply time, the corpus gate behind them:
    span dropped or mangled a key the fixer never meant to touch. The parse net
    waves this through. Caught by **`verify_apply`'s structure check**: every
    service the fix did not touch, and every top-level key outside `services`,
-   must parse identically before and after. This is the *cheap* form — it
-   confirms untouched config is unchanged, not that the *touched* services
-   changed in exactly the intended way (see Deferred, below).
+   must parse identically before and after — and in a service it did touch,
+   every key its fixers do not declare writing (`fix_writes_keys`), plus what
+   the service inherits of those through in-file `extends:`. The per-key form
+   replaced a per-service one under which a service that collected any fix was
+   exempt wholesale, so an edit to a list it shared through an anchor passed
+   even when its own finding on that list was excluded. This is still the
+   *cheap* form — it confirms unclaimed config is unchanged, not that the
+   claimed keys changed in exactly the intended way (see Deferred, below).
 3. **Self-inconsistent fix** — the patch is valid and confined but does not
    settle: a second `fix` pass would edit again, or the fix introduced a finding
    the original lacked. Caught by **`verify_apply`'s converge + no-new-finding
@@ -502,7 +516,7 @@ whole file, writes nothing, prints the diff for diagnosis, and exits 2.
 ### Deferred
 
 - **Strong structural proof.** The interim structure check (layer 2) only
-  asserts *untouched* config is unchanged. The strong form has each fixer
+  asserts *unclaimed* config is unchanged, key by key. The strong form has each fixer
   declare its intended semantic delta (e.g. `+services.web.read_only`,
   `-services.web.security_opt[seccomp:unconfined]`) and the engine verify the
   actual parsed delta equals the declared one — catching a fixer that mutates
