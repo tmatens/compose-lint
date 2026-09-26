@@ -1135,7 +1135,6 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     # that could not complete says so in the machine output, not only on a
     # channel a gate does not read.
     run_errors = parse_errors + coverage_errors + rule_errors + config_errors
-    truncation: Diagnostic | None = None
 
     if args.output_format == "text":
         if len(args.files) > 1:
@@ -1168,12 +1167,13 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         _stdout_print(json.dumps(json_log, indent=2, allow_nan=False))
     elif args.output_format == "sarif":
         # The document reports its own truncation (one notification, owned by
-        # the formatter that truncates); this side only says so on stderr and
-        # exits 2, because a gate must not read "success" from an artifact
-        # that is knowingly incomplete. It used to be recorded twice.
+        # the formatter that truncates); this side only says so on stderr. It
+        # does not change the exit code (#888): every finding was graded
+        # against --fail-on before any was dropped, and exiting 2 made the same
+        # file pass as JSON and fail as SARIF under the same threshold.
         truncation = truncation_notice(len(all_sarif))
         if truncation is not None:
-            emit(f"Error: {truncation.message}")
+            emit(f"Warning: {truncation.message}")
         sarif_log = build_sarif_log(
             all_sarif,
             run_errors,
@@ -1188,9 +1188,8 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     if has_errors and config_path is None:
         _note_no_config_in_effect()
 
-    # Parse errors, coverage gaps, crashed rules, a strict config error, or a
-    # truncated SARIF document.
-    if run_errors or truncation is not None:
+    # Parse errors, coverage gaps, crashed rules, or a strict config error.
+    if run_errors:
         sys.exit(2)
     sys.exit(1 if has_errors else 0)
 

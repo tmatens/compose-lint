@@ -266,13 +266,41 @@ def test_sarif_is_truncated_and_says_so(tmp_path: Path) -> None:
     run = doc["runs"][0]
     assert len(run["results"]) == MAX_SARIF_RESULTS
     invocation = run["invocations"][0]
-    assert invocation["executionSuccessful"] is False
-    assert any(
-        "omitted" in n["message"]["text"]
+    # Truncation is a size limit of the format, not a run that failed: every
+    # finding was graded, so the notice is a warning and the exit code follows
+    # --fail-on exactly as text and JSON do on the same file (#888).
+    assert invocation["executionSuccessful"] is True
+    [notice] = [
+        n
         for n in invocation["toolExecutionNotifications"]
-    )
-    # A gate must not read success from a knowingly incomplete artifact.
-    assert proc.returncode == 2
+        if "omitted" in n["message"]["text"]
+    ]
+    assert notice["level"] == "warning"
+    assert proc.returncode == 1
+    assert "Warning: SARIF output truncated" in proc.stderr
+
+
+def test_a_truncated_sarif_run_exits_like_json(tmp_path: Path) -> None:
+    """Same file, same --fail-on: SARIF exited 2 where JSON and text exit 1."""
+    lines = [
+        "services:",
+        "  base: &b",
+        "    image: nginx:latest",
+        "    privileged: true",
+    ]
+    for i in range(1500):
+        lines += [f"  s{i}:", "    <<: *b"]
+    target = tmp_path / "amp.yml"
+    target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    codes = {
+        fmt: _run(
+            ["check", "--format", fmt, "--fail-on", "critical", str(target)],
+            tmp_path,
+            timeout=180,
+        ).returncode
+        for fmt in ("json", "sarif")
+    }
+    assert codes == {"json": 1, "sarif": 1}
 
 
 def test_an_ordinary_run_is_not_truncated(tmp_path: Path) -> None:

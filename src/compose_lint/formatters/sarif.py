@@ -275,9 +275,9 @@ def truncation_notice(total_results: int) -> Diagnostic | None:
 
     Owned here because the truncation is: :func:`build_sarif_log` is what
     drops results past :data:`MAX_SARIF_RESULTS`, so it is what says so in
-    the document. The CLI calls this too, for the stderr line and the exit
-    code, and passes nothing extra to the log — the same event used to be
-    recorded twice, once by each side with different wording.
+    the document. The CLI calls this too, for the stderr line, and passes
+    nothing extra to the log — the same event used to be recorded twice, once
+    by each side with different wording.
     """
     omitted = total_results - MAX_SARIF_RESULTS
     if omitted <= 0:
@@ -619,14 +619,18 @@ def build_sarif_log(
     truncation = truncation_notice(len(all_results))
     results = all_results[:MAX_SARIF_RESULTS] if truncation else all_results
 
+    # A warning, not a failure (#888): every finding was graded against
+    # --fail-on before any was dropped, so the run completed and its exit code
+    # is the one text and JSON report for the same file. Only the document is
+    # short, and it says so here.
     working_dir_uri = _working_dir_uri()
     invocation: dict[str, Any] = {
-        "executionSuccessful": not errors and truncation is None,
+        "executionSuccessful": not errors,
         "workingDirectory": {"uri": working_dir_uri},
     }
     notifications: list[dict[str, Any]] = []
     if truncation is not None:
-        notifications.append(_notification(truncation, "error"))
+        notifications.append(_notification(truncation, "warning"))
     notifications.extend(_notification(d, "error") for d in (errors or []))
     notifications.extend(_notification(d, "warning") for d in (warnings or []))
     if notifications:

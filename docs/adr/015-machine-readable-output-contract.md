@@ -155,6 +155,19 @@ but values Compose deploys from that input were not graded, and before this the
 fact reached stderr alone. `coverage_gap` was not reused because it means a
 document that was not linted and, unwaived, exit 2.
 
+*Amendment (pre-1.0): SARIF truncation is a warning.* A SARIF log holds at most
+5,000 results (`MAX_SARIF_RESULTS`), because a larger one passes GitHub Code
+Scanning's 10 MB limit and is rejected whole. A truncated log used to report a
+`level: "error"` notification, set `executionSuccessful: false` and exit 2, so
+the same file under the same `--fail-on` passed as JSON or text and failed as
+SARIF. Truncation is now a `kind: run`, `level: "warning"` notification that
+leaves `executionSuccessful` true, and the exit code follows `--fail-on`. Every
+finding is graded before any is dropped, so the verdict is complete; only the
+document is short, and the notification says by how much. None of ADR-006's
+exit-2 causes (the run could not start, a rule crashed, part of the stack was
+not seen) describes it. A consumer that needs every result re-runs with
+`--format json`, which has no cap.
+
 `kind` and `warnings` are additive, so `version` does not change. Every exit-2
 path writes the envelope except the two that fail before an output format is
 known: an argument the parser rejects, and an `--explain` error.
