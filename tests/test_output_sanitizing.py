@@ -343,3 +343,18 @@ def test_a_failing_stderr_is_pointed_at_the_null_device(tmp_path: Path) -> None:
     finally:
         os.close(fd)
     assert sink.read_bytes() == b""
+
+
+@pytest.mark.skipif(not Path("/proc/self/fd").is_dir(), reason="needs /proc/self/fd")
+def test_a_stream_without_a_descriptor_leaks_no_null_fd() -> None:
+    """The /dev/null descriptor was left open when fileno() raised (CodeQL)."""
+    from compose_lint._output import _discard_stderr
+
+    class _NoFd:
+        def fileno(self) -> int:
+            raise ValueError("I/O operation on closed file")
+
+    before = len(os.listdir("/proc/self/fd"))
+    for _ in range(20):
+        _discard_stderr(_NoFd())  # type: ignore[arg-type]
+    assert len(os.listdir("/proc/self/fd")) == before
