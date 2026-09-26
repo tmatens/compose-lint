@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import hashlib
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
 from compose_lint import __version__
+from compose_lint._report_path import is_outside, report_path
 from compose_lint.attack import (
     ATTACK_TAXONOMY_GUID,
     ATTACK_URL,
@@ -69,15 +69,15 @@ def _artifact_location(filepath: str) -> dict[str, Any]:
     legal URI reference. When the file lives under the working directory, emit a
     percent-encoded repo-relative path tagged with the ``SRCROOT`` base id;
     otherwise fall back to an absolute, percent-encoded ``file:`` URI.
+
+    The path is :func:`report_path`'s, the value JSON reports as ``file``
+    (#887). The absolute fallback is joined lexically like the relative form,
+    rather than resolved through symlinks as it used to be.
     """
-    try:
-        rel = os.path.relpath(filepath, os.getcwd())
-    except ValueError:
-        # No common base (e.g. different drive on Windows).
-        rel = ".."
-    if not rel.startswith(".."):
-        return {"uri": quote(rel.replace(os.sep, "/")), "uriBaseId": _URI_BASE_ID}
-    return {"uri": Path(filepath).resolve().as_uri()}
+    reported = report_path(filepath)
+    if not is_outside(reported):
+        return {"uri": quote(reported), "uriBaseId": _URI_BASE_ID}
+    return {"uri": Path(reported).as_uri()}
 
 
 def _physical_location(filepath: str, line: int | None) -> dict[str, Any]:

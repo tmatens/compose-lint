@@ -11,6 +11,7 @@ from pathlib import Path
 from compose_lint._lines import BREAK_CHARS, split_lines
 from compose_lint._output import sanitize as _sanitize
 from compose_lint._output import sanitize_line as _sanitize_line
+from compose_lint._report_path import report_path
 from compose_lint.models import Finding, Severity
 
 _COLORS = {
@@ -388,7 +389,7 @@ def format_findings(
                 )
                 out.append(
                     f"          {_colorize('in:', _DIM)} "
-                    f"{_sanitize_line(f.source_file)} ({whence})"
+                    f"{_sanitize_line(report_path(f.source_file))} ({whence})"
                 )
 
             excerpt_source = (

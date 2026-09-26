@@ -18,6 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Every path in JSON and SARIF has one form.** `file`, `graded_file` and
+  SARIF's artifact `uri` are relative to the working directory, with `/`
+  separators, and absolute only for a file outside it. An `include:` or
+  cross-file `extends:` document was the lint host's absolute path in JSON;
+  an `env_file:` finding named the file as the Compose file wrote it
+  (`env/settings.txt`), which does not exist from a run started above the
+  project, in JSON and SARIF alike; and `./compose.yml` was echoed as typed.
+  SARIF alerts on an `env_file:` finding in a stack below the working
+  directory move to the correct path once.
+
 - **A truncated SARIF log no longer changes the exit code.** Past 5,000
   results the SARIF log is cut so GitHub Code Scanning accepts it. That used
   to exit 2 and set `executionSuccessful: false`, so one file under one
