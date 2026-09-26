@@ -28,6 +28,7 @@ import pytest
 import yaml
 
 from tests._execdir import require_exec
+from tests._workflow_commands import forged, processed
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VENV_BIN = REPO_ROOT / ".venv" / "bin"
@@ -75,8 +76,14 @@ def _run_step(
     workspace: Path,
     outputs: Path,
     extra_path: Path | None = None,
+    *,
+    one_log: bool = False,
 ) -> tuple[int, str, str]:
-    """Execute a step's `run:` body the way the runner would."""
+    """Execute a step's `run:` body the way the runner would.
+
+    ``one_log`` sends stderr into stdout, the single interleaved log the runner
+    reads commands from, so the order of lines across the two streams holds.
+    """
     if _BASH_MAJOR < 4:
         # The scripts target the GitHub runner's bash (5.x) and use
         # bash-4 features (`mapfile`). macOS ships bash 3.2, which fails
@@ -111,11 +118,12 @@ def _run_step(
         ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", script],
         cwd=workspace,
         env=full_env,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT if one_log else subprocess.PIPE,
         text=True,
         timeout=180,
     )
-    return proc.returncode, proc.stdout, proc.stderr
+    return proc.returncode, proc.stdout, proc.stderr or ""
 
 
 def _outputs(path: Path) -> dict[str, str]:
@@ -749,3 +757,109 @@ def test_sarif_traversal_through_a_missing_directory_is_refused(
     assert not (ws / "newdir").exists()
     assert not (ws.parent / "escaped.sarif").exists()
     assert _outputs(outputs).get("sarif-written") != "true"
+
+
+# --- GHSA-6f4g-xm8v-pgv6: compose-lint's output cannot issue commands -----
+
+_FORGED = "cl-ghsa-6f4g-forged"
+
+
+def _raw_printing_shim(ws: Path) -> Path:
+    """A ``compose-lint`` that prints workflow commands raw on both streams.
+
+    It stands in for any path the sanitizer misses, so what is under test is
+    the bracketing alone. ``set-output`` is included because it is the one
+    that writes step state; the model can only say it would not be processed,
+    not that the runner still honours it.
+    """
+    shim_dir = ws / "rawshim"
+    shim_dir.mkdir(exist_ok=True)
+    shim = shim_dir / "compose-lint"
+    shim.write_text(
+        "#!/usr/bin/env bash\n"
+        f'echo "::error::{_FORGED}-stdout"\n'
+        f'echo "::set-output name=verdict::{_FORGED}"\n'
+        f'echo "##[group]{_FORGED}"\n'
+        f'echo "::warning::{_FORGED}-stderr" >&2\n'
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    return shim_dir
+
+
+def _lint_one_log(ws: Path, outputs: Path, extra_path: Path | None, **env: str) -> str:
+    (ws / "docker-compose.yml").write_text(_INSECURE, encoding="utf-8")
+    _discover(ws, outputs)
+    base = {
+        "CL_CONFIG": "",
+        "CL_FAIL_ON": "high",
+        "CL_SKIP_SUPPRESSED": "false",
+        "CL_ALLOW_PARTIAL_COVERAGE": "false",
+        "CL_STRICT_CONFIG": "false",
+        "CL_QUIET": "false",
+        "CL_VERBOSE": "false",
+        "CL_SARIF_FILE": "",
+        "CL_ALLOW_NO_FILES": "false",
+        "CL_COUNT": "1",
+        "CL_LIST_FILE": _outputs(outputs)["list-file"],
+    }
+    base.update(env)
+    _rc, log, _ = _run_step(
+        "Run compose-lint", base, ws, outputs, extra_path=extra_path, one_log=True
+    )
+    return log
+
+
+@pytest.mark.parametrize("sarif", ["", "results.sarif"], ids=["text", "text+sarif"])
+def test_both_runs_are_bracketed_by_stop_commands(
+    ws: Path, outputs: Path, sarif: str
+) -> None:
+    log = _lint_one_log(ws, outputs, _raw_printing_shim(ws), CL_SARIF_FILE=sarif)
+    runs = 2 if sarif else 1
+    # Printed, not processed: the SARIF run's stdout goes to the file, but its
+    # stderr reaches the log, which is why that run is bracketed too.
+    assert log.count(f"::error::{_FORGED}-stdout") == 1
+    assert log.count(f"::warning::{_FORGED}-stderr") == runs
+    assert forged(log, _FORGED) == []
+    stops = [c for c in processed(log) if c.startswith("::stop-commands::")]
+    assert len(stops) == runs
+
+
+def test_the_stop_token_is_fresh_and_unguessable(ws: Path, outputs: Path) -> None:
+    """A file that knew the token could end the bracket and resume commands."""
+    tokens = []
+    for _ in range(2):
+        log = _lint_one_log(ws, outputs, _raw_printing_shim(ws))
+        (stop,) = [c for c in processed(log) if c.startswith("::stop-commands::")]
+        tokens.append(stop.removeprefix("::stop-commands::"))
+    assert tokens[0] != tokens[1]
+    assert all(re.fullmatch(r"[0-9a-f]{48}", token) for token in tokens), tokens
+
+
+def test_the_real_run_issues_no_command_from_the_file(ws: Path, outputs: Path) -> None:
+    """The real compose-lint on a file carrying both openers: two layers,
+    the sanitizer inside the bracket."""
+    (ws / "docker-compose.yml").write_text(
+        "services:\n"
+        f'  "web##[group]{_FORGED}":\n'
+        f'    image: "nginx\\n::error::{_FORGED}"\n',
+        encoding="utf-8",
+    )
+    _discover(ws, outputs)
+    base = {
+        "CL_CONFIG": "",
+        "CL_FAIL_ON": "high",
+        "CL_SKIP_SUPPRESSED": "false",
+        "CL_ALLOW_PARTIAL_COVERAGE": "false",
+        "CL_STRICT_CONFIG": "false",
+        "CL_QUIET": "false",
+        "CL_VERBOSE": "false",
+        "CL_SARIF_FILE": "results.sarif",
+        "CL_ALLOW_NO_FILES": "false",
+        "CL_COUNT": "1",
+        "CL_LIST_FILE": _outputs(outputs)["list-file"],
+    }
+    _rc, log, _ = _run_step("Run compose-lint", base, ws, outputs, one_log=True)
+    assert _FORGED in log
+    assert forged(log, _FORGED) == []
