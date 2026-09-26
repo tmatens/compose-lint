@@ -7,7 +7,7 @@ trace in JSON or SARIF at all. These tests pin the shape that replaced that:
 
 - every entry on either channel carries ``kind``, a closed set assigned where
   the condition is detected (``parse``, ``coverage_gap``, ``rule_crash``,
-  ``run``), mirrored in SARIF as the notification's ``descriptor.id``;
+  ``unread_input``, ``run``), mirrored in SARIF as the notification's ``descriptor.id``;
 - ``warnings[]`` is always present and holds waived gaps, which SARIF reports
   as ``level: warning`` without marking the invocation unsuccessful;
 - a run-level entry has ``file: ""`` in JSON and no ``locations`` in SARIF;
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from compose_lint.models import Finding
 
 SARIF_SCHEMA = Path(__file__).parent / "fixtures" / "sarif-schema-2.1.0.json"
-KINDS = {"parse", "coverage_gap", "rule_crash", "run"}
+KINDS = {"parse", "coverage_gap", "rule_crash", "unread_input", "run"}
 
 _CLEAN = "services:\n  web:\n    image: nginx:1.27\n"
 _GAP = "include:\n  - nope.yml\nservices:\n  web:\n    image: nginx:1.27\n"

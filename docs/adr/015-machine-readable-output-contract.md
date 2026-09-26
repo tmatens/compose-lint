@@ -147,6 +147,14 @@ each would cost a MAJOR afterwards or leave the frozen shape ambiguous.
   after 1.0 it would be a loosening of a typed field under
   [ADR-030](030-the-policy-is-part-of-the-contract.md).
 
+*Addition (pre-1.0): `unread_input`.* A fifth kind, for an input the run
+would read for values or for its file list — the sibling `.env`, an
+`env_file:` target, a `COMPOSE_FILE` entry — that was refused for leaving the
+project or could not be read. It is only ever a warning: the stack was linted,
+but values Compose deploys from that input were not graded, and before this the
+fact reached stderr alone. `coverage_gap` was not reused because it means a
+document that was not linted and, unwaived, exit 2.
+
 `kind` and `warnings` are additive, so `version` does not change. Every exit-2
 path writes the envelope except the two that fail before an output format is
 known: an argument the parser rejects, and an `--explain` error.

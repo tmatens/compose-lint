@@ -246,6 +246,15 @@ _NOTIFICATION_DESCRIPTORS: list[dict[str, Any]] = [
         },
     },
     {
+        "id": DiagnosticKind.UNREAD_INPUT.value,
+        "shortDescription": {
+            "text": (
+                "A .env, env_file: or COMPOSE_FILE entry was refused or could "
+                "not be read, so the values it supplies were not graded."
+            )
+        },
+    },
+    {
         "id": DiagnosticKind.RUN.value,
         "shortDescription": {
             "text": (
