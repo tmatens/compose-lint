@@ -517,3 +517,29 @@ def test_a_crafted_source_file_cannot_forge_report_lines() -> None:
     in_line = next(line for line in out.split("\n") if "in:" in line)
     assert "base\\u000a" in in_line
     assert "\\u001b[2Kwiped\\u202e.yml" in in_line
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "wording"),
+    [
+        ({"rule_error_count": 1}, "1 rule crash"),
+        ({"rule_error_count": 2}, "2 rule crashes"),
+        ({"config_error_count": 1}, "config error"),
+    ],
+)
+def test_a_crash_or_config_error_is_an_error_verdict(
+    kwargs: dict[str, int], wording: str
+) -> None:
+    """Both exit 2; the verdict said PASS or FAIL (#888)."""
+    verdict = format_verdict([], Severity.HIGH, **kwargs)
+    assert "⚠ ERROR" in verdict
+    assert "PASS" not in verdict
+    assert wording in verdict
+
+
+def test_the_aggregate_summary_names_crashes_and_config_errors() -> None:
+    summary = format_aggregate_summary(
+        [([], "a.yml"), ([], "b.yml")], rule_error_count=1, config_error_count=1
+    )
+    assert "1 rule crash" in summary
+    assert "config error" in summary

@@ -1601,3 +1601,25 @@ def test_a_closed_stderr_does_not_leak_onto_stdout(tmp_path: Path, fmt: str) -> 
     assert proc.returncode == 1, proc.returncode
     json.loads(proc.stdout)
     assert b"Note:" not in proc.stdout
+
+
+def test_a_strict_config_error_is_not_a_pass_verdict(tmp_path: Path) -> None:
+    """Exit 2 with `✓ PASS` as the one line a CI log reader sees (#888)."""
+    (tmp_path / "compose.yml").write_text(
+        "services:\n  app:\n    image: alpine:3.20\n", encoding="utf-8"
+    )
+    (tmp_path / ".compose-lint.yml").write_text(
+        "rules:\n  CL-0002:\n    exclude_services:\n      - ghost\n",
+        encoding="utf-8",
+    )
+    result = run_cli(
+        "check",
+        "--strict-config",
+        "compose.yml",
+        cwd=tmp_path,
+        env_extra={"NO_COLOR": "1"},
+    )
+    assert result.returncode == 2, result.stderr
+    verdict = result.stdout.rstrip().splitlines()[-1]
+    assert verdict.startswith("⚠ ERROR"), verdict
+    assert "config error" in verdict

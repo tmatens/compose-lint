@@ -1142,7 +1142,11 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             _stdout_print()
             _stdout_print(
                 format_aggregate_summary(
-                    all_file_findings, len(parse_errors), len(coverage_errors)
+                    all_file_findings,
+                    len(parse_errors),
+                    len(coverage_errors),
+                    len(rule_errors),
+                    len(config_errors),
                 )
             )
         _stdout_print(
@@ -1151,6 +1155,8 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                 args.fail_on,
                 len(parse_errors),
                 len(coverage_errors),
+                len(rule_errors),
+                len(config_errors),
             )
         )
     elif args.output_format == "json":

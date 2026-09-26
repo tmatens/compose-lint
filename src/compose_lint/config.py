@@ -126,7 +126,7 @@ def _reject_duplicate_config_keys(
             # so a `<<:` was legal in the file being linted and fatal in the
             # config beside it.
             continue
-        key = loader.construct_object(key_node, deep=True)
+        key = _config_key(loader, key_node)
         try:
             duplicate = key in seen
         except TypeError:
@@ -140,12 +140,61 @@ def _reject_duplicate_config_keys(
                 key_node.start_mark,
             )
         seen.add(key)
-    return loader.construct_mapping(node, deep=True)
+    loader.flatten_mapping(node)
+    mapping: dict[Any, Any] = {}
+    for key_node, value_node in node.value:
+        key = _config_key(loader, key_node)
+        try:
+            hash(key)
+        except TypeError as e:
+            raise yaml.constructor.ConstructorError(
+                None, None, "found unhashable key", key_node.start_mark
+            ) from e
+        mapping[key] = loader.construct_object(value_node, deep=True)
+    return mapping
+
+
+def _source_text(loader: _StrictLoader, node: yaml.Node) -> Any:
+    """Construct ``node``, keeping a plain non-string scalar as its source text.
+
+    The Compose parser keeps a service key like ``2048``, ``yes`` or ``0x10``
+    exactly as written (``parser._mapping_key``), because Compose does. A config
+    naming that service went through plain YAML instead, which turned it into
+    an int or a bool and was refused as "not a service name string", so the
+    service could not be excluded at all. Converting after the fact with
+    ``str()`` would name a different service (``True`` for ``yes``, ``16`` for
+    ``0x10``), so the text is kept at the one point it still exists.
+
+    Applied to mapping keys and to sequence items. Every config key is a name,
+    and ``exclude_services`` is the only sequence in the schema, so no value a
+    config means as a boolean or a number passes through here.
+    """
+    value = loader.construct_object(node, deep=True)
+    if (
+        isinstance(node, yaml.ScalarNode)
+        and node.style is None
+        and not isinstance(value, str)
+    ):
+        return node.value
+    return value
+
+
+_config_key = _source_text
+
+
+def _construct_config_sequence(
+    loader: _StrictLoader, node: yaml.SequenceNode
+) -> list[Any]:
+    return [_source_text(loader, item) for item in node.value]
 
 
 _StrictLoader.add_constructor(
     yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
     _reject_duplicate_config_keys,
+)
+_StrictLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_SEQUENCE_TAG,
+    _construct_config_sequence,
 )
 
 

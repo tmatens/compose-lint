@@ -39,6 +39,10 @@ SARIF_SCHEMA = (
 # comfortable headroom under that ceiling.
 MAX_SARIF_RESULTS = 5000
 
+# Where each rule's page is published (mkdocs `site_url` + `rules/<ID>/`), the
+# `helpUri` for a rule whose references carry no URL of their own.
+_RULE_DOCS_URL = "https://tmatens.github.io/compose-lint/rules/"
+
 # Symbolic base for relativized artifact URIs. Declared once per run in
 # ``originalUriBaseIds`` (pointed at the working directory) and referenced from
 # each in-tree ``artifactLocation`` via ``uriBaseId``; GitHub Code Scanning
@@ -405,14 +409,15 @@ def _build_rules(
             # SARIF 2.1.0 declares helpUri with "format": "uri"; a CIS benchmark
             # reference is free-text prose, not a URI, and strict validators /
             # GitHub Code Scanning reject or ignore a non-URI helpUri. Use the
-            # first reference that looks like a URL; otherwise omit helpUri (the
-            # prose still appears in help.text). (issue #279 S-a)
+            # first reference that looks like a URL (issue #279 S-a). A rule that
+            # cites only prose links its own published page instead, so every
+            # Code Scanning alert has a "learn more" link (#888); the prose
+            # still appears in help.text.
             help_uri = next(
                 (r for r in meta.references if r.startswith(("http://", "https://"))),
-                None,
+                f"{_RULE_DOCS_URL}{meta.id}/",
             )
-            if help_uri is not None:
-                rule_obj["helpUri"] = help_uri
+            rule_obj["helpUri"] = help_uri
             help_lines = [meta.description, "", "References:"]
             help_lines.extend(f"- {ref}" for ref in meta.references)
             rule_obj["help"] = {"text": "\n".join(help_lines)}

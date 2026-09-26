@@ -18,6 +18,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The text verdict says `⚠ ERROR` when a rule crashed or the config was
+  refused.** Both exit 2, but the verdict line read `✓ PASS` (or `✗ FAIL`),
+  so a CI log's last line contradicted the exit code, for example under
+  `--strict-config` with an `exclude_services` name no file defines. The
+  multi-file summary names them too.
+
+- **A numeric service name can be excluded.** `exclude_services: [2048]`
+  and `{2048: reason}` were refused as "not a service name string",
+  though the parser keeps a service key like `2048`, `yes` or `0x10` as
+  written, as Compose does, so such a service could not be excluded at all.
+  The config now keeps those names as written too.
+
+- **Every SARIF rule descriptor has a `helpUri`.** CL-0016 and CL-0017 cite
+  only CIS prose, so their Code Scanning alerts had no "learn more" link;
+  a rule with no URL reference now links its page on the docs site.
+
 - **`fix` and `init` no longer write after a rule crashed, and `init -o`
   cannot overwrite its own input.** A rule that raised held `check` at exit 2,
   but `fix --apply` applied the other rules' fixes and `init` wrote a baseline

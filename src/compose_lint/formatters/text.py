@@ -459,6 +459,8 @@ def format_aggregate_summary(
     file_findings: list[tuple[list[Finding], str]],
     parse_error_count: int = 0,
     coverage_gap_count: int = 0,
+    rule_error_count: int = 0,
+    config_error_count: int = 0,
 ) -> str:
     """Format a combined summary line across all scanned files (multi-file runs).
 
@@ -466,7 +468,9 @@ def format_aggregate_summary(
     parsed; surfaced inline as ``N skipped (failed to parse)`` so multi-file
     runs make skipped files visible in the same place as the totals.
     ``coverage_gap_count`` counts files that parsed but were only partly
-    linted, which is a different failure and is labelled as one.
+    linted, which is a different failure and is labelled as one. Crashed rules
+    and config errors are named too: each is an exit-2 cause the totals beside
+    them would otherwise hide.
     """
     total_files = len(file_findings)
     by_severity: dict[str, int] = {}
@@ -490,6 +494,7 @@ def format_aggregate_summary(
         notes.append(f"{parse_error_count} skipped (failed to parse)")
     if coverage_gap_count:
         notes.append(f"{coverage_gap_count} partly unlinted (coverage gap)")
+    notes.extend(_run_error_parts(rule_error_count, config_error_count))
     if notes:
         skipped_suffix = (
             f"  {sep}  {_colorize(', '.join(notes), _COLORS[Severity.HIGH])}"
@@ -537,11 +542,25 @@ def _severity_breakdown(
     return parts
 
 
+def _run_error_parts(rule_error_count: int, config_error_count: int) -> list[str]:
+    """Verdict phrases for the two exit-2 causes that are not about one file."""
+    parts = []
+    if rule_error_count:
+        crash_word = "crash" if rule_error_count == 1 else "crashes"
+        parts.append(f"{rule_error_count} rule {crash_word}: findings may be missing")
+    if config_error_count:
+        error_word = "error" if config_error_count == 1 else "errors"
+        parts.append(f"{config_error_count} config {error_word}")
+    return parts
+
+
 def format_verdict(
     file_findings: list[tuple[list[Finding], str]],
     fail_on: Severity,
     parse_error_count: int = 0,
     coverage_gap_count: int = 0,
+    rule_error_count: int = 0,
+    config_error_count: int = 0,
 ) -> str:
     """Return the verdict line, matching the CLI's three exit-code outcomes.
 
@@ -555,6 +574,10 @@ def format_verdict(
     worded separately: those files parsed fine, and saying they "could not be
     parsed" would misdescribe what happened. What went wrong is that part of
     the stack was never linted.
+
+    ``rule_error_count`` (a rule raised) and ``config_error_count`` (a
+    ``--strict-config`` error) are exit 2 as well. Without them the verdict read
+    ``✓ PASS`` or ``✗ FAIL`` on a run whose exit code said it did not complete.
     """
     failing = sum(
         1
@@ -565,7 +588,12 @@ def format_verdict(
 
     sep = _colorize("·", _DIM)
 
-    if parse_error_count or coverage_gap_count:
+    if (
+        parse_error_count
+        or coverage_gap_count
+        or rule_error_count
+        or config_error_count
+    ):
         parts = []
         if parse_error_count:
             file_word = "file" if parse_error_count == 1 else "files"
@@ -576,6 +604,7 @@ def format_verdict(
                 f"{coverage_gap_count} coverage {gap_word}: "
                 "part of the stack was not linted"
             )
+        parts.extend(_run_error_parts(rule_error_count, config_error_count))
         error_label = _colorize("⚠ ERROR", _ERROR_COLOR)
         result = f"{error_label}  {sep}  {_colorize(', '.join(parts), _ERROR_COLOR)}"
         if failing:
