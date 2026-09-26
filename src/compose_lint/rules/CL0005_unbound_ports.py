@@ -232,8 +232,18 @@ class UnboundPortsRule(BaseRule):
         lines: dict[str, int],
         index: int,
     ) -> Iterator[Finding]:
-        host_ip = port_config.get("host_ip", "")
-        if isinstance(host_ip, str) and not _is_wildcard_ip(host_ip):
+        # A `host_ip` that is written but empty, null or not a string is a file
+        # Compose refuses outright (`invalid ip address:` / `must be a string`,
+        # measured on Compose 5.5), including one an empty `${VAR:-}` produced.
+        # No container runs from it, so there is no publish to grade (#913) —
+        # the same reasoning CL-0010 applies to `pid: HOST`.
+        if "host_ip" in port_config:
+            host_ip = port_config["host_ip"]
+            if not isinstance(host_ip, str) or not host_ip:
+                return
+        else:
+            host_ip = ""
+        if not _is_wildcard_ip(host_ip):
             return
 
         # The protocol is part of a port's identity: 53/tcp and 53/udp are two

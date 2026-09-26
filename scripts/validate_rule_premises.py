@@ -1064,6 +1064,34 @@ def _cl0016_cgroup_rule_gates() -> tuple[bool, str]:
     )
 
 
+def _cl0016_symlink_dirs_grant_no_disk() -> tuple[bool | None, str]:
+    """``/dev/disk`` and ``/dev/mapper`` as whole directories grant no disk (#913).
+
+    Docker's ``--device`` directory walk maps real nodes and skips symlinks, and
+    these directories hold symlinks. ``/dev/disk`` has nothing else, so Docker
+    refuses the container; ``/dev/mapper`` maps only ``control``. That is why
+    CL-0016 claims ``/dev`` as a directory but not these (a symlink named
+    directly is resolved, and those rows stay). SKIP where a host lacks either.
+    """
+    _, present = _run(
+        ["-v", "/dev:/hostdev:ro"],
+        ["sh", "-c", "test -d /hostdev/disk && test -d /hostdev/mapper && echo BOTH"],
+    )
+    if present != "BOTH":
+        return None, "the daemon host has no /dev/disk or no /dev/mapper"
+    rc_disk, err_disk = _run_err(["--device", "/dev/disk:/dev/disk"], ["true"])
+    _, mapper = _run(
+        ["--device", "/dev/mapper:/dev/mapper"],
+        ["sh", "-c", "find /dev/mapper -type b | wc -l; ls /dev/mapper | tr '\\n' ' '"],
+    )
+    disk_refused = rc_disk != 0 and "not a device node" in err_disk
+    no_block = mapper.split("\n")[0].strip() == "0"
+    return disk_refused and no_block, (
+        f"/dev/disk refused={disk_refused}; /dev/mapper block nodes/entries: "
+        f"{' | '.join(mapper.splitlines())!r}"
+    )
+
+
 def _cl0013_dev_bind_is_gated() -> tuple[bool, str]:
     """A ``/dev`` bind conveys the nodes but not device-cgroup permission.
 
@@ -1388,6 +1416,11 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool | None, str]]]] = [
         "CL-0016",
         "premise: MKNOD drop and 'm' leave a rule inert; a /dev bind does not",
         _cl0016_cgroup_rule_gates,
+    ),
+    (
+        "CL-0016",
+        "premise: /dev/disk and /dev/mapper directories grant no disk",
+        _cl0016_symlink_dirs_grant_no_disk,
     ),
     ("CL-0017", "shared propagation is observable", _cl0017),
     ("CL-0018", "explicit user maps to that uid", _cl0018),

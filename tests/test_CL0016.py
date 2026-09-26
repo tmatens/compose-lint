@@ -211,10 +211,23 @@ class TestDirectoryGrants:
             findings = _device_findings(f'      - "{spelling}:/dev"\n')
             assert [f.evidence for f in findings] == ["/dev"], spelling
 
-    def test_block_subdirectories_are_flagged(self) -> None:
+    def test_symlink_directories_are_not_flagged(self) -> None:
+        """Docker's walk skips symlinks, and these hold little else (#913).
+
+        Measured: `--device /dev/disk` is refused ("not a device node") and
+        `--device /dev/mapper` maps only `control`. Neither grants a disk.
+        """
         for directory in ("/dev/mapper", "/dev/disk", "/dev/md"):
-            findings = _device_findings(f'      - "{directory}/:{directory}"\n')
-            assert [f.evidence for f in findings] == [directory], directory
+            for spelling in (directory, f"{directory}/"):
+                assert _device_findings(f'      - "{spelling}:{directory}"\n') == [], (
+                    spelling
+                )
+
+    def test_a_symlink_named_directly_is_still_flagged(self) -> None:
+        """Docker resolves a top-level symlink, so this one reads the disk."""
+        for node in ("/dev/disk/by-id/nvme-x", "/dev/mapper/vg-root", "/dev/md/data"):
+            findings = _device_findings(f'      - "{node}:/dev/probe"\n')
+            assert [f.evidence for f in findings] == [node], node
 
     def test_long_syntax_directory_is_flagged(self) -> None:
         findings = _device_findings("      - source: /dev\n        target: /dev\n")

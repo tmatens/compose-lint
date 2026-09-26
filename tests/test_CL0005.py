@@ -397,16 +397,18 @@ class TestUnboundPortsFix:
         )
         assert self._fix(tmp_path, content) is None
 
-    def test_long_syntax_refuses_empty_host_ip(self, tmp_path: Path) -> None:
+    def test_long_syntax_null_host_ip_has_nothing_to_fix(self) -> None:
+        # Compose refuses a null `host_ip` ("must be a string"), so CL-0005 no
+        # longer fires on it (#913) and there is no finding for the fixer. Its
+        # refusal of an empty or null value stays as the backstop.
+        from compose_lint.parser import loads
+
         content = (
-            "services:\n"
-            "  web:\n"
-            "    ports:\n"
-            "      - target: 80\n"
-            "        published: 8080\n"
-            "        host_ip:\n"
+            "services:\n  web:\n    ports:\n"
+            "      - target: 80\n        published: 8080\n        host_ip:\n"
         )
-        assert self._fix(tmp_path, content) is None
+        data, lines = loads(content)
+        assert list(self.rule.check("web", data["services"]["web"], data, lines)) == []
 
     def test_refuses_anchored_service(self, tmp_path: Path) -> None:
         content = "services:\n  web: &websvc\n    ports:\n      - 8080:80\n"
@@ -515,3 +517,40 @@ class TestFixSuggestion:
             (finding,) = _port_findings(f'      - "{port}"\n')
             assert finding.fix is not None
             assert f"Bind to localhost: {suggested}\n" in finding.fix, port
+
+
+class TestHostIpComposeRefuses:
+    """A written `host_ip` that is empty, null or not a string (#913).
+
+    Compose refuses each: `invalid ip address:` for "" (also when an empty
+    `${VAR:-}` produced it), `must be a string` for null. No container runs from
+    the file, so there is no publish to grade.
+    """
+
+    @staticmethod
+    def _findings(host_ip_line: str) -> list:
+        from compose_lint.engine import run_rules
+        from compose_lint.parser import loads
+
+        text = (
+            "services:\n  web:\n    image: nginx:1.27\n    ports:\n"
+            "      - target: 80\n        published: 8080\n" + host_ip_line
+        )
+        data, lines = loads(text, use_env=False)
+        return [f for f in run_rules(data, lines) if f.rule_id == "CL-0005"]
+
+    def test_refused_values_are_not_flagged(self) -> None:
+        for line in (
+            '        host_ip: ""\n',
+            "        host_ip:\n",
+            "        host_ip: ${BIND_ADDR:-}\n",
+            "        host_ip: 0\n",
+        ):
+            assert self._findings(line) == [], line
+
+    def test_absent_and_wildcard_host_ip_are_still_flagged(self) -> None:
+        for line in ("", '        host_ip: "0.0.0.0"\n', '        host_ip: "::"\n'):
+            assert len(self._findings(line)) == 1, line
+
+    def test_loopback_is_not_flagged(self) -> None:
+        assert self._findings('        host_ip: "127.0.0.1"\n') == []

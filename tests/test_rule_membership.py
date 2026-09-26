@@ -373,9 +373,10 @@ class TestDeviceMembership:
             r"^/dev/nbd\d",
             r"^/dev/mtdblock",
             r"^/dev/hd[a-z]\d*$",
-            # Directory sources: Docker maps every device node beneath them.
+            # Directory source: Docker maps every device node beneath it. Only
+            # /dev: the walk skips symlinks, so /dev/disk, /dev/mapper and
+            # /dev/md grant no disk as whole directories (#913).
             r"^/dev$",
-            r"^/dev/(mapper|disk|md)$",
             # Symlinks and control nodes that reach the same devices.
             r"^/dev/disk/",
             r"^/dev/mapper/",
