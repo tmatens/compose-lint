@@ -129,7 +129,19 @@ _KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
 
 # An unquoted value ends at an unescaped `#`, which starts a trailing comment.
 # Quoted values do not -- `K="v # trail"` keeps the hash.
-_UNQUOTED_COMMENT_RE = re.compile(r"\s+#.*$")
+# A comment starts at a `#` that follows whitespace. Searched as the fixed-width
+# `\s#` and trimmed with rstrip: the `\s+#.*$` it replaces backtracked across
+# every position of a whitespace run with no `#` after it, O(n²) on a value of
+# interior spaces (41 s for one 256 KB value).
+_COMMENT_START_RE = re.compile(r"\s#")
+_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _strip_unquoted_comment(raw: str) -> str:
+    r"""``raw`` without a trailing ``  # comment``, as ``\s+#.*$`` removed it."""
+    found = _COMMENT_START_RE.search(raw)
+    return raw if found is None else raw[: found.start() + 1].rstrip()
+
 
 # Escapes a double-quoted value processes. Single-quoted and unquoted values
 # carry the backslash through literally (verified: `K=a\nb` ships `a\nb`).
@@ -416,9 +428,7 @@ def _entry(key: str, raw: str, line: int = 0) -> _Entry:
         return _Entry(key=key, raw=raw[1:-1], expands=False, line=line)
     if len(raw) >= 2 and raw[0] == raw[-1] == '"':
         return _Entry(key=key, raw=_unescape(raw[1:-1]), expands=True, line=line)
-    return _Entry(
-        key=key, raw=_UNQUOTED_COMMENT_RE.sub("", raw), expands=True, line=line
-    )
+    return _Entry(key=key, raw=_strip_unquoted_comment(raw), expands=True, line=line)
 
 
 def _unescape(value: str) -> str:
@@ -467,7 +477,7 @@ def _references(value: str) -> set[str]:
                 index += 1
                 continue
             interior = value[index + 2 : close]
-            name = re.match(r"[A-Za-z_][A-Za-z0-9_]*", interior)
+            name = _NAME_RE.match(interior)
             if name is not None:
                 found.add(name.group())
             default = _default_of(interior)
@@ -475,7 +485,7 @@ def _references(value: str) -> set[str]:
                 found |= _references(default)
             index = close + 1
             continue
-        name = re.match(r"[A-Za-z_][A-Za-z0-9_]*", value[index + 1 :])
+        name = _NAME_RE.match(value, index + 1)
         if name is not None:
             found.add(name.group())
             index += 1 + len(name.group())
@@ -528,6 +538,12 @@ def _resolve(
     values: dict[str, str] = dict(initial or {})
     unresolved: set[str] = set()
     for entry in entries:
+        if needed is not None and entry.key not in needed:
+            # Outside the closure of what the document asks for, so nothing
+            # read here can depend on it: ADR-026 §5's "discarded rather than
+            # parsed into the run" holds for the expansion as well as the
+            # result. A value no document uses cost its full expansion.
+            continue
         if entry.bare and not bare_is_empty:
             # An `env_file:` bare key is a process-environment lookup and
             # nothing else, so there is no file value to ship. Left unresolved
@@ -593,7 +609,7 @@ def _expand(value: str, defined: Mapping[str, str]) -> str | None:
             produced += len(substituted)
             index = close + 1
             continue
-        name = re.match(r"[A-Za-z_][A-Za-z0-9_]*", value[index + 1 :])
+        name = _NAME_RE.match(value, index + 1)
         if name is None:
             out.append(char)
             produced += 1
@@ -611,7 +627,7 @@ def _expand(value: str, defined: Mapping[str, str]) -> str | None:
 
 def _substitute(interior: str, defined: Mapping[str, str]) -> str | None:
     """Resolve one ``${...}`` interior against ``defined``."""
-    name = re.match(r"[A-Za-z_][A-Za-z0-9_]*", interior)
+    name = _NAME_RE.match(interior)
     if name is None:
         return None
     key = name.group()

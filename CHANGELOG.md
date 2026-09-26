@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Brace matching, `.env` comments and names scan in linear time.** A value
+  of unclosed `${` was rescanned to its end from every brace (27 s for a
+  64 KB `.env` value, 0.43 s per capped document scalar), an unquoted value
+  with a long whitespace run backtracked through the comment pattern (41 s),
+  and every `$` copied the rest of the value to match a name. Each is now one
+  pass, with identical results. A `.env` entry outside what the document
+  references is no longer expanded at all, as ADR-026 already said.
+
 - **Nested YAML aliases and repeated `include:` no longer blow up a run.** A
   792-byte file nesting aliases under `extends:` took 11 s and 1.5 GB, because
   the merge memo stopped at the top call; it now reaches every level, and 40

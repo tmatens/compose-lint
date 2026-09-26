@@ -445,3 +445,81 @@ def test_a_file_included_many_times_is_folded_once(tmp_path: Path) -> None:
     data_once, _ = load_compose(once)
     assert data_many["services"] == data_once["services"]
     assert data_many["services"]["p0"]["cap_add"] == ["NET_ADMIN"]
+
+
+# --- #889: scans that were quadratic below their caps ---------------------
+
+
+def test_unclosed_braces_in_a_referenced_env_value_scan_linearly(
+    tmp_path: Path,
+) -> None:
+    """Each unclosed `${` counted forward to the end: 64 KB took 27 s."""
+    from compose_lint.parser import load_compose
+
+    (tmp_path / ".env").write_text("V=" + "${" * 60_000 + "\n", encoding="utf-8")
+    compose = tmp_path / "compose.yml"
+    compose.write_text(
+        "services:\n  web:\n    image: alpine:3.20\n    command: ${V}\n",
+        encoding="utf-8",
+    )
+    start = time.perf_counter()
+    load_compose(compose)
+    assert time.perf_counter() - start < 5
+
+
+def test_an_unreferenced_env_value_is_not_expanded() -> None:
+    from compose_lint._env_file import parse_env
+
+    start = time.perf_counter()
+    env = parse_env("UNUSED=" + "${" * 60_000 + "\nUSED=x\n", {"USED"})
+    assert time.perf_counter() - start < 5
+    assert env.values == {"USED": "x"}
+
+
+def test_interior_whitespace_in_an_env_value_strips_linearly() -> None:
+    """`\\s+#.*$` backtracked across a whitespace run with no `#`: 41 s."""
+    from compose_lint._env_file import parse_env
+
+    start = time.perf_counter()
+    env = parse_env("K=x" + " " * 120_000 + "y\n", {"K"})
+    assert time.perf_counter() - start < 5
+    assert env.values["K"] == "x" + " " * 120_000 + "y"
+
+
+def test_capped_scalars_of_unclosed_braces_scan_linearly() -> None:
+    """One `command:` of 8,192 unclosed-brace characters took 0.43 s."""
+    scalar = "${" * 4096
+    source = "services:\n" + "".join(
+        f"  s{j}:\n    image: alpine:3.20\n    command: '{scalar}'\n" for j in range(16)
+    )
+    start = time.perf_counter()
+    loads(source)
+    assert time.perf_counter() - start < 3
+
+
+def test_the_linear_scanners_match_the_old_ones() -> None:
+    import random
+    import re
+
+    from compose_lint._env_file import _strip_unquoted_comment
+    from compose_lint.rules._interpolation import _matching_brace
+
+    def forward_count(value: str, start: int) -> int | None:
+        depth = 0
+        for i in range(start, len(value)):
+            if value[i] == "{":
+                depth += 1
+            elif value[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    return i
+        return None
+
+    old_comment = re.compile(r"\s+#.*$")
+    rng = random.Random(889)
+    for _ in range(20_000):
+        value = "".join(rng.choice(" \t#a{}$") for _ in range(rng.randint(0, 12)))
+        assert _strip_unquoted_comment(value) == old_comment.sub("", value)
+        for start, char in enumerate(value):
+            if char == "{":
+                assert _matching_brace(value, start) == forward_count(value, start)

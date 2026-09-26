@@ -10,6 +10,7 @@ anything literal at all, which :func:`ships_no_literal` answers.
 
 from __future__ import annotations
 
+import functools
 import re
 from typing import TYPE_CHECKING
 
@@ -100,17 +101,32 @@ def _matching_brace(value: str, start: int) -> int | None:
     Braces are counted whether or not a ``$`` precedes them, because a default
     may contain a literal one: Compose resolves ``${CONF:-{"a":1}}`` to
     ``{"a":1}``, which only balanced counting reproduces.
+
+    Answered from :func:`_brace_pairs`, one pass over ``value``. Counting
+    forward from ``start`` on every call scanned to the end of the value for
+    each unclosed ``{``, so a value of *n* unclosed ``${`` cost O(n²): 0.43 s
+    for one scalar at ``MAX_SCAN_LEN``, 27 s for a 64 KB ``.env`` value.
     """
-    depth = 0
-    for i in range(start, len(value)):
-        char = value[i]
+    return _brace_pairs(value).get(start)
+
+
+@functools.lru_cache(maxsize=64)
+def _brace_pairs(value: str) -> dict[int, int]:
+    """Every ``{`` in ``value`` that is closed, mapped to its ``}``.
+
+    Pairing with a stack gives the same answer as counting depth forward from
+    each ``{``: both close a brace at the first ``}`` that returns to its own
+    depth. An unclosed ``{`` is absent, and a ``}`` with nothing open is
+    skipped, as the forward count never reached it from any later start.
+    """
+    pairs: dict[int, int] = {}
+    open_at: list[int] = []
+    for index, char in enumerate(value):
         if char == "{":
-            depth += 1
-        elif char == "}":
-            depth -= 1
-            if depth == 0:
-                return i
-    return None
+            open_at.append(index)
+        elif char == "}" and open_at:
+            pairs[open_at.pop()] = index
+    return pairs
 
 
 def _resolve_defaults(
