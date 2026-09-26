@@ -1539,3 +1539,65 @@ class TestExplainPagerOnTTY:
         assert code == 0
         assert "CL-0003" in out
         assert "Space next" in out and "q quit" in out
+
+
+# --- #891: a stderr that cannot be written ----------------------------------
+
+_PRIVILEGED = "services:\n  web:\n    image: nginx:1.27\n    privileged: true\n"
+
+
+def _stderr_run(
+    tmp_path: Path, fmt: str, stderr: int
+) -> subprocess.CompletedProcess[bytes]:
+    target = tmp_path / "compose.yml"
+    target.write_text(_PRIVILEGED, encoding="utf-8")
+    return subprocess.run(
+        [sys.executable, "-m", "compose_lint", "check", "--format", fmt, str(target)],
+        cwd=tmp_path,
+        stdout=subprocess.PIPE,
+        stderr=stderr,
+        env={**os.environ, "NO_COLOR": "1"},
+        timeout=120,
+    )
+
+
+@pytest.mark.skipif(not os.path.exists("/dev/full"), reason="needs /dev/full")
+@pytest.mark.parametrize("fmt", ["json", "sarif"])
+def test_a_full_stderr_still_delivers_the_report(tmp_path: Path, fmt: str) -> None:
+    with open("/dev/full", "w") as full:
+        proc = _stderr_run(tmp_path, fmt, full.fileno())
+    assert proc.returncode == 1, proc.returncode
+    json.loads(proc.stdout)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX pipe semantics")
+def test_a_stderr_reader_that_went_away_still_delivers_the_report(
+    tmp_path: Path,
+) -> None:
+    read_end, write_end = os.pipe()
+    os.close(read_end)
+    try:
+        proc = _stderr_run(tmp_path, "json", write_end)
+    finally:
+        os.close(write_end)
+    assert proc.returncode == 1, proc.returncode
+    json.loads(proc.stdout)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX fd semantics")
+@pytest.mark.parametrize("fmt", ["json", "sarif"])
+def test_a_closed_stderr_does_not_leak_onto_stdout(tmp_path: Path, fmt: str) -> None:
+    target = tmp_path / "compose.yml"
+    target.write_text(_PRIVILEGED, encoding="utf-8")
+    proc = subprocess.run(
+        [sys.executable, "-m", "compose_lint", "check", "--format", fmt, str(target)],
+        cwd=tmp_path,
+        stdout=subprocess.PIPE,
+        # Started with fd 2 closed, CPython sets `sys.stderr` to None.
+        preexec_fn=lambda: os.close(2),  # noqa: PLW1509
+        env={**os.environ, "NO_COLOR": "1"},
+        timeout=120,
+    )
+    assert proc.returncode == 1, proc.returncode
+    json.loads(proc.stdout)
+    assert b"Note:" not in proc.stdout

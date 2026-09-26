@@ -383,7 +383,8 @@ def format_findings(
                     else "read for this run"
                 )
                 out.append(
-                    f"          {_colorize('in:', _DIM)} {f.source_file} ({whence})"
+                    f"          {_colorize('in:', _DIM)} "
+                    f"{_sanitize_line(f.source_file)} ({whence})"
                 )
 
             excerpt_source = (
@@ -406,7 +407,10 @@ def format_findings(
                 for fix_line in fix_lines[1:]:
                     out.append(f"               {fix_line}")
             if show_fix and f.references:
-                out.append(f"          {_colorize('ref:', _DIM)} {f.references[0]}")
+                out.append(
+                    f"          {_colorize('ref:', _DIM)} "
+                    f"{_sanitize_line(f.references[0])}"
+                )
 
             seen_fixes.add(fix_key)
 

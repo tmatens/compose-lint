@@ -270,3 +270,38 @@ def test_a_parse_error_does_not_reproduce_the_line_it_failed_on() -> None:
     # The diagnosis and the position survive -- only the quoted bytes go.
     assert "cannot start any token" in message
     assert "line 3" in message
+
+
+# --- #891: the rest of Bidi_Control and the invisible ignorables ------------
+
+
+@pytest.mark.parametrize(
+    "code_point",
+    [0x061C, 0x00AD, 0x180E, 0xFFF9, 0xFFFA, 0xFFFB, 0xE0000, 0xE0001, 0xE007F],
+)
+def test_bidi_marks_and_invisibles_are_escaped(code_point: int) -> None:
+    raw = f"svc{chr(code_point)}X"
+    for fn in (sanitize, sanitize_line):
+        escaped = fn(raw)
+        assert chr(code_point) not in escaped
+        assert escaped.startswith("svc\\")
+        assert escaped.endswith("X")
+
+
+def test_an_astral_escape_is_unambiguous() -> None:
+    """`\\ue0041` would read as U+E004 followed by a `1`."""
+    assert sanitize("\U000e0041") == "\\U000e0041"
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["café", "サービス", "خدمة", "сервис", "🐳-web", "naïve_ß"],
+)
+def test_ordinary_multibyte_names_are_unchanged(text: str) -> None:
+    assert sanitize(text) == text
+    assert sanitize_line(text) == text
+
+
+def test_multiline_fix_guidance_keeps_its_layout() -> None:
+    guidance = "Add to the service:\n\n    cap_drop:\n      - ALL\n\tthen re-run."
+    assert sanitize(guidance) == guidance
