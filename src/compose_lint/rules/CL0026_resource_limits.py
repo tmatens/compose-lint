@@ -57,6 +57,33 @@ def _interpolation_default(text: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
+# The suffixes go-units' `RAMInBytes` accepts, which is what Compose parses
+# `mem_limit` and `deploy.resources.limits.memory` with: a scale letter, alone
+# or followed by `b` or `ib`, case-insensitive, or a bare `b`. `512Mi` is not
+# one — Compose refuses it with "invalid suffix".
+_SIZE_SUFFIXES = frozenset(
+    {"", "b"} | {unit + tail for unit in "kmgtp" for tail in ("", "b", "ib")}
+)
+
+
+def _quantity(text: str) -> float | None:
+    """The numeric part of a size, split the way go-units splits it.
+
+    The number ends at the last digit, dot or space; one space before the
+    suffix is allowed. Returns ``None`` for anything go-units would refuse.
+    """
+    sep = max(text.rfind(ch) for ch in "0123456789. ")
+    if sep == -1:
+        return None
+    number = text[:sep] if text[sep] == " " else text[: sep + 1]
+    if text[sep + 1 :].lower() not in _SIZE_SUFFIXES:
+        return None
+    try:
+        return float(number)
+    except ValueError:
+        return None
+
+
 def _is_set(value: Any) -> bool:
     """Whether a limit key actually bounds anything.
 
@@ -80,22 +107,21 @@ def _is_set(value: Any) -> bool:
             # "${MEM:-0}" — the fallback is written right here, so it is not
             # unknowable. Judge the value the file actually ships with.
             return _is_set(default)
-        # "512M", "1.5", "0", "0m" — a size/quantity with an optional unit
-        # suffix. If the numeric part is non-positive it bounds nothing.
-        number = text.rstrip("bBkKmMgG")
-        try:
-            return float(number) > 0
-        except ValueError:
-            # A *defaulted* interpolation never reaches here: the parser
-            # resolved it to the value the file ships, so "${MEM:-0}m" arrives
-            # as "0m" and parses as unbounded. A bare "${MEM_LIMIT}" is
-            # genuinely unknowable from this file and keeps its exemption —
-            # assuming the worst would fire on every parameterised stack.
-            # Anything else is not a quantity Docker accepts and so bounds
-            # nothing; the old "$" in text answer credited any unparseable
-            # dollar-bearing string as a limit, which is what let "${MEM:-0}m"
-            # through.
-            return ships_no_literal(text)
+        # "512M", "1GiB", "1.5", "0", "0m" — a size/quantity with an optional
+        # unit suffix. If the numeric part is non-positive it bounds nothing.
+        number = _quantity(text)
+        if number is not None:
+            return number > 0
+        # A *defaulted* interpolation never reaches here: the parser
+        # resolved it to the value the file ships, so "${MEM:-0}m" arrives
+        # as "0m" and parses as unbounded. A bare "${MEM_LIMIT}" is
+        # genuinely unknowable from this file and keeps its exemption —
+        # assuming the worst would fire on every parameterised stack.
+        # Anything else is not a quantity Docker accepts and so bounds
+        # nothing; the old "$" in text answer credited any unparseable
+        # dollar-bearing string as a limit, which is what let "${MEM:-0}m"
+        # through.
+        return ships_no_literal(text)
     return True
 
 

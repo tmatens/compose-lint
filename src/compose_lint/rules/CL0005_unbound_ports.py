@@ -47,6 +47,55 @@ _PORT_PATTERN = re.compile(
     rf"^(?:(?P<ip>[^:]+):)?(?P<host>{_PORT_PART}):(?P<container>{_PORT_PART})$"
 )
 
+_PORT_FIELD = re.compile(rf"^{_PORT_PART}$")
+
+
+def _split_port_fields(port_str: str) -> list[str]:
+    """Split a short-syntax port on the colons outside any ``${...}``.
+
+    A substitution may carry its own colon (``${PORT:?unset}``) and is one
+    field, not two.
+    """
+    fields: list[str] = []
+    depth = 0
+    start = 0
+    for i, ch in enumerate(port_str):
+        if ch == "{" and i and port_str[i - 1] == "$":
+            depth += 1
+        elif ch == "}" and depth:
+            depth -= 1
+        elif ch == ":" and not depth:
+            fields.append(port_str[start:i])
+            start = i + 1
+    fields.append(port_str[start:])
+    return fields
+
+
+def _short_syntax_ip(port_str: str) -> tuple[str | None, bool]:
+    """The bind address of a ``[IP:][HOST:]CONTAINER`` port, and whether it parsed.
+
+    Split the way Docker's own parser (go-connections ``splitParts``) splits
+    it: the last field is the container port, the one before it the host
+    port, and everything before that — colons included — is the address. So
+    an unbracketed IPv6 literal (``:::8080:80``) keeps its colons, and an empty
+    host port (``0.0.0.0::80``, ``::81``, ``[::]::82``) is the ephemeral
+    publish it is rather than a parse failure. ``None`` means no address was
+    written; an empty string is an address field left empty, which Compose
+    also publishes on every interface.
+    """
+    fields = _split_port_fields(port_str)
+    if len(fields) < 2:
+        return None, False
+    host, container = fields[-2], fields[-1]
+    if not _PORT_FIELD.match(container):
+        return None, False
+    if host and not _PORT_FIELD.match(host):
+        return None, False
+    if len(fields) == 2:
+        return None, True
+    return ":".join(fields[:-2]), True
+
+
 # A bare short-syntax port with no colon (`"3000"`, `3001`, a `"3000-3005"`
 # range, optional `/proto`). Docker still publishes it — `docker compose
 # config` normalizes `- "3000"` to a `target` with an ephemeral host port
@@ -160,29 +209,20 @@ class UnboundPortsRule(BaseRule):
                 )
             return
 
-        # Extract bracketed IPv6 prefix (e.g. "[::]:8080:80") before the
-        # main regex, which doesn't accept colons inside the IP group.
-        ip: str | None = None
-        rest = port_str
-        if port_str.startswith("["):
-            end = port_str.find("]:")
-            if end == -1:
-                return  # malformed
-            ip = port_str[: end + 1]
-            rest = port_str[end + 2 :]
-
-        match = _PORT_PATTERN.match(rest)
-        if not match:
+        ip, parsed = _short_syntax_ip(port_str)
+        if not parsed:
             return
-
-        if ip is None:
-            ip = match.group("ip")
 
         # Fire when there's no bind address or it's a wildcard form.
         # Any other value (loopback, specific interface IP, hostname) is
         # treated as a real bind.
         if ip is None or _is_wildcard_ip(ip):
-            yield self._make_finding(port_str, service_name, lines, index)
+            # Rebind only the host and container fields: prefixing the whole
+            # string would suggest `127.0.0.1:0.0.0.0:8080:80`.
+            ports_only = ":".join(_split_port_fields(port_str)[-2:])
+            yield self._make_finding(
+                port_str, service_name, lines, index, bind=ports_only
+            )
 
     def _check_long_syntax(
         self,
@@ -191,10 +231,6 @@ class UnboundPortsRule(BaseRule):
         lines: dict[str, int],
         index: int,
     ) -> Iterator[Finding]:
-        # Long syntax: target is required, published makes it a host mapping
-        if "published" not in port_config:
-            return
-
         host_ip = port_config.get("host_ip", "")
         if isinstance(host_ip, str) and not _is_wildcard_ip(host_ip):
             return
@@ -215,6 +251,18 @@ class UnboundPortsRule(BaseRule):
             if isinstance(protocol, str) and protocol.lower() not in ("", "tcp")
             else ""
         )
+        if "published" not in port_config:
+            # `- target: 80` is the long spelling of `- "80"`: Compose renders
+            # both to the same entry, and Docker publishes it on an ephemeral
+            # host port on every interface.
+            target = port_config.get("target")
+            if target is None or isinstance(target, (bool, dict, list)):
+                return
+            yield self._make_finding(
+                f"{target}{suffix}", service_name, lines, index, bare=True
+            )
+            return
+
         port_desc = (
             f"{port_config.get('published')}:{port_config.get('target')}{suffix}"
         )
@@ -227,6 +275,7 @@ class UnboundPortsRule(BaseRule):
         lines: dict[str, int],
         index: int,
         bare: bool = False,
+        bind: str | None = None,
     ) -> Finding:
         if bare:
             message = (
@@ -249,7 +298,7 @@ class UnboundPortsRule(BaseRule):
                 "to the public internet."
             )
             fix = (
-                f"Bind to localhost: 127.0.0.1:{port_str}\n"
+                f"Bind to localhost: 127.0.0.1:{bind or port_str}\n"
                 "If public access is needed, use a reverse proxy with TLS."
             )
         return Finding(

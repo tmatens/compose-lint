@@ -423,3 +423,95 @@ class TestUnboundPortsFix:
             "      - 8080:80\n"
         )
         assert self._fix(tmp_path, content) is None
+
+
+def _port_findings(ports_yaml: str) -> list:
+    from compose_lint.parser import loads as _loads
+    from compose_lint.rules.CL0005_unbound_ports import UnboundPortsRule
+
+    data, lines = _loads(
+        "services:\n  app:\n    image: nginx\n    ports:\n" + ports_yaml
+    )
+    return list(UnboundPortsRule().check("app", data["services"]["app"], data, lines))
+
+
+class TestDockerPortGrammar:
+    """Split the way Docker's parser splits: last two colons delimit ports (#890)."""
+
+    def test_unbracketed_ipv6_wildcards_are_flagged(self) -> None:
+        for port in (":::8080:80", "0:0:0:0:0:0:0:0:8081:80", "::0:8082:80"):
+            assert len(_port_findings(f'      - "{port}"\n')) == 1, port
+
+    def test_wildcard_ephemeral_publishes_are_flagged(self) -> None:
+        for port in ("0.0.0.0::80", "::81", "[::]::82", "*::83"):
+            findings = _port_findings(f'      - "{port}"\n')
+            assert [f.evidence for f in findings] == [port], port
+
+    def test_unbracketed_non_wildcard_ipv6_is_not_flagged(self) -> None:
+        for port in ("::1:8080:80", "fe80::1:8080:80", "[::1]:8080:80", "[::1]::80"):
+            assert _port_findings(f'      - "{port}"\n') == [], port
+
+    def test_loopback_ephemeral_is_not_flagged(self) -> None:
+        assert _port_findings('      - "127.0.0.1::80"\n') == []
+
+    def test_a_substitution_with_a_colon_is_one_field(self) -> None:
+        assert len(_port_findings('      - "${PORT:?unset}:80"\n')) == 1
+        assert _port_findings('      - "127.0.0.1:${PORT:?unset}:80"\n') == []
+
+    def test_non_port_junk_is_still_ignored(self) -> None:
+        for port in ("a:b", "0.0.0.0:web:80", "1.2.3.4:80:http"):
+            assert _port_findings(f'      - "{port}"\n') == [], port
+
+
+class TestLongSyntaxTargetOnly:
+    """`- target: 80` is the long spelling of `- "80"`; Compose renders both alike."""
+
+    def test_target_only_is_flagged_like_a_bare_port(self) -> None:
+        findings = _port_findings("      - target: 80\n")
+        assert [f.evidence for f in findings] == ["80"]
+        assert "ephemeral" in findings[0].message
+
+    def test_target_only_keeps_a_non_tcp_protocol(self) -> None:
+        findings = _port_findings(
+            "      - target: 53\n      - target: 53\n        protocol: udp\n"
+        )
+        assert [f.evidence for f in findings] == ["53", "53/udp"]
+
+    def test_target_only_with_a_wildcard_host_ip_is_flagged(self) -> None:
+        assert len(_port_findings("      - target: 80\n        host_ip: '::'\n")) == 1
+
+    def test_target_only_with_a_real_host_ip_is_not_flagged(self) -> None:
+        for host_ip in ("127.0.0.1", "192.168.1.10", "'::1'"):
+            assert (
+                _port_findings(f"      - target: 80\n        host_ip: {host_ip}\n")
+                == []
+            ), host_ip
+
+    def test_published_with_a_real_host_ip_is_still_not_flagged(self) -> None:
+        assert (
+            _port_findings(
+                "      - target: 80\n"
+                "        published: 8080\n"
+                "        host_ip: 10.0.0.5\n"
+            )
+            == []
+        )
+
+
+class TestFixSuggestion:
+    def test_the_suggestion_replaces_the_address_rather_than_prefixing_it(
+        self,
+    ) -> None:
+        for port, suggested in (
+            ("8080:80", "127.0.0.1:8080:80"),
+            ("0.0.0.0:8080:80", "127.0.0.1:8080:80"),
+            ("[::]:8080:80", "127.0.0.1:8080:80"),
+            (":::8080:80", "127.0.0.1:8080:80"),
+            (":443:443", "127.0.0.1:443:443"),
+            (":9000", "127.0.0.1::9000"),
+            ("::81", "127.0.0.1::81"),
+            ("0.0.0.0::80", "127.0.0.1::80"),
+        ):
+            (finding,) = _port_findings(f'      - "{port}"\n')
+            assert finding.fix is not None
+            assert f"Bind to localhost: {suggested}\n" in finding.fix, port
