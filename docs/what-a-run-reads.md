@@ -61,12 +61,21 @@ against its own directory, and the merge order follows Compose's, which is not
 the one `-f a -f b` uses: the including file wins, and an earlier `include:`
 entry beats a later one.
 
+Every `extends:` merge — in-file, cross-file, or inside an included document —
+is the same field-by-field merge Compose uses for overlays, so a child's
+`!reset` deletes an inherited key and `!override` replaces an inherited value
+instead of adding to it. A service an included document declares with
+`extends:` is resolved once, against that document's directory, and is not
+resolved again by the including file.
+
 ## Coverage gaps
 
 What is *not* followed is still an error rather than a quiet pass, because
 reporting clean over a partial view is the one failure mode a merge gate
 cannot have: a reference that leaves the project directory, is missing, is
-interpolated, is a cycle, or fails the bounded read. A gap means exit 2, a
+interpolated, is a cycle, or fails the bounded read — and an in-file
+`extends:` naming a service the file does not declare, or forming a cycle,
+both of which Compose refuses outright. A gap means exit 2, a
 JSON `errors[]` entry, and a SARIF `toolExecutionNotifications` record, and
 the message says which of those it was. Lint the merged output (`docker
 compose config`) to cover everything, or pass `--allow-partial-coverage` to

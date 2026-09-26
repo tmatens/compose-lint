@@ -72,7 +72,8 @@ severity never moves on judgment alone.
 When compose-lint cannot see part of a stack — today, an `include:` or
 cross-file `extends: {file: ...}` it could not follow, because the target
 leaves the project directory, is missing, is interpolated, is a cycle, or
-could not be read safely — it does not guess. It reports a **coverage gap**: a
+could not be read safely, or an in-file `extends:` whose target service the
+file does not declare or whose chain is a cycle — it does not guess. It reports a **coverage gap**: a
 stderr `Error:` line, a JSON `errors[]` entry, a SARIF
 `toolExecutionNotifications` record with `executionSuccessful: false`, and
 **exit 2**. That is deliberate: reporting 0 findings on a file whose real

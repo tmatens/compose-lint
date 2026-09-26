@@ -33,6 +33,7 @@ would change what they see on files that have no overlay at all.
 
 from __future__ import annotations
 
+import posixpath
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -82,16 +83,32 @@ _KEYED_SEQ = frozenset({"volumes", "devices", "ports"})
 _KEY_VALUE_SEQ = frozenset({"environment", "labels", "sysctls", "depends_on"})
 
 
+def _container_path(path: str) -> str:
+    """A container path as Compose keys it: ``.``, ``//`` and a trailing ``/`` gone.
+
+    Measured against Compose 5.5.0: a child mounting over
+    ``/var/run/docker.sock/`` replaces the base's ``/var/run/docker.sock``, and
+    the merged service ships one mount. Keyed as written, the two stayed
+    separate and the base's socket mount was graded against the child.
+    """
+    if not path:
+        return path
+    normalized = posixpath.normpath(path)
+    if normalized.startswith("//"):
+        normalized = "/" + normalized.lstrip("/")
+    return normalized
+
+
 def _volume_key(entry: Any) -> str | None:
     """Container-side path of a volume entry, in either syntax."""
     if isinstance(entry, dict):
         target = entry.get("target")
-        return target if isinstance(target, str) else None
+        return _container_path(target) if isinstance(target, str) else None
     if isinstance(entry, str):
         parts = _split_outside_braces(entry)
         # "name" (anonymous/named volume, no target) has no container path to
         # key on; "src:tgt" and "src:tgt:mode" do.
-        return parts[1] if len(parts) >= 2 else None
+        return _container_path(parts[1]) if len(parts) >= 2 else None
     return None
 
 
@@ -99,11 +116,11 @@ def _device_key(entry: Any) -> str | None:
     """Container-side path of a device entry."""
     if isinstance(entry, dict):
         target = entry.get("target")
-        return target if isinstance(target, str) else None
+        return _container_path(target) if isinstance(target, str) else None
     if isinstance(entry, str):
         parts = _split_outside_braces(entry)
         # A bare "/dev/x" maps to itself in the container.
-        return parts[1] if len(parts) >= 2 else parts[0]
+        return _container_path(parts[1] if len(parts) >= 2 else parts[0])
     return None
 
 
@@ -767,3 +784,27 @@ def merge_service_from(
         rec=rec,
     )
     return merged, rec.lines, rec.sources
+
+
+def merge_extended(
+    base_value: Any,
+    child_value: Any,
+    *,
+    child_path: str,
+    resets: frozenset[str] = frozenset(),
+    overrides: frozenset[str] = frozenset(),
+) -> Any:
+    """Merge a child service onto the service it ``extends:`` in the same file.
+
+    ``resets`` and ``overrides`` are the document's ``!reset``/``!override``
+    paths; the ones under ``child_path`` apply, exactly as they do to an
+    overlay. No provenance is recorded: the child keeps the document's own
+    line map.
+    """
+    child = Document(path="", data={}, lines={}, resets=resets, overrides=overrides)
+    return merge_values(
+        base_value,
+        child_value,
+        over_side=_Side(child_value, child, child_path),
+        out_path=child_path,
+    )
