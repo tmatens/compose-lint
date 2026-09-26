@@ -168,10 +168,8 @@ def _discard_stderr(target: TextIO) -> None:
     once more at exit, outside any handler, so the descriptor itself has to
     stop failing for the chosen exit code to stand.
     """
-    with contextlib.suppress(AttributeError, OSError, ValueError):
-        fd = target.fileno()
-        null = os.open(os.devnull, os.O_WRONLY)
-        try:
-            os.dup2(null, fd)
-        finally:
-            os.close(null)
+    with (
+        contextlib.suppress(AttributeError, OSError, ValueError),
+        open(os.devnull, "wb") as null,
+    ):
+        os.dup2(null.fileno(), target.fileno())
