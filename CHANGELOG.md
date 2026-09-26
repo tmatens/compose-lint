@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Nested YAML aliases and repeated `include:` no longer blow up a run.** A
+  792-byte file nesting aliases under `extends:` took 11 s and 1.5 GB, because
+  the merge memo stopped at the top call; it now reaches every level, and 40
+  levels take well under a second. A file listed many times in `include:` was
+  parsed and merged once per listing (64 listings of a 100 KB file: 45 s); a
+  repeat under the same project directory is now folded once, which is also
+  what Compose ships.
+
 - **`fix --apply` no longer writes a file Compose rejects for a wrapped port
   value or an anchor-shared list.** CL-0005 inserted `host_ip:` between a
   long-syntax entry's first value and its continuation line, and a `ports:`

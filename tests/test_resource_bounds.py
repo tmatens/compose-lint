@@ -374,3 +374,74 @@ def test_a_non_scalar_security_opt_normalizes_to_nothing() -> None:
     assert normalize_security_opt({"a": "b"}) == ""
     # Scalars are untouched.
     assert normalize_security_opt("seccomp=unconfined") == "seccomp:unconfined"
+
+
+# --- #889: expansion that the byte caps do not bound ----------------------
+
+
+def _dag_under_extends(levels: int) -> str:
+    anchors = ["x-anchors:", "  d0: &a0 {leaf: v}"]
+    anchors += [
+        f"  d{i}: &a{i} {{l: *a{i - 1}, r: *a{i - 1}}}" for i in range(1, levels + 1)
+    ]
+    return (
+        "\n".join(
+            [
+                *anchors,
+                "services:",
+                "  base:",
+                "    image: alpine:3.20",
+                f"    labels: *a{levels}",
+                "  child:",
+                "    extends: {service: base}",
+                f"    labels: *a{levels}",
+            ]
+        )
+        + "\n"
+    )
+
+
+def test_a_nested_alias_dag_under_extends_merges_in_linear_time() -> None:
+    """The memo stopped at the top call, so nested shared subtrees were
+    re-merged per path: 22 levels (792 bytes) took 11 s and 1.5 GB."""
+    start = time.perf_counter()
+    loads(_dag_under_extends(40))
+    assert time.perf_counter() - start < 5
+
+
+def test_the_memo_is_not_shared_across_a_directive() -> None:
+    # Two children merge the same aliased value; one replaces it with
+    # `!override`. The memoized result of the plain merge must not be reused.
+    data, _ = loads(
+        "x-l: &l {a: '1'}\n"
+        "services:\n"
+        "  base:\n    image: alpine:3.20\n    labels: {b: '2'}\n"
+        "  one:\n    extends: base\n    labels: *l\n"
+        "  two:\n    extends: base\n    labels: !override {a: '1'}\n"
+    )
+    assert data["services"]["one"]["labels"] == {"b": "2", "a": "1"}
+    assert data["services"]["two"]["labels"] == {"a": "1"}
+
+
+def test_a_file_included_many_times_is_folded_once(tmp_path: Path) -> None:
+    """64 references to one ~100 KB file re-parsed and re-merged it 64 times:
+    45 s. Compose 5.5.0 ships a duplicated include as one copy."""
+    from compose_lint.parser import load_compose
+
+    part = "services:\n" + "".join(
+        f"  p{j}:\n    image: alpine:3.20\n    cap_add: [NET_ADMIN]\n"
+        for j in range(2000)
+    )
+    (tmp_path / "part.yml").write_text(part, encoding="utf-8")
+    once = tmp_path / "once.yml"
+    once.write_text("include:\n  - part.yml\nservices: {}\n", encoding="utf-8")
+    many = tmp_path / "many.yml"
+    many.write_text(
+        "include:\n" + "  - part.yml\n" * 64 + "services: {}\n", encoding="utf-8"
+    )
+    start = time.perf_counter()
+    data_many, _ = load_compose(many)
+    assert time.perf_counter() - start < 10
+    data_once, _ = load_compose(once)
+    assert data_many["services"] == data_once["services"]
+    assert data_many["services"]["p0"]["cap_add"] == ["NET_ADMIN"]

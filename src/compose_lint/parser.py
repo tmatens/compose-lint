@@ -838,6 +838,8 @@ def _resolve_in_file_extends(
     # the document a DAG, and re-merging a shared subtree per path was
     # exponential (tests/test_resource_bounds.py).
     memo: dict[tuple[int, int], Any] = {}
+    # Shared by every merge below, for subtrees reached by more than one path.
+    subtree_memo: dict[tuple[int, int, str], Any] = {}
     refused: dict[tuple[str, str], list[str]] = {}
 
     def _resolve(name: str, stack: tuple[str, ...]) -> Any:
@@ -883,6 +885,7 @@ def _resolve_in_file_extends(
                 child_path=f"services.{name}",
                 resets=resets,
                 overrides=overrides,
+                memo=subtree_memo,
             )
             memo[key] = merged
         resolved[name] = merged
@@ -1166,6 +1169,12 @@ def _resolve_includes(  # noqa: PLR0913
 
     gaps: list[str] = []
     resolved: list[Document] = []
+    # A file named again under the same project directory folds in exactly
+    # what it did the first time, and folding a document twice changes nothing
+    # (keyed entries replace, appended ones deduplicate, scalars are equal), so
+    # the repeat is skipped. Listing one 100 KB file 64 times — inside both
+    # reference caps — re-parsed and re-merged it 64 times: 45 s.
+    folded: set[tuple[str, str]] = set()
 
     for entry in entries:
         documents: list[Document] = []
@@ -1192,6 +1201,10 @@ def _resolve_includes(  # noqa: PLR0913
             if step in chain:
                 _gap("the include chain returns to a file it already pulled in")
                 continue
+            identity = (step, str(entry_dir))
+            if identity in folded:
+                continue
+            folded.add(identity)
             if not budget.spend_file():
                 _gap(f"the document opens more than {MAX_REFERENCE_FILES} files")
                 continue
