@@ -23,7 +23,8 @@ page is the full contract behind the README's summary.
   per-service excludes are honored.
 - **Refuses rather than risk a wrong rewrite.** Files using YAML anchors, merge keys, or `${VAR}`
   interpolation in the affected region are skipped rather than risk a wrong
-  rewrite, and every apply is re-parsed and re-linted before it is written —
+  rewrite — including a `ports:` or `tmpfs:` list shared between services
+  through an anchor, which one edit would change for all of them, and every apply is re-parsed and re-linted before it is written —
   anything that wouldn't round-trip clean is refused with the diff surfaced for
   diagnosis.
 - **A key deleted with `!reset` is deferred, not written back.** `!reset`

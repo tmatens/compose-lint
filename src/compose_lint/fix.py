@@ -463,17 +463,24 @@ def collect_edits(
     # two regions overlap only while `b.start < a.end`, and an insertion
     # conflicts with a region only at `a.start < point <= a.end`.
     flat = sorted(
-        (start, end, index)
-        for index, (_unit, spans) in enumerate(spanned)
-        for start, end in spans
+        (start, end, index, edit.replacement)
+        for index, (unit, spans) in enumerate(spanned)
+        for (start, end), edit in zip(spans, unit.edits, strict=True)
     )
-    for position, (a_start, a_end, a_unit) in enumerate(flat):
-        for b_start, b_end, b_unit in flat[position + 1 :]:
+    for position, (a_start, a_end, a_unit, a_text) in enumerate(flat):
+        for b_start, b_end, b_unit, b_text in flat[position + 1 :]:
             if b_start > a_end:
                 break  # sorted by start, so nothing later can reach back
             if a_unit == b_unit:
                 continue  # a unit's own edits are applied together
-            if _spans_conflict((a_start, a_end), (b_start, b_end)):
+            if _spans_conflict((a_start, a_end), (b_start, b_end)) or (
+                # Two units inserting the *same* text at the *same* point are
+                # two findings resolving to one physical line — a list shared
+                # through an anchor — and would splice it twice. Different
+                # text at one point (CL-0007 and CL-0003 both inserting a
+                # service's first child) still composes.
+                a_start == a_end == b_start == b_end and a_text == b_text
+            ):
                 refused.add(a_unit)
                 refused.add(b_unit)
 
@@ -598,17 +605,24 @@ def reparse_or_error(patched: str, base_dir: Path | None = None) -> str | None:
 def _structural_drift(
     original: dict[str, Any],
     patched: dict[str, Any],
-    fixed_services: set[str],
+    written: Mapping[str, frozenset[str]],
 ) -> str | None:
-    """Return a message if ``patched`` changed anything outside the fixed services.
+    """Return a message if ``patched`` changed anything the fixes did not claim.
 
     Compares the two parsed trees, which carry plain Python types only (line
     numbers live in a separate map), so deep equality is a faithful test of
-    "same configuration". Three things must hold for the patch to be confined to
-    what the fixers claimed: every top-level key other than ``services`` is
-    unchanged, the set of service names is unchanged, and every service the fix
-    did *not* touch is deep-equal before and after. Returns ``None`` when only
-    the fixed services differ, else the first violation found.
+    "same configuration". ``written`` maps each fixed service to the keys its
+    fixers declare they write (:meth:`~compose_lint.rules.BaseRule.fix_writes_keys`).
+    Four things must hold: every top-level key other than ``services`` is
+    unchanged, the set of service names is unchanged, every service the fix did
+    *not* touch is deep-equal before and after, and in a service it did touch,
+    every key outside ``written`` is unchanged too.
+
+    The last is per key rather than per service because a service that
+    collected one legitimate fix was otherwise exempt wholesale: an edit to a
+    list it shares with another service through an anchor rewrote its value
+    for a rule that was excluded for it, and passed. Returns ``None`` when only
+    claimed keys differ, else the first violation found.
     """
     orig_top = {k: v for k, v in original.items() if k != "services"}
     new_top = {k: v for k, v in patched.items() if k != "services"}
@@ -621,11 +635,53 @@ def _structural_drift(
         return "computed fix added or removed a service"
 
     for name, config in orig_services.items():
-        if name in fixed_services:
+        after = new_services.get(name)
+        claimed = written.get(name)
+        if claimed is None:
+            if config != after:
+                return f"computed fix altered untouched service '{name}'"
             continue
-        if config != new_services.get(name):
-            return f"computed fix altered untouched service '{name}'"
+        if not isinstance(config, dict) or not isinstance(after, dict):
+            continue
+        for key in (set(config) | set(after)) - claimed:
+            if config.get(key) != after.get(key):
+                return f"computed fix altered '{key}' on service '{name}'"
     return None
+
+
+def _with_inherited_claims(
+    data: dict[str, Any], claimed: dict[str, frozenset[str]]
+) -> dict[str, frozenset[str]]:
+    """``claimed``, plus what each fixed service inherits through in-file ``extends:``.
+
+    A key a fixer writes on a base reaches every service extending it, so a
+    fixed child's merged value changes there too without any of its own
+    fixers claiming it. Only services that are already fixed gain these keys:
+    an untouched child is still held to whole-service equality, as before.
+    """
+    services = data.get("services")
+    if not isinstance(services, dict):
+        return claimed
+    parent: dict[str, str] = {}
+    for name, config in services.items():
+        if not isinstance(config, dict):
+            continue
+        ext = config.get("extends")
+        target = ext if isinstance(ext, str) else None
+        if isinstance(ext, dict) and "file" not in ext:
+            service = ext.get("service")
+            target = service if isinstance(service, str) else None
+        if target is not None:
+            parent[str(name)] = target
+    result = dict(claimed)
+    for name in claimed:
+        seen = {name}
+        target = parent.get(name)
+        while target is not None and target not in seen:
+            seen.add(target)
+            result[name] = result[name] | claimed.get(target, frozenset())
+            target = parent.get(target)
+    return result
 
 
 def verify_apply(
@@ -682,7 +738,19 @@ def verify_apply(
     except ComposeError as e:  # pragma: no cover - reparse guard runs first
         return f"computed fix does not parse as Compose ({e})"
 
-    drift = _structural_drift(original_data, re_data, {f.service for f in result.fixed})
+    from compose_lint.rules import get_registered_rules
+
+    writes = {
+        cls().metadata.id: cls().fix_writes_keys() for cls in get_registered_rules()
+    }
+    claimed: dict[str, frozenset[str]] = {}
+    for finding in result.fixed:
+        claimed[finding.service] = claimed.get(
+            finding.service, frozenset()
+        ) | writes.get(finding.rule_id, frozenset())
+    drift = _structural_drift(
+        original_data, re_data, _with_inherited_claims(original_data, claimed)
+    )
     if drift is not None:
         return drift
 

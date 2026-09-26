@@ -208,6 +208,25 @@ def opens_block_body(line: str) -> bool:
     return not trailing or trailing.startswith("#")
 
 
+def value_is_shared(line: str) -> bool:
+    """Whether a ``key:`` line gives its value an anchor or takes it from an alias.
+
+    ``ports: &p`` and ``ports: *p`` make one list the value of two keys, so
+    an edit to it changes both. A tag (``ports: !override``) does not, and its
+    block body is this key's alone. Tokens after a ``#`` are a comment.
+    """
+    body = line.rstrip("\n")
+    colon = body.find(":")
+    if colon == -1:
+        return False
+    for token in body[colon + 1 :].split():
+        if token.startswith("#"):
+            return False
+        if token.startswith(("&", "*")):
+            return True
+    return False
+
+
 def _is_seq_item(line: str) -> bool:
     """Return whether ``line`` is a block-sequence entry (``-`` or ``- ...``)."""
     stripped = line.lstrip()

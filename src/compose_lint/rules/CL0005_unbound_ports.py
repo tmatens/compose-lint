@@ -12,6 +12,7 @@ from compose_lint._yaml_edit import (
     is_anchored_or_merged,
     line_indent,
     sequence_scalar_span,
+    value_is_shared,
 )
 from compose_lint.models import Finding, RuleMetadata, Severity, TextEdit
 from compose_lint.rules import BaseRule, register_rule
@@ -361,6 +362,14 @@ class UnboundPortsRule(BaseRule):
             return None
         if is_anchored_or_merged(source_lines, service_line):
             return None
+        # `ports: &p` or `ports: *p`: the list is shared with another service,
+        # so an edit to its one physical line changes both, and two findings
+        # resolving to that line spliced the same prefix twice.
+        ports_line = lines.get(f"services.{service}.ports")
+        if ports_line is None or not 1 <= ports_line <= n:
+            return None
+        if value_is_shared(source_lines[ports_line - 1]):
+            return None
 
         port_config = _port_at_line(ports, lines, service, item_line)
         if isinstance(port_config, dict):
@@ -429,6 +438,13 @@ def _fix_long_syntax(
         return None  # flow style, anchor/alias entry, or a dashless mapping start
     dash_col, key_col = dash
 
+    if _value_continues(source_lines, item_line, key_col):
+        # The first key's value wraps onto the next line (a folded plain or
+        # quoted scalar, or a block scalar). A key inserted after the dash line
+        # would land between the value and its continuation, and Compose then
+        # reads the continuation as part of the inserted key's value.
+        return None
+
     if "host_ip" not in port_config:
         edit = _insert_host_ip(source_lines, item_line, key_col)
         return [edit] if edit is not None else None
@@ -438,6 +454,22 @@ def _fix_long_syntax(
         edit = _replace_host_ip(source_lines, item_line, dash_col)
         return [edit] if edit is not None else None
     return None  # empty/null/alias host_ip: ambiguous, refuse
+
+
+def _value_continues(source_lines: list[str], item_line: int, key_col: int) -> bool:
+    """True if the value on the ``- key: value`` line carries onto the next line.
+
+    A sibling key sits exactly at ``key_col``; only a continuation of the first
+    key's value is indented deeper. A full-line comment is not one: a ``#``
+    ends a plain scalar, so it cannot be the value's next line.
+    """
+    for raw in source_lines[item_line:]:
+        if not raw.strip():
+            continue
+        if raw.lstrip().startswith("#"):
+            return False
+        return line_indent(raw) > key_col
+    return False
 
 
 def _long_syntax_dash(raw_line: str) -> tuple[int, int] | None:

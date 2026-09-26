@@ -863,6 +863,38 @@ def test_verify_apply_flags_new_finding(tmp_path: Path) -> None:
     findings, data, lines, text = _findings_for(
         tmp_path, "services:\n  web:\n    image: nginx:1.27\n"
     )
+    # The patch stays inside the key the claimed fixer writes (CL-0003 writes
+    # `security_opt`), so the per-key structure check passes and the
+    # new-finding check is the one that fires.
+    result = FixResult(
+        fixed=[
+            Finding(
+                rule_id="CL-0003",
+                severity=Severity.MEDIUM,
+                service="web",
+                message="x",
+            )
+        ]
+    )
+    patched = (
+        "services:\n  web:\n    image: nginx:1.27\n"
+        "    security_opt: [seccomp:unconfined]\n"
+    )
+    msg = verify_apply(data, findings, result, patched, only={"CL-0002"})
+    assert msg is not None
+    assert "introduces a new finding" in msg
+    assert "CL-0009" in msg
+
+
+def test_verify_apply_flags_an_unclaimed_key_on_a_fixed_service(
+    tmp_path: Path,
+) -> None:
+    # #886: a service that collected one legitimate fix used to be exempt from
+    # the structure check wholesale, so a change to a key no fixer claimed —
+    # a list shared through an anchor — passed.
+    findings, data, lines, text = _findings_for(
+        tmp_path, "services:\n  web:\n    image: nginx:1.27\n"
+    )
     result = FixResult(
         fixed=[
             Finding(
@@ -875,9 +907,7 @@ def test_verify_apply_flags_new_finding(tmp_path: Path) -> None:
     )
     patched = "services:\n  web:\n    image: nginx:1.27\n    privileged: true\n"
     msg = verify_apply(data, findings, result, patched, only={"CL-0002"})
-    assert msg is not None
-    assert "introduces a new finding" in msg
-    assert "CL-0002" in msg
+    assert msg == "computed fix altered 'privileged' on service 'web'"
 
 
 # --- #601: line endings are content the fix must respect ------------------

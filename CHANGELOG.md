@@ -18,6 +18,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`fix --apply` no longer writes a file Compose rejects for a wrapped port
+  value or an anchor-shared list.** CL-0005 inserted `host_ip:` between a
+  long-syntax entry's first value and its continuation line, and a `ports:`
+  list shared by two services through an anchor was edited once per service
+  at its one line (`127.0.0.1:127.0.0.1:8080:80`). Both passed the re-lint
+  and `docker compose config` refused the result. CL-0005 and CL-0022 now
+  refuse a `ports:`/`tmpfs:` key that is anchored or an alias, CL-0005
+  refuses a wrapped first value, and two fixes inserting the same text at the
+  same point are treated as a conflict. The apply-time structure check is now
+  per key: a service that collected one fix was exempt wholesale, so an
+  anchor edit reached a service whose finding on that list was excluded.
+
 - **An `env_file:` in an included document is read from beside that
   document.** It was read from beside the including file, where it usually
   does not exist, so a credential Compose deploys from it was never graded.
