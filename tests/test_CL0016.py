@@ -153,3 +153,97 @@ class TestNamedRaidArrays:
     def test_mdadm_is_not_a_device(self) -> None:
         # The over-match the \d guards against; /dev/md/ must not reopen it.
         assert self._findings("/dev/mdadm") == []
+
+
+def _device_findings(devices_yaml: str) -> list:
+    data, lines = loads(
+        "services:\n  svc:\n    image: nginx\n    devices:\n" + devices_yaml
+    )
+    return list(
+        DangerousDevicesRule().check("svc", data["services"]["svc"], data, lines)
+    )
+
+
+class TestLongSyntax:
+    """The mapping form is what `docker compose config` itself renders.
+
+    `_extract_host_device` returned None for every non-string entry, so the
+    canonical spelling of a raw-disk grant never reached the pattern table.
+    """
+
+    def test_long_syntax_block_device_is_flagged(self) -> None:
+        findings = _device_findings(
+            "      - source: /dev/sda\n"
+            "        target: /dev/sda\n"
+            "        permissions: rwm\n"
+        )
+        assert len(findings) == 1
+        assert findings[0].evidence == "/dev/sda"
+        assert findings[0].line == 5
+
+    def test_long_syntax_source_is_normalized(self) -> None:
+        findings = _device_findings("      - source: //dev/./nvme0n1\n")
+        assert [f.evidence for f in findings] == ["/dev/nvme0n1"]
+
+    def test_long_syntax_safe_device_is_not_flagged(self) -> None:
+        assert (
+            _device_findings(
+                "      - source: /dev/net/tun\n        target: /dev/net/tun\n"
+            )
+            == []
+        )
+
+    def test_long_syntax_without_source_is_ignored(self) -> None:
+        assert _device_findings("      - target: /dev/sda\n") == []
+        assert _device_findings("      - source: 42\n") == []
+
+
+class TestDirectoryGrants:
+    """Docker walks a directory source and maps every device node beneath it.
+
+    `/dev:/dev` grants every block device the host has, and each of the
+    subdirectories below grants the class of node the rule already flags one at
+    a time. Every existing pattern is anchored below the directory itself.
+    """
+
+    def test_whole_dev_is_flagged(self) -> None:
+        for spelling in ("/dev", "/dev/", "//dev", "/dev/."):
+            findings = _device_findings(f'      - "{spelling}:/dev"\n')
+            assert [f.evidence for f in findings] == ["/dev"], spelling
+
+    def test_block_subdirectories_are_flagged(self) -> None:
+        for directory in ("/dev/mapper", "/dev/disk", "/dev/md"):
+            findings = _device_findings(f'      - "{directory}/:{directory}"\n')
+            assert [f.evidence for f in findings] == [directory], directory
+
+    def test_long_syntax_directory_is_flagged(self) -> None:
+        findings = _device_findings("      - source: /dev\n        target: /dev\n")
+        assert [f.evidence for f in findings] == ["/dev"]
+
+    def test_other_device_directories_are_not_flagged(self) -> None:
+        for directory in ("/dev/net", "/dev/snd", "/dev/dri", "/dev/bus/usb"):
+            assert _device_findings(f'      - "{directory}:{directory}"\n') == [], (
+                directory
+            )
+
+
+class TestAdditionalBlockFamilies:
+    """Raw block-device node families the table did not enumerate."""
+
+    def test_new_families_are_flagged(self) -> None:
+        for device in (
+            "/dev/zd0",
+            "/dev/zd16",
+            "/dev/zvol/tank/vm-100-disk-0",
+            "/dev/nbd0",
+            "/dev/nbd15",
+            "/dev/mtdblock0",
+            "/dev/hda",
+            "/dev/hdb1",
+        ):
+            findings = _device_findings(f'      - "{device}:{device}"\n')
+            assert [f.evidence for f in findings] == [device], device
+
+    def test_near_misses_are_not_flagged(self) -> None:
+        for device in ("/dev/zero", "/dev/hdmi0", "/dev/hidraw0", "/dev/mtd0"):
+            assert _device_findings(f'      - "{device}:{device}"\n') == [], device

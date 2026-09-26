@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **CL-0016 sees raw-disk grants in every spelling Compose accepts.** A
+  long-syntax `devices:` entry (`source:`/`target:`/`permissions:`, the form
+  `docker compose config` renders) was skipped outright. A directory source —
+  `/dev:/dev`, or `/dev/mapper`, `/dev/disk`, `/dev/md` — maps every device
+  node beneath it but matched no pattern, because every row was anchored one
+  level below the directory. Both are now flagged CRITICAL, and the table
+  gains the ZFS zvol (`/dev/zd*`, `/dev/zvol/*`), network block device
+  (`/dev/nbd*`), MTD flash (`/dev/mtdblock*`) and legacy IDE (`/dev/hd*`)
+  node families.
+
 ## [0.30.0] - 2026-09-25
 
 ### Added

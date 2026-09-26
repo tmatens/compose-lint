@@ -369,9 +369,17 @@ class TestDeviceMembership:
             r"^/dev/md/",
             r"^/dev/dm-",
             r"^/dev/rbd",
+            r"^/dev/zd\d",
+            r"^/dev/nbd\d",
+            r"^/dev/mtdblock",
+            r"^/dev/hd[a-z]\d*$",
+            # Directory sources: Docker maps every device node beneath them.
+            r"^/dev$",
+            r"^/dev/(mapper|disk|md)$",
             # Symlinks and control nodes that reach the same devices.
             r"^/dev/disk/",
             r"^/dev/mapper/",
+            r"^/dev/zvol/",
             r"^/dev/zfs$",
             r"^/dev/loop",
             # Not a block device, kept for the reason in the test below.
