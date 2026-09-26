@@ -35,7 +35,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
-from compose_lint._env_file import ENV_FILENAME, read_env
+from compose_lint._env_file import ENV_FILENAME, env_read_failure, read_env
 from compose_lint._safe_read import escapes_project
 
 if TYPE_CHECKING:
@@ -112,6 +112,10 @@ class Selection:
     # also what makes a laptop-versus-CI difference a diff rather than a
     # mystery.
     env_files: tuple[str, ...] = ()
+    # The subset of `notes` a machine reader must see too: `(file, message)`
+    # for an input that was refused or unreadable, so what it supplies was
+    # not graded. Each is also in `notes`, which is what stderr prints.
+    warnings: tuple[tuple[str, str], ...] = ()
 
     def is_consumed(self, path: str) -> bool:
         """Whether ``path`` is already being graded inside another group."""
@@ -161,7 +165,9 @@ def _plan_discovered(
     asked "what does this project lint to", and the project's own answer is the
     file list Compose would load.
     """
-    selected, notes = _compose_file_entries(directory, read_env_files=read_env_files)
+    selected, notes, warnings = _compose_file_entries(
+        directory, read_env_files=read_env_files
+    )
     env_file = env_file_for(directory, read_env_files=read_env_files)
     env_files = (env_file,) if env_file else ()
     if selected is not None:
@@ -172,10 +178,15 @@ def _plan_discovered(
             consumed=frozenset(_key(path) for path in selected[1:]),
             notes=tuple(notes),
             env_files=env_files,
+            warnings=tuple(warnings),
         )
     discovered = [name for name in COMPOSE_FILENAMES if (directory / name).is_file()]
     selection = _pair_with_overrides(discovered, merge_overrides, notes)
-    return replace(selection, env_files=env_files if discovered else ())
+    return replace(
+        selection,
+        env_files=env_files if discovered else (),
+        warnings=tuple(warnings),
+    )
 
 
 def _plan_named(
@@ -185,6 +196,7 @@ def _plan_named(
     groups: list[DocumentGroup] = []
     consumed: set[str] = set()
     notes: list[str] = []
+    warnings: list[tuple[str, str]] = []
     planned: set[str] = set()
     env_files: list[str] = []
 
@@ -192,10 +204,12 @@ def _plan_named(
         if _key(path) in planned:
             continue
         directory = Path(path).parent
-        selected, file_notes = _compose_file_entries(
+        selected, file_notes, file_warnings = _compose_file_entries(
             directory, read_env_files=read_env_files
         )
-        notes.extend(file_notes)
+        # Two files in one directory share its `.env`; say so once.
+        notes.extend(note for note in file_notes if note not in notes)
+        warnings.extend(w for w in file_warnings if w not in warnings)
         env_file = env_file_for(directory, read_env_files=read_env_files)
         if env_file is not None and env_file not in env_files:
             env_files.append(env_file)
@@ -228,6 +242,7 @@ def _plan_named(
         consumed=frozenset(consumed),
         notes=tuple(notes),
         env_files=tuple(env_files),
+        warnings=tuple(warnings),
     )
 
 
@@ -266,8 +281,11 @@ def env_file_for(directory: Path, *, read_env_files: bool) -> str | None:
 
 def _compose_file_entries(
     directory: Path, *, read_env_files: bool
-) -> tuple[list[str] | None, list[str]]:
+) -> tuple[list[str] | None, list[str], list[tuple[str, str]]]:
     """The document list ``directory``'s ``.env`` selects, and what to say.
+
+    The third value is the notes that are also machine-readable warnings, as
+    ``(file, message)``: a refused list, or a ``.env`` that could not be read.
 
     ``None`` means no list applies — there is no ``.env``, it sets no
     ``COMPOSE_FILE``, or the one it sets was refused. A refusal falls back to
@@ -276,13 +294,22 @@ def _compose_file_entries(
     is the failure this whole mechanism exists to remove.
     """
     if not read_env_files:
-        return None, []
+        return None, [], []
     parsed = read_env(directory, COMPOSE_FILE_KEYS)
     if parsed is None:
-        return None, []
+        failure = env_read_failure(directory)
+        if failure is None:
+            return None, [], []
+        env_path = str(directory / ENV_FILENAME)
+        message = (
+            f"{env_path} was not read because {failure}, so it selected no "
+            "documents and supplied no values. Compose reads it anyway, so any "
+            "value it sets was not graded."
+        )
+        return None, [message], [(env_path, message)]
     raw = parsed.values.get("COMPOSE_FILE")
     if not raw:
-        return None, []
+        return None, [], []
 
     separator = parsed.values.get("COMPOSE_PATH_SEPARATOR") or DEFAULT_PATH_SEPARATOR
     entries = [part for part in raw.split(separator) if part.strip()]
@@ -290,14 +317,15 @@ def _compose_file_entries(
     for entry in entries:
         candidate = _resolve_entry(directory, entry.strip())
         if candidate is None:
-            return None, [
+            message = (
                 f"{directory / ENV_FILENAME}: COMPOSE_FILE names {entry.strip()!r}, "
                 "which is outside the project directory or missing, so the whole "
                 "list was ignored and file selection fell back to the default."
-            ]
+            )
+            return None, [message], [(str(directory / ENV_FILENAME), message)]
         resolved.append(candidate)
     if not resolved:
-        return None, []
+        return None, [], []
 
     note = (
         f"{directory / ENV_FILENAME}: COMPOSE_FILE selects "
@@ -305,7 +333,7 @@ def _compose_file_entries(
     )
     if len(resolved) > 1:
         note += ", merged in that order"
-    return resolved, [note + "."]
+    return resolved, [note + "."], []
 
 
 def _resolve_entry(directory: Path, entry: str) -> str | None:

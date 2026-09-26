@@ -66,6 +66,10 @@ class DiagnosticKind(enum.Enum):
     # Run-level, not about one file: no Compose files found, a configuration
     # error, output truncation. `Diagnostic.file` is "" for these.
     RUN = "run"
+    # A file the run would read for values or for its file list -- the sibling
+    # `.env`, an `env_file:` target, a `COMPOSE_FILE` entry -- was refused or
+    # could not be read, so what it supplies was not graded. Warning only.
+    UNREAD_INPUT = "unread_input"
 
 
 @dataclass(frozen=True)

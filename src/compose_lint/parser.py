@@ -999,7 +999,7 @@ def _locate_reference(
 
 
 def _rebase_env_files(data: dict[str, Any], prefix: tuple[str, ...]) -> None:
-    """Re-express a base document's ``env_file:`` paths against the project root.
+    """Re-express a document's own ``env_file:`` paths against the project root.
 
     Bind sources are made absolute during the base's own parse, so the merge
     carries them across correctly. ``env_file:`` is resolved later and
@@ -1415,9 +1415,6 @@ def _resolve_cross_file_extends(
             _gap(f"it could not be read safely ({exc})")
             continue
 
-        base_prefix = tuple(
-            target.absolute().parent.relative_to(project_dir.absolute()).parts
-        )
         try:
             base_data, base_lines, _, _, base_gaps = _loads_full(
                 content,
@@ -1441,7 +1438,6 @@ def _resolve_cross_file_extends(
             continue
 
         gaps.extend(base_gaps)
-        _rebase_env_files(base_data, base_prefix)
         # A base reached through another base carries lines that already name
         # their own file. Without seeding `sources`, the merge would credit
         # every one of them to the file this hop opened.
@@ -2056,6 +2052,13 @@ def _loads_full(  # noqa: PLR0913
         # re-resolved against this one's directory.
         if base_dir is not None:
             _resolve_bind_sources(data, base_dir)
+        # Likewise its own `env_file:` paths, re-expressed against the project
+        # root because that is where `resolve_env_files` reads them from. Done
+        # here, once per document and before anything is folded in, so a path
+        # arriving from a nested `include:` or `extends:` was already rebased
+        # by the document that wrote it and is never rebased a second time.
+        if prefix:
+            _rebase_env_files(data, prefix)
         # `include:` folds in *before* either `extends:` pass, which is the
         # order Compose resolves them in — measured, and not the order a
         # reading of the docs suggests. An included document's contribution to

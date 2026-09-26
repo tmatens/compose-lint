@@ -210,6 +210,29 @@ def read_env(directory: Path, wanted: Iterable[str] | None = None) -> EnvFile | 
     return parse_env(text, wanted)
 
 
+def env_read_failure(directory: Path) -> str | None:
+    """Why ``directory/.env`` exists but cannot be read, or ``None``.
+
+    :func:`read_env` treats an unreadable ``.env`` as absent, which keeps the
+    run going but was silent: Compose reads the file as raw bytes with no size
+    cap, so a ``.env`` that is not UTF-8, or is larger than the cap, still
+    supplies values to the deployed stack that this run never graded. This is
+    the reason, for the note and ``warnings[]`` entry that say so.
+    """
+    path = directory / ENV_FILENAME
+    if not path.is_file():
+        return None
+    try:
+        read_text_bounded(path, max_bytes=MAX_ENV_BYTES)
+    except UnicodeDecodeError as exc:
+        return f"it is not valid UTF-8 (byte {exc.start})"
+    except UnsafeFileError as exc:
+        return str(exc).replace(f"{path} ", "it ", 1)
+    except OSError as exc:
+        return f"it could not be read ({exc.strerror or exc})"
+    return None
+
+
 def parse_env(text: str, wanted: Iterable[str] | None = None) -> EnvFile:
     """Parse ``.env`` text, resolving only what ``wanted`` needs.
 

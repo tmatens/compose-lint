@@ -7,7 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **An unread input is a machine-readable warning.** A new diagnostic kind,
+  `unread_input`, appears on JSON `warnings[]` and as a SARIF `level:
+  warning` notification when a `.env`, `env_file:` or `COMPOSE_FILE` entry
+  is refused for leaving the project or cannot be read. The run still passes
+  or fails on its findings; the warning says which values were not graded.
+  These refusals used to reach stderr only.
+
 ### Fixed
+
+- **An `env_file:` in an included document is read from beside that
+  document.** It was read from beside the including file, where it usually
+  does not exist, so a credential Compose deploys from it was never graded.
+  Each document now re-expresses its own `env_file:` paths against the
+  project root once, when it is loaded, which also stops a path reached
+  through two `extends:` hops being rebased twice.
+
+- **A `.env` that is not UTF-8 or is over the read cap is reported.** It was
+  treated as absent without a word, though Compose reads it as raw bytes with
+  no cap and deploys its values. It is still not read; the run now says so on
+  stderr and as an `unread_input` warning.
 
 - **CL-0016 sees raw-disk grants in every spelling Compose accepts.** A
   long-syntax `devices:` entry (`source:`/`target:`/`permissions:`, the form

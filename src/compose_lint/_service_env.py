@@ -377,7 +377,11 @@ def _environment_keys(env_block: Any) -> set[str]:
     return keys
 
 
-def describe_unread(resolved: Mapping[str, ServiceEnvFiles]) -> list[str]:
+def describe_unread(
+    resolved: Mapping[str, ServiceEnvFiles],
+    *,
+    only: Unread | None = None,
+) -> list[str]:
     """One stderr note per target that contributed nothing, per service.
 
     Replaces the blanket note #669 shipped, which said the credential rules
@@ -404,11 +408,17 @@ def describe_unread(resolved: Mapping[str, ServiceEnvFiles]) -> list[str]:
 
     Notes never touch the exit code, like the unread-``.env`` and
     unresolved-mount-source notes they sit beside.
+
+    ``only`` restricts the result to one reason and drops the skipped-line
+    notes: the CLI passes ``Unread.OUTSIDE_PROJECT`` to get the refusals it
+    also reports on the machine-readable ``warnings[]`` channel.
     """
     unevaluated = "so CL-0020 and CL-0021 were not evaluated for its keys"
     notes: list[str] = []
     for service in sorted(resolved):
         for entry in resolved[service].unread:
+            if only is not None and entry.reason is not only:
+                continue
             path = repr(entry.path)
             if entry.reason is Unread.ABSENT and entry.required:
                 notes.append(
@@ -437,6 +447,8 @@ def describe_unread(resolved: Mapping[str, ServiceEnvFiles]) -> list[str]:
                     f"service '{service}' reads {path}, whose path is still "
                     f"unresolved and names no file, {unevaluated}"
                 )
+        if only is not None:
+            continue
         for skip in resolved[service].skipped:
             numbers = ", ".join(str(number) for number in skip.lines)
             plural = "lines" if len(skip.lines) > 1 else "line"

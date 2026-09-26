@@ -40,6 +40,12 @@ resolved from a `.env` (that is where secrets live), and the ambient shell
 environment is never read, so the same checkout lints the same on every
 machine. `--no-env` ignores env files entirely.
 
+A `.env` that is there but cannot be read — not UTF-8, or larger than the
+256 KiB read cap — is not treated as absent. Compose reads it as raw bytes with
+no cap, so its values still deploy: the run says it was not read, on stderr
+and as an `unread_input` entry in JSON `warnings[]` and SARIF, and grades the
+rest without it.
+
 ## An `env_file:` is read too, and its keys are graded
 
 ([ADR-027](adr/027-grade-env-file-where-the-document-routes-it.md)).
@@ -48,7 +54,11 @@ credential written there reaches every surface CL-0020 describes — moving a
 line out of `environment:` no longer silences CL-0020/CL-0021 without
 changing what deploys. Only those two rules read env files; a finding names
 the key and the file, **never the value**, and a path resolving outside the
-project directory is refused rather than read.
+project directory is refused rather than read. A refusal is reported as an
+`unread_input` warning, as is a `COMPOSE_FILE` entry refused for the same
+reason, so a JSON or SARIF consumer sees it as well as a reader of stderr. An
+`env_file:` written in an included or extended document is read from beside
+that document, as Compose reads it.
 
 ## `include:` and cross-file `extends:` are followed when they stay inside the project
 

@@ -20,7 +20,7 @@ from compose_lint import __version__
 from compose_lint._env_file import ENV_FILENAME
 from compose_lint._output import emit, emit_block
 from compose_lint._selection import Selection, plan_documents
-from compose_lint._service_env import describe_unread, resolve_env_files
+from compose_lint._service_env import Unread, describe_unread, resolve_env_files
 from compose_lint.config import (
     CONFIG_FILENAMES,
     ConfigError,
@@ -940,7 +940,13 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     all_file_findings: list[tuple[list[Finding], str]] = []
     parse_errors: list[Diagnostic] = []
     coverage_errors: list[Diagnostic] = []
-    coverage_warnings: list[Diagnostic] = []
+    # The warnings channel: accepted coverage gaps, and inputs that were
+    # refused or unreadable (stated on stderr as notes, and here as well so a
+    # JSON or SARIF consumer is not the one reader left without a trace).
+    coverage_warnings: list[Diagnostic] = [
+        Diagnostic(file, message, DiagnosticKind.UNREAD_INPUT)
+        for file, message in selection.warnings
+    ]
     rule_errors: list[Diagnostic] = []
     has_errors = False
     seen_services: set[str] = set()
@@ -1007,6 +1013,10 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         )
         for note in describe_unread(service_env_files):
             emit(f"note: {filepath}: {note}")
+        coverage_warnings.extend(
+            Diagnostic(filepath, note, DiagnosticKind.UNREAD_INPUT)
+            for note in describe_unread(service_env_files, only=Unread.OUTSIDE_PROJECT)
+        )
         seen_services.update(data.get("services", {}).keys())
 
         def _record_rule_error(
