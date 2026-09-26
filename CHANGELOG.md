@@ -45,6 +45,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CL-0016 reads `device_cgroup_rules:`.** A rule like `b 8:* rwm` opens
+  the same device-cgroup gate as `devices: [/dev/sda]`, and at Docker's
+  defaults the container creates the node itself with `mknod` and reads the
+  host disk (verified live, now a premise check). CL-0016 flags an `a` rule,
+  or a `b` rule with `r` or `w` for any major, at CRITICAL, when the service
+  keeps `MKNOD` or bind-mounts `/dev` or a path under it. A service that drops
+  `MKNOD` and mounts nothing from `/dev` is not flagged, and neither is a rule
+  granting only `m`. The finding's evidence is `b 8:*`, without the access
+  letters.
+
 - **A finding a service inherits through `extends:` points at the line that
   wrote it.** An append merge moves every index, so a child inheriting
   `cap_add: [SYS_ADMIN]` had its CL-0024 finding reported on its own harmless

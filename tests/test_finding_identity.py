@@ -227,7 +227,7 @@ EVIDENCE_CONTRACT = {
     "CL-0010": {"pid", "ipc"},
     "CL-0011": {"NET_ADMIN"},
     "CL-0013": {"/etc"},
-    "CL-0016": {"/dev/sda"},
+    "CL-0016": {"/dev/sda", "b 8:*"},
     "CL-0022": {"/c1", "/c2"},
     "CL-0024": {"SYS_ADMIN"},
     "CL-0027": {"SYS_PTRACE"},
@@ -268,6 +268,9 @@ services:
     tmpfs: ["/c1:exec", "/c2:suid"]
     devices:
       - /dev/sda:/dev/sda
+    # CL-0016's second evidence shape (#882): the rule, whitespace collapsed,
+    # without its access letters.
+    device_cgroup_rules: ["b  8:* rwm"]
     cap_add: [SYS_ADMIN, NET_ADMIN, SYS_NICE, SYS_PTRACE]
     security_opt: ["apparmor:unconfined", "seccomp:unconfined"]
     pid: host

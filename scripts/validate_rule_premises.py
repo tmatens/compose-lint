@@ -987,6 +987,83 @@ def _cl0016_raw_disk() -> tuple[bool, str]:
     return ("512 bytes" in out), f"/dev/{dev} via --device at default caps: {out!r}"
 
 
+def _host_block_numbers(dev: str) -> tuple[int, int] | None:
+    """``(major, minor)`` of ``/dev/<dev>`` on the daemon's host, or None."""
+    _, out = _run(
+        ["-v", "/dev:/hostdev:ro"], ["stat", "-c", "%t %T", f"/hostdev/{dev}"]
+    )
+    try:
+        major, minor = (int(part, 16) for part in out.split())
+    except ValueError:
+        return None
+    return major, minor
+
+
+# One sector read through a node the container creates itself (or finds under a
+# bind-mounted /dev), echoing only the byte count: no disk content reaches the
+# output, and nothing is written.
+def _cgroup_read(args: list[str], node: str, mknod: tuple[int, int] | None) -> str:
+    make = f"mknod {node} b {mknod[0]} {mknod[1]} 2>/dev/null; " if mknod else ""
+    _, out = _run(
+        args,
+        ["sh", "-c", f"{make}dd if={node} bs=512 count=1 2>/dev/null | wc -c"],
+    )
+    return out.strip()
+
+
+def _cgroup_disk() -> tuple[str, tuple[int, int]] | None:
+    dev = _host_block_device()
+    numbers = _host_block_numbers(dev) if dev else None
+    return (dev, numbers) if dev and numbers else None
+
+
+def _cl0016_cgroup_rule() -> tuple[bool, str]:
+    """``device_cgroup_rules:`` plus the default ``MKNOD`` reads the host disk.
+
+    Why the key belongs to CL-0016 at CRITICAL (#882): the rule opens the same
+    device-cgroup gate ``devices:`` does, and Docker's default capabilities let
+    the container create the node. The major is read from the host, not assumed:
+    NVMe sits on a dynamically allocated one.
+    """
+    disk = _cgroup_disk()
+    if disk is None:
+        return False, "no whole-disk block device found under the daemon host's /dev"
+    dev, (major, minor) = disk
+    rule = ["--device-cgroup-rule", f"b {major}:* r"]
+    out = _cgroup_read(rule, "/dev/probe", (major, minor))
+    return (
+        out == "512",
+        f"/dev/{dev} ({major}:{minor}) via 'b {major}:* r' + mknod: {out!r} bytes",
+    )
+
+
+def _cl0016_cgroup_rule_gates() -> tuple[bool, str]:
+    """The conditions CL-0016 places on a cgroup rule, each measured.
+
+    Dropping ``MKNOD`` leaves the rule with no node, so the service is not
+    flagged; ``m`` alone permits creating a node but not reading it. But a
+    ``/dev`` bind mount conveys the host's node, so the rule reads the disk at
+    ``--cap-drop ALL`` and the exemption must not cover it.
+    """
+    disk = _cgroup_disk()
+    if disk is None:
+        return False, "no whole-disk block device found under the daemon host's /dev"
+    dev, (major, minor) = disk
+    rule = ["--device-cgroup-rule", f"b {major}:* r"]
+    dropped = _cgroup_read([*rule, "--cap-drop", "MKNOD"], "/dev/probe", (major, minor))
+    create_only = _cgroup_read(
+        ["--device-cgroup-rule", f"b {major}:* m"], "/dev/probe", (major, minor)
+    )
+    bound = _cgroup_read(
+        [*rule, "--cap-drop", "ALL", "-v", "/dev:/hostdev"], f"/hostdev/{dev}", None
+    )
+    ok = dropped == "0" and create_only == "0" and bound == "512"
+    return ok, (
+        f"cap-drop MKNOD: {dropped!r} bytes; 'm' only: {create_only!r} bytes; "
+        f"/dev bind at cap-drop ALL: {bound!r} bytes"
+    )
+
+
 def _cl0013_dev_bind_is_gated() -> tuple[bool, str]:
     """A ``/dev`` bind conveys the nodes but not device-cgroup permission.
 
@@ -1302,6 +1379,16 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool | None, str]]]] = [
     ),
     ("CL-0016", "device exposes a host device", _cl0016),
     ("CL-0016", "premise: raw host-disk read at default caps", _cl0016_raw_disk),
+    (
+        "CL-0016",
+        "premise: device_cgroup_rules + default MKNOD reads the host disk",
+        _cl0016_cgroup_rule,
+    ),
+    (
+        "CL-0016",
+        "premise: MKNOD drop and 'm' leave a rule inert; a /dev bind does not",
+        _cl0016_cgroup_rule_gates,
+    ),
     ("CL-0017", "shared propagation is observable", _cl0017),
     ("CL-0018", "explicit user maps to that uid", _cl0018),
     ("CL-0022", "tmpfs noexec by default; :exec removes it", _cl0022),

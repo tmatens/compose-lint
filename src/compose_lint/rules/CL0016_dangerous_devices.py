@@ -5,9 +5,11 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
-from compose_lint.rules._mounts import normalize_host_path
+from compose_lint.rules._caps import normalize_cap
+from compose_lint.rules._mounts import iter_bind_mounts, normalize_host_path
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -110,6 +112,85 @@ def _extract_host_device(device: Any) -> str | None:
     return normalize_host_path(host) if host else host
 
 
+# `device_cgroup_rules:` entries, in the one shape Docker accepts:
+# `<type> <major>:<minor> <access>`. Whitespace is normalized first, so
+# `b  8:*   rwm` is the same rule; anything else Docker refuses to start, so it
+# describes no running service and is skipped.
+_CGROUP_RULE = re.compile(r"^([abc]) (\*|\d+):(\*|\d+) ([rwm]{1,3})$")
+
+
+def _cgroup_disk_grant(entry: Any) -> tuple[str, str] | None:
+    """``(evidence, description)`` for a rule that opens the gate to a disk.
+
+    A device cgroup rule only *permits* a device class; it maps no node. With
+    the node present (see :func:`_node_reachable`) a ``b`` rule carrying ``r``
+    or ``w`` is a raw read or write of whatever disk has that major, and ``a``
+    is every device. Any block major counts, not a table of disk majors: NVMe
+    and device-mapper, zvol and nbd disks all sit on dynamically allocated
+    majors, so a table would miss the host disk itself (#882, measured). ``m``
+    alone permits creating a node, not using it, and grants nothing. ``c``
+    rules are not claimed here.
+
+    Evidence is ``<type> <major>:<minor>`` without the access letters: ``r``
+    alone is already the whole read, so ``rwm`` → ``r`` is the same finding and
+    must not re-key the alert (ADR-024).
+    """
+    text = as_scalar_text(entry)
+    if text is None:
+        return None
+    match = _CGROUP_RULE.match(" ".join(text.split()))
+    if match is None:
+        return None
+    kind, major, minor, access = match.groups()
+    if kind == "c" or not set(access) & {"r", "w"}:
+        return None
+    evidence = f"{kind} {major}:{minor}"
+    if kind == "a":
+        return evidence, "every host device, every disk included"
+    if major == "*":
+        return evidence, "every host block device"
+    return evidence, f"every host block device with major {major}"
+
+
+def _node_reachable(
+    service_name: str,
+    service_config: dict[str, Any],
+    global_config: dict[str, Any],
+    lines: dict[str, int],
+) -> bool:
+    """Whether the container can get a device node for a cgroup rule to open.
+
+    Two ways, both measured (#882). Docker's default ``MKNOD`` capability lets
+    it create the node itself. Without it, a bind mount of ``/dev`` or of a
+    node beneath it conveys the host's node, and the rule then opens it at
+    ``cap_drop: [ALL]``. A service that drops ``MKNOD`` and mounts nothing from
+    ``/dev`` holds a rule with no node to use.
+    """
+    if _keeps_mknod(service_config):
+        return True
+    for mount in iter_bind_mounts(service_name, service_config, lines, global_config):
+        host = normalize_host_path(mount.host_path)
+        if host == "/dev" or host.startswith("/dev/"):
+            return True
+    return False
+
+
+def _keeps_mknod(service_config: dict[str, Any]) -> bool:
+    """Whether ``MKNOD`` survives ``cap_drop`` (and any ``cap_add`` restoring it)."""
+
+    def names(key: str) -> set[str]:
+        value = service_config.get(key, [])
+        if not isinstance(value, list):
+            return set()
+        return {normalize_cap(cap) for cap in value}
+
+    if service_config.get("privileged") is True:
+        return True
+    if names("cap_add") & {"MKNOD", "ALL"}:
+        return True
+    return not names("cap_drop") & {"MKNOD", "ALL"}
+
+
 @register_rule
 class DangerousDevicesRule(BaseRule):
     """Detects services exposing dangerous host devices."""
@@ -163,3 +244,52 @@ class DangerousDevicesRule(BaseRule):
                         references=[CIS_REF],
                     )
                     break  # One finding per device
+
+        yield from self._check_cgroup_rules(
+            service_name, service_config, global_config, lines
+        )
+
+    def _check_cgroup_rules(
+        self,
+        service_name: str,
+        service_config: dict[str, Any],
+        global_config: dict[str, Any],
+        lines: dict[str, int],
+    ) -> Iterator[Finding]:
+        """``device_cgroup_rules:`` opening the same gate ``devices:`` does.
+
+        The same Direct x Host cell as a mapped disk, so the same rule and the
+        same severity (ADR-028): at default capabilities ``b <major>:* r`` plus
+        ``mknod`` read the host disk, verified live (``_cl0016_cgroup_rule``).
+        """
+        rules = service_config.get("device_cgroup_rules", [])
+        if not isinstance(rules, list) or not rules:
+            return
+        grants = [(i, _cgroup_disk_grant(entry)) for i, entry in enumerate(rules)]
+        if not any(grant for _, grant in grants):
+            return
+        if not _node_reachable(service_name, service_config, global_config, lines):
+            return
+        for i, grant in grants:
+            if grant is None:
+                continue
+            evidence, description = grant
+            yield Finding(
+                rule_id="CL-0016",
+                severity=Severity.CRITICAL,
+                service=service_name,
+                evidence=evidence,
+                message=(
+                    f"Service's device cgroup rule '{evidence}' permits "
+                    f"{description}, and the container can obtain the node "
+                    "(the default MKNOD capability, or a /dev bind mount)."
+                ),
+                line=lines.get(f"services.{service_name}.device_cgroup_rules[{i}]")
+                or lines.get(f"services.{service_name}.device_cgroup_rules"),
+                fix=(
+                    f"Remove '{evidence}' from device_cgroup_rules, or narrow it to "
+                    "the specific non-disk device the workload needs. If the rule "
+                    "must stay, add MKNOD to cap_drop and mount nothing from /dev."
+                ),
+                references=[CIS_REF],
+            )
