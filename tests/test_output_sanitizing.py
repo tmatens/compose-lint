@@ -305,3 +305,41 @@ def test_ordinary_multibyte_names_are_unchanged(text: str) -> None:
 def test_multiline_fix_guidance_keeps_its_layout() -> None:
     guidance = "Add to the service:\n\n    cap_drop:\n      - ALL\n\tthen re-run."
     assert sanitize(guidance) == guidance
+
+
+def test_a_missing_stderr_is_not_replaced_by_stdout(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With fd 2 closed `sys.stderr` is None, and `print(file=None)` is stdout."""
+    from compose_lint._output import emit, emit_block
+
+    monkeypatch.setattr(sys, "stderr", None)
+    emit("Note: a diagnostic")
+    emit_block("a block\n")
+    assert capsys.readouterr().out == ""
+
+
+def test_a_failing_stderr_is_pointed_at_the_null_device(tmp_path: Path) -> None:
+    from compose_lint._output import emit
+
+    sink = tmp_path / "stderr"
+    fd = os.open(sink, os.O_WRONLY | os.O_CREAT, 0o600)
+
+    class _Full:
+        def write(self, _text: str) -> int:
+            raise OSError(28, "No space left on device")
+
+        def flush(self) -> None:  # pragma: no cover - write raises first
+            pass
+
+        def fileno(self) -> int:
+            return fd
+
+    try:
+        emit("Note: lost", stream=_Full())  # type: ignore[arg-type]
+        # The descriptor now writes to the null device, so the interpreter's
+        # shutdown flush cannot fail and override the exit code.
+        os.write(fd, b"after")
+    finally:
+        os.close(fd)
+    assert sink.read_bytes() == b""
