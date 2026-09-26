@@ -95,11 +95,16 @@ class EnvFileKey:
 
     key: str
     value: str
-    #: The file as the document wrote it, which is what a report should name —
-    #: not the lint host's absolute path, which is not a fact about the project.
+    #: The file as the document wrote it, which is what a message should quote:
+    #: it is the spelling the author will search for.
     source_file: str
     #: 1-indexed line within that file.
     line: int
+    #: The file it was read from, joined onto the project directory. What a
+    #: finding records as its location: the spelling above is relative to the
+    #: project, so it named nothing when the run started anywhere else (#887).
+    #: The report renders it relative to the working directory.
+    path: str = ""
 
 
 @dataclass(frozen=True)
@@ -346,6 +351,7 @@ def _resolve_one(
                 value=value,
                 source_file=ref.path,
                 line=parsed.lines.get(key, 0),
+                path=str(path),
             )
 
     for key in _environment_keys(config.get("environment")):

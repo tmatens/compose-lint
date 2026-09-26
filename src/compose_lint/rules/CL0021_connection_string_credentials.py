@@ -275,7 +275,7 @@ class ConnectionStringCredentialsRule(BaseRule):
                     "any process or operator with daemon access can read them."
                 ),
                 line=entry.line or None,
-                source_file=entry.source_file,
+                source_file=entry.path or entry.source_file,
                 source_is_document=False,
                 fix=(
                     "Remove the literal password from the connection string. "

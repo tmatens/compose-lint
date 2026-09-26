@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from compose_lint import __version__
+from compose_lint._report_path import report_path
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -38,10 +39,15 @@ def format_findings(findings: list[Finding], filepath: str) -> list[dict[str, ob
     ``graded_file``, because "which project did this come from" is a real
     question a merged run has to answer; it is emitted only when it differs
     from ``file``.
+
+    Both are spelled by :func:`report_path` (#887): relative to the working
+    directory, or absolute outside it, whichever document they name and however
+    it was reached — the same value SARIF reports as the artifact ``uri``.
     """
+    graded_file = report_path(filepath)
     results: list[dict[str, object]] = []
     for f in findings:
-        evidence_file = f.source_file or filepath
+        evidence_file = report_path(f.source_file) if f.source_file else graded_file
         entry: dict[str, object] = {
             "file": evidence_file,
             "line": f.line,
@@ -62,22 +68,28 @@ def format_findings(findings: list[Finding], filepath: str) -> list[dict[str, ob
             entry["suppression_reason"] = f.suppression_reason
         if f.severity_overridden_from is not None:
             entry["severity_overridden_from"] = f.severity_overridden_from.value
-        if evidence_file != filepath:
+        if evidence_file != graded_file:
             # The project this finding was graded under, when that is not the
             # document the evidence sits in. Emitted only for a merged or
             # `env_file:` run, so a single-file run's shape is unchanged.
-            entry["graded_file"] = filepath
+            entry["graded_file"] = graded_file
             # Retained as an alias of `file` for consumers written against
             # schema 1, where it was the only way to learn where `line`
             # actually pointed. Deprecated; `file` now answers it directly.
-            entry["source_file"] = f.source_file
+            entry["source_file"] = evidence_file
         results.append(entry)
     return results
 
 
 def _diagnostics(entries: Sequence[Diagnostic] | None) -> list[dict[str, str]]:
     return [
-        {"file": d.file, "message": d.message, "kind": d.kind.value}
+        {
+            # A run-level entry's empty `file` is contract (ADR-015), not a
+            # path to spell.
+            "file": report_path(d.file) if d.file else "",
+            "message": d.message,
+            "kind": d.kind.value,
+        }
         for d in (entries or [])
     ]
 

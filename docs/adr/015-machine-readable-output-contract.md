@@ -41,7 +41,7 @@ was invisible in JSON, with exit code 2 the only signal.
 
   | field | type | meaning |
   |-------|------|---------|
-  | `file` | string | the document the evidence is written in |
+  | `file` | string | the document the evidence is written in, relative to the working directory (see amendment) |
   | `line` | integer or null | 1-indexed line **within `file`**; null when no line there names the key (see amendment) |
   | `rule_id` | string | **opaque** — match exact values, never the `CL-\d{4}` shape (see [compatibility.md](../compatibility.md)) |
   | `severity` | string | one of `critical`, `high`, `medium`, `low` — a closed set |
@@ -167,6 +167,25 @@ document is short, and the notification says by how much. None of ADR-006's
 exit-2 causes (the run could not start, a rule crashed, part of the stack was
 not seen) describes it. A consumer that needs every result re-runs with
 `--format json`, which has no cap.
+
+*Amendment (pre-1.0): one path form (#887).* `file`, `graded_file`, the
+deprecated `source_file`, `errors[].file`/`warnings[].file`, and SARIF's
+artifact `uri` all spell a path the same way: relative to the working
+directory, joined lexically (a symlinked directory keeps the spelling the user
+sees), with `/` separators on every platform; absolute only when the file lies
+outside the working directory, where no relative spelling stays inside it.
+JSON and SARIF report the same value for the same finding, SARIF's
+percent-encoded under `SRCROOT`. Before this the form depended on how the
+document was reached: the argv spelling for the primary file and an overlay,
+the lint host's absolute path in JSON (relative in SARIF) for an `include:` or
+cross-file `extends:` document, and the path as the Compose file wrote it for
+an `env_file:` target, which named nothing when the run started outside the
+project directory. The working directory was chosen over the document's own
+directory because it is where every consumer of the path looks it up (a CI log,
+git, Code Scanning), and over an absolute path because that leaks the runner's
+checkout directory and differs between two checkouts of one repository. The
+primary file's `./compose.yml` spelling now reports as `compose.yml`. The field
+types and presence rules are unchanged, so `version` does not change.
 
 `kind` and `warnings` are additive, so `version` does not change. Every exit-2
 path writes the envelope except the two that fail before an output format is
