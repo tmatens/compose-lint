@@ -32,6 +32,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `"000"`, `"+0"` and `"-0"` as root, as runc does. CL-0010 compares `pid`
   and `ipc` case-sensitively, because Docker rejects `pid: HOST` outright.
 
+- **CL-0005 reads ports with Docker's grammar, and CL-0026 reads memory
+  with Compose's.** A short-syntax port is now split on its last two colons,
+  as Docker's parser splits it, so an unbracketed IPv6 wildcard
+  (`":::8080:80"`) and an ephemeral publish with a wildcard or empty address
+  (`"0.0.0.0::80"`, `"::81"`, `":443:443"`) are flagged. A long-syntax
+  `target:` with no `published:` is flagged like the bare port it is. The fix
+  suggestion replaces a wildcard address instead of prefixing it, which
+  suggested `127.0.0.1:0.0.0.0:8080:80`. CL-0026 accepts the IEC (`1GiB`,
+  `512MiB`) and tera/peta (`1t`, `1p`) memory spellings, which were reported
+  as no memory limit, and flags suffixes Compose refuses (`512Mi`).
+
 - **A relative `secrets:` or `configs:` `file:` is resolved like a bind
   source.** Outside Swarm that entry is a read-only bind of the host file, and
   Compose resolves a relative `file:` against the compose file's directory, so

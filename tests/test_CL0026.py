@@ -174,3 +174,39 @@ class TestInterpolationDefaults:
         for junk in ("notanumber", "m", "gb"):
             findings = _findings(_svc(f"    mem_limit: {junk}\n    cpus: 2\n"))
             assert len(findings) == 1, f"{junk!r} was accepted as a limit"
+
+
+class TestGoUnitsMemoryGrammar:
+    """Memory values are read with go-units' grammar, as Compose reads them (#890)."""
+
+    @staticmethod
+    def _flagged(value: str) -> bool:
+        from compose_lint.parser import loads as _loads
+        from compose_lint.rules.CL0026_resource_limits import ResourceLimitsRule
+
+        data, lines = _loads(
+            "services:\n  app:\n    image: nginx\n    cpus: 0.5\n"
+            f'    mem_limit: "{value}"\n'
+        )
+        return any(
+            "memory" in f.message
+            for f in ResourceLimitsRule().check(
+                "app", data["services"]["app"], data, lines
+            )
+        )
+
+    def test_iec_and_large_scale_suffixes_are_limits(self) -> None:
+        for value in ("1GiB", "512MiB", "262144KiB", "1t", "1p", "1TB", "2 gib", "1b"):
+            assert not self._flagged(value), value
+
+    def test_existing_spellings_still_count(self) -> None:
+        for value in ("512m", "512M", "1g", "1gb", "1073741824", "1.5g"):
+            assert not self._flagged(value), value
+
+    def test_suffixes_compose_refuses_are_not_limits(self) -> None:
+        for value in ("512Mi", "1gi", "1bb", "1kbb", "1x", "1gig", "g"):
+            assert self._flagged(value), value
+
+    def test_a_zero_quantity_is_still_unbounded(self) -> None:
+        for value in ("0GiB", "0t", "0"):
+            assert self._flagged(value), value
