@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`/dev/nbd*`), MTD flash (`/dev/mtdblock*`) and legacy IDE (`/dev/hd*`)
   node families.
 
+- **A relative `secrets:` or `configs:` `file:` is resolved like a bind
+  source.** Outside Swarm that entry is a read-only bind of the host file, and
+  Compose resolves a relative `file:` against the compose file's directory, so
+  `file: ../../../../etc/shadow` ships `/etc/shadow`. The path was only graded
+  when written absolute or with `~`. A climbing one reached no rule, and CL-0013
+  (or CL-0001 for a socket) now grades it. A project-relative `file:
+  ./secrets/…` still resolves inside the project and is not flagged.
+
 ## [0.30.0] - 2026-09-25
 
 ### Added

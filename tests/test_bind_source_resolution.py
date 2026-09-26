@@ -359,3 +359,80 @@ def test_a_whole_home_mount_is_claimed(tmp_path: Path) -> None:
         'services:\n  svc:\n    image: nginx\n    volumes: ["~:/probe"]\n',
     )
     assert _mount_findings(path).get("svc") == {"CL-0013"}
+
+
+# Outside Swarm, a top-level secrets:/configs: file: is a read-only bind of that
+# host file, and Compose 5.5.0 resolves a relative one against the compose
+# file's directory the same way it resolves a bind source.
+_SECRET_BODY = (
+    "services:\n  svc:\n    image: nginx\n"
+    "    secrets: [s]\n    configs: [{{source: c, target: /tmp/c}}]\n"
+    "secrets:\n  s:\n    file: {secret}\n"
+    "configs:\n  c:\n    file: {config}\n"
+)
+
+
+def test_a_climbing_secret_file_is_claimed(base_dir: Path) -> None:
+    path = _write(
+        base_dir,
+        _SECRET_BODY.format(secret=f"{CLIMB}/etc/shadow", config="./app.conf"),
+    )
+    assert _mount_findings(path).get("svc") == {"CL-0013"}
+
+
+def test_a_climbing_config_file_is_claimed(base_dir: Path) -> None:
+    path = _write(
+        base_dir,
+        _SECRET_BODY.format(
+            secret="./secrets/db_password", config=f"{CLIMB}/var/run/docker.sock"
+        ),
+    )
+    assert _mount_findings(path).get("svc") == {"CL-0001"}
+
+
+def test_a_project_relative_secret_file_is_not_flagged(base_dir: Path) -> None:
+    # The pattern CL-0020 recommends. Resolving it must not make it a finding.
+    path = _write(
+        base_dir,
+        _SECRET_BODY.format(secret="./secrets/db_password", config="config/app.conf"),
+    )
+    assert _mount_findings(path) == {}
+
+
+def test_a_secret_file_resolves_to_the_path_compose_ships(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        _SECRET_BODY.format(secret="../x/../s.txt", config=f"{CLIMB}/root/id"),
+    )
+    data, _ = load_compose(path)
+    expected = "/" + "/".join((tmp_path / "stack" / "s.txt").parts[1:])
+    assert data["secrets"]["s"]["file"] == expected
+    assert data["configs"]["c"]["file"] == "/root/id"
+
+
+def test_an_included_secret_file_resolves_against_its_own_directory(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "stack" / "compose"
+    sub = root / "sub"
+    sub.mkdir(parents=True)
+    (sub / "compose.yml").write_text(
+        "services:\n  other:\n    image: nginx\n"
+        f"secrets:\n  s:\n    file: {CLIMB}/etc/shadow\n",
+        encoding="utf-8",
+    )
+    path = root / "compose.yml"
+    path.write_text(
+        "include: [sub/compose.yml]\n"
+        "services:\n  svc:\n    image: nginx\n    secrets: [s]\n",
+        encoding="utf-8",
+    )
+    assert _mount_findings(path).get("svc") == {"CL-0013"}
+
+
+def test_loads_without_a_base_dir_leaves_secret_files_as_written() -> None:
+    data, _ = loads(
+        "services:\n  svc:\n    image: nginx\n"
+        "secrets:\n  s:\n    file: ../../etc/shadow\n"
+    )
+    assert data["secrets"]["s"]["file"] == "../../etc/shadow"
