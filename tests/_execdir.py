@@ -23,7 +23,9 @@ over a non-executable entry, so a bypassed ``pip`` shim reached the real
 source breakage.
 
 So never let one of these fall through. Probe an exec up front and skip with
-the remedy.
+the remedy. ``scripts/preflight.sh`` sets an exec-capable ``TMPDIR`` first
+(#880), so there this is a backstop; it is the normal path only for a bare
+``pytest`` on a noexec host.
 """
 
 from __future__ import annotations
@@ -46,8 +48,9 @@ def require_exec(directory: Path) -> None:
         subprocess.run([str(probe)], check=True, timeout=10)
     except OSError:
         pytest.skip(
-            f"{directory} cannot execute files (noexec tmpdir?) — set TMPDIR "
-            "to an exec-capable directory, see CONTRIBUTING.md"
+            f"{directory} cannot execute files (noexec tmpdir?) — run "
+            "scripts/preflight.sh, which picks an exec-capable TMPDIR, or set "
+            "TMPDIR yourself, see CONTRIBUTING.md"
         )
     finally:
         probe.unlink()
