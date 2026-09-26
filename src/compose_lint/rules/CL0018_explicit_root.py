@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 from compose_lint._scalar import as_scalar_text
@@ -19,6 +20,7 @@ OWASP_REF = (
 DOCKER_REF = "https://docs.docker.com/engine/security/userns-remap/"
 
 _ROOT_USER_PARTS = {"root", "0"}
+_ATOI = re.compile(r"[+-]?[0-9]+")
 
 
 def _is_root_user(user_str: str) -> bool:
@@ -30,7 +32,12 @@ def _is_root_user(user_str: str) -> bool:
     root?".
     """
     user_part = user_str.partition(":")[0]
-    return user_part in _ROOT_USER_PARTS
+    if user_part in _ROOT_USER_PARTS:
+        return True
+    # runc parses a numeric user with Go's `strconv.Atoi`, which takes leading
+    # zeros and a sign, so "000", "+0" and "-0" are all UID 0. `int()` is
+    # looser (whitespace, underscores, non-ASCII digits), hence the pattern.
+    return _ATOI.fullmatch(user_part) is not None and int(user_part) == 0
 
 
 @register_rule

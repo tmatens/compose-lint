@@ -12,6 +12,7 @@ from compose_lint._yaml_edit import (
     first_child_indent,
     is_anchored_or_merged,
     line_indent,
+    no_new_privileges_effective,
     normalize_security_opt,
     opens_block_body,
 )
@@ -61,11 +62,7 @@ class NoNewPrivilegesRule(BaseRule):
         if not isinstance(security_opt, list):
             security_opt = []
 
-        has_no_new_privs = any(
-            normalize_security_opt(opt)
-            in ("no-new-privileges:true", "no-new-privileges")
-            for opt in security_opt
-        )
+        has_no_new_privs = no_new_privileges_effective(security_opt)
 
         if not has_no_new_privs:
             yield Finding(

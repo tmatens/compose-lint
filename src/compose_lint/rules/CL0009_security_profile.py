@@ -8,6 +8,7 @@ from compose_lint._lines import split_lines
 from compose_lint._yaml_edit import (
     DISABLED_SECURITY_PROFILES,
     delete_lines,
+    disabled_profile_indexes,
     is_anchored_or_merged,
     line_indent,
     normalize_security_opt,
@@ -109,10 +110,8 @@ class SecurityProfileRule(BaseRule):
         if not isinstance(security_opt, list):
             return
 
-        for i, opt in enumerate(security_opt):
-            opt_str = normalize_security_opt(opt)
-            if opt_str not in DISABLED_SECURITY_PROFILES:
-                continue
+        for i in disabled_profile_indexes(security_opt):
+            opt_str = normalize_security_opt(security_opt[i])
             profile_key = opt_str.split(":", 1)[0]
             profile_name = _PROFILE_DISPLAY_NAME[profile_key]
             removal = _PROFILE_REMOVAL[profile_key]
