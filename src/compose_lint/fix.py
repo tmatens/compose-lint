@@ -345,28 +345,6 @@ def _coordinate_security_opt(
     return _FixUnit([*cl0003, *cl0009], [edit], caveat_rule_id="CL-0009")
 
 
-def _service_block(source_lines: list[str], key_line: int) -> tuple[int, int] | None:
-    """The 1-indexed first and last line of the service whose key is ``key_line``.
-
-    Read from the text rather than the line map: the map can hold lines from
-    other documents (an overlay, an ``include:``), and what bounds an edit is
-    where this file's service ends — the next line, ignoring blanks and
-    comments, indented no deeper than the service's own key.
-    """
-    if not 1 <= key_line <= len(source_lines):
-        return None
-    header = source_lines[key_line - 1]
-    indent = len(header) - len(header.lstrip(" "))
-    for number in range(key_line + 1, len(source_lines) + 1):
-        raw = source_lines[number - 1]
-        stripped = raw.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if len(raw) - len(raw.lstrip(" ")) <= indent:
-            return key_line, number - 1
-    return key_line, len(source_lines)
-
-
 def _within_own_service(
     units: list[_FixUnit],
     lines: Mapping[str, int],
@@ -393,7 +371,9 @@ def _within_own_service(
         if service not in blocks:
             key_line = lines.get(f"services.{service}")
             blocks[service] = (
-                None if key_line is None else _service_block(source_lines, key_line)
+                block_span(source_lines, key_line)
+                if key_line is not None and 1 <= key_line <= len(source_lines)
+                else None
             )
         return blocks[service]
 

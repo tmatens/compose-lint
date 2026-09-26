@@ -205,3 +205,26 @@ def test_a_childs_own_finding_is_still_fixed(
     )
     assert code == 0, err
     assert '"127.0.0.1:9090:90"' in text
+
+
+def test_a_child_keeping_its_own_legitimate_entry_loses_its_disable(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CL-0009 counts the entries the child wrote, not the merged list (#881).
+
+    The child's own list keeps `label:user:foo` after the delete, so removing
+    its disable is safe. The case it refuses — the child's only entry is the
+    disable — is pinned in test_fix.py (#277 C1).
+    """
+    code, text, err = _apply(
+        tmp_path,
+        "services:\n"
+        "  base:\n    image: nginx:1.27\n"
+        "    security_opt:\n      - no-new-privileges:true\n"
+        "  child:\n    extends: base\n"
+        "    security_opt:\n      - label:user:foo\n      - seccomp:unconfined\n",
+        capsys,
+    )
+    assert code == 0, err
+    assert "seccomp:unconfined" not in text
+    assert "      - label:user:foo\n" in text

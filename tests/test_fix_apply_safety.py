@@ -216,11 +216,15 @@ class TestAnchorSharedLists:
         assert "      - 8080:80\n" in written
 
 
-def test_identical_insertions_at_one_point_are_a_conflict() -> None:
-    # Two findings that resolve to one physical line produce the same
-    # insertion twice. Line maps are what an alias produces; the text is
-    # written so each service's own `ports:` line still opens a block, which
-    # is the case the anchor refusal above cannot see.
+def test_an_edit_on_another_services_line_is_not_applied_twice() -> None:
+    # Two findings that resolve to one physical line used to produce the same
+    # insertion twice, and the identical-insertion conflict refused both. Since
+    # #881 the engine refuses first any edit outside its finding's own service
+    # block, so `api`'s edit on `web`'s line never competes: `web`'s own fix
+    # applies once and `api` is left for review. The line map is what an alias
+    # produces; the text keeps each `ports:` line opening a block, the case the
+    # anchor refusal cannot see. The real shapes that produce it are refused
+    # earlier, below.
     text = (
         "services:\n"
         "  web:\n    image: nginx:1.27\n    ports:\n      - 8080:80\n"
@@ -229,6 +233,40 @@ def test_identical_insertions_at_one_point_are_a_conflict() -> None:
     data, lines = loads(text)
     lines["services.api.ports[0]"] = lines["services.web.ports[0]"]
     data["services"]["api"]["ports"] = ["8080:80"]
+    findings = [f for f in run_rules(data, lines) if f.rule_id == "CL-0005"]
+    assert {f.service for f in findings} == {"web", "api"}
+    result = collect_edits(findings, data, lines, text, only={"CL-0005"})
+    assert len(result.edits) == 1
+    assert result.edits[0].start_line == 5
+    assert {f.service for f in result.fixed} == {"web"}
+    assert {f.service for f in result.manual} == {"api"}
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param(
+            "services:\n"
+            "  web:\n    image: nginx:1.27\n    ports: &p\n      - 8080:80\n"
+            "  api:\n    image: nginx:1.27\n    ports: *p\n",
+            id="aliased-list",
+        ),
+        pytest.param(
+            "x-base: &b\n  image: nginx:1.27\n  ports:\n    - 8080:80\n"
+            "services:\n  web:\n    <<: *b\n  api:\n    <<: *b\n",
+            id="merge-key-from-extension",
+        ),
+        pytest.param(
+            "services:\n"
+            "  web: &w\n    image: nginx:1.27\n    ports:\n      - 8080:80\n"
+            "  api:\n    <<: *w\n",
+            id="merge-key-from-service",
+        ),
+    ],
+)
+def test_a_list_two_services_share_is_refused_for_both(text: str) -> None:
+    """The real shapes behind a shared line still refuse every service."""
+    data, lines = loads(text)
     findings = [f for f in run_rules(data, lines) if f.rule_id == "CL-0005"]
     assert {f.service for f in findings} == {"web", "api"}
     result = collect_edits(findings, data, lines, text, only={"CL-0005"})

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from compose_lint._lines import split_lines
 from compose_lint._yaml_edit import (
     DISABLED_SECURITY_PROFILES,
+    block_span,
     delete_lines,
     disabled_profile_indexes,
     is_anchored_or_merged,
@@ -198,12 +199,21 @@ class SecurityProfileRule(BaseRule):
         if not opens_block_body(source_lines[so_line - 1]):
             return None
 
+        written = _written_entries(
+            security_opt,
+            lines,
+            service,
+            block_span(source_lines, service_line),
+            extends="extends" in service_config,
+        )
+        if written is None:
+            return None
         disabled = sum(
             1
-            for opt in security_opt
+            for opt in written
             if normalize_security_opt(opt) in DISABLED_SECURITY_PROFILES
         )
-        legit_remaining = len(security_opt) - disabled
+        legit_remaining = len(written) - disabled
 
         if legit_remaining >= 1:
             # A legitimate entry survives, so the list stays non-empty: remove
@@ -226,3 +236,35 @@ class SecurityProfileRule(BaseRule):
         # recreate it next pass (non-idempotent), and the right end state needs a
         # cross-rule merge. Refuse and leave it for manual remediation.
         return None
+
+
+def _written_entries(
+    security_opt: list[Any],
+    lines: dict[str, int],
+    service: str,
+    block: tuple[int, int],
+    *,
+    extends: bool,
+) -> list[Any] | None:
+    """The entries of the merged list that this service's own block writes.
+
+    ``legit_remaining`` has to count what deleting this line leaves *here*. An
+    in-file ``extends:`` child's list is the base's entries followed by its
+    own, so counting the merged list credited the child with the base's
+    legitimate entry, and the child's only line was deleted, leaving an empty
+    ``security_opt:`` (#881). Each item's line says which block wrote it.
+
+    ``None`` refuses: an item with no line can't be placed, and on a child
+    that is the case the count exists to get right.
+    """
+    first, last = block
+    written: list[Any] = []
+    for index, opt in enumerate(security_opt):
+        line = lines.get(f"services.{service}.security_opt[{index}]")
+        if line is None:
+            if extends:
+                return None
+            written.append(opt)
+        elif first <= line <= last:
+            written.append(opt)
+    return written
