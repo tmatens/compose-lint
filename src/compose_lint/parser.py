@@ -1672,7 +1672,25 @@ def _resolve_bind_sources(data: dict[str, Any], base_dir: Path) -> None:
     that knows where the file sits: rules receive the parsed document and never
     learn its path. :func:`_resolve_in_file_extends` resolves the same way, for
     the same reason.
+
+    A top-level ``secrets:`` or ``configs:`` ``file:`` is resolved the same
+    way. Outside Swarm it is a read-only bind of that host file, and Compose
+    5.5.0 resolves a relative ``file:`` against the compose file's directory
+    exactly as it does a bind source: ``file: ../../../../etc/shadow`` ships as
+    ``/etc/shadow``. Left relative, it never reached the host-path rules.
     """
+    for channel in ("secrets", "configs"):
+        block = data.get(channel)
+        if not isinstance(block, dict):
+            continue
+        for spec in block.values():
+            if not isinstance(spec, dict):
+                continue
+            file_value = spec.get("file")
+            if isinstance(file_value, str):
+                resolved = _resolved_bind_source(file_value, base_dir)
+                if resolved is not None:
+                    spec["file"] = resolved
     services = data.get("services")
     if not isinstance(services, dict):
         return
