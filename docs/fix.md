@@ -8,8 +8,10 @@ edit is labelled `⚠ behavior-changing` with the specific breakage named. This
 page is the full contract behind the README's summary.
 
 - **Dry-run by default; `--apply` writes in place** via an atomic swap that
-  preserves the file's permission bits — an interrupted write never corrupts the
-  Compose file.
+  preserves the file's read, write and execute bits — an interrupted write never
+  corrupts the Compose file. The setuid, setgid and sticky bits are deliberately
+  dropped: a Compose file has no use for them, and the swap writes a new inode,
+  which would otherwise be handed those bits.
 - **Only mechanically unambiguous fixes are applied.** Findings whose
   remediation is context-dependent (e.g. CL-0006 capability lists, CL-0001
   socket mounts) are reported as needing manual review, never auto-edited — the

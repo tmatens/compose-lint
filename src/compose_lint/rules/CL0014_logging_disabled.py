@@ -142,4 +142,9 @@ class LoggingDisabledRule(BaseRule):
             return None
 
         first, last = block_span(source_lines, logging_line)
+        if any("$" in raw for raw in source_lines[first - 1 : last]):
+            # `driver: ${LOG_DRIVER:-none}` is `none` only under the default;
+            # the deployed driver may be set elsewhere, so the block is not
+            # known to be the opt-out it looks like here (ADR-014).
+            return None
         return [delete_lines(source_lines, first, last, caveat=_CAVEAT)]
