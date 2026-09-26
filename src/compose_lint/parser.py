@@ -23,6 +23,7 @@ from compose_lint._merge import (
 from compose_lint._safe_read import (
     OutsideProjectError,
     UnsafeFileError,
+    escapes_project,
     read_text_bounded,
 )
 from compose_lint._service_env import project_relative
@@ -1202,7 +1203,13 @@ def _entry_directory(
         segments = project_relative(f"{entry.project_directory}/x", prefix)
         if segments is None:
             return None
-        return project_dir.absolute().joinpath(*segments[:-1])
+        directory = project_dir.absolute().joinpath(*segments[:-1])
+        # The lexical check above answers what the path *says*. A committed
+        # directory symlink says nothing, and named here it sent the `.env`
+        # read to wherever the link pointed. Asked of this filesystem.
+        if escapes_project(directory, project_dir):
+            return None
+        return directory
     located, _why = _locate_reference(entry.references[0], project_dir, prefix)
     return None if located is None else located.absolute().parent
 
@@ -2154,7 +2161,12 @@ def _loads_full(  # noqa: PLR0913
             if wanted:
                 layered: dict[str, str] = {}
                 for directory in env_dirs or (base_dir,):
-                    parsed_env = read_env(directory, wanted)
+                    # Inside the project, not merely inside `directory`: an
+                    # included file's `.env` may link to one elsewhere in the
+                    # same project, but never out of it.
+                    parsed_env = read_env(
+                        directory, wanted, within=project_dir or directory
+                    )
                     if parsed_env is not None and parsed_env.values:
                         layered.update(parsed_env.values)
                 supplied = layered or None

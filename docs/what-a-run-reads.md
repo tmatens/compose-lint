@@ -46,6 +46,13 @@ no cap, so its values still deploy: the run says it was not read, on stderr
 and as an `unread_input` entry in JSON `warnings[]` and SARIF, and grades the
 rest without it.
 
+A `.env` that resolves outside the project — a committed symlink to a file
+elsewhere on the machine — is not read at all, the same containment every
+other file a run opens gets, and is reported the same way. So is an
+`include:` entry's `project_directory:` that resolves outside through a
+directory symlink: the entry's files resolve against their own directories
+instead.
+
 ## An `env_file:` is read too, and its keys are graded
 
 ([ADR-027](adr/027-grade-env-file-where-the-document-routes-it.md)).

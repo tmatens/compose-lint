@@ -295,9 +295,9 @@ def _compose_file_entries(
     """
     if not read_env_files:
         return None, [], []
-    parsed = read_env(directory, COMPOSE_FILE_KEYS)
+    parsed = read_env(directory, COMPOSE_FILE_KEYS, within=directory)
     if parsed is None:
-        failure = env_read_failure(directory)
+        failure = env_read_failure(directory, within=directory)
         if failure is None:
             return None, [], []
         env_path = str(directory / ENV_FILENAME)
