@@ -21,6 +21,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -29,6 +30,7 @@ from compose_lint._selection import _resolve_entry
 from compose_lint._service_env import Unread, _classify, env_file_refs
 from compose_lint.parser import ComposeError, loads
 from tests._cli_env import cli_env
+from tests._workflow_commands import forged
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC = REPO_ROOT / "src" / "compose_lint"
@@ -357,3 +359,57 @@ def test_a_stream_without_a_descriptor_leaks_no_null_fd() -> None:
     for _ in range(20):
         _discard_stderr(_NoFd())  # type: ignore[arg-type]
     assert len(os.listdir("/proc/self/fd")) == before
+
+
+# --- GHSA-6f4g-xm8v-pgv6: file text must not issue CI workflow commands -----
+
+FORGED = "cl-ghsa-6f4g-forged"
+
+
+@pytest.mark.parametrize("escape", [sanitize, sanitize_line])
+def test_a_legacy_command_opener_is_escaped_anywhere(escape: Any) -> None:
+    assert escape("web##[group]x") == "web##\\u005bgroup]x"
+
+
+def test_a_line_leading_command_is_escaped_after_indentation() -> None:
+    assert sanitize("fix:\n    ::error::x") == "fix:\n    \\u003a:error::x"
+    assert sanitize("::warning::x") == "\\u003a:warning::x"
+
+
+def test_sanitize_line_escapes_a_line_leading_command() -> None:
+    assert sanitize_line("::error::x") == "\\u003a:error::x"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "image: nginx:1.27",
+        "a::b",
+        "ports: ::1:8080:80",
+        "## heading",
+        "#[not legacy]",
+    ],
+)
+def test_colons_and_hashes_that_are_not_commands_are_unchanged(text: str) -> None:
+    """IPv6 binds, `a::b` and markdown-ish text are common in Compose files."""
+    assert sanitize(text) == text
+    assert sanitize_line(text) == text
+
+
+def test_compose_text_issues_no_workflow_command_in_the_report(
+    tmp_path: Path,
+) -> None:
+    """End to end, on the two shapes that worked before the fix: a service name
+    carrying ``##[group]`` (the legacy opener, anywhere in a line), and an image
+    whose embedded newline put ``::error::`` at the start of CL-0019's fix line.
+    """
+    (tmp_path / "compose.yml").write_text(
+        "services:\n"
+        f'  "web##[group]{FORGED}":\n'
+        f'    image: "nginx\\n::error::{FORGED}"\n',
+        encoding="utf-8",
+    )
+    result = _run(["compose.yml"], tmp_path)
+    log = result.stdout + result.stderr
+    assert FORGED in log  # the file's text is still reported, escaped
+    assert forged(log, FORGED) == []
