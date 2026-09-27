@@ -30,7 +30,7 @@ pipeline, this is the page to read.
    only `fix --apply` rewrites in place, via an atomic swap that
    preserves the read, write and execute bits (setuid, setgid and sticky
    are dropped rather than handed to the new inode). It applies only mechanically unambiguous
-   edits, never touches suppressed findings, and re-parses and re-lints
+   edits, never weakens a suppressed finding, and re-parses and re-lints
    every change before writing. That guarantee covers the *edit*, not
    the *outcome*: a fix can still change how your stack behaves, and
    every such edit is labelled `⚠ behavior-changing` in the diff rather
@@ -63,7 +63,7 @@ pipeline, this is the page to read.
 
 ## Security properties
 
-The promises above are the headline. These nine properties are the
+The promises above are the headline. These eight properties are the
 precise version, and they define what counts as a vulnerability in
 compose-lint: a defect is a vulnerability when it breaks one of them, can
 be triggered by someone with less trust than you, and shipped in a
@@ -75,14 +75,13 @@ names of files and directories.
 | | Property | Example of a break | Not a break |
 |---|---|---|---|
 | **P0** | **No execution.** Content never causes code to run. | A YAML tag that constructs a Python object. | A crash on malformed YAML. |
-| **P1** | **Read confinement.** Only files inside the project are read, whatever a path says or resolves to. | A committed `.env` symlinked to `/proc/self/environ`, quoting the CI job's environment into findings (GHSA-6wcv-rj3c-mhv3). | Refusing a symlink that stays inside the project. |
+| **P1** | **Read confinement.** The contents of a file outside the project never reach compose-lint's output, whatever a path says or resolves to. Reading what Compose would read, including through a symlink, is not a break by itself. | A committed `.env` symlinked to `/proc/self/environ`, quoting the CI job's environment into findings (GHSA-6wcv-rj3c-mhv3). | Refusing a symlink that stays inside the project. |
 | **P2** | **Output confinement.** Data never lands in an output more exposed than where it came from, and a value is not quoted where its name would do. | A secret from an uncommitted, CI-generated env file quoted into SARIF that is uploaded to Code Scanning. | A finding quoting a non-secret value written in the Compose file itself. |
-| **P3** | **Write safety.** `fix --apply` and `init` never write outside the file you asked for, and never leave it weaker than the diff showed: a security setting removed or changed, or a new finding, that the diff did not present. | An edit that lands one line late and silently deletes network isolation. | A fix that mangles formatting or comments without touching a security setting. |
-| **P4** | **Output integrity.** Content can't forge report or log lines, conceal findings with control or bidi characters, or issue commands to whatever consumes the output: terminals, CI runners, SARIF viewers. | A service name that the GitHub Actions runner executes as a workflow command (GHSA-6f4g-xm8v-pgv6). | Garbled output from a Unicode edge case that hides nothing. |
-| **P5** | **Verdict integrity.** The exit code and SARIF status accurately report what was graded, and anything that couldn't be read or graded fails closed. No claim is made that grading was complete. | The Action reporting success having scanned no files, or an empty SARIF uploaded as a clean result. | A SARIF write failure that turns the step red. Any false negative. |
-| **P6** | **Policy integrity.** Policy and suppressions come only from documented locations, and the policy in effect is the one a reviewer sees in the diff. | A file name read as `--config=…`, loading a policy the review never showed. | A pull request adding a visible suppression that reviewers approve. |
-| **P7** | **Artifact integrity.** What you install was built by the release pipeline from signed `main`, and pins behave as documented. | A SHA-pinned Action installing whatever version PyPI serves. | A maintainer shipping a buggy release. A CVE in a dependency. |
-| **P8** | **Bounded resources.** A small input can't hang or exhaust anything beyond the attacker's own job, such as a shared runner, a merge queue, or a maintainer's machine running pre-commit. | A few hundred bytes of env file that exhaust memory on the machine that lints them. | The same input failing only the job that ran it. |
+| **P3** | **Write safety.** `fix --apply` and `init` never write outside the file you asked for, and never change it beyond the fixes they report. A security setting removed or changed, or a new finding, that the reported fixes do not account for is a break whether or not a diff displayed it. | A reported fix to one service that also changes another service's security settings without reporting it. | A fix that mangles formatting or comments without touching a security setting. |
+| **P4** | **Output integrity.** Content can't issue commands to whatever consumes the output: terminals, CI runners, SARIF viewers. | A service name that the GitHub Actions runner executes as a workflow command (GHSA-6f4g-xm8v-pgv6). | Garbled or misleading output from invisible or control characters, where the verdict stays accurate. |
+| **P5** | **Verdict integrity.** The exit code and SARIF status accurately report what was graded, and anything that couldn't be read or graded fails closed. No claim is made that grading was complete. | SARIF recording a run as successful when a Compose file failed to parse. | A SARIF write failure that turns the step red. Any false negative. |
+| **P6** | **Policy integrity.** Policy and suppressions come only from documented locations, and the policy in effect is the one a reviewer sees in the diff. | Suppressions read from an environment variable or a user-level config file that the pull request can't show. | A pull request adding a visible suppression that reviewers approve. |
+| **P7** | **Artifact integrity.** What you install was built by the release pipeline from signed `main`, so no one outside the maintainers can get an artifact published under the project's name. | A release path that publishes from a tag nobody signed. | A maintainer shipping a buggy release, or a newer release reaching an unpinned install. A CVE in a dependency. |
 
 **False negatives are not vulnerabilities.** A false negative is the tool
 reading and grading its input and missing a finding. That includes a

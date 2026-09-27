@@ -32,17 +32,28 @@ advisory, when all three of these hold:
    author of content compose-lint reads (a pull request contributor, the
    author of a template or included file, whoever names files and
    directories, env files, a policy file arriving in a pull request) or
-   someone in the distribution chain. It does not mean you, the author of
-   the workflow that runs compose-lint, or the project's maintainers.
-2. **It breaks one of the security properties** P0–P8 in
+   someone in the distribution chain. This includes their data arriving
+   through an input compose-lint documents, such as a list of changed
+   files passed to the Action's `files:`. It does not mean you, the
+   author of the workflow that runs compose-lint, or the project's
+   maintainers. The harm must not depend on someone approving content
+   that is visible in the pull request. If a reviewer reading the diff
+   would see everything the attack needs, compose-lint missing it is a
+   false negative, not a vulnerability.
+2. **It breaks one of the security properties** P0–P7 in
    [docs/SECURITY-EXPECTATIONS.md](../docs/SECURITY-EXPECTATIONS.md#security-properties):
    no execution, read confinement, output confinement, write safety,
    output integrity, verdict integrity, policy integrity, artifact
-   integrity, bounded resources.
+   integrity.
 3. **It shipped in a release:** a version tag (which the GitHub Action
    and the pre-commit hook resolve), a PyPI release, or a published image
    tag. The `main` branch is not a release. A defect introduced and fixed
    between two releases gets no advisory.
+
+How Docker Compose handles the same input is recorded in the advisory
+but doesn't decide the verdict. compose-lint runs where Compose doesn't —
+on untrusted pull requests, before anything is deployed — so an input
+Compose would reject can still be a compose-lint vulnerability.
 
 This applies however the defect was found (an outside report, a
 maintainer's own review, an automated audit) and whether or not it has
@@ -57,9 +68,26 @@ Report these as normal issues:
   differently from Compose. It does not promise complete detection.
 - **False positives,** and findings against the intentionally insecure
   fixtures in `tests/compose_files/`.
-- **A crash or resource exhaustion confined to the job that ran it.**
+- **Anything a careful reviewer would see.** A pull request whose
+  dangerous content, and whatever makes compose-lint miss it, are all
+  visible in the diff.
+- **A crash confined to the job that ran it.**
+- **Resource exhaustion,** whatever its size or cause. A small input
+  that makes compose-lint use too much memory or time is a bug; report
+  it as one. Isolating and limiting the machines that run untrusted pull
+  requests is the operator's job, and in a `pull_request` workflow the
+  pull request's author can already run code on that machine.
+- **Invisible or control characters in a pull request,** and what they
+  make compose-lint's output look like, where the verdict stays
+  accurate. Detecting hidden Unicode in contributions is the
+  repository's job (GitHub's hidden-character warning, a pre-commit
+  check). Output that a CI system *executes*, such as a workflow
+  command, is still in scope under P4.
 - **A limitation the documentation disclosed** for the version in
-  question.
+  question. Where shipped texts disagree (the README, the docs site,
+  `action.yml`, `--help`), the stronger promise is the one judged, so a
+  limitation stated in one place and contradicted by a promise in
+  another is not disclosed.
 - **A vulnerability in a dependency or the base image,** unless
   compose-lint makes it reachable and you can't fix it by updating the
   dependency yourself.
@@ -76,10 +104,19 @@ Report these as normal issues:
   CI runner, its log, Code Scanning) is scored as subsequent-system
   impact. The severity label follows the score; where a maintainer
   overrides it, the advisory says why.
+- **A false result that leaves a visible trace** in the pull request is
+  scored as low integrity impact (`VI:L`): the verdict is wrong, but
+  nothing deploys unless someone merges a change they could see. High
+  integrity impact is for a false result that leaves no visible trace.
+  `AT:P` marks only setups outside the ordinary way the affected surface
+  is used; running the hook or the Action over pull-request files is the
+  ordinary way.
 - **Surfaces** are listed separately: the `compose-lint` package, the
-  `tmatens/compose-lint` Action, and the `composelint/compose-lint`
-  image. Each affected range is confirmed by reproducing the defect on
-  the last affected release and its absence on the first fixed one.
+  `tmatens/compose-lint` Action and pre-commit hook (both resolve the
+  repository's version tags, and are listed under the `actions`
+  ecosystem), and the `composelint/compose-lint` image. Each affected
+  range is confirmed by reproducing the defect on the last affected
+  release and its absence on the first fixed one.
 - **Every affected version is listed,** even though only the latest minor
   release receives fixes.
 - **A CVE is requested** for every advisory. Requesting one publishes
