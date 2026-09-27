@@ -92,7 +92,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from compose_lint._limits import MAX_SUBSTITUTED_LEN
-from compose_lint._safe_read import UnsafeFileError, read_text_bounded
+from compose_lint._safe_read import (
+    OutsideProjectError,
+    UnsafeFileError,
+    read_text_bounded,
+)
 from compose_lint.rules._interpolation import _default_of, _matching_brace
 
 if TYPE_CHECKING:
@@ -200,7 +204,12 @@ class _Entry:
     line: int = 0
 
 
-def read_env(directory: Path, wanted: Iterable[str] | None = None) -> EnvFile | None:
+def read_env(
+    directory: Path,
+    wanted: Iterable[str] | None = None,
+    *,
+    within: Path | None = None,
+) -> EnvFile | None:
     """Read ``directory/.env``, or ``None`` if there is not one.
 
     ``directory`` is the project directory — the Compose file's own parent,
@@ -213,16 +222,25 @@ def read_env(directory: Path, wanted: Iterable[str] | None = None) -> EnvFile | 
     reason a malformed line is skipped: the file is not the artifact under
     lint, and a FIFO or an over-cap file committed as one should not take the
     report down with it.
+
+    ``within`` is the project directory the file must resolve inside, defaulting
+    to ``directory`` itself. Every other file a run reads passed this gate and
+    the ``.env`` did not: a committed ``.env`` symlinked to a file elsewhere on
+    the runner was opened and its values quoted into the report. Pointed at
+    ``/proc/self/environ`` that was the process environment. One that resolves
+    outside is treated as absent, like any other unreadable ``.env``.
     """
     path = directory / ENV_FILENAME
     try:
-        text = read_text_bounded(path, max_bytes=MAX_ENV_BYTES)
+        text = read_text_bounded(
+            path, max_bytes=MAX_ENV_BYTES, within=within or directory
+        )
     except (FileNotFoundError, UnsafeFileError, UnicodeDecodeError, OSError):
         return None
     return parse_env(text, wanted)
 
 
-def env_read_failure(directory: Path) -> str | None:
+def env_read_failure(directory: Path, *, within: Path | None = None) -> str | None:
     """Why ``directory/.env`` exists but cannot be read, or ``None``.
 
     :func:`read_env` treats an unreadable ``.env`` as absent, which keeps the
@@ -235,7 +253,9 @@ def env_read_failure(directory: Path) -> str | None:
     if not path.is_file():
         return None
     try:
-        read_text_bounded(path, max_bytes=MAX_ENV_BYTES)
+        read_text_bounded(path, max_bytes=MAX_ENV_BYTES, within=within or directory)
+    except OutsideProjectError:
+        return "it resolves outside the project directory"
     except UnicodeDecodeError as exc:
         return f"it is not valid UTF-8 (byte {exc.start})"
     except UnsafeFileError as exc:
@@ -391,6 +411,12 @@ def _scan(text: str, *, raw: bool = False) -> tuple[list[_Entry], list[int]]:
     for number, line in numbered:
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
+            continue
+        if "\x00" in line:
+            # No dotenv writer produces a NUL, and a file that has them is not a
+            # dotenv file: `/proc/self/environ` separates variables with NUL, so
+            # parsed as one it put the whole environment in a single value.
+            skipped.append(number)
             continue
         if raw:
             # `format: raw` is a different grammar, not a relaxation of this

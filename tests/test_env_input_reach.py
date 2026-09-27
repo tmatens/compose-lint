@@ -18,6 +18,9 @@ The last two are warnings, not failures: kind `unread_input`, on JSON
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -27,6 +30,9 @@ from compose_lint._env_file import MAX_ENV_BYTES
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+MARKER = "cl-ghsa-6wcv-marker"
+IMAGE_BY_ENV = "services:\n  web:\n    image: ${IMG}\n"
 
 PRIVILEGED_BY_ENV = (
     "services:\n  web:\n    image: nginx:1.27\n    privileged: ${PRIV}\n"
@@ -193,6 +199,92 @@ class TestUnreadableDotEnv:
             ["--format", "json", "compose.yml"], tmp_path, monkeypatch, capsys
         )
         assert _unread(doc) == []
+
+
+class TestSymlinkedEnvLeavingTheProject:
+    """GHSA-6wcv-rj3c-mhv3: the linked file's values were substituted and quoted
+    into findings. Now it is not read, and the run says so."""
+
+    def test_it_is_not_graded_and_is_reported(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+    ) -> None:
+        _write(tmp_path / "outside" / "linked.env", "PRIV=true\n")
+        project = tmp_path / "project"
+        _write(project / "compose.yml", PRIVILEGED_BY_ENV)
+        (project / ".env").symlink_to(tmp_path / "outside" / "linked.env")
+
+        code, doc, err = _run(
+            ["--format", "json", "compose.yml"], project, monkeypatch, capsys
+        )
+        assert "CL-0002" not in _rules(doc)
+        (warning,) = _unread(doc)
+        assert warning["file"].endswith(".env")
+        assert "resolves outside the project directory" in warning["message"]
+        assert "resolves outside the project directory" in err
+        assert code == 0
+
+    @pytest.mark.parametrize("fmt", ["text", "json"])
+    def test_the_linked_value_is_not_quoted_into_the_report(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: Any,
+        fmt: str,
+    ) -> None:
+        """The leak itself. CL-0004 quotes the image it resolved, so before the
+        fix the linked file's value appeared verbatim in the finding."""
+        _write(tmp_path / "outside" / "linked.env", f"IMG={MARKER}\n")
+        project = tmp_path / "project"
+        _write(project / "compose.yml", IMAGE_BY_ENV)
+        (project / ".env").symlink_to(tmp_path / "outside" / "linked.env")
+
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("NO_COLOR", "1")
+        capsys.readouterr()
+        with pytest.raises(SystemExit):
+            cli.main(["--format", fmt, "compose.yml"])
+        captured = capsys.readouterr()
+        assert MARKER not in captured.out
+        assert MARKER not in captured.err
+
+    @pytest.mark.skipif(not os.path.exists("/proc/self/environ"), reason="needs procfs")
+    def test_the_process_environment_is_not_quoted_into_the_report(
+        self, tmp_path: Path
+    ) -> None:
+        """A `.env` linked to `/proc/self/environ`. It has to be a subprocess:
+        the file shows the environment the process was started with, which is
+        why the child gets a synthetic one, and why nothing real can reach this
+        test's output. Before the fix the first variable's value, the marker,
+        was substituted into the image and quoted by CL-0004."""
+        _write(tmp_path / "compose.yml", IMAGE_BY_ENV)
+        (tmp_path / ".env").symlink_to("/proc/self/environ")
+        env = {"IMG": MARKER, "PATH": os.defpath, "NO_COLOR": "1"}
+
+        result = subprocess.run(  # noqa: S603 - fixed argv, synthetic env
+            [sys.executable, "-m", "compose_lint", "compose.yml"],
+            cwd=tmp_path,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert MARKER not in result.stdout
+        assert MARKER not in result.stderr
+        assert "resolves outside the project directory" in result.stderr
+
+    def test_a_link_inside_the_project_is_graded(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+    ) -> None:
+        _write(tmp_path / "compose.yml", PRIVILEGED_BY_ENV)
+        _write(tmp_path / "config" / "shared.env", "PRIV=true\n")
+        (tmp_path / ".env").symlink_to(tmp_path / "config" / "shared.env")
+
+        code, doc, _ = _run(
+            ["--format", "json", "compose.yml"], tmp_path, monkeypatch, capsys
+        )
+        assert _unread(doc) == []
+        assert "CL-0002" in _rules(doc)
+        assert code == 1
 
 
 class TestRefusedReferencesAreMachineReadable:

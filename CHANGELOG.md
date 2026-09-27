@@ -240,6 +240,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (or CL-0001 for a socket) now grades it. A project-relative `file:
   ./secrets/…` still resolves inside the project and is not flagged.
 
+### Security
+
+- **The sibling `.env` is read only from inside the project.** A `.env`
+  committed as a symlink to a file outside the project was read, and the
+  values it supplied were quoted in finding messages; linked to
+  `/proc/self/environ`, that exposed the linter's environment. It is now
+  refused, like every other file outside the project, and reported as an
+  `unread_input` warning. An `include:` entry's `project_directory:` that
+  resolves outside through a directory symlink is refused too, and a `.env`
+  line containing a NUL byte is skipped. See GHSA-6wcv-rj3c-mhv3.
+
 ## [0.30.0] - 2026-09-25
 
 ### Added

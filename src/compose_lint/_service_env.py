@@ -314,7 +314,7 @@ def _dotenv_scope(
                 wanted |= env_file_references(text, raw=ref.raw)
     if not wanted:
         return {}
-    parsed = read_env(base_dir, wanted)
+    parsed = read_env(base_dir, wanted, within=base_dir)
     return parsed.values if parsed is not None else {}
 
 
