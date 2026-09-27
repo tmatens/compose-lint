@@ -104,8 +104,8 @@ Report these as normal issues:
   CI runner, its log, Code Scanning) is scored as subsequent-system
   impact. The severity label follows the score; where a maintainer
   overrides it, the advisory says why.
-- **A false result that leaves a visible trace** in the pull request is
-  scored as low integrity impact (`VI:L`): the verdict is wrong, but
+- **A false result where part of the attack shows in the pull request**
+  is scored as low integrity impact (`VI:L`): the verdict is wrong, but
   nothing deploys unless someone merges a change they could see. High
   integrity impact is for a false result that leaves no visible trace.
   `AT:P` marks only setups outside the ordinary way the affected surface
