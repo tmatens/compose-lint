@@ -83,3 +83,52 @@ def test_versioned_upgrading_heading_is_normalised() -> None:
 def test_a_heading_inside_a_fenced_block_is_ignored() -> None:
     body = "\n### Added\n\n- a thing\n\n```markdown\n### Bogus\n```\n"
     assert validate(_doc(body), require_content=True) is None
+
+
+# --- Every Security entry records an advisory decision --------------------
+
+
+def test_a_security_entry_citing_an_advisory_passes() -> None:
+    body = (
+        "\n### Security\n\n"
+        "- **A thing.** Detail\n  over two lines. See GHSA-6wcv-rj3c-mhv3.\n"
+    )
+    assert validate(_doc(body), require_content=True) is None
+
+
+def test_a_security_entry_with_a_no_advisory_reason_passes() -> None:
+    body = (
+        "\n### Security\n\n"
+        "- Pinned a dev dependency. No advisory: dev-only, never shipped.\n"
+    )
+    assert validate(_doc(body), require_content=True) is None
+
+
+def test_a_security_entry_with_no_decision_fails() -> None:
+    body = (
+        "\n### Security\n\n"
+        "- Decided. No advisory: hardening.\n"
+        "- **Undecided.** Refuses a symlink out of the project.\n"
+    )
+    error = validate(_doc(body), require_content=True)
+    assert error is not None
+    assert "1 entry(s)" in error
+    assert "Undecided" in error
+
+
+def test_a_malformed_ghsa_id_does_not_count() -> None:
+    body = "\n### Security\n\n- A fix. See GHSA-TODO.\n"
+    assert validate(_doc(body), require_content=True) is not None
+
+
+def test_entries_in_other_sections_need_no_decision() -> None:
+    body = "\n### Fixed\n\n- A crafted file could pass with a finding missing.\n"
+    assert validate(_doc(body), require_content=True) is None
+
+
+def test_released_security_entries_are_not_re_judged() -> None:
+    text = (
+        "# Changelog\n\n## [Unreleased]\n\n"
+        "## [0.19.0] - 2026-08-18\n\n### Security\n\n- An old entry, no decision.\n"
+    )
+    assert validate(text, require_content=False) is None

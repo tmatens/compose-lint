@@ -61,6 +61,37 @@ pipeline, this is the page to read.
    attacker who pushed a malicious tag to the repo could not get it to
    ship.
 
+## Security properties
+
+The promises above are the headline. These nine properties are the
+precise version, and they define what counts as a vulnerability in
+compose-lint: a defect is a vulnerability when it breaks one of them, can
+be triggered by someone with less trust than you, and shipped in a
+release (see [.github/SECURITY.md](../.github/SECURITY.md) §"What counts
+as a vulnerability"). "Content" below means anything compose-lint reads
+from the project: Compose files, env files, `.compose-lint.yml`, and the
+names of files and directories.
+
+| | Property | Example of a break | Not a break |
+|---|---|---|---|
+| **P0** | **No execution.** Content never causes code to run. | A YAML tag that constructs a Python object. | A crash on malformed YAML. |
+| **P1** | **Read confinement.** Only files inside the project are read, whatever a path says or resolves to. | A committed `.env` symlinked to `/proc/self/environ`, quoting the CI job's environment into findings (GHSA-6wcv-rj3c-mhv3). | Refusing a symlink that stays inside the project. |
+| **P2** | **Output confinement.** Data never lands in an output more exposed than where it came from, and a value is not quoted where its name would do. | A secret from an uncommitted, CI-generated env file quoted into SARIF that is uploaded to Code Scanning. | A finding quoting a non-secret value written in the Compose file itself. |
+| **P3** | **Write safety.** `fix --apply` and `init` never write outside the file you asked for, and never leave it weaker than the diff showed: a security setting removed or changed, or a new finding, that the diff did not present. | An edit that lands one line late and silently deletes network isolation. | A fix that mangles formatting or comments without touching a security setting. |
+| **P4** | **Output integrity.** Content can't forge report or log lines, conceal findings with control or bidi characters, or issue commands to whatever consumes the output: terminals, CI runners, SARIF viewers. | A service name that the GitHub Actions runner executes as a workflow command (GHSA-6f4g-xm8v-pgv6). | Garbled output from a Unicode edge case that hides nothing. |
+| **P5** | **Verdict integrity.** The exit code and SARIF status accurately report what was graded, and anything that couldn't be read or graded fails closed. No claim is made that grading was complete. | The Action reporting success having scanned no files, or an empty SARIF uploaded as a clean result. | A SARIF write failure that turns the step red. Any false negative. |
+| **P6** | **Policy integrity.** Policy and suppressions come only from documented locations, and the policy in effect is the one a reviewer sees in the diff. | A file name read as `--config=…`, loading a policy the review never showed. | A pull request adding a visible suppression that reviewers approve. |
+| **P7** | **Artifact integrity.** What you install was built by the release pipeline from signed `main`, and pins behave as documented. | A SHA-pinned Action installing whatever version PyPI serves. | A maintainer shipping a buggy release. A CVE in a dependency. |
+| **P8** | **Bounded resources.** A small input can't hang or exhaust anything beyond the attacker's own job, such as a shared runner, a merge queue, or a maintainer's machine running pre-commit. | A few hundred bytes of env file that exhaust memory on the machine that lints them. | The same input failing only the job that ran it. |
+
+**False negatives are not vulnerabilities.** A false negative is the tool
+reading and grading its input and missing a finding. That includes a
+rule's check being incomplete, and an input that compose-lint models
+differently from how Compose deploys it, even when the input was crafted
+to be missed. Report them as ordinary bugs. What *is* in scope is the
+tool reporting success over something it did not read or grade (P5), or
+following a policy it should not have (P6).
+
 ## What compose-lint does NOT promise
 
 1. **It is not a Compose schema validator.** A file that fails Compose
@@ -99,7 +130,8 @@ pipeline, this is the page to read.
    findings against ~1,500 real-world Compose files — but the threat
    model in [docs/ASSURANCE.md](ASSURANCE.md) acknowledges both
    classes as real risks. Report a false positive or false negative as
-   a normal GitHub issue using the bug template.
+   a normal GitHub issue using the bug template, including one reached
+   with a deliberately crafted file (see §"Security properties").
 
 7. **It does not maintain old releases.** Per
    [.github/SECURITY.md](../.github/SECURITY.md) §"Supported Versions",

@@ -17,6 +17,10 @@ One definition, two call sites (#593):
 release-prep.yml only *renames* ``[Unreleased]`` -> ``[X.Y.Z]``; it never
 authors or reorders entries, so whatever shape the section is in is what
 ships — in the GitHub Release notes too.
+
+It also requires every ``### Security`` entry to record whether it got an
+advisory, so the decision in .github/SECURITY.md is made on the PR that
+fixes the defect rather than remembered at release time.
 """
 
 from __future__ import annotations
@@ -102,7 +106,44 @@ def validate(text: str, *, require_content: bool) -> str | None:
             f"[Unreleased] sections are out of order: {headings}. Expected: {expected}"
         )
 
+    if undecided := _undecided_security_entries(lines[start + 1 : end]):
+        return (
+            f"[Unreleased] ### Security has {len(undecided)} entry(s) with no "
+            "advisory decision. End each one with the advisory it fixes "
+            "(`See GHSA-xxxx-xxxx-xxxx.`) or `No advisory:` and the reason, per "
+            ".github/SECURITY.md. First one: " + repr(undecided[0][:80])
+        )
+
     return None
+
+
+_GHSA = re.compile(r"GHSA(-[23456789cfghjmpqrvwx]{4}){3}")
+
+
+def _undecided_security_entries(section: list[str]) -> list[str]:
+    """Top-level ``### Security`` bullets that record no advisory decision.
+
+    Only ``[Unreleased]`` is passed in, so entries already released under the
+    older convention are never re-judged. A bullet runs until the next
+    top-level bullet or heading; its continuation lines count.
+    """
+    entries: list[str] = []
+    inside = fenced = False
+    for line in section:
+        if re.match(r"^(```|~~~)", line.strip()):
+            fenced = not fenced
+        if fenced:
+            continue
+        if line.startswith("### "):
+            inside = line[4:].strip() == "Security"
+            continue
+        if not inside:
+            continue
+        if line.startswith("- "):
+            entries.append(line)
+        elif entries and line.strip():
+            entries[-1] += " " + line.strip()
+    return [e for e in entries if not _GHSA.search(e) and "No advisory:" not in e]
 
 
 def main() -> int:

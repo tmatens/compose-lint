@@ -251,6 +251,10 @@ version number.
 - [ ] `pytest`
 - [ ] CI on `main` is green for the commit you're about to release.
 - [ ] No open Renovate PRs you meant to merge first.
+- [ ] Every `### Security` entry in `[Unreleased]` names its advisory or a
+      `No advisory:` reason (CI enforces the shape), and every advisory it
+      names is a complete draft with its CVE requested. See
+      [Security advisories](#security-advisories).
 - [ ] `[Unreleased]` in `CHANGELOG.md` covers every user-facing PR
       merged since the last release tag. `release-prep.yml` only
       *renames* `[Unreleased]` → `[X.Y.Z]`; it does not author entries,
@@ -455,6 +459,9 @@ After approval, `publish` and `docker-publish` run in parallel.
 
 ## Post-release
 
+- [ ] **Security advisories** — once PyPI, the image and the Action tag
+      are live, publish every advisory the release fixes. See
+      [Security advisories](#security-advisories).
 - [ ] **GitHub Release** — created automatically by `publish.yml`'s
       `create-release` job (runs after both `publish` and
       `docker-publish` succeed). Notes come from the matching
@@ -510,6 +517,33 @@ After approval, `publish` and `docker-publish` run in parallel.
       deserve a sentence naming the escape hatches (`--fail-on`, pinning),
       since `docs/compatibility.md` treats them as MINOR rather than
       breaking and a pinned CI user will meet them without warning.
+
+## Security advisories
+
+What gets an advisory is decided by the test in
+[.github/SECURITY.md](../.github/SECURITY.md) §"What counts as a
+vulnerability", when the fix is written, and recorded in its changelog
+entry. The steps for one that does:
+
+1. **Draft it privately** from the repository's Security tab, and request
+   the CVE straight away: GitHub reviews the request within about three
+   working days, and requesting publishes nothing.
+2. **Reproduce it** on the last affected release and confirm it is gone on
+   the fix, for each surface: the package, the Action and the image. The
+   affected ranges in the advisory come from these runs. A defect in the
+   Action's own handling needs a run on a real GitHub-hosted runner, not
+   only a local emulation.
+3. **Write the fix and its regression tests in the advisory's temporary
+   private fork.** The tests should fail on the unfixed code for the reason
+   the advisory describes.
+4. **Land it as an ordinary pull request, immediately before the
+   release.** The branch ruleset requires `ci-ok`, which a temporary fork
+   cannot produce, so the advisory page's merge button stays disabled.
+   Opening the pull request is the moment the fix becomes public; keep its
+   description to what the fix does, then close the fork's pull request so
+   the advisory can be published.
+5. **Release**, then publish the advisory once the artifacts are live
+   (see Post-release).
 
 ## If something goes wrong
 
