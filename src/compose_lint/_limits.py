@@ -43,6 +43,14 @@ MAX_SCAN_LEN = 8192
 # resolve.
 MAX_SUBSTITUTED_LEN = MAX_SCAN_LEN * 16
 
+# MAX_SUBSTITUTED_LEN bounds one value, and a document holds many: a 130 KB
+# `.env` value under the per-value cap, referenced from 20,000 distinct leaves,
+# is 2.6 GB. This bounds what substitution adds to one document in total, at
+# the size of the largest document compose-lint reads, so a substituted file
+# costs at most about twice a file at the read cap. Past it a value is left as
+# written. Identical leaves share one result and are counted once.
+MAX_SUBSTITUTED_TOTAL = 8 * 1024 * 1024
+
 # A merge key (`<<: *common`) copies every pair of its anchor into each mapping
 # that uses it, so N keys merged into M services is N*M constructed pairs from
 # N+M lines. 2,000 of each is a 122 KB file that took 1.1 GB and 5 s to load.

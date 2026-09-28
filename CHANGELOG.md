@@ -61,6 +61,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path at every dot of a service name, which cost seconds for a name with
   thousands of dots.
 
+- **Env files cost their size once, not once per use.** One `.env` value
+  of 130 KB, under the per-value cap, referenced from 20,000 labels was a
+  389 KB file that substituted to 2.6 GB and ran out of memory. Identical
+  values now share one result, and what substitution adds to a document is
+  capped at 8 MB in total; past it a value is left as written, as one over
+  the per-value cap already was. And an `env_file:` named by many services
+  was read, parsed and graded once per service: 169 KB named by 2,000
+  services ran for over a minute and now takes half a second. Findings are
+  unchanged.
+
 ## [0.31.0] - 2026-09-27
 
 ### Added

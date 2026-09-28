@@ -74,6 +74,8 @@ def run_rules(
 
     for rule in rules:
         rule_id = rule.metadata.id
+        # One rule's findings on each shared `env_file:` key set, graded once.
+        graded: dict[int, tuple[tuple[Any, ...], list[Finding]]] = {}
         is_suppressed = rule_id in disabled
         rule_excluded = excluded.get(rule_id, {})
 
@@ -84,10 +86,8 @@ def run_rules(
                 )
                 contributed = (env_files or {}).get(service_name)
                 if contributed is not None and contributed.keys:
-                    rule_findings += list(
-                        rule.check_env_file_keys(
-                            service_name, contributed.keys, service_config
-                        )
+                    rule_findings += _env_file_findings(
+                        rule, service_name, contributed, service_config, graded
                     )
             except Exception as exc:  # noqa: BLE001 - isolate a crashing rule
                 report_error(rule_id, service_name, exc)
@@ -143,4 +143,34 @@ def filter_findings(
     """
     return [
         f for f in findings if f.severity >= severity_threshold and not f.suppressed
+    ]
+
+
+def _env_file_findings(
+    rule: Any,
+    service_name: str,
+    contributed: ServiceEnvFiles,
+    service_config: dict[str, Any],
+    graded: dict[int, tuple[tuple[Any, ...], list[Finding]]],
+) -> list[Finding]:
+    """``rule``'s findings on one service's ``env_file:`` keys.
+
+    Services naming the same files share one ``available`` tuple, and the
+    rules that grade it read only the keys (the contract on
+    :meth:`BaseRule.check_env_file_keys`). So the tuple is graded once and each
+    service gets those findings under its own name, less the keys its own
+    ``environment:`` shadows. Grading it per service cost the file's keys times
+    the services: 20,000 keys named by 2,000 services ran for over a minute.
+    """
+    available = contributed.available
+    cached = graded.get(id(available))
+    if cached is None or cached[0] is not available:
+        template = list(rule.check_env_file_keys("", available, service_config))
+        cached = (available, template)
+        graded[id(available)] = cached
+    shadowed = contributed.shadowed
+    return [
+        replace(finding, service=service_name)
+        for finding in cached[1]
+        if finding.evidence not in shadowed
     ]

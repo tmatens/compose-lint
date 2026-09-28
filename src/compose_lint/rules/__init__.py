@@ -55,6 +55,13 @@ class BaseRule(abc.ABC):
 
         The default yields nothing, so a rule that does not care is unaffected
         and no existing rule had to change.
+
+        The engine relies on two properties, because services naming the same
+        files share one key set and it grades that set once: the findings
+        depend on ``keys`` alone (not on ``service_name`` or
+        ``service_config``; the engine sets each finding's ``service``), and
+        each finding's ``evidence`` is the key it is about, so a key the
+        service's ``environment:`` shadows can be dropped from the result.
         """
         return iter(())
 
