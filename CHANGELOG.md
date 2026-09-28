@@ -21,6 +21,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an `unread_input` warning. No advisory: the file is part of the change
   under review, and 0.31.0 already reported it as not read.
 
+### Fixed
+
+- **Merging an overlay or an `extends:` base no longer grows with what
+  aliases expand to.** Three merge steps did work in the size of an expanded
+  value rather than of the file. A long-form `ports:` entry was keyed by
+  rendering each field as text, so a `host_ip` written as a doubling alias
+  chain (under 1 KB, with a one-line `compose.override.yml`) ran out of
+  memory. Append-style lists (`dns`, `cap_add`, ...) were deduplicated by
+  comparing each entry with every earlier one, which took 47 s on 1.6 KB
+  holding two alias chains of the same shape, and was quadratic in a long
+  list. And each merged list item re-scanned the whole line map, so a
+  20,000-entry `dns:` under a one-line overlay took 16 s. All three are now
+  linear: a port entry whose fields are not strings or numbers is not keyed
+  (Compose rejects it), the dedupe hashes a bounded canonical form, and a
+  subtree's lines are found by bisection. No advisory: resource use is a
+  robustness bug, and runners that lint untrusted pull requests are
+  isolated and limited by whoever operates them.
+
 ## [0.31.0] - 2026-09-27
 
 ### Added
