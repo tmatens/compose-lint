@@ -71,6 +71,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   services ran for over a minute and now takes half a second. Findings are
   unchanged.
 
+- **A document that multiplies its findings stops being graded, and says
+  so.** A rule reports one finding per item, and an aliased list is one set
+  of items in every service that uses it: a 1,000-entry `ports:` anchor in
+  2,000 services (103 KB) built two million findings and ran out of memory
+  in every format, SARIF included, since its 5,000-result cap applied only
+  when the log was written. Grading now stops at 20,000 findings per
+  document, over 60 times the most any file in the test corpus produces.
+  What was not graded is a coverage gap (exit 2, `--allow-partial-coverage`
+  accepts it) and the findings graded so far are reported; `fix` and
+  `init` refuse such a file.
+
 ## [0.31.0] - 2026-09-27
 
 ### Added

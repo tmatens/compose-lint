@@ -30,7 +30,7 @@ from compose_lint.config import (
     warn_unknown_excluded_services,
 )
 from compose_lint.config_emit import render_config
-from compose_lint.engine import filter_findings, run_rules
+from compose_lint.engine import FindingLimitError, filter_findings, run_rules
 from compose_lint.explain import UnknownRuleError, load_rule_doc, normalize_rule_id
 from compose_lint.fix import (
     LineOutOfRangeError,
@@ -1065,16 +1065,26 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             rule_errors.append(Diagnostic(_filepath, msg, DiagnosticKind.RULE_CRASH))
             emit(f"Error: {_filepath}: {msg}")
 
-        findings = run_rules(
-            data,
-            lines,
-            disabled_rules=disabled_rules,
-            severity_overrides=severity_overrides,
-            excluded_services=excluded_services,
-            on_error=_record_rule_error,
-            env_files=service_env_files,
-            config_path=_config_name(args.config, config_path),
-        )
+        try:
+            findings = run_rules(
+                data,
+                lines,
+                disabled_rules=disabled_rules,
+                severity_overrides=severity_overrides,
+                excluded_services=excluded_services,
+                on_error=_record_rule_error,
+                env_files=service_env_files,
+                config_path=_config_name(args.config, config_path),
+            )
+        except FindingLimitError as limit:
+            # Part of the document was never graded, which is what a coverage
+            # gap means; the findings graded before the stop are still reported.
+            findings = limit.findings
+            gap_channel.extend(
+                _report_coverage_gaps(
+                    filepath, (str(limit),), fatal=gap_is_fatal, remedy=gap_remedy
+                )
+            )
         # Also on the single-file path: a resolved cross-file `extends:` puts
         # lines from another document into this one's map, so a finding can be
         # written in a file the report is not headed by even with no overlay.
@@ -1459,15 +1469,22 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             had_error = True
             continue
         crashed = _CrashRecorder(filepath)
-        findings = run_rules(
-            data,
-            lines,
-            disabled_rules=disabled_rules,
-            severity_overrides=severity_overrides,
-            excluded_services=excluded_services,
-            config_path=fix_config_name,
-            on_error=crashed,
-        )
+        try:
+            findings = run_rules(
+                data,
+                lines,
+                disabled_rules=disabled_rules,
+                severity_overrides=severity_overrides,
+                excluded_services=excluded_services,
+                config_path=fix_config_name,
+                on_error=crashed,
+            )
+        except FindingLimitError as limit:
+            # A partial set cannot be fixed safely: verify-apply compares the
+            # findings before and after, and half of them were never computed.
+            emit(f"Error: {filepath}: {limit} No fixes computed or written.")
+            had_error = True
+            continue
         if crashed:
             # The same treatment as a parse error: exit 2, nothing written, the
             # rest of the batch still runs. A crashed rule is a sweep that did
@@ -1746,7 +1763,13 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
         emit(f"note: {group.primary}: {note}")
 
     crashed = _CrashRecorder(group.primary)
-    findings = run_rules(data, lines, env_files=service_env_files, on_error=crashed)
+    try:
+        findings = run_rules(data, lines, env_files=service_env_files, on_error=crashed)
+    except FindingLimitError as limit:
+        # A baseline suppresses every finding; one written over part of them
+        # leaves the next `check` failing on the rest.
+        emit(f"Error: {group.primary}: {limit} No baseline written.")
+        sys.exit(2)
     if crashed:
         # A baseline is a suppression for every finding, so the crashed rule's
         # findings would be the ones missing — and the next `check`, which

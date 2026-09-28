@@ -177,7 +177,7 @@ finding is graded before any is dropped, so the verdict is complete; only the
 document is short, and the notification says by how much. None of ADR-006's
 exit-2 causes (the run could not start, a rule crashed, part of the stack was
 not seen) describes it. A consumer that needs every result re-runs with
-`--format json`, which has no cap.
+`--format json`, which has no result cap.
 
 *Amendment (pre-1.0): one path form (#887).* `file`, `graded_file`, the
 deprecated `source_file`, `errors[].file`/`warnings[].file`, and SARIF's
@@ -201,3 +201,13 @@ types and presence rules are unchanged, so `version` does not change.
 `kind` and `warnings` are additive, so `version` does not change. Every exit-2
 path writes the envelope except the two that fail before an output format is
 known: an argument the parser rejects, and an `--explain` error.
+
+*Amendment (pre-1.0): a findings limit is a coverage gap.* One document grades
+at most `MAX_FINDINGS` (20,000) findings. A rule reports one finding per item,
+and an aliased list multiplies items by the services that share it, so a
+100 KB file could build two million findings before printing any. Past the
+limit the engine stops, so the rest of the document is not graded, and that is
+reported as `coverage_gap` with the findings graded so far: exit 2 unless
+`--allow-partial-coverage`. Unlike SARIF's result cap, which drops results from
+a verdict that was complete, this one leaves the verdict incomplete, so it
+fails closed. The largest count in the corpus is 323.

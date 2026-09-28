@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._limits import MAX_FINDINGS
 from compose_lint._output import emit
 from compose_lint.models import Finding, Severity
 from compose_lint.rules import get_registered_rules
@@ -13,6 +14,24 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
     from compose_lint._service_env import ServiceEnvFiles
+
+
+class FindingLimitError(Exception):
+    """A document produced more findings than one run grades.
+
+    ``findings`` are the ones graded before grading stopped, sorted as
+    :func:`run_rules` sorts its result, so a caller that accepts the gap can
+    still report them.
+    """
+
+    def __init__(self, findings: list[Finding]) -> None:
+        super().__init__(
+            f"grading stopped at {MAX_FINDINGS} findings, so the rest of this "
+            "document was not graded. That many findings means a shared list "
+            "multiplied by the services that use it; lint the document with "
+            "fewer aliases of it, or split the stack."
+        )
+        self.findings = findings
 
 
 def _default_rule_error(rule_id: str, service_name: str, exc: Exception) -> None:
@@ -59,6 +78,9 @@ def run_rules(
     CLI maps such a failure to exit 2 ("compose-lint itself couldn't run",
     ADR-006) so a directory sweep is never silently truncated and a crash is
     never mistaken for a clean lint failure.
+
+    More than :data:`~compose_lint._limits.MAX_FINDINGS` findings raises
+    :class:`FindingLimitError` carrying the ones graded so far.
     """
     disabled = disabled_rules or {}
     overrides = severity_overrides or {}
@@ -128,6 +150,9 @@ def run_rules(
                         ),
                     )
                 findings.append(finding)
+            if len(findings) > MAX_FINDINGS:
+                findings.sort(key=lambda f: (f.line is None, f.line or 0))
+                raise FindingLimitError(findings)
 
     findings.sort(key=lambda f: (f.line is None, f.line or 0))
     return findings
