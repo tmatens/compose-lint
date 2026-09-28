@@ -12,7 +12,12 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from compose_lint._env_file import ENV_FILENAME, env_read_failure, read_env
-from compose_lint._limits import MAX_MERGED_PAIRS, MAX_REPEATED_LINES, MAX_SERVICES
+from compose_lint._limits import (
+    MAX_MERGED_PAIRS,
+    MAX_REPEATED_LINES,
+    MAX_SERVICES,
+    MAX_SUBSTITUTED_TOTAL,
+)
 from compose_lint._lines import find_ambiguous_break
 from compose_lint._merge import (
     Document,
@@ -1831,10 +1836,32 @@ def _substitute_interpolation_defaults(
     because a default is committed in the file and ships to every clone.
     """
     seen: set[int] = set()
+    # Each value is bounded (MAX_SUBSTITUTED_LEN); the document was not. One
+    # 130 KB `.env` value referenced as `${X}b` in 20,000 labels was a 389 KB
+    # file that substituted to 2.6 GB. Identical leaves now share one result,
+    # and what substitution adds to the document is budgeted: past
+    # MAX_SUBSTITUTED_TOTAL a value stays as written, the same "unknowable"
+    # answer a single value over its own cap gets.
+    results: dict[tuple[str, bool], str] = {}
+    remaining = [MAX_SUBSTITUTED_TOTAL]
 
     def resolve(value: str, supplied: Mapping[str, str] | None) -> str:
+        key = (value, supplied is None)
+        cached = results.get(key)
+        if cached is not None:
+            return cached
         substituted = substitute_defaults(value, supplied)
-        return value if substituted is None else substituted
+        if substituted is None:
+            result = value
+        else:
+            growth = len(substituted) - len(value)
+            if growth > remaining[0]:
+                result = value
+            else:
+                remaining[0] -= max(growth, 0)
+                result = substituted
+        results[key] = result
+        return result
 
     def walk(node: Any, supplied: Mapping[str, str] | None) -> None:
         if isinstance(node, dict):

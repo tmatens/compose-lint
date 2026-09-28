@@ -36,6 +36,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from functools import cached_property
 from typing import TYPE_CHECKING, Any
 
 from compose_lint._env_file import (
@@ -134,11 +135,25 @@ class ServiceEnvFiles:
     a key contributes nothing (verified). Dropping it here is also what keeps
     CL-0020 from reporting the same credential twice — it already grades the
     ``environment:`` spelling.
+
+    ``available`` is what the files contribute before that removal, and
+    ``shadowed`` the names the service's own ``environment:`` sets. Services
+    naming the same files share one ``available`` tuple, so a file read once
+    is held once however many services name it, and a rule can grade it once
+    (:func:`compose_lint.engine.run_rules`).
     """
 
-    keys: tuple[EnvFileKey, ...]
+    available: tuple[EnvFileKey, ...]
     unread: tuple[UnreadEnvFile, ...]
     skipped: tuple[SkippedLines, ...] = ()
+    shadowed: frozenset[str] = frozenset()
+
+    @cached_property
+    def keys(self) -> tuple[EnvFileKey, ...]:
+        """The contributed keys the service's ``environment:`` does not set."""
+        if not self.shadowed:
+            return self.available
+        return tuple(key for key in self.available if key.key not in self.shadowed)
 
     def __bool__(self) -> bool:
         return bool(self.keys or self.unread or self.skipped)
@@ -280,11 +295,36 @@ def resolve_env_files(
 
     supplied = _dotenv_scope(plans, texts, base_dir)
 
+    # A plan is a function of its refs alone (the files, and the `.env` scope
+    # every service shares), so services naming the same files in the same
+    # order resolve them once. Re-parsing a shared file per service cost the
+    # file's size times the services: a 169 KB file named by 2,000 services
+    # ran for over a minute.
+    shared: dict[tuple[object, ...], _Resolved] = {}
     resolved: dict[str, ServiceEnvFiles] = {}
     for name, plan in plans.items():
-        config = services[name]
-        resolved[name] = _resolve_one(plan, texts, supplied, config)
+        key = tuple((ref, path, refusal) for ref, path, refusal in plan)
+        if key not in shared:
+            shared[key] = _resolve_one(plan, texts, supplied)
+        result = shared[key]
+        own = _environment_keys(services[name].get("environment"))
+        resolved[name] = ServiceEnvFiles(
+            available=result.available,
+            unread=result.unread,
+            skipped=result.skipped,
+            shadowed=frozenset(own & result.names),
+        )
     return resolved
+
+
+@dataclass(frozen=True)
+class _Resolved:
+    """One plan's contribution, before any service's ``environment:`` applies."""
+
+    available: tuple[EnvFileKey, ...]
+    names: frozenset[str]
+    unread: tuple[UnreadEnvFile, ...]
+    skipped: tuple[SkippedLines, ...]
 
 
 def _read_text(path: Path) -> str | None:
@@ -307,9 +347,14 @@ def _dotenv_scope(
 ) -> Mapping[str, str]:
     """The ``.env`` values the env files chain to, and nothing else."""
     wanted: set[str] = set()
+    # Once per file and reading mode, not once per service that names it.
+    scanned: set[tuple[Path, bool]] = set()
     for plan in plans.values():
         for ref, path, _refusal in plan:
-            text = texts.get(path) if path is not None else None
+            if path is None or (path, ref.raw) in scanned:
+                continue
+            scanned.add((path, ref.raw))
+            text = texts.get(path)
             if text is not None:
                 wanted |= env_file_references(text, raw=ref.raw)
     if not wanted:
@@ -322,9 +367,8 @@ def _resolve_one(
     plan: list[tuple[EnvFileRef, Path | None, Unread | None]],
     texts: dict[Path, str | None],
     supplied: Mapping[str, str],
-    config: dict[str, Any],
-) -> ServiceEnvFiles:
-    """Apply one service's targets in order, then remove what it overrides."""
+) -> _Resolved:
+    """Apply one plan's targets in order, a later file winning."""
     scope: dict[str, str] = dict(supplied)
     contributed: dict[str, EnvFileKey] = {}
     unread: list[UnreadEnvFile] = []
@@ -354,11 +398,9 @@ def _resolve_one(
                 path=str(path),
             )
 
-    for key in _environment_keys(config.get("environment")):
-        contributed.pop(key, None)
-
-    return ServiceEnvFiles(
-        keys=tuple(contributed.values()),
+    return _Resolved(
+        available=tuple(contributed.values()),
+        names=frozenset(contributed),
         unread=tuple(unread),
         skipped=tuple(skipped),
     )
