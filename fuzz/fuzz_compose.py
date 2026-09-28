@@ -38,6 +38,11 @@ def _test_one_input(data: bytes) -> None:
         # the interpreter stack. load_compose wraps this as ComposeError, but
         # the harness calls yaml.load directly, so swallow it here too.
         return
+    except parser.ComposeError:
+        # LineLoader's constructors refuse some documents mid-load (e.g. the
+        # MAX_MERGED_PAIRS merge-key budget). That refusal is the parser's
+        # documented exit-2 path, not a crash.
+        return
 
     if raw is None:
         return
