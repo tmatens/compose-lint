@@ -289,7 +289,9 @@ runs:
         # annotations, fold the verdict out of sight, or reach the deprecated
         # `set-output`. `stop-commands` with a fresh, unguessable token turns
         # command processing off while compose-lint runs; it is GitHub's
-        # documented control for printing untrusted text.
+        # documented control for printing untrusted text. It does not turn off
+        # problem matchers registered earlier in the job, which still read the
+        # output (docs/github-action.md).
         STOP_TOKEN="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
 
         # `--` terminates the option namespace, so a repository file named
