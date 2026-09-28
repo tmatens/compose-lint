@@ -836,7 +836,7 @@ def verify_apply(
     first); a parse failure here is reported as a verification failure all the
     same rather than raising.
     """
-    from compose_lint.engine import run_rules
+    from compose_lint.engine import FindingLimitError, run_rules
     from compose_lint.parser import ComposeError, loads
 
     # `reparse` lets a caller verify against something other than the patched
@@ -866,13 +866,16 @@ def verify_apply(
     if drift is not None:
         return drift
 
-    re_findings = run_rules(
-        re_data,
-        re_lines,
-        disabled_rules=disabled_rules,
-        severity_overrides=severity_overrides,
-        excluded_services=excluded_services,
-    )
+    try:
+        re_findings = run_rules(
+            re_data,
+            re_lines,
+            disabled_rules=disabled_rules,
+            severity_overrides=severity_overrides,
+            excluded_services=excluded_services,
+        )
+    except FindingLimitError:  # pragma: no cover - a fix that multiplies findings
+        return "computed fix could not be verified: it exceeds the findings limit"
 
     # Convergence is only meaningful over the findings this run would actually
     # fix. On a merged run the rest belong to another document, and asking for

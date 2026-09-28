@@ -85,3 +85,16 @@ MAX_SERVICES = 4096
 # largest count in the 11,111-file corpus is 1,225, so no real file
 # comes near it; at the cap the line map costs tens of megabytes.
 MAX_REPEATED_LINES = 262144
+
+# A rule reports one finding per item it grades, and YAML aliases share one
+# list between services, so findings are services times items: a `ports:`
+# anchor of 1,000 entries aliased into 2,000 services is a 103 KB file and
+# two million findings, which ran out of memory before any of them was printed.
+# SARIF's result cap (5,000) applied only when the log was written, after every
+# finding had been built and graded.
+#
+# Counted per document as the engine builds findings. Reaching it stops the
+# grading, so what was not graded is a coverage gap (exit 2, which
+# `--allow-partial-coverage` accepts) rather than a verdict over part of the
+# stack. The largest count in the 11,111-file corpus is 323.
+MAX_FINDINGS = 20000
