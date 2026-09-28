@@ -14,13 +14,18 @@ or image is consulted at all.
 
 That holds for the files a run *finds* as well as the ones a document names.
 A discovered `compose.yml`, its `compose.override.yml`, and the
-`.compose-lint.yml` in the working directory are part of the checkout, so one
-committed as a symlink to a file outside its own directory is refused rather
-than followed: exit 2, a coverage gap for a Compose document and a
-configuration error for the policy file. The same goes for a Compose file
-named on the command line that is such a link, since CI hands the linter paths
-the checkout chose. A plain path you type is read as given, and so is
-`--config`.
+`.compose-lint.yml` in the working directory are part of the checkout, and so
+is a Compose file named on the command line, since CI hands the linter paths
+the checkout chose. One committed as a symlink is followed only while its
+target stays inside the directory the run started in (the checkout, in CI:
+the Action runs in the workspace and pre-commit at the repository root) or
+inside the link's own directory. A shared file symlinked into a monorepo's
+service directories is therefore graded when you run from the repository
+root, and its relative paths resolve beside the link, as Compose resolves
+them. A target outside both is refused rather than followed: exit 2, a
+coverage gap for a Compose document. The policy file is contained to the
+working directory, and one that leaves it is a configuration error. A plain
+path you type is read as given, and so is `--config`.
 
 | Source | Read because | Switch it off |
 |---|---|---|

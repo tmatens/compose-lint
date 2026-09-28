@@ -14,14 +14,12 @@ Every value here is a synthetic marker.
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 
 import pytest
 
 from compose_lint import cli
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 MARKER = "cl-link-containment-marker"
 CREDENTIALS = f"[default]\nkey_id = {MARKER}\nsecret = {MARKER}\n"
@@ -321,5 +319,93 @@ class TestComposeDocuments:
         code, out, err = _run([command, "compose.yml"], project, monkeypatch, capsys)
         assert code == 2
         assert MARKER not in out + err
-        assert "resolves outside the project directory" in err
+        assert "links to a file outside both its own directory" in err
         assert not (project / ".compose-lint.yml").exists()
+
+
+PRIVILEGED = "services:\n  web:\n    image: nginx:1.27\n    privileged: true\n"
+
+
+class TestLinkRoot:
+    """A linked Compose file is followed while its target stays inside the
+    directory the run started in: in CI that is the checkout, whose content the
+    change under review can already see."""
+
+    def test_a_shared_file_linked_into_a_monorepo_is_graded(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        repo = tmp_path / "repo"
+        _write(repo / "shared" / "compose.yml", PRIVILEGED)
+        link = repo / "services" / "foo" / "compose.yml"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(Path("..", "..", "shared", "compose.yml"))
+        for path in ("services/foo/compose.yml", "./services/foo/compose.yml"):
+            code, out, _ = _run(
+                ["--format", "json", "--", path], repo, monkeypatch, capsys
+            )
+            doc = json.loads(out)
+            assert code == 1
+            assert doc["errors"] == []
+            assert "CL-0002" in {f["rule_id"] for f in doc["findings"]}
+
+    def test_run_from_the_link_directory_it_is_still_refused(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Neither root contains the target when the run starts beside the link."""
+        repo = tmp_path / "repo"
+        _write(repo / "shared" / "x.yml", PRIVILEGED)
+        (repo / "app").mkdir()
+        (repo / "app" / "compose.yml").symlink_to(Path("..", "shared", "x.yml"))
+        code, _, err = _run([], repo / "app", monkeypatch, capsys)
+        assert code == 2
+        assert "Run compose-lint from a directory that contains the target" in err
+
+    def test_a_chain_that_leaves_the_run_directory_is_refused(
+        self,
+        outside: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """The first hop stays in the checkout; the final target does not."""
+        repo = tmp_path / "repo"
+        (repo / "hop").mkdir(parents=True)
+        (repo / "hop" / "link.yml").symlink_to(outside / "stack.yml")
+        (repo / "app").mkdir()
+        (repo / "app" / "compose.yml").symlink_to(Path("..", "hop", "link.yml"))
+        code, out, err = _run(
+            ["--format", "json", "--", "app/compose.yml"], repo, monkeypatch, capsys
+        )
+        assert code == 2
+        assert MARKER not in out + err
+        assert ("coverage_gap", "app/compose.yml") in _kinds(json.loads(out))
+
+    def test_the_targets_references_resolve_beside_the_link(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Compose takes the project directory from the path as given, so the
+        linked file's `env_file:` is read from the link's directory, not the
+        target's (measured with Compose 5.5.0)."""
+        repo = tmp_path / "repo"
+        _write(
+            repo / "shared" / "x.yml",
+            "services:\n  web:\n    image: nginx:1.27\n    env_file: vars.env\n",
+        )
+        _write(repo / "shared" / "vars.env", "SHARED_SIDE_PASSWORD=placeholder-1\n")
+        _write(repo / "app" / "vars.env", "APP_SIDE_PASSWORD=placeholder-2\n")
+        (repo / "app" / "compose.yml").symlink_to(Path("..", "shared", "x.yml"))
+        _, out, _ = _run(
+            ["--format", "json", "--", "app/compose.yml"], repo, monkeypatch, capsys
+        )
+        messages = " ".join(f["message"] for f in json.loads(out)["findings"])
+        assert "APP_SIDE_PASSWORD" in messages
+        assert "SHARED_SIDE_PASSWORD" not in messages

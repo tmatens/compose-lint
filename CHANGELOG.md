@@ -126,14 +126,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   notifications. It is now refused with exit 2. Config parse errors also no
   longer quote the line PyYAML failed on, matching the Compose loader since
   0.25.0. `--config` is read as given. See GHSA-88f4-frh5-gmcr.
-- **A Compose file that is a symlink out of its own directory is not
-  followed.** A discovered `compose.yml`, a sibling `compose.override.yml`,
-  and a Compose file named on the command line (the Action's default list,
-  `pattern:`, `files:` and pre-commit all pass paths the checkout chose),
-  committed as a link to a file elsewhere on the machine, were read and
-  merged, so a Compose-shaped target's values reached findings. Each is now
-  a coverage gap: exit 2, and `--allow-partial-coverage` accepts it. A link
-  that stays in its directory, and a plain path, are read as before.
+- **A Compose file that links out of the checkout is not followed.** A
+  discovered `compose.yml`, a sibling `compose.override.yml`, and a Compose
+  file named on the command line (the Action's default list, `pattern:`,
+  `files:` and pre-commit all pass paths the checkout chose), committed as a
+  link to a file elsewhere on the machine, were read and merged, so a
+  Compose-shaped target's values reached findings. A link is now followed
+  only while its target stays inside the directory the run started in (the
+  checkout, in CI) or inside the link's own directory; a target outside both
+  is a coverage gap, exit 2, which `--allow-partial-coverage` accepts when
+  another file is left to grade. A shared file symlinked into a monorepo's
+  service directories is still graded from the repository root, and a plain
+  path is read as before.
   No advisory: since 0.25.0 only values from a target that is itself a
   Compose file reached output; releases before that are covered by
   GHSA-whr6-fgpq-fpv9.
