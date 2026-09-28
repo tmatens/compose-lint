@@ -203,10 +203,17 @@ runs:
           # -name takes a literal glob; we never eval the pattern as shell.
           # -print0 keeps paths intact through newlines and spaces, which the
           # previous `tr '\n' ' '` join destroyed.
+          # find names an unreadable directory in its error message, and this
+          # step runs outside the lint step's stop-commands window, so a
+          # directory name could read as a workflow command. The walk is
+          # bracketed the same way, with a token of its own.
+          FIND_TOKEN="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
+          echo "::stop-commands::${FIND_TOKEN}"
           while IFS= read -r -d '' f; do
             printf '%s\0' "$f" >> "$LIST_FILE"
             COUNT=$((COUNT + 1))
           done < <(find . -path "./.git" -prune -o -name "$CL_PATTERN" -print0)
+          echo "::${FIND_TOKEN}::"
         else
           # Default: common Compose file names in repo root
           for f in docker-compose.yml docker-compose.yaml compose.yml compose.yaml; do

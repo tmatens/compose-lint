@@ -157,7 +157,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the resolved directory, which a committed symlink can make a pull
   request's own directory name, outside the `stop-commands` window. Every
   route is now escaped, JSON and SARIF stay byte-for-byte equivalent data,
-  and the Action names the `sarif-file:` input as written. See
+  and the Action names the `sarif-file:` input as written. As hardening,
+  the Action's `pattern:` discovery, whose `find` errors name directories,
+  now runs inside a `stop-commands` window of its own. See
   GHSA-r7j4-crjv-h467.
 
 ## [0.31.0] - 2026-09-27

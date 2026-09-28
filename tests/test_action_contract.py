@@ -905,3 +905,30 @@ def test_a_sarif_directory_failure_prints_no_checkout_path(
     assert "sarif-file directory could not be created: out/reports/x.sarif" in log
     assert forged(log, _FORGED) == []
     assert _FORGED not in log
+
+
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root reads a mode-000 directory, so find prints no error",
+)
+def test_a_find_error_under_pattern_is_not_a_command(ws: Path, outputs: Path) -> None:
+    """Discovery runs outside the lint step's window, and find quotes an
+    unreadable directory's name in its error."""
+    (ws / "compose.yml").write_text(_INSECURE, encoding="utf-8")
+    locked = ws / f"##[warning]{_FORGED}"
+    locked.mkdir()
+    locked.chmod(0)
+    try:
+        rc, log, _ = _run_step(
+            "Find Compose files",
+            {"CL_FILES": "", "CL_PATTERN": "compose.yml"},
+            ws,
+            outputs,
+            one_log=True,
+        )
+    finally:
+        locked.chmod(0o755)
+    assert rc == 0
+    assert _FORGED in log
+    assert forged(log, _FORGED) == []
+    assert _outputs(outputs)["count"] == "1"
