@@ -15,11 +15,11 @@ import tempfile
 import traceback
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 from compose_lint import __version__
 from compose_lint._env_file import ENV_FILENAME
-from compose_lint._output import emit, emit_block
+from compose_lint._output import defuse_json, emit, emit_block, sanitize
 from compose_lint._selection import Selection, plan_documents
 from compose_lint._service_env import Unread, describe_unread, resolve_env_files
 from compose_lint.config import (
@@ -92,6 +92,8 @@ def _format_type(value: str) -> str:
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
+
+    from _typeshed import SupportsWrite
 
     from compose_lint._merge import Merged
 
@@ -509,9 +511,41 @@ def _add_init_subparser(
     )
 
 
+class _Parser(argparse.ArgumentParser):
+    """``argparse`` with its own output routed through the sanitizer.
+
+    An argument the parser rejects is echoed in its error (``unrecognized
+    arguments: …``), and a path from the repository reaches argv whenever a
+    harness appends file names without a ``--`` first. argparse writes that
+    straight to stderr, the one print site that bypassed :func:`emit`, so a
+    directory named ``--##[warning]…`` issued a workflow command. Subparsers
+    inherit the class, so every level is covered.
+    """
+
+    def print_usage(self, file: SupportsWrite[str] | None = None) -> None:
+        self._emit(self.format_usage(), file)
+
+    def print_help(self, file: SupportsWrite[str] | None = None) -> None:
+        self._emit(self.format_help(), file)
+
+    def exit(self, status: int = 0, message: str | None = None) -> NoReturn:
+        if message:
+            emit_block(message)
+        sys.exit(status)
+
+    @staticmethod
+    def _emit(text: str, file: SupportsWrite[str] | None) -> None:
+        # argparse's own default: help and usage go to stdout unless the caller
+        # (an error) asked for stderr.
+        if file is sys.stderr:
+            emit_block(text)
+        else:
+            (sys.stdout if file is None else file).write(sanitize(text))
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the top-level argument parser and its subcommands."""
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog="compose-lint",
         description="A security-focused linter for Docker Compose files.",
     )
@@ -520,7 +554,12 @@ def _build_parser() -> argparse.ArgumentParser:
         action="version",
         version=f"%(prog)s {__version__}",
     )
-    subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
+    # Typed as the base class the helpers take; the parsers it builds are
+    # `_Parser`s, because a subparser inherits its parent's class.
+    subparsers = cast(
+        "argparse._SubParsersAction[argparse.ArgumentParser]",
+        parser.add_subparsers(dest="command", metavar="COMMAND"),
+    )
     _add_check_subparser(subparsers)
     _add_fix_subparser(subparsers)
     _add_init_subparser(subparsers)
@@ -913,9 +952,9 @@ def _exit_2_with_envelope(
     # the empty path into the working directory.
     failure.append(Diagnostic("", message, DiagnosticKind.RUN))
     if output_format == "json":
-        _stdout_print(json.dumps(build_json_log([], failure), indent=2))
+        _stdout_print(defuse_json(json.dumps(build_json_log([], failure), indent=2)))
     elif output_format == "sarif":
-        _stdout_print(json.dumps(build_sarif_log([], failure), indent=2))
+        _stdout_print(defuse_json(json.dumps(build_sarif_log([], failure), indent=2)))
     sys.exit(2)
 
 
@@ -1234,7 +1273,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         # reject. The formatter already coerces `service` to str, so this guards
         # any future numeric field; the same applies to the SARIF dump below.
         json_log = build_json_log(all_json, run_errors, coverage_warnings)
-        _stdout_print(json.dumps(json_log, indent=2, allow_nan=False))
+        _stdout_print(defuse_json(json.dumps(json_log, indent=2, allow_nan=False)))
     elif args.output_format == "sarif":
         # The document reports its own truncation (one notification, owned by
         # the formatter that truncates); this side only says so on stderr. It
@@ -1250,7 +1289,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             severity_overrides=severity_overrides,
             warnings=coverage_warnings,
         )
-        _stdout_print(json.dumps(sarif_log, indent=2, allow_nan=False))
+        _stdout_print(defuse_json(json.dumps(sarif_log, indent=2, allow_nan=False)))
 
     # A failing run with no config loaded is the shape of a config that was
     # never found. This is the moment the user asks "why is this failing?",

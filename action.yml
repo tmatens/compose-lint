@@ -349,8 +349,14 @@ runs:
               exit 2
               ;;
           esac
-          mkdir -p "$SARIF_DIR" || {
-            echo "::error::sarif-file directory could not be created: $SARIF_DIR"
+          # Outside the stop-commands windows, so nothing here may print a
+          # path the checkout chose. `$SARIF_DIR` is resolved through the
+          # workspace, and a committed symlink puts the pull request's own
+          # directory name in it, newlines and `::` included. The message names
+          # the input as the workflow author wrote it, and mkdir's own error,
+          # which quotes the resolved path, is discarded.
+          mkdir -p "$SARIF_DIR" 2>/dev/null || {
+            echo "::error::sarif-file directory could not be created: $CL_SARIF_FILE"
             exit 2
           }
 

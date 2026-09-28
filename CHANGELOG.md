@@ -135,6 +135,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to Code Scanning. Rules still grade the resolved value; findings now quote
   the reference in its place, for any value of eight or more characters, in
   text, JSON, SARIF and fix guidance. See GHSA-jf3h-8jvx-vcrg.
+- **No output path lets Compose file text issue a CI command.** The 0.31.0
+  fix left four routes. A no-break space, an ideographic space or any other
+  Unicode white space before a line-leading `::` got past the sanitizer,
+  which allowed only space and tab, while the runner strips them all.
+  `--format json` and `--format sarif` printed to the log were not escaped
+  at all. argparse echoed a rejected argument, such as a repository path
+  passed without `--`, raw to stderr. And Azure Pipelines' `##vso[` was not
+  escaped anywhere. In the Action, a failed `mkdir` for `sarif-file:` printed
+  the resolved directory, which a committed symlink can make a pull
+  request's own directory name, outside the `stop-commands` window. Every
+  route is now escaped, JSON and SARIF stay byte-for-byte equivalent data,
+  and the Action names the `sarif-file:` input as written. See
+  GHSA-r7j4-crjv-h467.
 
 ## [0.31.0] - 2026-09-27
 

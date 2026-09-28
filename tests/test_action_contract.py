@@ -863,3 +863,45 @@ def test_the_real_run_issues_no_command_from_the_file(ws: Path, outputs: Path) -
     _rc, log, _ = _run_step("Run compose-lint", base, ws, outputs, one_log=True)
     assert _FORGED in log
     assert forged(log, _FORGED) == []
+
+
+# --- GHSA-r7j4-crjv-h467: lines outside the stop-commands windows ----------
+
+
+def test_a_sarif_directory_failure_prints_no_checkout_path(
+    ws: Path, outputs: Path
+) -> None:
+    """The SARIF block runs between the two windows. A committed symlink puts a
+    pull request's directory name, newline and all, into the resolved path it
+    used to print when `mkdir -p` failed."""
+    (ws / "docker-compose.yml").write_text(_INSECURE, encoding="utf-8")
+    _discover(ws, outputs)
+    listed = _outputs(outputs)["list-file"]
+    evil = ws / f"d\n::warning::{_FORGED}\n##[warning]{_FORGED}"
+    evil.mkdir()
+    (evil / "reports").write_text("a file where a directory is expected\n")
+    (ws / "out").symlink_to(evil.name)
+
+    rc, log, _ = _run_step(
+        "Run compose-lint",
+        {
+            "CL_CONFIG": "",
+            "CL_FAIL_ON": "high",
+            "CL_SKIP_SUPPRESSED": "false",
+            "CL_ALLOW_PARTIAL_COVERAGE": "false",
+            "CL_STRICT_CONFIG": "false",
+            "CL_QUIET": "false",
+            "CL_VERBOSE": "false",
+            "CL_SARIF_FILE": "out/reports/x.sarif",
+            "CL_ALLOW_NO_FILES": "false",
+            "CL_COUNT": "1",
+            "CL_LIST_FILE": listed,
+        },
+        ws,
+        outputs,
+        one_log=True,
+    )
+    assert rc == 2
+    assert "sarif-file directory could not be created: out/reports/x.sarif" in log
+    assert forged(log, _FORGED) == []
+    assert _FORGED not in log
