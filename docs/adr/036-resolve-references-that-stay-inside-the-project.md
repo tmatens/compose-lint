@@ -216,3 +216,18 @@ decisions turn on resolution semantics a spec reading got wrong:
   step that proves the plumbing); then `include:`, including include-only
   roots, the object form, own-directory interpolation, the recursion caps and
   decision 6's fixture result.
+
+*Amendment (0.32.0): the root for a linked Compose file.* 0.32.0 refuses a
+Compose file the run picks up (discovered, named on the command line, or the
+sibling override) when it is a symlink whose target leaves the checkout,
+because a pull request could otherwise make the linter open a Compose-shaped
+file elsewhere on the runner. That file's root is the directory the run
+started in, which in CI is the checkout, plus the link's own directory; it is
+not this ADR's root. This ADR's root is for the *references* a document makes,
+measured from the document that makes them. Measuring the primary file against
+its own link directory would be circular, and it refused the standard
+monorepo idiom (`services/foo/compose.yml -> ../../shared/compose.yml`) with
+nothing left to grade and no waiver that could help, although that target is
+content the change under review can already see. Compose follows the link and
+takes the project directory from the path as given, so the followed file's
+relative references resolve beside the link, which is what compose-lint does.

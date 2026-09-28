@@ -83,16 +83,20 @@ COMPOSE_FILE_KEYS = ("COMPOSE_FILE", "COMPOSE_PATH_SEPARATOR")
 # because an absolute entry is refused by `_resolve_entry` either way.
 DEFAULT_PATH_SEPARATOR = ":"
 
-# The gaps for a file the run found rather than was given, that resolves
-# outside the project. Neither names where it resolves to: that path is the
-# outside file, and the report is not the place to learn it.
+# The gaps for a Compose file that is a link resolving outside both its own
+# directory and the directory the run started in. Neither names where it
+# resolves to: that path is the outside file, and the report is not the place
+# to learn it.
 _OUTSIDE_NOT_LINTED = (
-    "not linted because it resolves outside the project directory (refused "
-    "rather than read), so the services Compose would load from it were not graded."
+    "not linted because it links to a file outside both its own directory and "
+    "the directory compose-lint was run from (refused rather than read), so the "
+    "services Compose would load from it were not graded. Run compose-lint from "
+    "a directory that contains the target."
 )
 _OUTSIDE_NOT_MERGED = (
-    "not merged because it resolves outside the project directory (refused "
-    "rather than read), so what Compose would merge from it was not graded."
+    "not merged because it links to a file outside both its own directory and "
+    "the directory compose-lint was run from (refused rather than read), so "
+    "what Compose would merge from it was not graded."
 )
 
 
@@ -292,7 +296,7 @@ def _pair_with_overrides(
 
 
 def _links_outside(path: Path) -> bool:
-    """Whether ``path`` is a link to a file outside its own directory.
+    """Whether ``path`` is a link to a file outside the run's reach.
 
     A primary Compose file and its sibling override arrive as paths, but a path
     is not always something a person chose. Bare discovery finds the file in
@@ -304,12 +308,23 @@ def _links_outside(path: Path) -> bool:
 
     So the test is on the link, not on who handed the path over. A plain path
     resolves to itself and is read as given, wherever it is. A link is followed
-    only while its target stays in the directory the link sits in — the project
-    directory every reference that file makes is measured against. Symlinked
+    while its target stays inside the directory the run started in, which in
+    CI is the checkout (the Action runs in the workspace, pre-commit at the
+    repository root): a target there is content the change under review can
+    already see, so reading it discloses nothing, and a shared file symlinked
+    into a monorepo's service directories is graded as Compose deploys it. A
+    target inside the link's own directory is followed too, so a run started
+    from a subdirectory keeps what it had. Anything else is refused. Symlinked
     directories *above* the file resolve the same on both sides, so a checkout
     under a linked home directory is unaffected.
+
+    This root is for the file the run picks up. The references a document makes
+    (``include:``, ``extends:``, ``env_file:``, ``COMPOSE_FILE``) keep their own
+    root, the directory of the file that names them (ADR-036).
     """
-    return path.is_file() and escapes_project(path, path.parent)
+    if not path.is_file():
+        return False
+    return escapes_project(path, path.parent) and escapes_project(path, Path.cwd())
 
 
 def _with_override(
