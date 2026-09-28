@@ -807,6 +807,9 @@ _CHECK_GAP_REMEDY = (
 _CHECK_GAP_ACCEPTED_REMEDY = (
     "Lint the merged output (docker compose config) to cover the gap."
 )
+_NOTHING_LEFT_REMEDY = (
+    "Name the file it links to, rather than the link, to lint it as given."
+)
 _FIX_GAP_REMEDY = (
     "What was not seen was not fixed. Lint the merged output "
     "(docker compose config) to cover the gap."
@@ -861,7 +864,22 @@ def _report_coverage_gaps(
     ]
 
 
-def _exit_2_with_envelope(args: argparse.Namespace, message: str) -> NoReturn:
+def _nothing_to_lint(selection: Selection) -> str:
+    """Why a run has no document to grade: none found, or all of them refused."""
+    if selection.gaps:
+        return "no Compose file was left to lint"
+    return (
+        "no Compose files found. Searched for: compose.yml, compose.yaml, "
+        "docker-compose.yml, docker-compose.yaml"
+    )
+
+
+def _exit_2_with_envelope(
+    args: argparse.Namespace,
+    message: str,
+    *,
+    gaps: tuple[tuple[str, str], ...] = (),
+) -> NoReturn:
     """Report a pre-scan failure on the machine channel too, then exit 2.
 
     These two branches exit before any formatter runs, so `--format json`
@@ -873,6 +891,17 @@ def _exit_2_with_envelope(args: argparse.Namespace, message: str) -> NoReturn:
     Run-level metadata a consumer can read is what the envelope exists for
     (ADR-015).
     """
+    # Files the run found and refused (one resolving outside the project) are
+    # the reason nothing was left to lint, so they are said first and ride the
+    # envelope with the kind a consumer filters on. There is nothing to grade,
+    # so `--allow-partial-coverage` has nothing to accept: this is exit 2.
+    failure = [
+        diagnostic
+        for env_path, gap in gaps
+        for diagnostic in _report_coverage_gaps(
+            env_path, (gap,), fatal=True, remedy=_NOTHING_LEFT_REMEDY
+        )
+    ]
     emit(f"Error: {message}")
     # `fix` has no --format, so its namespace has no output_format: it reports
     # on stderr only, and its exit 2 must come from here and not from an
@@ -882,7 +911,7 @@ def _exit_2_with_envelope(args: argparse.Namespace, message: str) -> NoReturn:
     # Run-level: there is no file to name, and `""` is the documented way of
     # saying so (ADR-015). SARIF omits `locations` for it rather than turning
     # the empty path into the working directory.
-    failure = [Diagnostic("", message, DiagnosticKind.RUN)]
+    failure.append(Diagnostic("", message, DiagnosticKind.RUN))
     if output_format == "json":
         _stdout_print(json.dumps(build_json_log([], failure), indent=2))
     elif output_format == "sarif":
@@ -934,12 +963,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
 
     selection = _plan(args)
     if not selection.groups:
-        _exit_2_with_envelope(
-            args,
-            "no Compose files found. Searched for: "
-            "compose.yml, compose.yaml, "
-            "docker-compose.yml, docker-compose.yaml",
-        )
+        _exit_2_with_envelope(args, _nothing_to_lint(selection), gaps=selection.gaps)
     args.files = [group.primary for group in selection.groups]
     overlay_of = {
         group.primary: list(group.overlays)
@@ -1401,12 +1425,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
 
     selection = _plan(args)
     if not selection.groups:
-        _exit_2_with_envelope(
-            args,
-            "no Compose files found. Searched for: "
-            "compose.yml, compose.yaml, "
-            "docker-compose.yml, docker-compose.yaml",
-        )
+        _exit_2_with_envelope(args, _nothing_to_lint(selection), gaps=selection.gaps)
     for env_path, message in selection.gaps:
         _report_coverage_gaps(env_path, (message,), fatal=False, remedy=_FIX_GAP_REMEDY)
     args.files = [group.primary for group in selection.groups]
@@ -1721,6 +1740,10 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
     # group; its primary may differ from FILE when COMPOSE_FILE orders the
     # project differently, in which case the note above says so.
     selection = _plan(args, [args.file])
+    if not selection.groups:
+        # FILE was refused (a link leaving its own directory), so there is
+        # nothing to baseline; say why, and exit as `check` would.
+        _exit_2_with_envelope(args, f"{args.file} was not linted", gaps=selection.gaps)
     (group,) = selection.groups
     for env_path, message in selection.gaps:
         _report_coverage_gaps(

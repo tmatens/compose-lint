@@ -106,6 +106,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still built in full before being discarded, which took seconds; a value
   that cannot fit is now left as written without being built.
 
+### Security
+
+- **A `.compose-lint.yml` committed as a symlink to a file outside the
+  project is no longer read.** The policy file discovered in the working
+  directory was followed wherever it pointed, and a parse error quoted part
+  of the target's line into stderr, JSON `errors[]` and the SARIF
+  notifications. It is now refused with exit 2. Config parse errors also no
+  longer quote the line PyYAML failed on, matching the Compose loader since
+  0.25.0. `--config` is read as given. See GHSA-88f4-frh5-gmcr.
+- **A Compose file that is a symlink out of its own directory is not
+  followed.** A discovered `compose.yml`, a sibling `compose.override.yml`,
+  and a Compose file named on the command line (the Action's default list,
+  `pattern:`, `files:` and pre-commit all pass paths the checkout chose),
+  committed as a link to a file elsewhere on the machine, were read and
+  merged, so a Compose-shaped target's values reached findings. Each is now
+  a coverage gap: exit 2, and `--allow-partial-coverage` accepts it. A link
+  that stays in its directory, and a plain path, are read as before.
+  No advisory: since 0.25.0 only values from a target that is itself a
+  Compose file reached output; releases before that are covered by
+  GHSA-whr6-fgpq-fpv9.
+
 ## [0.31.0] - 2026-09-27
 
 ### Added

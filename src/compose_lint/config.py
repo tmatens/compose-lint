@@ -10,6 +10,7 @@ import yaml
 from compose_lint._output import emit
 from compose_lint._safe_read import read_text_bounded
 from compose_lint._scalar import as_scalar_text
+from compose_lint._yaml_error import describe_yaml_error
 from compose_lint.models import Severity
 
 if TYPE_CHECKING:
@@ -279,7 +280,15 @@ def _read_raw_config(
         # A committed symlink to a FIFO or /dev/zero passes `.exists()` and
         # every permission check; reading one hangs the job or allocates until
         # the runner dies. Same bounded read the Compose loader uses.
-        content = read_text_bounded(config_path)
+        #
+        # A discovered config is part of the checkout, not something the user
+        # pointed at, so it gets the containment every other file the project
+        # names gets: a `.compose-lint.yml` committed as a symlink to a file
+        # elsewhere on the runner is refused rather than read. `--config` is a
+        # path the user typed and is read as given.
+        content = read_text_bounded(
+            config_path, within=None if path is not None else Path.cwd()
+        )
     except OSError as e:
         # UnsafeFileError is an OSError, so one clause covers both the refusal
         # and an ordinary read failure.
@@ -295,7 +304,12 @@ def _read_raw_config(
     try:
         data = yaml.load(content, Loader=_StrictLoader)  # noqa: S506  # nosec B506
     except yaml.YAMLError as e:
-        raise ConfigError(f"Invalid YAML in config file: {e}") from e
+        # Without the source line PyYAML quotes under its caret: the file may
+        # not be the one it appears to be, and the message reaches JSON, SARIF
+        # and the job log.
+        raise ConfigError(
+            f"Invalid YAML in config file: {describe_yaml_error(e)}"
+        ) from e
     except RecursionError as e:
         # PyYAML's composer recurses with no depth limit, and RecursionError is
         # a RuntimeError rather than a YAMLError, so it walks straight past the
