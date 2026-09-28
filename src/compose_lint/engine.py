@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
@@ -51,6 +52,7 @@ def run_rules(
     on_error: Callable[[str, str, Exception], None] | None = None,
     env_files: Mapping[str, ServiceEnvFiles] | None = None,
     config_path: str | None = None,
+    env_values: Mapping[str, Mapping[str, str]] | None = None,
 ) -> list[Finding]:
     """Run all registered rules against the parsed Compose data.
 
@@ -81,6 +83,15 @@ def run_rules(
 
     More than :data:`~compose_lint._limits.MAX_FINDINGS` findings raises
     :class:`FindingLimitError` carrying the ones graded so far.
+
+    ``env_values`` is what a ``.env`` substituted into the document: for each
+    substituted value, the names and values it used (``Loaded.env_values``).
+    Rules grade the substituted value, which is what deploys, but a finding
+    quotes ``${NAME}`` in its place. Some CI jobs write secrets into that
+    ``.env``, and a message is copied into the job log, JSON and the SARIF
+    uploaded to Code Scanning; ``image: "${DB_PASSWORD}"`` quoted the password
+    in CL-0004's message and fix. The reference says as much as the value
+    would, and it is what the file shows.
     """
     disabled = disabled_rules or {}
     overrides = severity_overrides or {}
@@ -154,8 +165,111 @@ def run_rules(
                 findings.sort(key=lambda f: (f.line is None, f.line or 0))
                 raise FindingLimitError(findings)
 
+    if env_values:
+        findings = _quote_references(findings, services, env_values)
     findings.sort(key=lambda f: (f.line is None, f.line or 0))
     return findings
+
+
+# Nodes one service's walk may visit before its references are taken from the
+# whole document instead. Aliases make a service a DAG that can be far larger
+# than the file; the fallback only ever quotes more references, never fewer.
+_MAX_WALK = 100_000
+
+
+def _quote_references(
+    findings: list[Finding],
+    services: Mapping[Any, Any],
+    env_values: Mapping[str, Mapping[str, str]],
+) -> list[Finding]:
+    """Replace each ``.env`` value a service used with its ``${NAME}``.
+
+    Scoped to the values that reached *that* service's own substituted fields,
+    so a literal ``redis:latest`` in one service is not rewritten because
+    another service's ``${TAG}`` supplied ``latest``. Within a service a value
+    is replaced wherever it appears, from :data:`_QUOTED_FROM` characters up.
+    """
+    patterns: dict[str, tuple[re.Pattern[str], dict[str, str]] | None] = {}
+    quoted: list[Finding] = []
+    for finding in findings:
+        if finding.service not in patterns:
+            patterns[finding.service] = _service_pattern(
+                services.get(finding.service), env_values
+            )
+        compiled = patterns[finding.service]
+        if compiled is None:
+            quoted.append(finding)
+            continue
+        pattern, names = compiled
+
+        def sub(
+            text: str, _p: re.Pattern[str] = pattern, _n: dict[str, str] = names
+        ) -> str:
+            return _p.sub(lambda m: "${" + _n[m.group(0)] + "}", text)
+
+        quoted.append(
+            replace(
+                finding,
+                message=sub(finding.message),
+                fix=sub(finding.fix) if finding.fix else finding.fix,
+            )
+        )
+    return quoted
+
+
+def _service_pattern(
+    config: Any, env_values: Mapping[str, Mapping[str, str]]
+) -> tuple[re.Pattern[str], dict[str, str]] | None:
+    """A regex matching every ``.env`` value ``config`` used, and its names."""
+    used: dict[str, str] = {}
+    seen: set[int] = set()
+    stack = [config]
+    visited = 0
+    while stack:
+        node = stack.pop()
+        visited += 1
+        if visited > _MAX_WALK:
+            used = {}
+            for leaf_names in env_values.values():
+                used.update(leaf_names)
+            break
+        if isinstance(node, str):
+            used.update(env_values.get(node, {}))
+        elif isinstance(node, (dict, list)):
+            if id(node) in seen:
+                continue
+            seen.add(id(node))
+            stack.extend(node.values() if isinstance(node, dict) else node)
+    if not used:
+        return None
+    names: dict[str, str] = {}
+    for name, value in used.items():
+        # The whole value, and each separated part of it: a rule quotes pieces
+        # of what it parsed (CL-0004's fix names the image without its tag), so
+        # a secret inside the value would otherwise leave in a fragment.
+        for piece in (value, *_SEPARATORS.split(value)):
+            if len(piece) >= _QUOTED_FROM:
+                names.setdefault(piece, name)
+    if not names:
+        return None
+    alternatives = "|".join(
+        re.escape(value) for value in sorted(names, key=len, reverse=True)
+    )
+    return re.compile(alternatives), names
+
+
+# The shortest value replaced by its reference. A secret is often glued to the
+# text around it (`image: "app${TOKEN}"`), so a value is matched anywhere, not
+# as a whole word, and that is what makes a floor necessary: short values are
+# configuration tokens (`true`, `host`, `latest`, `1000`) that the rules' own
+# guidance also writes, and replacing them there turned `no-new-privileges:true`
+# into `no-new-privileges:${PRIV}`. A value a CI job writes as a secret is
+# longer than this.
+_QUOTED_FROM = 8
+
+# What rules split a value on before quoting part of it: image references,
+# ports, mounts, `key=value` options, lists.
+_SEPARATORS = re.compile(r"[:/@=,;\s]+")
 
 
 def filter_findings(
