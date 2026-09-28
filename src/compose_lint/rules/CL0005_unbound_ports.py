@@ -7,6 +7,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from compose_lint._lines import split_lines
+from compose_lint._output import inline
 from compose_lint._scalar import as_scalar_text
 from compose_lint._yaml_edit import (
     is_anchored_or_merged,
@@ -299,7 +300,7 @@ class UnboundPortsRule(BaseRule):
             # field) while pinning the bind address to localhost.
             fix = (
                 f"Bind to localhost, keeping an ephemeral host port: "
-                f"127.0.0.1::{port_str}\n"
+                f"127.0.0.1::{inline(port_str)}\n"
                 "If public access is needed, use a reverse proxy with TLS."
             )
         else:
@@ -309,7 +310,7 @@ class UnboundPortsRule(BaseRule):
                 "to the public internet."
             )
             fix = (
-                f"Bind to localhost: 127.0.0.1:{bind or port_str}\n"
+                f"Bind to localhost: 127.0.0.1:{inline(bind or port_str)}\n"
                 "If public access is needed, use a reverse proxy with TLS."
             )
         return Finding(

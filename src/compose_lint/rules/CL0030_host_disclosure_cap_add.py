@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._output import inline
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 from compose_lint.rules._caps import REFERENCES, iter_cap_add
@@ -66,7 +67,7 @@ class HostDisclosureCapAddRule(BaseRule):
                 message=(f"Service adds {as_written}: {HOST_DISCLOSURE_CAPS[bare]}."),
                 line=line,
                 fix=(
-                    f"Remove {as_written} from cap_add. A container almost "
+                    f"Remove {inline(as_written)} from cap_add. A container almost "
                     "never needs the host's kernel log: read it on the host "
                     "with journalctl, or ship it with a log collector that "
                     "runs there. A workload that must see kernel messages "

@@ -142,6 +142,18 @@ def sanitize_line(text: str) -> str:
     return _defuse_commands(_UNSAFE_LINE_CHARS.sub(_escape, text))
 
 
+def inline(value: object) -> str:
+    """A value from a Compose file, quoted inside rule guidance on one line.
+
+    Guidance keeps its own line breaks, and the text report indents them. A
+    break carried in with a quoted value would start a line whose whole text
+    the file chose, which a problem matcher registered earlier in a CI job
+    reads as one of its own lines. The break is shown as the same visible
+    escape the sanitizer gives other control characters.
+    """
+    return str(value).replace("\n", "\\u000a")
+
+
 # Continuation lines are indented so nothing after an embedded newline can sit
 # in the report's own left margin.
 _CONTINUATION_INDENT = "  "

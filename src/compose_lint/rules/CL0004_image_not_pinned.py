@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._output import inline
 from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
@@ -72,7 +73,7 @@ class ImageNotPinnedRule(BaseRule):
                     "Pin to a specific version for reproducible builds."
                 ),
                 line=lines.get(f"services.{service_name}.image"),
-                fix=f"Pin to a specific version, e.g.: image: {name}:<version>",
+                fix=f"Pin to a specific version, e.g.: image: {inline(name)}:<version>",
                 references=[OWASP_REF, CIS_REF],
             )
             return
@@ -87,6 +88,6 @@ class ImageNotPinnedRule(BaseRule):
                     "Pin to a specific version for reproducible builds."
                 ),
                 line=lines.get(f"services.{service_name}.image"),
-                fix=f"Pin to a specific version, e.g.: image: {name}:<version>",
+                fix=f"Pin to a specific version, e.g.: image: {inline(name)}:<version>",
                 references=[OWASP_REF, CIS_REF],
             )

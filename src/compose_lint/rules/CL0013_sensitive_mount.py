@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._output import inline
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 from compose_lint.rules._mounts import (
@@ -257,7 +258,7 @@ class SensitiveMountRule(BaseRule):
                     continue  # writable root-equivalent — CL-0025's
 
             remedy = _SCOPED_ALTERNATIVES.get(normalized) or (
-                f"Remove the bind mount for {mount.host_path}. If the "
+                f"Remove the bind mount for {inline(mount.host_path)}. If the "
                 "container needs specific files, copy them into the image at "
                 "build time or use a named volume with only the required data."
             )

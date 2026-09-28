@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A value quoted in fix guidance stays on one line.** A line break inside
+  a quoted value, such as an `image:` written with `\n`, started a line of
+  its own in the text report. A problem matcher registered earlier in a CI
+  job (`actions/setup-python` adds one) keeps reading output while workflow
+  commands are stopped, so two such lines could become an annotation. The
+  break is now shown as `\u000a`. No advisory: a problem matcher is a
+  parser the workflow set up, not a command compose-lint's output issues,
+  and the verdict is unaffected (see `docs/github-action.md`).
+
 - **A `.env` that could not be read fails the run.** A sibling `.env` that is
   not UTF-8, is over the 256 KiB read cap, or resolves outside the project,
   and a `COMPOSE_FILE` list refused for naming a file outside the project or
@@ -138,7 +147,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **No output path lets Compose file text issue a CI command.** The 0.31.0
   fix left four routes. A no-break space, an ideographic space or any other
   Unicode white space before a line-leading `::` got past the sanitizer,
-  which allowed only space and tab, while the runner strips them all.
+  which allowed only space and tab, while the runner strips them all. That
+  reached quoted values and also file names, which start the report's file
+  heading and summary lines, so a repository directory's name was enough.
   `--format json` and `--format sarif` printed to the log were not escaped
   at all. argparse echoed a rejected argument, such as a repository path
   passed without `--`, raw to stderr. And Azure Pipelines' `##vso[` was not

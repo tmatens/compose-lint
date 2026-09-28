@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._output import inline
 from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
@@ -101,6 +102,9 @@ class HostNamespaceRule(BaseRule):
                     evidence=key,
                     message=f"Service shares the host's {desc}",
                     line=lines.get(f"services.{service_name}.{key}"),
-                    fix=f"Remove '{key}: {value}' to restore namespace isolation.",
+                    fix=(
+                        f"Remove '{inline(key)}: {inline(value)}' to restore "
+                        "namespace isolation."
+                    ),
                     references=[OWASP_REF, cis_ref],
                 )

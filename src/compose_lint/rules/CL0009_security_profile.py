@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from compose_lint._lines import split_lines
+from compose_lint._output import inline
 from compose_lint._yaml_edit import (
     DISABLED_SECURITY_PROFILES,
     block_span,
@@ -136,8 +137,8 @@ class SecurityProfileRule(BaseRule):
                 line=lines.get(f"services.{service_name}.security_opt[{i}]")
                 or lines.get(f"services.{service_name}.security_opt"),
                 fix=(
-                    f"Remove '{opt_str}' from security_opt. The host applies "
-                    f"a default {profile_name} policy automatically."
+                    f"Remove '{inline(opt_str)}' from security_opt. The host applies "
+                    f"a default {inline(profile_name)} policy automatically."
                 ),
                 references=[
                     OWASP_REF,

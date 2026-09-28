@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._output import inline
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 from compose_lint.rules._caps import REFERENCES, iter_cap_add
@@ -71,7 +72,7 @@ class HostReachCapAddRule(BaseRule):
                 message=(f"Service adds {as_written}: {HOST_REACH_CAPS[bare]}."),
                 line=line,
                 fix=(
-                    f"Remove {as_written} from cap_add. If the workload "
+                    f"Remove {inline(as_written)} from cap_add. If the workload "
                     "genuinely needs it — an NTP client for SYS_TIME, a "
                     "profiler for PERFMON — prefer syncing the clock on the "
                     "host and letting containers inherit it, or profiling from "
