@@ -847,10 +847,20 @@ jobs:
       # release accepts the syntax. The check they silence — that a `uses:`
       # names a pinnable ref — is carried by zizmor's unpinned-uses audit
       # below and by the repository's SHA-pinning requirement.
+      #
+      # The third `-ignore`: actionlint hard-codes GitHub's hosted runner
+      # labels and only learns a new one in a release, so every Renovate
+      # runner bump (ubuntu-26.04 first, rhysd/actionlint#682 / #683) fails
+      # here while GitHub runs the job fine. Not a per-label allowlist: that
+      # recurs on each new label and never gets pruned. The cost is losing
+      # the typo check on `runs-on:`, which GitHub reports anyway as a job
+      # that never gets a runner. Unlike the `$/` pair, this one stays even
+      # after a fixed release — the next label would break it again.
       - run: >-
           ./actionlint -color
           -ignore 'specifying action "\$/[^"]*" in invalid format because ref is missing'
           -ignore 'reusable workflow call "\$/[^"]*" at "uses" is not following the format'
+          -ignore 'label "[^"]+" is unknown\. available labels are'
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
