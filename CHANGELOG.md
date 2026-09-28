@@ -39,6 +39,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   robustness bug, and runners that lint untrusted pull requests are
   isolated and limited by whoever operates them.
 
+- **A file that is not UTF-8 no longer crashes the run.** An `include:`
+  target or a cross-file `extends:` base that is not UTF-8 raised a
+  traceback and exited 1, the findings code, with empty JSON and SARIF
+  output; it is now a coverage gap, as an unreadable target already was. A
+  `.compose-lint.yml` that is not UTF-8 is a configuration error (exit 2).
+  Any exception nothing else handles now exits 2 with the JSON or SARIF
+  envelope and a request to report it, instead of exiting 1.
+
 ## [0.31.0] - 2026-09-27
 
 ### Added

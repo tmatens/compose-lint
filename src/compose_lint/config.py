@@ -284,6 +284,13 @@ def _read_raw_config(
         # UnsafeFileError is an OSError, so one clause covers both the refusal
         # and an ordinary read failure.
         raise ConfigError(f"Cannot read config file: {e}") from e
+    except UnicodeDecodeError as e:
+        # A ValueError, so the clause above missed it and a policy file that is
+        # not UTF-8 crashed the run with a traceback and exit 1.
+        raise ConfigError(
+            f"Cannot read config file: {config_path} is not valid UTF-8 "
+            f"(byte {e.start})"
+        ) from e
 
     try:
         data = yaml.load(content, Loader=_StrictLoader)  # noqa: S506  # nosec B506
