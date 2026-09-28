@@ -1255,7 +1255,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now asks the *filesystem* — after the lexical test, at the moment of
   resolution — for both `env_file:` targets and `COMPOSE_FILE` entries.
   Symlinks themselves are still followed; only ones resolving outside the
-  project are refused, with the existing `outside-project` note.
+  project are refused, with the existing `outside-project` note. See
+  GHSA-whr6-fgpq-fpv9.
 
 - **A parse error no longer reproduces the line it failed on.** PyYAML renders
   a snippet of the document under a caret, which reached `errors[].message`,
@@ -1263,6 +1264,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   log. A syntax error on a line carrying a credential therefore republished the
   credential. The diagnosis and the line/column position are kept — they say
   what is wrong and exactly where — and only the quoted bytes are dropped.
+  See GHSA-whr6-fgpq-fpv9.
 
 ## [0.24.0] - 2026-08-24
 
