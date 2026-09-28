@@ -218,6 +218,66 @@ def test_an_argument_argparse_rejects(tmp_path: Path) -> None:
         _no_command(result.stdout + result.stderr)
 
 
+# The report's file heading and per-file summary, and fix's summary line,
+# start with the path as given, so a repository directory's name starts them.
+FILE_NAME_SPACES = ["\xa0", "\u2028", "\u3000", " "]
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Windows forbids ':' in a file name"
+)
+@pytest.mark.parametrize("space", FILE_NAME_SPACES, ids=_ids(FILE_NAME_SPACES))
+@pytest.mark.parametrize(
+    "command",
+    [[], ["--quiet"], ["fix"], ["fix", "--apply"]],
+    ids=["heading-and-summary", "quiet-summary", "fix-summary", "apply-summary"],
+)
+def test_a_file_name_at_the_start_of_a_line(
+    tmp_path: Path, space: str, command: list[str]
+) -> None:
+    directory = tmp_path / f"{space}::notice::{MARK}"
+    directory.mkdir()
+    (directory / "compose.yml").write_text(
+        "services:\n  web:\n    image: nginx:latest\n    privileged: true\n",
+        encoding="utf-8",
+    )
+    result = _run([*command, "--", f"{directory.name}/compose.yml"], tmp_path)
+    log = result.stdout + result.stderr
+    assert MARK in log
+    _no_command(log)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        [f"--x\r::notice::{MARK}/compose.yml"],
+        ["--format", f"x\r::notice::{MARK}", "compose.yml"],
+    ],
+    ids=["unrecognized-argument", "invalid-choice"],
+)
+def test_a_carriage_return_in_an_argument_argparse_echoes(
+    tmp_path: Path, argv: list[str]
+) -> None:
+    """The runner also ends a line at a lone carriage return. Captured as bytes,
+    because text mode would turn it into a newline before the check."""
+    (tmp_path / "compose.yml").write_text(
+        "services:\n  web:\n    image: nginx:1.27\n", encoding="utf-8"
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "compose_lint", *argv],
+        cwd=tmp_path,
+        capture_output=True,
+        env=cli_env(PYTHONPATH=str(REPO_ROOT / "src"), NO_COLOR="1"),
+        timeout=120,
+    )
+    assert result.returncode == 2
+    # Windows ends every line with CRLF itself; only a bare CR is the file's.
+    assert b"\r" not in (result.stdout + result.stderr).replace(b"\r\n", b"\n")
+    log = (result.stdout + result.stderr).decode("utf-8")
+    assert MARK in log
+    _no_command(log)
+
+
 def test_help_still_reaches_stdout(tmp_path: Path) -> None:
     result = _run(["check", "--help"], tmp_path)
     assert result.returncode == 0
