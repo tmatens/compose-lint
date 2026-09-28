@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **What counts as a vulnerability is written down.** `SECURITY.md`
+  now defines it as a defect that someone with less trust than you can
+  cause, that breaks one of eight security properties listed in
+  `docs/SECURITY-EXPECTATIONS.md`, and that shipped in a release. False
+  negatives, including files crafted to be missed, and resource
+  exhaustion stay ordinary bugs. Advisories are scored with CVSS 4.0 and
+  list the package, the Action and pre-commit hook, and the image
+  separately. Every `### Security` changelog entry now records
+  whether it got an advisory, and CI checks that it does.
+
 ## [0.32.0] - 2026-09-28
 
 ### Changed

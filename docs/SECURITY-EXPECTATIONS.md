@@ -30,7 +30,7 @@ pipeline, this is the page to read.
    only `fix --apply` rewrites in place, via an atomic swap that
    preserves the read, write and execute bits (setuid, setgid and sticky
    are dropped rather than handed to the new inode). It applies only mechanically unambiguous
-   edits, never touches suppressed findings, and re-parses and re-lints
+   edits, never weakens a suppressed finding, and re-parses and re-lints
    every change before writing. That guarantee covers the *edit*, not
    the *outcome*: a fix can still change how your stack behaves, and
    every such edit is labelled `⚠ behavior-changing` in the diff rather
@@ -60,6 +60,36 @@ pipeline, this is the page to read.
    against [`.github/allowed_signers`](../.github/allowed_signers). An
    attacker who pushed a malicious tag to the repo could not get it to
    ship.
+
+## Security properties
+
+The promises above are the headline. These eight properties are the
+precise version, and they define what counts as a vulnerability in
+compose-lint: a defect is a vulnerability when it breaks one of them, can
+be triggered by someone with less trust than you, and shipped in a
+release (see [.github/SECURITY.md](../.github/SECURITY.md) §"What counts
+as a vulnerability"). "Content" below means anything compose-lint reads
+from the project: Compose files, env files, `.compose-lint.yml`, and the
+names of files and directories.
+
+| | Property | Example of a break | Not a break |
+|---|---|---|---|
+| **P0** | **No execution.** Content never causes code to run. | A YAML tag that constructs a Python object. | A crash on malformed YAML. |
+| **P1** | **Read confinement.** The contents of a file outside the project never reach compose-lint's output, whatever a path says or resolves to. | A committed `.env` symlinked to `/proc/self/environ`, quoting the CI job's environment into findings (GHSA-6wcv-rj3c-mhv3). | A finding that quotes a path the Compose file itself wrote, such as a bind source. |
+| **P2** | **Output confinement.** Data never lands in an output more exposed than where it came from, and a value is not quoted where its name would do. | A secret from an uncommitted, CI-generated env file quoted into SARIF that is uploaded to Code Scanning. | A finding quoting a non-secret value written in the Compose file itself. |
+| **P3** | **Write safety.** `fix --apply` and `init` never write outside the file you asked for, and never change it beyond the fixes they report. A security setting removed or changed, or a new finding, that the reported fixes do not account for is a break whether or not a diff displayed it. | A reported fix to one service that also changes another service's security settings without reporting it. | A fix that mangles formatting or comments without touching a security setting. |
+| **P4** | **Output integrity.** Content can't issue commands to whatever consumes the output: terminals, SARIF viewers, and the CI systems the documentation or changelog names (GitHub Actions and Azure Pipelines). | A service name that the GitHub Actions runner executes as a workflow command (GHSA-6f4g-xm8v-pgv6). | Garbled or misleading output from invisible or control characters, where the verdict stays accurate. Command syntax of a CI system neither names. A problem matcher the workflow's own steps registered turning a line of output into an annotation. |
+| **P5** | **Verdict integrity.** The exit code and SARIF status accurately report what was graded, and anything that couldn't be read or graded fails closed. No claim is made that grading was complete. | SARIF recording a run as successful when a Compose file failed to parse. | A SARIF write failure that turns the step red. Any false negative. An `env_file:` target that is missing or not read, which only the credential-key rules need: it is reported as a note or an `unread_input` warning. |
+| **P6** | **Policy integrity.** Policy and suppressions come only from documented locations, and the policy in effect is the one a reviewer sees in the diff. | Suppressions taken from a comment inside the Compose file, a place the documentation doesn't list. | A pull request adding a visible suppression that reviewers approve. |
+| **P7** | **Artifact integrity.** What you install was built by the release pipeline from signed `main`, so no one outside the maintainers can get an artifact published under the project's name. | A release path that publishes from a tag nobody signed. | A maintainer shipping a buggy release, or a newer release reaching an unpinned install. A CVE in a dependency. |
+
+**False negatives are not vulnerabilities.** A false negative is the tool
+reading and grading its input and missing a finding. That includes a
+rule's check being incomplete, and an input that compose-lint models
+differently from how Compose deploys it, even when the input was crafted
+to be missed. Report them as ordinary bugs. What *is* in scope is the
+tool reporting success over something it did not read or grade (P5), or
+following a policy it should not have (P6).
 
 ## What compose-lint does NOT promise
 
@@ -99,7 +129,8 @@ pipeline, this is the page to read.
    findings against ~1,500 real-world Compose files — but the threat
    model in [docs/ASSURANCE.md](ASSURANCE.md) acknowledges both
    classes as real risks. Report a false positive or false negative as
-   a normal GitHub issue using the bug template.
+   a normal GitHub issue using the bug template, including one reached
+   with a deliberately crafted file (see §"Security properties").
 
 7. **It does not maintain old releases.** Per
    [.github/SECURITY.md](../.github/SECURITY.md) §"Supported Versions",

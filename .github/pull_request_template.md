@@ -54,6 +54,15 @@ Closes #
      doesn't" is a fine answer, but say it deliberately rather than by
      leaving this empty. -->
 
+**Does this fix a security defect?**
+
+<!-- If it breaks one of the properties in docs/SECURITY-EXPECTATIONS.md
+     §"Security properties", say which, and whether .github/SECURITY.md's
+     three-question test makes it an advisory. The changelog's
+     `### Security` entry records the answer: the advisory, or
+     `No advisory:` and why. A suspected vulnerability that has not been
+     disclosed belongs in a private report, not this PR. -->
+
 ## Checklist
 
 <!-- Short on purpose. CI checks sign-off, the four local gates, AI
