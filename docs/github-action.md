@@ -54,6 +54,28 @@ keeps a compromised dependency in this job from reaching anything else.
 
 Drop `security-events: write` if you are not uploading SARIF.
 
+## Problem matchers still read the output
+
+compose-lint's output quotes text from the files it grades, so the action
+turns workflow-command processing off while compose-lint runs
+(`stop-commands`). That does not turn off
+[problem matchers](https://github.com/actions/toolkit/blob/main/docs/problem-matchers.md).
+A matcher registered earlier in the job still reads compose-lint's output,
+and any line matching its pattern becomes an annotation. Some setup actions
+register one without being asked: `actions/setup-python` adds a matcher for
+Python tracebacks. A Compose file in a pull request can be written so its
+quoted text matches such a pattern and adds an annotation of its own. The
+verdict and the exit code are not affected.
+
+If those annotations matter to you, run the action in a job with no matcher
+registered, or remove the matcher in a step before it:
+
+```yaml
+      - run: echo "::remove-matcher owner=python::"
+```
+
+The owner is the `owner` field of the matcher's JSON file.
+
 ## SARIF without the Code Scanning upload
 
 To write the SARIF file and skip the upload — for example to attach it as a
