@@ -12,6 +12,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import traceback
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
@@ -733,6 +734,31 @@ def _dispatch(args: argparse.Namespace) -> NoReturn:
     _run_check(args)
 
 
+def _exit_on_internal_error(
+    args: argparse.Namespace | None, exc: Exception
+) -> NoReturn:
+    """Report an exception nothing else handled, and exit 2.
+
+    Python's own handler exits 1, which is the code for "findings at or above
+    the threshold": a crash read as a verdict, with an empty JSON or SARIF
+    document on stdout. Every crash this caught was a bug with a better answer
+    of its own, and each gets one where it is found; this is the backstop, so
+    the next one still exits with the code that means "compose-lint could not
+    run" (ADR-006) and still writes the envelope a machine consumer reads. The
+    traceback is kept for the bug report, through the sanitizer like every
+    other line on stderr.
+    """
+    emit_block("".join(traceback.format_exception(exc)))
+    message = (
+        f"internal error: {type(exc).__name__}: {exc}. This is a bug in "
+        "compose-lint; please report it with the traceback above."
+    )
+    if args is None:
+        emit(f"Error: {message}")
+        sys.exit(2)
+    _exit_2_with_envelope(args, message)
+
+
 def main(argv: list[str] | None = None) -> NoReturn:
     """Main entry point for the CLI."""
     _utf8_stdio()
@@ -744,6 +770,7 @@ def main(argv: list[str] | None = None) -> NoReturn:
         emit("Error: could not write output: stdout is closed")
         sys.exit(2)
     raw = sys.argv[1:] if argv is None else argv
+    args: argparse.Namespace | None = None
     try:
         parser = _build_parser()
         args = parser.parse_args(_normalize_argv(raw, _value_options(parser)))
@@ -751,6 +778,8 @@ def main(argv: list[str] | None = None) -> NoReturn:
     except BrokenPipeError as exc:
         # Raised by a `print` when the reader closed early (`| head`).
         _abort_on_write_failure(exc)
+    except Exception as exc:  # noqa: BLE001 - the last line of the exit contract
+        _exit_on_internal_error(args, exc)
     except SystemExit:
         # Buffered stdout is not written until it is flushed, so a write
         # failure surfaces here rather than at the `print` that caused it.

@@ -1317,6 +1317,12 @@ def _resolve_includes(  # noqa: PLR0913
             except FileNotFoundError:
                 _gap("the file was not found")
                 continue
+            except UnicodeDecodeError as exc:
+                # A ValueError, not an OSError, so it walked past the clause
+                # below: a traceback and exit 1, with an empty JSON or SARIF
+                # document, for the same input a gap reports on the main file.
+                _gap(f"it is not valid UTF-8 (byte {exc.start})")
+                continue
             except (UnsafeFileError, OSError) as exc:
                 _gap(f"it could not be read safely ({exc})")
                 continue
@@ -1523,6 +1529,10 @@ def _resolve_cross_file_extends(
             continue
         except FileNotFoundError:
             _gap("the file was not found")
+            continue
+        except UnicodeDecodeError as exc:
+            # See the same clause in `_resolve_includes`.
+            _gap(f"it is not valid UTF-8 (byte {exc.start})")
             continue
         except (UnsafeFileError, OSError) as exc:
             _gap(f"it could not be read safely ({exc})")
