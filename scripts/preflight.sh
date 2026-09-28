@@ -176,9 +176,14 @@ run_actionlint() {
   # broken repository rather than a stale linter. These are the same two
   # patterns ci.yml passes; upstream is rhysd/actionlint#711. Drop them here
   # and in ci.yml together when a release accepts the syntax.
+  #
+  # The third pattern silences actionlint's hard-coded runner-label list, which
+  # lags every new GitHub-hosted label (rhysd/actionlint#682). It is permanent,
+  # not tied to a release; ci.yml has the reasoning. Keep the two in sync.
   actionlint -color \
     -ignore 'specifying action "\$/[^"]*" in invalid format because ref is missing' \
-    -ignore 'reusable workflow call "\$/[^"]*" at "uses" is not following the format'
+    -ignore 'reusable workflow call "\$/[^"]*" at "uses" is not following the format' \
+    -ignore 'label "[^"]+" is unknown\. available labels are'
 }
 
 run_zizmor() {
