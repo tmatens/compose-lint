@@ -83,6 +83,18 @@ COMPOSE_FILE_KEYS = ("COMPOSE_FILE", "COMPOSE_PATH_SEPARATOR")
 # because an absolute entry is refused by `_resolve_entry` either way.
 DEFAULT_PATH_SEPARATOR = ":"
 
+# The gaps for a file the run found rather than was given, that resolves
+# outside the project. Neither names where it resolves to: that path is the
+# outside file, and the report is not the place to learn it.
+_OUTSIDE_NOT_LINTED = (
+    "not linted because it resolves outside the project directory (refused "
+    "rather than read), so the services Compose would load from it were not graded."
+)
+_OUTSIDE_NOT_MERGED = (
+    "not merged because it resolves outside the project directory (refused "
+    "rather than read), so what Compose would merge from it was not graded."
+)
+
 
 @dataclass(frozen=True)
 class DocumentGroup:
@@ -186,8 +198,16 @@ def _plan_discovered(
             env_files=env_files,
             gaps=tuple(gaps),
         )
-    discovered = [name for name in COMPOSE_FILENAMES if (directory / name).is_file()]
-    selection = _pair_with_overrides(discovered, merge_overrides, notes)
+    discovered = []
+    for name in COMPOSE_FILENAMES:
+        candidate = directory / name
+        if not candidate.is_file():
+            continue
+        if _links_outside(candidate):
+            gaps.append((str(candidate), _OUTSIDE_NOT_LINTED))
+            continue
+        discovered.append(name)
+    selection = _pair_with_overrides(discovered, merge_overrides, notes, gaps)
     return replace(
         selection,
         env_files=env_files if discovered else (),
@@ -209,6 +229,11 @@ def _plan_named(
     for path in named:
         if _key(path) in planned:
             continue
+        if _links_outside(Path(path)):
+            gap = (path, _OUTSIDE_NOT_LINTED)
+            if gap not in gaps:
+                gaps.append(gap)
+            continue
         directory = Path(path).parent
         selected, file_notes, file_gaps = _compose_file_entries(
             directory, read_env_files=read_env_files
@@ -221,7 +246,7 @@ def _plan_named(
             env_files.append(env_file)
 
         if selected is None:
-            group = _with_override(path, merge_overrides)
+            group = _with_override(path, merge_overrides, gaps)
         elif any(_key(entry) == _key(path) for entry in selected):
             # The project the .env describes contains this file, so grade the
             # project. Merge order is COMPOSE_FILE's, not the order the paths
@@ -237,7 +262,7 @@ def _plan_named(
                 f"{path}: COMPOSE_FILE in {ENV_FILENAME} does not include this "
                 "file, so it was graded on its own. Nothing was skipped."
             )
-            group = _with_override(path, merge_overrides)
+            group = _with_override(path, merge_overrides, gaps)
 
         groups.append(group)
         planned.update(_key(entry) for entry in group.paths)
@@ -253,18 +278,49 @@ def _plan_named(
 
 
 def _pair_with_overrides(
-    discovered: list[str], merge_overrides: bool, notes: list[str]
+    discovered: list[str],
+    merge_overrides: bool,
+    notes: list[str],
+    gaps: list[tuple[str, str]],
 ) -> Selection:
     """The pre-ADR-026 behaviour: each base file plus its sibling override."""
-    groups = [_with_override(path, merge_overrides) for path in discovered]
+    groups = [_with_override(path, merge_overrides, gaps) for path in discovered]
     consumed = {_key(entry) for group in groups for entry in group.overlays}
     return Selection(
         groups=tuple(groups), consumed=frozenset(consumed), notes=tuple(notes)
     )
 
 
-def _with_override(path: str, merge_overrides: bool) -> DocumentGroup:
-    """Pair ``path`` with the overlay Compose would merge into it, if any."""
+def _links_outside(path: Path) -> bool:
+    """Whether ``path`` is a link to a file outside its own directory.
+
+    A primary Compose file and its sibling override arrive as paths, but a path
+    is not always something a person chose. Bare discovery finds the file in
+    the checkout, the Action's default list and ``pattern:`` do the same, and a
+    list of changed files passed to ``files:`` or by pre-commit is whatever the
+    change under review committed. A ``compose.yml`` committed as a symlink to
+    a file elsewhere on the machine is then content choosing what the linter
+    opens, and its values reach findings.
+
+    So the test is on the link, not on who handed the path over. A plain path
+    resolves to itself and is read as given, wherever it is. A link is followed
+    only while its target stays in the directory the link sits in — the project
+    directory every reference that file makes is measured against. Symlinked
+    directories *above* the file resolve the same on both sides, so a checkout
+    under a linked home directory is unaffected.
+    """
+    return path.is_file() and escapes_project(path, path.parent)
+
+
+def _with_override(
+    path: str, merge_overrides: bool, gaps: list[tuple[str, str]]
+) -> DocumentGroup:
+    """Pair ``path`` with the overlay Compose would merge into it, if any.
+
+    The override is always found, never named, so it is contained like any
+    other file the project chooses: one resolving outside the base file's
+    directory is not merged, and ``gaps`` gets the reason.
+    """
     if not merge_overrides:
         return DocumentGroup(path)
     base = Path(path)
@@ -275,7 +331,13 @@ def _with_override(path: str, merge_overrides: bool) -> DocumentGroup:
     ]
     if not present:
         return DocumentGroup(path)
-    return DocumentGroup(path, (str(present[0]),))
+    candidate = present[0]
+    if _links_outside(candidate):
+        gap = (str(candidate), _OUTSIDE_NOT_MERGED)
+        if gap not in gaps:
+            gaps.append(gap)
+        return DocumentGroup(path)
+    return DocumentGroup(path, (str(candidate),))
 
 
 def env_file_for(directory: Path, *, read_env_files: bool) -> str | None:

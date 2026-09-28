@@ -12,6 +12,16 @@ one of them has to resolve inside that file's own directory. Nothing outside
 the project is read, no matter what the document says, and no registry, daemon
 or image is consulted at all.
 
+That holds for the files a run *finds* as well as the ones a document names.
+A discovered `compose.yml`, its `compose.override.yml`, and the
+`.compose-lint.yml` in the working directory are part of the checkout, so one
+committed as a symlink to a file outside its own directory is refused rather
+than followed: exit 2, a coverage gap for a Compose document and a
+configuration error for the policy file. The same goes for a Compose file
+named on the command line that is such a link, since CI hands the linter paths
+the checkout chose. A plain path you type is read as given, and so is
+`--config`.
+
 | Source | Read because | Switch it off |
 |---|---|---|
 | Sibling `compose.override.yml` | `docker compose up` merges it with no flag | `--no-merge-overrides` |
