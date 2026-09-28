@@ -34,6 +34,7 @@ would change what they see on files that have no overlay at all.
 from __future__ import annotations
 
 import posixpath
+from bisect import bisect_left
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -132,15 +133,23 @@ def _port_key(entry: Any) -> str | None:
 
     Compose keeps two publishings of the same container port on different host
     ports (verified), so the key is the whole tuple rather than the target.
+
+    A long-form entry whose fields are not all scalars has no key, and merges
+    as an unkeyed entry. Compose's schema rejects it (``host_ip must be a
+    string``), so there is no identity to honour, and rendering the field with
+    ``str()`` was the cost: a ``host_ip`` written as a doubling alias chain is a
+    few hundred bytes of YAML and gigabytes of text.
     """
     if isinstance(entry, dict):
-        bits = [
-            str(entry.get("host_ip", "")),
-            str(entry.get("published", "")),
-            str(entry.get("target", "")),
-            str(entry.get("protocol", "tcp")),
-        ]
-        return "|".join(bits)
+        fields = (
+            entry.get("host_ip", ""),
+            entry.get("published", ""),
+            entry.get("target", ""),
+            entry.get("protocol", "tcp"),
+        )
+        if not all(value is None or isinstance(value, _SCALAR) for value in fields):
+            return None
+        return "|".join(str(value) for value in fields)
     if isinstance(entry, str):
         spec, _, proto = entry.partition("/")
         parts = _split_outside_braces(spec)
@@ -153,6 +162,8 @@ def _port_key(entry: Any) -> str | None:
         return "|".join([host_ip, published, target, proto or "tcp"])
     return None
 
+
+_SCALAR = (str, int, float, bool)
 
 _SEQ_KEYERS = {
     "volumes": _volume_key,
@@ -276,6 +287,12 @@ class _Recorder:
     def __init__(self) -> None:
         self.lines: dict[str, int] = {}
         self.sources: dict[str, str] = {}
+        # Each input line map's keys, sorted, with their original positions, so
+        # a subtree is found by bisection instead of a scan of the whole map.
+        # Keyed by the map's id and holding the map itself, which both keeps it
+        # alive and lets a lookup confirm it is the same object.
+        self._indexes: dict[int, tuple[Mapping[str, int], list[str], dict[str, int]]]
+        self._indexes = {}
 
     def take(self, out_path: str, side: _Side | None) -> None:
         """Record that ``out_path`` was supplied by ``side``."""
@@ -301,23 +318,44 @@ class _Recorder:
             return
         self.take(out_path, side)
         prefix = side.path
-        for key, line in side.doc.lines.items():
-            if key == prefix:
-                continue
-            # The document root has an empty path, under which *every* key is a
-            # descendant. Without this case the separator check below indexes
-            # key[0] — always a name character at the root — and silently copied
-            # nothing, so a value neither document overrode lost its line.
-            if not prefix:
+        lines = side.doc.lines
+        # The document root has an empty path, under which *every* key is a
+        # descendant, and the separator a descendant's key continues with is
+        # not there to look for.
+        if not prefix:
+            for key, line in lines.items():
+                if key == prefix:
+                    continue
                 origin = _origin_of(side.doc, key)
                 self.lines[key] = SourcedLine(line, origin)
                 self.sources[key] = origin
-                continue
-            if key.startswith(prefix) and key[len(prefix)] in ".[":
-                moved = out_path + key[len(prefix) :]
-                origin = _origin_of(side.doc, key)
-                self.lines[moved] = SourcedLine(line, origin)
-                self.sources[moved] = origin
+            return
+        # A scan of the whole map per call made every item of a merged list
+        # cost the size of the document: a 20,000-entry `dns:` under a one-line
+        # overlay took 16 s. The subtree is two contiguous runs of the sorted
+        # keys, one per separator; they are replayed in the map's own order.
+        for key in self._descendants(lines, prefix):
+            moved = out_path + key[len(prefix) :]
+            origin = _origin_of(side.doc, key)
+            self.lines[moved] = SourcedLine(lines[key], origin)
+            self.sources[moved] = origin
+
+    def _descendants(self, lines: Mapping[str, int], prefix: str) -> list[str]:
+        """Keys strictly below ``prefix`` in ``lines``, in ``lines``' order."""
+        index = self._indexes.get(id(lines))
+        if index is None or index[0] is not lines:
+            position = {key: i for i, key in enumerate(lines)}
+            index = (lines, sorted(position), position)
+            self._indexes[id(lines)] = index
+        _, keys, position = index
+        found: list[str] = []
+        for start in (f"{prefix}.", f"{prefix}["):
+            i = bisect_left(keys, start)
+            while i < len(keys) and keys[i].startswith(start):
+                found.append(keys[i])
+                i += 1
+        found.sort(key=position.__getitem__)
+        return found
 
 
 def merge_values(
@@ -591,18 +629,71 @@ def _merge_appended(
 ) -> list[Any]:
     result: list[Any] = []
     origins: list[tuple[_Side | None, int]] = []
-    seen: list[Any] = []
+    seen: set[Any] = set()
 
     for source_side, items in ((base_side, base), (over_side, over)):
         for i, entry in enumerate(items):
-            if any(entry == prior for prior in seen):
+            key = _dedupe_key(entry)
+            if key in seen:
                 continue
-            seen.append(entry)
+            seen.add(key)
             result.append(entry)
             origins.append((source_side, i))
 
     _record_items(result, origins, out_path, rec)
     return result
+
+
+# Nodes an entry may have before the dedupe stops comparing it by value. An
+# append-style field holds strings in every file Compose accepts; the bound is
+# for the ones it does not, where YAML aliases make a small entry a huge tree.
+_DEDUPE_NODES = 256
+_MAPPING = object()
+_SEQUENCE = object()
+_IDENTITY = object()
+
+
+class _TooLarge(Exception):
+    """An entry has more nodes than the dedupe compares by value."""
+
+
+def _dedupe_key(entry: Any) -> Any:
+    """A hashable stand-in for ``entry``: equal keys exactly when ``==`` holds.
+
+    The dedupe compared each entry with ``==`` against every one kept so far.
+    That is quadratic in the list, and on two distinct alias chains of the same
+    shape each comparison walks the whole expanded tree: 1.6 KB of YAML took
+    47 s. A set of canonical forms makes each entry one hash, and an entry over
+    :data:`_DEDUPE_NODES` falls back to its identity, so it is deduplicated only
+    against itself (an alias repeated in the list), which is all ``==`` would
+    have found in the time it has.
+    """
+    if not isinstance(entry, (dict, list)):
+        try:
+            hash(entry)
+        except TypeError:  # pragma: no cover - YAML scalars are all hashable
+            return (_IDENTITY, id(entry))
+        return entry
+    try:
+        return _canonical(entry, [_DEDUPE_NODES])
+    except (_TooLarge, TypeError):
+        return (_IDENTITY, id(entry))
+
+
+def _canonical(value: Any, budget: list[int]) -> Any:
+    """``value`` as nested tuples and frozensets, spending one node of ``budget``."""
+    budget[0] -= 1
+    if budget[0] < 0:
+        raise _TooLarge
+    if isinstance(value, dict):
+        return (
+            _MAPPING,
+            frozenset((key, _canonical(item, budget)) for key, item in value.items()),
+        )
+    if isinstance(value, list):
+        return (_SEQUENCE, tuple(_canonical(item, budget) for item in value))
+    hash(value)
+    return value
 
 
 def _merge_kv_forms(
