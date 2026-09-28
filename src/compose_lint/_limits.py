@@ -62,3 +62,18 @@ MAX_MERGED_PAIRS = 65536
 # folded in, so a stack cannot pass by spreading its services across files. The
 # largest count in the corpus is 64 services, and the test suite's is 2,000.
 MAX_SERVICES = 4096
+
+# The line map records a position per *path*, and a node reached by many paths
+# (an aliased mapping, a merge key's anchor, an `extends:` base every child
+# inherits) is recorded once per path. The first recording of every node is
+# linear in the file; the repeats multiply: 4,000 services sharing one
+# 16,000-key `labels:` anchor is a 372 KB file and 64 million entries, and
+# 2,000 `extends:` children of a 4,000-label base is 112 KB and 8 million.
+#
+# Counted across one load (a document and everything it includes or extends),
+# at every site that repeats a record. Past the cap a repeat is not recorded, so
+# the finding it would have located reports no line, which every consumer
+# already handles: the fix engine refuses to edit what it cannot locate. The
+# largest count in the 11,111-file corpus is 1,225, so no real file
+# comes near it; at the cap the line map costs tens of megabytes.
+MAX_REPEATED_LINES = 262144

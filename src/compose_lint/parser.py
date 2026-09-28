@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+from bisect import bisect_left
 from dataclasses import dataclass, field
 from pathlib import Path, PurePath
 from typing import TYPE_CHECKING, Any
@@ -11,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from compose_lint._env_file import ENV_FILENAME, env_read_failure, read_env
-from compose_lint._limits import MAX_MERGED_PAIRS, MAX_SERVICES
+from compose_lint._limits import MAX_MERGED_PAIRS, MAX_REPEATED_LINES, MAX_SERVICES
 from compose_lint._lines import find_ambiguous_break
 from compose_lint._merge import (
     Document,
@@ -36,7 +37,7 @@ from compose_lint.rules._interpolation import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterable, Mapping
 
 
 class _LinesKey:
@@ -546,6 +547,26 @@ def _install_scalar_resolvers() -> None:
 _install_scalar_resolvers()
 
 
+class _RepeatBudget:
+    """How many repeated line or tag records one load may still write.
+
+    A repeat is a record for a node already recorded under another path, or an
+    inherited line copied under an ``extends:`` child. See
+    :data:`~compose_lint._limits.MAX_REPEATED_LINES`.
+    """
+
+    def __init__(self, limit: int = MAX_REPEATED_LINES) -> None:
+        self.remaining = limit
+
+    def take(self, count: int) -> bool:
+        """Spend ``count`` if that much is left; say whether it was."""
+        if count > self.remaining:
+            self.remaining = 0
+            return False
+        self.remaining -= count
+        return True
+
+
 def _strip_lines(data: Any) -> Any:
     """Remove line-map metadata (the ``_LINES`` sentinel key) at every depth.
 
@@ -598,6 +619,7 @@ def _collect_lines(
     data: Any,
     seq_lines: dict[int, dict[int, int]] | None = None,
     prefix: str = "",
+    repeats: _RepeatBudget | None = None,
 ) -> dict[str, int]:
     """Collect line numbers into a flat dot-notation map.
 
@@ -621,8 +643,15 @@ def _collect_lines(
     are still recorded under only its first-reached path; rule lookups are
     shallow (``services.<svc>.<key>``, with a list index falling back to the
     list's own line), so the direct-key recording covers them.
+
+    Recording under every path is still one record per path, and the paths to
+    one node multiply: a mapping aliased into every service is its size times
+    the services. ``repeats`` bounds those records; once it is spent, a
+    container reached again is not recorded again, and its keys have a line
+    only under the path that reached it first.
     """
     seq_lines = seq_lines or {}
+    repeats = repeats if repeats is not None else _RepeatBudget()
     lines: dict[str, int] = {}
     expanded: set[int] = set()
     # Paths that two different nodes both claim. Joining path segments with "."
@@ -651,6 +680,8 @@ def _collect_lines(
             first = id(current) not in expanded
             if first:
                 expanded.add(id(current))
+            elif not repeats.take(len(current)):
+                continue
             line_map = current.get(_LINES, {})
             for key, value in current.items():
                 if key is _LINES:
@@ -664,6 +695,8 @@ def _collect_lines(
             first = id(current) not in expanded
             if first:
                 expanded.add(id(current))
+            elif not repeats.take(len(current)):
+                continue
             item_lines = seq_lines.get(id(current), {})
             for i, item in enumerate(current):
                 full_key = f"{current_prefix}[{i}]"
@@ -677,24 +710,31 @@ def _collect_lines(
 
 
 def _collect_tagged(
-    data: Any, tagged: dict[int, set[str]], prefix: str = ""
+    data: Any,
+    tagged: dict[int, set[str]],
+    prefix: str = "",
+    repeats: _RepeatBudget | None = None,
 ) -> frozenset[str]:
     """Collect dot-notation paths of keys carrying a Compose merge directive.
 
     Walks the *raw* document (before :func:`_strip_lines` rebuilds it, which
     would invalidate the id() keys) with the same iterative work-stack shape as
-    :func:`_collect_lines`.
+    :func:`_collect_lines`, and spends the same ``repeats`` budget on a tagged
+    mapping reached by a second path.
     """
     if not tagged:
         return frozenset()
+    repeats = repeats if repeats is not None else _RepeatBudget()
     found: set[str] = set()
     expanded: set[int] = set()
     stack: list[tuple[Any, str]] = [(data, prefix)]
     while stack:
         current, current_prefix = stack.pop()
         if isinstance(current, dict):
-            for key in tagged.get(id(current), ()):
-                found.add(f"{current_prefix}.{key}" if current_prefix else key)
+            keys = tagged.get(id(current), ())
+            if id(current) not in expanded or repeats.take(len(keys)):
+                for key in keys:
+                    found.add(f"{current_prefix}.{key}" if current_prefix else key)
             if id(current) in expanded:
                 continue
             expanded.add(id(current))
@@ -816,25 +856,56 @@ def _merge_extends(
 
 
 def _lines_by_service(
-    lines: Mapping[str, int], services: Mapping[Any, Any]
+    lines: Mapping[str, int], services: Mapping[Any, Any], wanted: Iterable[str]
 ) -> dict[str, dict[str, int]]:
-    """Split the line map into each service's own entries, in one pass.
+    """Each ``wanted`` service's own entries of the line map.
 
-    A service name can contain `.` or `[`, so the name is the first prefix of
-    the path that is a declared service, not whatever precedes the first dot.
+    A service name can contain `.` or `[`, so a path belongs to the shortest
+    declared name that is a prefix of it at a separator. That is a property of
+    the name alone: a path under ``a.b`` belongs to ``a`` whenever ``a`` is also
+    declared, and otherwise to ``a.b``. So each wanted name is checked once,
+    and its paths are the contiguous run of sorted keys under its prefix.
+
+    It used to cut every path at every separator and look up each prefix, which
+    is quadratic in the dots of a name: one service with a 4,000-dot name and
+    1,000 labels took seconds, on every document, whether or not anything used
+    ``extends:``. Only the services an in-file ``extends:`` relates are asked
+    for now.
     """
     names = {name for name in services if isinstance(name, str)}
+    lengths = {len(name) for name in names}
+    keys = sorted(path for path in lines if path.startswith("services."))
     grouped: dict[str, dict[str, int]] = {}
-    for path, line in lines.items():
-        if not path.startswith("services."):
+    for name in wanted:
+        if name not in names or _shadowed(name, names, lengths):
             continue
-        rest = path[len("services.") :]
-        cuts = [i for i, ch in enumerate(rest) if ch in ".["] + [len(rest)]
-        for cut in cuts:
-            if rest[:cut] in names:
-                grouped.setdefault(rest[:cut], {})[path] = line
-                break
+        own: dict[str, int] = {}
+        base = f"services.{name}"
+        if base in lines:
+            own[base] = lines[base]
+        for start in (f"{base}.", f"{base}["):
+            i = bisect_left(keys, start)
+            while i < len(keys) and keys[i].startswith(start):
+                own[keys[i]] = lines[keys[i]]
+                i += 1
+        grouped[name] = own
     return grouped
+
+
+def _shadowed(name: str, names: set[str], lengths: set[int]) -> bool:
+    """Whether a shorter declared name is a prefix of ``name`` at a separator.
+
+    Only positions whose length some declared name has are sliced, so the cost
+    is bounded by the separators in ``name`` and not by their square.
+    """
+    for match in _SEPARATOR.finditer(name):
+        cut = match.start()
+        if cut in lengths and name[:cut] in names:
+            return True
+    return False
+
+
+_SEPARATOR = re.compile(r"[.\[]")
 
 
 def _merged_service_lines(
@@ -855,6 +926,20 @@ def _merged_service_lines(
     return merged
 
 
+def _in_file_target(cfg: Any) -> str | None:
+    """The service an in-file ``extends:`` names, or ``None``."""
+    if not isinstance(cfg, dict):
+        return None
+    ext = cfg.get("extends")
+    if isinstance(ext, str):
+        return ext
+    if isinstance(ext, dict) and "file" not in ext:
+        service = ext.get("service")
+        if isinstance(service, str):
+            return service
+    return None
+
+
 def _resolve_in_file_extends(
     data: dict[str, Any],
     lines: dict[str, int] | None = None,
@@ -862,6 +947,7 @@ def _resolve_in_file_extends(
     resets: frozenset[str] = frozenset(),
     overrides: frozenset[str] = frozenset(),
     skip: frozenset[str] = frozenset(),
+    repeats: _RepeatBudget | None = None,
 ) -> list[str]:
     """Merge in-file ``extends`` targets into each service, in place.
 
@@ -899,11 +985,26 @@ def _resolve_in_file_extends(
     the child's lines, since that is where an edit to them belongs; the fix
     engine refuses any edit outside the finding's own service block, so a
     child's inherited finding is never fixed by editing the base.
+
+    Every child records its base's lines again under its own name, which is
+    the base's size times the children: ``repeats`` bounds it. A child past
+    the budget keeps its own lines, and what it inherits has none.
     """
     services = data.get("services")
     if not isinstance(services, dict):
         return []
-    by_service = _lines_by_service(lines, services) if lines is not None else {}
+    repeats = repeats if repeats is not None else _RepeatBudget()
+    related = {
+        name
+        for child, cfg in services.items()
+        if (target := _in_file_target(cfg)) is not None
+        for name in (child, target)
+    }
+    if not related:
+        return []
+    by_service = (
+        _lines_by_service(lines, services, related) if lines is not None else {}
+    )
     resolved_lines: dict[str, dict[str, int]] = {}
     resolved: dict[str, Any] = {}
     # Two services that are one aliased mapping merge once. YAML aliases make
@@ -924,14 +1025,7 @@ def _resolve_in_file_extends(
         if not isinstance(cfg, dict) or name in skip:
             resolved[name] = cfg
             return cfg
-        ext = cfg.get("extends")
-        target: str | None = None
-        if isinstance(ext, str):
-            target = ext
-        elif isinstance(ext, dict) and "file" not in ext:
-            service = ext.get("service")
-            if isinstance(service, str):
-                target = service
+        target = _in_file_target(cfg)
         if target is None:
             resolved[name] = cfg
             return cfg
@@ -954,13 +1048,18 @@ def _resolve_in_file_extends(
         child_path = f"services.{name}"
         key = (id(parent), id(cfg))
         cached = memo.get(key)
+        if cached is not None and not repeats.take(len(cached[1])):
+            cached = (cached[0], {})
         if cached is None:
+            base_lines = _lines_of(target)
+            if not repeats.take(len(base_lines)):
+                base_lines = {}
             merged, recorded = merge_extended(
                 parent,
                 cfg,
                 child_path=child_path,
                 base_path=f"services.{target}",
-                base_lines=_lines_of(target),
+                base_lines=base_lines,
                 child_lines=by_service.get(name, {}),
                 resets=resets,
                 overrides=overrides,
@@ -1225,6 +1324,7 @@ def _resolve_includes(  # noqa: PLR0913
     env_dirs: tuple[Path, ...],
     use_env: bool,
     budget: _ExtendsBudget,
+    repeats: _RepeatBudget | None = None,
     depth: int,
     chain: tuple[str, ...],
     prefix: tuple[str, ...],
@@ -1345,6 +1445,7 @@ def _resolve_includes(  # noqa: PLR0913
                     # entry's that Compose reads (see `_IncludeEntry`).
                     env_dirs=(entry_dir or target_dir, *(env_dirs or (base_dir,))),
                     budget=budget,
+                    repeats=repeats,
                     depth=depth + 1,
                     include_chain=(*chain, step),
                     document_path=target,
@@ -1435,6 +1536,7 @@ def _resolve_cross_file_extends(
     env_dirs: tuple[Path, ...],
     use_env: bool,
     budget: _ExtendsBudget,
+    repeats: _RepeatBudget | None = None,
     depth: int,
     chain: tuple[tuple[str, str], ...],
     prefix: tuple[str, ...],
@@ -1547,6 +1649,7 @@ def _resolve_cross_file_extends(
                 project_dir=project_dir,
                 env_dirs=env_dirs,
                 budget=budget,
+                repeats=repeats,
                 depth=depth + 1,
                 chain=(*chain, step),
                 document_path=target,
@@ -2043,6 +2146,7 @@ def _loads_full(  # noqa: PLR0913
     project_dir: Path | None = None,
     env_dirs: tuple[Path, ...] = (),
     budget: _ExtendsBudget | None = None,
+    repeats: _RepeatBudget | None = None,
     depth: int = 0,
     chain: tuple[tuple[str, str], ...] = (),
     include_chain: tuple[str, ...] = (),
@@ -2154,9 +2258,12 @@ def _loads_full(  # noqa: PLR0913
     # each pass that walks the document, not only the one that builds it.
     gaps: list[str] = []
     try:
-        lines = _collect_lines(raw, seq_lines)
-        reset_paths = _collect_tagged(raw, raw_resets)
-        override_paths = _collect_tagged(raw, raw_overrides)
+        # One budget for this document and everything it pulls in, so an
+        # included file cannot spend a fresh allowance.
+        repeats = repeats if repeats is not None else _RepeatBudget()
+        lines = _collect_lines(raw, seq_lines, repeats=repeats)
+        reset_paths = _collect_tagged(raw, raw_resets, repeats=repeats)
+        override_paths = _collect_tagged(raw, raw_overrides, repeats=repeats)
         data = _strip_lines(raw)
         # Canonicalize before anything classifies: rules and the extends and
         # bind-source passes below all see the value the file actually ships
@@ -2236,6 +2343,7 @@ def _loads_full(  # noqa: PLR0913
                 env_dirs=env_dirs,
                 use_env=use_env,
                 budget=budget if budget is not None else _ExtendsBudget(),
+                repeats=repeats,
                 depth=depth,
                 chain=include_chain,
                 prefix=prefix,
@@ -2256,6 +2364,7 @@ def _loads_full(  # noqa: PLR0913
                     env_dirs=env_dirs or (base_dir,),
                     use_env=use_env,
                     budget=budget if budget is not None else _ExtendsBudget(),
+                    repeats=repeats,
                     depth=depth,
                     chain=chain,
                     prefix=prefix,
@@ -2271,6 +2380,7 @@ def _loads_full(  # noqa: PLR0913
                 resets=reset_paths,
                 overrides=override_paths,
                 skip=already_resolved,
+                repeats=repeats,
             )
         )
         if "include" in data and "services" not in data:
