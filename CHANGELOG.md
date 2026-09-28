@@ -1909,7 +1909,8 @@ Compose then ships nothing.
   source excerpt all use it. A CI guard fails the build on a bare
   `str.splitlines()` in `src/`. Documents free of those four codepoints —
   effectively all real Compose files — are unaffected: a 5,417-file corpus run
-  shows zero change in findings, exit codes or errors.
+  shows zero change in findings, exit codes or errors. See
+  GHSA-65v8-q222-64xx.
 - **A file whose fixes could not be computed no longer destroys the batch.**
   The same desync could push a line number past the offset table and raise a
   bare `IndexError`, which aborted the whole run: `check --format sarif` then
