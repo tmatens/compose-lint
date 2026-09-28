@@ -13,6 +13,7 @@ import yaml
 
 from compose_lint._env_file import ENV_FILENAME, env_read_failure, read_env
 from compose_lint._limits import (
+    MAX_LINE_KEY_CHARS,
     MAX_MERGED_PAIRS,
     MAX_REPEATED_LINES,
     MAX_SERVICES,
@@ -669,7 +670,17 @@ def _collect_lines(
     # which every consumer already treats as "cannot locate this — refuse".
     ambiguous: set[str] = set()
 
+    # What the map's keys cost in characters. Each key spells its whole path,
+    # so a service name thousands of characters long is repeated in every key
+    # under it: one 8,000-character name over 60,000 labels was a 1 MB file and
+    # a 600 MB line map. Past the budget a key is not recorded.
+    key_chars = [MAX_LINE_KEY_CHARS]
+
     def record(full_key: str, line: int) -> None:
+        if len(full_key) > key_chars[0]:
+            key_chars[0] = 0
+            return
+        key_chars[0] -= len(full_key)
         previous = lines.get(full_key)
         # The same node reached by two paths yields two different keys, so a
         # repeat with a *different* line is always a genuine collision.
@@ -694,7 +705,9 @@ def _collect_lines(
                 full_key = f"{current_prefix}.{key}" if current_prefix else key
                 if key in line_map:
                     record(full_key, line_map[key])
-                if first:
+                # A scalar has nothing below it to record; queueing it held
+                # every leaf's full path in memory at once.
+                if first and isinstance(value, (dict, list)):
                     stack.append((value, full_key))
         elif isinstance(current, list):
             first = id(current) not in expanded
@@ -707,7 +720,7 @@ def _collect_lines(
                 full_key = f"{current_prefix}[{i}]"
                 if i in item_lines:
                     record(full_key, item_lines[i])
-                if first:
+                if first and isinstance(item, (dict, list)):
                     stack.append((item, full_key))
     for key in ambiguous:
         lines.pop(key, None)
@@ -1789,6 +1802,21 @@ def _resolved_bind_source(source: str, base_dir: PurePath) -> str | None:
 ENVIRONMENT_KEY = "environment"
 
 
+def _cannot_fit(value: str, supplied: Mapping[str, str], remaining: int) -> bool:
+    """Whether substituting ``value`` must grow the document past ``remaining``.
+
+    A lower bound: each supplied name the value references is inserted at least
+    once, except through ``${VAR:+word}``, which inserts ``word``. So a value
+    this says cannot fit is occasionally one that would have, and it is then
+    left as written, the conservative answer, and only once the budget is
+    nearly spent.
+    """
+    floor = sum(
+        len(supplied[name]) for name in reference_names(value) if name in supplied
+    )
+    return floor > remaining + len(value)
+
+
 def _substitute_interpolation_defaults(
     data: Any, env: Mapping[str, str] | None = None
 ) -> None:
@@ -1850,6 +1878,12 @@ def _substitute_interpolation_defaults(
         cached = results.get(key)
         if cached is not None:
             return cached
+        if supplied and _cannot_fit(value, supplied, remaining[0]):
+            # Building a value only to discard it cost its full size per leaf:
+            # 40,000 distinct references to one 130 KB value took seconds after
+            # the budget was spent.
+            results[key] = value
+            return value
         substituted = substitute_defaults(value, supplied)
         if substituted is None:
             result = value
