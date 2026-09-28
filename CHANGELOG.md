@@ -89,6 +89,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the one Compose picks: `compose.override.yml`, then `.yaml`, then the
   `docker-compose.override.*` pair.
 
+- **SARIF fix regions are placed correctly after an emoji.** A suggested
+  fix's columns were counted in code points, and the log did not say so;
+  JavaScript consumers (Code Scanning, the VS Code SARIF viewer) index in
+  UTF-16 code units, so an edit on a line holding a character outside the
+  Basic Multilingual Plane landed one column short per character. Columns
+  are now UTF-16 code units, and the run declares
+  `"columnKind": "utf16CodeUnits"`.
+
 ## [0.31.0] - 2026-09-27
 
 ### Added

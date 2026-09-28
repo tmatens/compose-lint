@@ -321,6 +321,8 @@ SARIF_RUN_KEYS = {
     "invocations",
     "originalUriBaseIds",
     "taxonomies",
+    # Added pre-1.0: fix regions are counted in UTF-16 code units.
+    "columnKind",
 }
 SARIF_DRIVER_KEYS = {"name", "version", "informationUri", "rules", "notifications"}
 SARIF_RESULT_KEYS = {

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
 from compose_lint import __version__
+from compose_lint._lines import split_lines
 from compose_lint._report_path import is_outside, report_path
 from compose_lint.attack import (
     ATTACK_TAXONOMY_GUID,
@@ -444,7 +445,24 @@ def _build_rules(
     return rules, index_map
 
 
-def _build_fix(edits: list[TextEdit], filepath: str) -> dict[str, Any]:
+def _utf16_column(lines: Sequence[str] | None, line: int, column: int) -> int:
+    """``column`` (1-indexed code points on ``line``) in UTF-16 code units.
+
+    The log declares ``columnKind: utf16CodeUnits``: the unit JavaScript
+    consumers (Code Scanning, the VS Code SARIF viewer) index strings in, and
+    the only one that places a region correctly for them after a character
+    outside the Basic Multilingual Plane. Counted in code points, an edit on a
+    line holding an emoji landed one column short per emoji.
+    """
+    if lines is None or not 1 <= line <= len(lines):
+        return column
+    before = lines[line - 1][: column - 1]
+    return 1 + len(before.encode("utf-16-le")) // 2
+
+
+def _build_fix(
+    edits: list[TextEdit], filepath: str, lines: Sequence[str] | None = None
+) -> dict[str, Any]:
     """Build one SARIF ``fix`` object from a finding's :class:`TextEdit`s.
 
     Each edit becomes a ``replacement``: ``TextEdit``'s half-open, 1-indexed
@@ -461,9 +479,9 @@ def _build_fix(edits: list[TextEdit], filepath: str) -> dict[str, Any]:
         replacement: dict[str, Any] = {
             "deletedRegion": {
                 "startLine": edit.start_line,
-                "startColumn": edit.start_col,
+                "startColumn": _utf16_column(lines, edit.start_line, edit.start_col),
                 "endLine": edit.end_line,
-                "endColumn": edit.end_col,
+                "endColumn": _utf16_column(lines, edit.end_line, edit.end_col),
             },
         }
         if edit.replacement:
@@ -489,8 +507,13 @@ def format_findings(
     findings: list[Finding],
     filepath: str,
     fixes: Sequence[tuple[Finding, list[TextEdit]]] | None = None,
+    text: str | None = None,
 ) -> list[dict[str, Any]]:
     """Format findings as SARIF result objects.
+
+    ``text`` is the file the fixes were computed against; with it, their
+    columns are converted to UTF-16 code units, the ``columnKind`` the log
+    declares.
 
     When ``fixes`` is given (each entry pairs a finding with the edits a fixer
     produced for it, e.g. ``FixResult.fixed_edits``), the matching result gains a
@@ -500,6 +523,9 @@ def format_findings(
     caller gates whether to pass ``fixes`` at all (experimental until the ``fix``
     feature is promoted), so the default output shape is unchanged.
     """
+    # The fix engine's own line space, so a column is read on the line it was
+    # computed against.
+    source_lines = split_lines(text) if text is not None else None
     _taxonomy, taxa_index = _build_attack_taxonomy()
     rules, index_map = _build_rules(taxa_index=taxa_index)
     results: list[dict[str, Any]] = []
@@ -566,7 +592,7 @@ def format_findings(
 
         edits = edits_by_finding.get(_finding_key(f))
         if edits:
-            result["fixes"] = [_build_fix(edits, filepath)]
+            result["fixes"] = [_build_fix(edits, filepath, source_lines)]
 
         if f.severity_overridden_from is not None:
             props = result.setdefault("properties", {})
@@ -652,6 +678,7 @@ def build_sarif_log(
                 },
                 "taxonomies": [taxonomy],
                 "originalUriBaseIds": {_URI_BASE_ID: {"uri": working_dir_uri}},
+                "columnKind": "utf16CodeUnits",
                 "invocations": [invocation],
                 "results": results,
             },
