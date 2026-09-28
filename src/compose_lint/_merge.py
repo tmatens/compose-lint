@@ -239,6 +239,8 @@ class Document:
     # each (ADR-036 decision 7). Carried here so a merge set reports the gaps
     # of every document in it, not only the primary's.
     gaps: tuple[str, ...] = ()
+    # Values a `.env` substituted into this document (see `Loaded`).
+    env_values: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -255,6 +257,8 @@ class Merged:
     # document where the reset deletes it again. `fix` reads this to defer that
     # finding instead of refusing the file it appears in.
     resets: dict[str, str] = field(default_factory=dict)
+    # Every value a `.env` substituted into any document in the set.
+    env_values: dict[str, dict[str, str]] = field(default_factory=dict)
 
     def source_of(self, path: str) -> str | None:
         return self.sources.get(path)
@@ -876,12 +880,17 @@ def merge_documents(documents: list[Document]) -> Merged:
     # Later documents win, matching the fold: two documents resetting the same
     # path leave the last one named.
     resets = {path: document.path for document in documents for path in document.resets}
+    env_values: dict[str, dict[str, str]] = {}
+    for document in documents:
+        for text, used in document.env_values.items():
+            env_values.setdefault(text, {}).update(used)
     return Merged(
         data=merged_data,
         lines=rec.lines,
         sources=rec.sources,
         gaps=gaps,
         resets=resets,
+        env_values=env_values,
     )
 
 

@@ -57,6 +57,13 @@ resolved from a `.env` (that is where secrets live), and the ambient shell
 environment is never read, so the same checkout lints the same on every
 machine. `--no-env` ignores env files entirely.
 
+A value the `.env` supplies is graded but not printed: wherever a finding,
+its fix guidance or a note would quote it, the report shows the reference
+instead (`${DB_PASSWORD}`), in text, JSON and SARIF alike. One limit: a value
+shorter than 8 characters is shown as written. Short values (`true`,
+`latest`, `1000`) are also words the guidance itself uses, and replacing
+them there would corrupt it.
+
 A `.env` that is there but cannot be read — not UTF-8, or larger than the
 256 KiB read cap — is not treated as absent. Compose reads it as raw bytes with
 no cap, so its values still deploy, and a run that graded the rest without them

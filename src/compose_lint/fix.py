@@ -810,6 +810,7 @@ def verify_apply(
     reparse: Callable[[str], tuple[dict[str, Any], dict[str, int]]] | None = None,
     fixable: Callable[[Finding], bool] | None = None,
     resets: Mapping[str, str] | None = None,
+    env_values: Mapping[str, Mapping[str, str]] | None = None,
 ) -> str | None:
     """Verify a patched candidate beyond "it parses" before it is written.
 
@@ -873,6 +874,9 @@ def verify_apply(
             disabled_rules=disabled_rules,
             severity_overrides=severity_overrides,
             excluded_services=excluded_services,
+            # The same quoting as the findings compared against below, or a
+            # finding that quotes a `.env` value would read as new.
+            env_values=env_values,
         )
     except FindingLimitError:  # pragma: no cover - a fix that multiplies findings
         return "computed fix could not be verified: it exceeds the findings limit"

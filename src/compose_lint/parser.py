@@ -1315,6 +1315,7 @@ def _resolve_includes(  # noqa: PLR0913
     use_env: bool,
     budget: _ExtendsBudget,
     repeats: _RepeatBudget | None = None,
+    env_seen: dict[str, dict[str, str]] | None = None,
     depth: int,
     chain: tuple[str, ...],
     prefix: tuple[str, ...],
@@ -1436,6 +1437,7 @@ def _resolve_includes(  # noqa: PLR0913
                     env_dirs=(entry_dir or target_dir, *(env_dirs or (base_dir,))),
                     budget=budget,
                     repeats=repeats,
+                    env_seen=env_seen,
                     depth=depth + 1,
                     include_chain=(*chain, step),
                     document_path=target,
@@ -1527,6 +1529,7 @@ def _resolve_cross_file_extends(
     use_env: bool,
     budget: _ExtendsBudget,
     repeats: _RepeatBudget | None = None,
+    env_seen: dict[str, dict[str, str]] | None = None,
     depth: int,
     chain: tuple[tuple[str, str], ...],
     prefix: tuple[str, ...],
@@ -1640,6 +1643,7 @@ def _resolve_cross_file_extends(
                 env_dirs=env_dirs,
                 budget=budget,
                 repeats=repeats,
+                env_seen=env_seen,
                 depth=depth + 1,
                 chain=(*chain, step),
                 document_path=target,
@@ -1790,7 +1794,10 @@ def _cannot_fit(value: str, supplied: Mapping[str, str], remaining: int) -> bool
 
 
 def _substitute_interpolation_defaults(
-    data: Any, env: Mapping[str, str] | None = None
+    data: Any,
+    env: Mapping[str, str] | None = None,
+    *,
+    record: dict[str, dict[str, str]] | None = None,
 ) -> None:
     """Rewrite every string leaf to the value Compose ships.
 
@@ -1834,6 +1841,12 @@ def _substitute_interpolation_defaults(
 
     Written defaults are unaffected there: ``${PW:-changeme}`` still resolves,
     because a default is committed in the file and ships to every clone.
+
+    ``record`` collects, for each value a ``.env`` changed, the names and values
+    it used, keyed by the substituted text. Rules classify the substituted
+    value, and the engine uses this to quote ``${NAME}`` in their messages
+    instead of the value: a ``.env`` is often written by CI and holds secrets,
+    and the report reaches the job log, JSON and Code Scanning.
     """
     seen: set[int] = set()
     # Each value is bounded (MAX_SUBSTITUTED_LEN); the document was not. One
@@ -1866,6 +1879,14 @@ def _substitute_interpolation_defaults(
             else:
                 remaining[0] -= max(growth, 0)
                 result = substituted
+                if record is not None and supplied:
+                    used = {
+                        name: supplied[name]
+                        for name in reference_names(value)
+                        if supplied.get(name) and supplied[name] in substituted
+                    }
+                    if used:
+                        record.setdefault(substituted, {}).update(used)
         results[key] = result
         return result
 
@@ -2093,6 +2114,11 @@ class Loaded:
     # key from `data` whether or not a second document is merged, so an absence
     # rule fires on it and its fixer would write it straight back.
     resets: dict[str, str] = field(default_factory=dict)
+    # For each value a `.env` changed, in this document or one it pulled in:
+    # the substituted text, and the names and values it used. Classification
+    # sees the substituted value; the report quotes the reference instead
+    # (see :func:`compose_lint.engine.run_rules`).
+    env_values: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
 def load_compose_full(path: str | Path, *, use_env: bool = True) -> Loaded:
@@ -2136,18 +2162,21 @@ def load_compose_full(path: str | Path, *, use_env: bool = True) -> Loaded:
     # not of the link's target. Resolving physically named a different host path
     # than the one Compose actually mounts, in either direction.
     base_dir = filepath.absolute().parent
+    env_values: dict[str, dict[str, str]] = {}
     data, lines, resets, _, gaps = _loads_full(
         content,
         base_dir=base_dir,
         use_env=use_env,
         project_dir=base_dir,
         document_path=filepath.absolute(),
+        env_seen=env_values,
     )
     return Loaded(
         data=data,
         lines=lines,
         gaps=gaps,
         resets=dict.fromkeys(resets, str(path)),
+        env_values=env_values,
     )
 
 
@@ -2180,6 +2209,7 @@ def _loads_full(  # noqa: PLR0913
     env_dirs: tuple[Path, ...] = (),
     budget: _ExtendsBudget | None = None,
     repeats: _RepeatBudget | None = None,
+    env_seen: dict[str, dict[str, str]] | None = None,
     depth: int = 0,
     chain: tuple[tuple[str, str], ...] = (),
     include_chain: tuple[str, ...] = (),
@@ -2325,7 +2355,7 @@ def _loads_full(  # noqa: PLR0913
                     elif parsed_env.values:
                         layered.update(parsed_env.values)
                 supplied = layered or None
-        _substitute_interpolation_defaults(data, supplied)
+        _substitute_interpolation_defaults(data, supplied, record=env_seen)
         prefix: tuple[str, ...] = ()
         if base_dir is not None and project_dir is not None:
             try:
@@ -2377,6 +2407,7 @@ def _loads_full(  # noqa: PLR0913
                 use_env=use_env,
                 budget=budget if budget is not None else _ExtendsBudget(),
                 repeats=repeats,
+                env_seen=env_seen,
                 depth=depth,
                 chain=include_chain,
                 prefix=prefix,
@@ -2398,6 +2429,7 @@ def _loads_full(  # noqa: PLR0913
                     use_env=use_env,
                     budget=budget if budget is not None else _ExtendsBudget(),
                     repeats=repeats,
+                    env_seen=env_seen,
                     depth=depth,
                     chain=chain,
                     prefix=prefix,
@@ -2510,6 +2542,7 @@ def load_document(path: str | Path, *, use_env: bool = True) -> Document:
     except OSError as e:
         raise ComposeError(f"Cannot read file: {e}") from e
     base_dir = filepath.absolute().parent
+    env_values: dict[str, dict[str, str]] = {}
     data, lines, resets, overrides, gaps = _loads_full(
         content,
         base_dir=base_dir,
@@ -2517,6 +2550,7 @@ def load_document(path: str | Path, *, use_env: bool = True) -> Document:
         use_env=use_env,
         project_dir=base_dir,
         document_path=filepath.absolute(),
+        env_seen=env_values,
     )
     return Document(
         path=str(path),
@@ -2525,6 +2559,7 @@ def load_document(path: str | Path, *, use_env: bool = True) -> Document:
         resets=resets,
         overrides=overrides,
         gaps=gaps,
+        env_values=env_values,
         # `_loads_full` may already have folded `include:` or a cross-file
         # `extends:` into this document, so `lines` can name other files. Seed
         # `sources` from it or the next merge credits all of them to `path`.

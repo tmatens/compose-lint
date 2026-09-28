@@ -1025,6 +1025,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             if overlays:
                 merged = load_merged([filepath, *overlays], use_env=not args.no_env)
                 data, lines, gaps = merged.data, merged.lines, merged.gaps
+                env_values = merged.env_values
                 # Not a coverage gap — coverage was achieved, not missed — so
                 # this warns without touching the exit code. What it must never
                 # do is stay silent: the findings below describe a document that
@@ -1040,6 +1041,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             else:
                 loaded = load_compose_full(filepath, use_env=not args.no_env)
                 data, lines, gaps = loaded.data, loaded.lines, loaded.gaps
+                env_values = loaded.env_values
         except ComposeNotApplicableError as e:
             # v1 / fragment file: not malformed, just outside what we lint.
             # Per ADR-013 this is exit 0 (skipped, not a parse error). Must
@@ -1097,6 +1099,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                 severity_overrides=severity_overrides,
                 excluded_services=excluded_services,
                 on_error=_record_rule_error,
+                env_values=env_values,
                 env_files=service_env_files,
                 config_path=_config_name(args.config, config_path),
             )
@@ -1450,6 +1453,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             if overlays:
                 merged = load_merged([filepath, *overlays], use_env=not args.no_env)
                 data, lines, gaps = merged.data, merged.lines, merged.gaps
+                env_values = merged.env_values
                 resets = merged.resets
                 emit(
                     f"note: {filepath}: merged {', '.join(overlays)} before "
@@ -1458,6 +1462,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             else:
                 loaded = load_compose_full(filepath, use_env=not args.no_env)
                 data, lines, gaps = loaded.data, loaded.lines, loaded.gaps
+                env_values = loaded.env_values
                 # A `!reset` needs no second document to matter: it deletes the
                 # key from this file's own parsed data, and the key is still
                 # written here for a fixer's insertion to collide with.
@@ -1497,6 +1502,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
                 excluded_services=excluded_services,
                 config_path=fix_config_name,
                 on_error=crashed,
+                env_values=env_values,
             )
         except FindingLimitError as limit:
             # A partial set cannot be fixed safely: verify-apply compares the
@@ -1595,6 +1601,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             patched,
             base_dir=Path(filepath).absolute().parent,
             only=only,
+            env_values=env_values,
             disabled_rules=disabled_rules,
             severity_overrides=severity_overrides,
             excluded_services=excluded_services,
@@ -1754,6 +1761,7 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
         if group.overlays:
             merged = load_merged(list(group.paths), use_env=use_env)
             data, lines, gaps = merged.data, merged.lines, merged.gaps
+            env_values = merged.env_values
             overlays = list(group.overlays)
             why = _why_merged(overlays, selected_by_env=group.selected_by_env)
             emit(
@@ -1763,6 +1771,7 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
         else:
             loaded = load_compose_full(group.primary, use_env=use_env)
             data, lines, gaps = loaded.data, loaded.lines, loaded.gaps
+            env_values = loaded.env_values
     except ComposeNotApplicableError as e:
         # v1 / fragment file: skipped, not an error (ADR-013). Nothing to lint,
         # so nothing to bootstrap. Must precede the ComposeError clause below —
@@ -1787,7 +1796,13 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
 
     crashed = _CrashRecorder(group.primary)
     try:
-        findings = run_rules(data, lines, env_files=service_env_files, on_error=crashed)
+        findings = run_rules(
+            data,
+            lines,
+            env_files=service_env_files,
+            on_error=crashed,
+            env_values=env_values,
+        )
     except FindingLimitError as limit:
         # A baseline suppresses every finding; one written over part of them
         # leaves the next `check` failing on the rest.

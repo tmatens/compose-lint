@@ -126,6 +126,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   No advisory: since 0.25.0 only values from a target that is itself a
   Compose file reached output; releases before that are covered by
   GHSA-whr6-fgpq-fpv9.
+- **A finding quotes the `${NAME}` a `.env` filled in, not its value.**
+  Values under `environment:` were never resolved from the sibling `.env`,
+  but `image:` and every other field were, and CL-0004 and CL-0019 quoted
+  the resolved image in their message and fix. A pull request changing one
+  line to `image: "${DB_PASSWORD}"`, in a workflow that writes secrets into
+  that `.env`, got the value into the job log, JSON and the SARIF uploaded
+  to Code Scanning. Rules still grade the resolved value; findings now quote
+  the reference in its place, for any value of eight or more characters, in
+  text, JSON, SARIF and fix guidance. See GHSA-jf3h-8jvx-vcrg.
 
 ## [0.31.0] - 2026-09-27
 
