@@ -42,16 +42,19 @@ machine. `--no-env` ignores env files entirely.
 
 A `.env` that is there but cannot be read — not UTF-8, or larger than the
 256 KiB read cap — is not treated as absent. Compose reads it as raw bytes with
-no cap, so its values still deploy: the run says it was not read, on stderr
-and as an `unread_input` entry in JSON `warnings[]` and SARIF, and grades the
-rest without it.
+no cap, so its values still deploy, and a run that graded the rest without them
+could pass a stack whose real configuration it never saw. It is a coverage
+gap: exit 2, a JSON `errors[]` entry of kind `coverage_gap`, and a SARIF
+notification with `executionSuccessful: false`. `--allow-partial-coverage`
+accepts it and grades the rest. The same holds for an included file's own
+`.env`, which Compose reads for that file.
 
 A `.env` that resolves outside the project — a committed symlink to a file
 elsewhere on the machine — is not read at all, the same containment every
-other file a run opens gets, and is reported the same way. So is an
+other file a run opens gets, and is the same coverage gap. An
 `include:` entry's `project_directory:` that resolves outside through a
-directory symlink: the entry's files resolve against their own directories
-instead.
+directory symlink is not followed either: the entry's files resolve against
+their own directories instead.
 
 ## An `env_file:` is read too, and its keys are graded
 
@@ -62,8 +65,11 @@ line out of `environment:` no longer silences CL-0020/CL-0021 without
 changing what deploys. Only those two rules read env files; a finding names
 the key and the file, **never the value**, and a path resolving outside the
 project directory is refused rather than read. A refusal is reported as an
-`unread_input` warning, as is a `COMPOSE_FILE` entry refused for the same
-reason, so a JSON or SARIF consumer sees it as well as a reader of stderr. An
+`unread_input` warning, so a JSON or SARIF consumer sees it as well as a
+reader of stderr; it does not fail the run, because only those two rules read
+the keys. A `COMPOSE_FILE` entry refused for leaving the project, or missing,
+is a coverage gap instead: the whole list is ignored, so the documents graded
+are not the ones Compose loads. An
 `env_file:` written in an included or extended document is read from beside
 that document, as Compose reads it.
 

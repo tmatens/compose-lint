@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path, PurePath
@@ -9,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from compose_lint._env_file import read_env
+from compose_lint._env_file import ENV_FILENAME, env_read_failure, read_env
 from compose_lint._limits import MAX_MERGED_PAIRS, MAX_SERVICES
 from compose_lint._lines import find_ambiguous_break
 from compose_lint._merge import (
@@ -2167,7 +2168,11 @@ def _loads_full(  # noqa: PLR0913
                     parsed_env = read_env(
                         directory, wanted, within=project_dir or directory
                     )
-                    if parsed_env is not None and parsed_env.values:
+                    if parsed_env is None:
+                        gap = _unread_env_gap(directory, project_dir)
+                        if gap is not None and gap not in gaps:
+                            gaps.append(gap)
+                    elif parsed_env.values:
                         layered.update(parsed_env.values)
                 supplied = layered or None
         _substitute_interpolation_defaults(data, supplied)
@@ -2277,6 +2282,40 @@ def _loads_full(  # noqa: PLR0913
         ) from e
 
     return data, lines, reset_paths, override_paths, tuple(gaps)
+
+
+def _unread_env_gap(directory: Path, project_dir: Path | None) -> str | None:
+    """The coverage gap for an included document's ``.env`` that exists unread.
+
+    Compose reads an included file's own ``.env`` and deploys what it sets, so
+    one that is there but cannot be read (not UTF-8, over the read cap,
+    resolving outside the project) leaves values this run never graded. That
+    used to be silent: the document was linted as though the file were absent.
+
+    The project's own ``.env`` is not reported here. File selection reads it
+    first and reports it once per run, whether or not a document references
+    anything it sets.
+    """
+    if project_dir is None or _same_directory(directory, project_dir):
+        return None
+    failure = env_read_failure(directory, within=project_dir)
+    if failure is None:
+        return None
+    try:
+        shown = (directory.absolute() / ENV_FILENAME).relative_to(
+            project_dir.absolute()
+        )
+    except ValueError:  # pragma: no cover - env_dirs never leave the project
+        shown = directory / ENV_FILENAME
+    return (
+        f"'{shown.as_posix()}' was not read because {failure}, so the values "
+        "it supplies to the documents beside it were not graded."
+    )
+
+
+def _same_directory(left: Path, right: Path) -> bool:
+    """Whether two directories are one, compared lexically as ADR-023 keys paths."""
+    return os.path.normpath(left.absolute()) == os.path.normpath(right.absolute())
 
 
 def loads(

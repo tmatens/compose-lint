@@ -155,6 +155,17 @@ but values Compose deploys from that input were not graded, and before this the
 fact reached stderr alone. `coverage_gap` was not reused because it means a
 document that was not linted and, unwaived, exit 2.
 
+*Amendment (pre-1.0): an unread `.env` is a coverage gap.* The sibling `.env`
+(and an included file's own) that exists but could not be read, and a
+`COMPOSE_FILE` list that was refused, moved from `unread_input` to
+`coverage_gap`. Compose deploys what either sets, so a run that graded the rest
+without them could pass a stack whose real values it never saw; "anything that
+couldn't be read or graded fails closed" is the rule a gate needs, and exit 2 is
+what it already means for an `include:` that was not followed.
+`--allow-partial-coverage` accepts them like any other gap. `unread_input`
+stays, for a refused `env_file:` target: only CL-0020 and CL-0021 read those
+keys, so a refusal is stated without failing the run.
+
 *Amendment (pre-1.0): SARIF truncation is a warning.* A SARIF log holds at most
 5,000 results (`MAX_SARIF_RESULTS`), because a larger one passes GitHub Code
 Scanning's 10 MB limit and is rejected whole. A truncated log used to report a

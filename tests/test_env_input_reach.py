@@ -10,9 +10,14 @@ machine-readable trace:
 - an `env_file:` or `COMPOSE_FILE` entry refused for leaving the project was
   reported on stderr only.
 
-The last two are warnings, not failures: kind `unread_input`, on JSON
-`warnings[]` and as a SARIF `level: warning` notification that leaves
-`executionSuccessful` true.
+A sibling `.env` that exists but was not read, and a refused `COMPOSE_FILE`
+list, are coverage gaps: exit 2, on JSON `errors[]` with kind `coverage_gap`,
+and `--allow-partial-coverage` moves them to `warnings[]`. Compose still
+deploys what either sets, so what was not graded fails closed. A refused
+`env_file:` target is a warning, kind `unread_input`, on JSON `warnings[]` and
+as a SARIF `level: warning` notification that leaves `executionSuccessful`
+true: only CL-0020/CL-0021 read those keys, and a refusal is stated rather than
+treated as a stack that was not seen.
 """
 
 from __future__ import annotations
@@ -70,6 +75,10 @@ def _rules(doc: dict[str, Any]) -> set[str]:
 
 def _unread(doc: dict[str, Any]) -> list[dict[str, Any]]:
     return [w for w in doc["warnings"] if w["kind"] == "unread_input"]
+
+
+def _gaps(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [entry for entry in entries if entry["kind"] == "coverage_gap"]
 
 
 class TestIncludedEnvFile:
@@ -160,24 +169,126 @@ class TestUnreadableDotEnv:
         ],
         ids=["not-utf8", "over-cap"],
     )
-    def test_it_is_reported_not_treated_as_absent(
+    def test_it_fails_closed(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: Any,
         content: bytes,
     ) -> None:
+        """Compose deploys `privileged: true` from this file; the run must not
+        pass over a value it could not grade."""
         _write(tmp_path / "compose.yml", PRIVILEGED_BY_ENV)
         _write(tmp_path / ".env", content)
         code, doc, err = _run(
             ["--format", "json", "compose.yml"], tmp_path, monkeypatch, capsys
         )
-        (warning,) = _unread(doc)
-        assert warning["file"].endswith(".env")
-        assert "was not read because" in warning["message"]
-        assert "was not read because" in err
+        (gap,) = _gaps(doc["errors"])
+        assert gap["file"].endswith(".env")
+        assert "not read because" in gap["message"]
+        assert "not read because" in err
+        assert _unread(doc) == []
+        assert code == 2
+
+    def test_allow_partial_coverage_accepts_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+    ) -> None:
+        _write(tmp_path / "compose.yml", PRIVILEGED_BY_ENV)
+        _write(tmp_path / ".env", b"# caf\xe9\nPRIV=true\n")
+        code, doc, _ = _run(
+            ["--format", "json", "--allow-partial-coverage", "compose.yml"],
+            tmp_path,
+            monkeypatch,
+            capsys,
+        )
         assert doc["errors"] == []
+        (gap,) = _gaps(doc["warnings"])
+        assert gap["file"].endswith(".env")
         assert code == 0
+
+    def test_it_is_a_failed_sarif_run(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+    ) -> None:
+        _write(tmp_path / "compose.yml", PRIVILEGED_BY_ENV)
+        _write(tmp_path / ".env", b"# caf\xe9\nPRIV=true\n")
+        code, doc, _ = _run(
+            ["--format", "sarif", "compose.yml"], tmp_path, monkeypatch, capsys
+        )
+        invocation = doc["runs"][0]["invocations"][0]
+        assert invocation["executionSuccessful"] is False
+        notes = invocation["toolExecutionNotifications"]
+        assert [(n["level"], n["descriptor"]["id"]) for n in notes] == [
+            ("error", "coverage_gap")
+        ]
+        assert code == 2
+
+    def test_the_text_verdict_counts_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+    ) -> None:
+        _write(tmp_path / "compose.yml", PRIVILEGED_BY_ENV)
+        _write(tmp_path / ".env", b"# caf\xe9\nPRIV=true\n")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("NO_COLOR", "1")
+        capsys.readouterr()
+        with pytest.raises(SystemExit) as exc:
+            cli.main(["compose.yml"])
+        captured = capsys.readouterr()
+        assert exc.value.code == 2
+        assert "coverage gap" in captured.out
+        assert "PASS" not in captured.out
+
+    def test_an_included_directory_env_fails_closed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+    ) -> None:
+        """Compose reads an included file's own `.env`. One it cannot read was
+        silently treated as absent."""
+        _write(tmp_path / "compose.yml", "include:\n  - sub/compose.yml\n")
+        _write(tmp_path / "sub" / "compose.yml", PRIVILEGED_BY_ENV)
+        _write(tmp_path / "sub" / ".env", b"# caf\xe9\nPRIV=true\n")
+        code, doc, err = _run(
+            ["--format", "json", "compose.yml"], tmp_path, monkeypatch, capsys
+        )
+        (gap,) = _gaps(doc["errors"])
+        assert gap["file"] == "compose.yml"
+        assert (
+            "'sub/.env' was not read because it is not valid UTF-8" in (gap["message"])
+        )
+        assert "sub/.env" in err
+        assert code == 2
+
+    def test_a_readable_included_directory_env_is_graded(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+    ) -> None:
+        _write(tmp_path / "compose.yml", "include:\n  - sub/compose.yml\n")
+        _write(tmp_path / "sub" / "compose.yml", PRIVILEGED_BY_ENV)
+        _write(tmp_path / "sub" / ".env", "PRIV=true\n")
+        code, doc, _ = _run(
+            ["--format", "json", "compose.yml"], tmp_path, monkeypatch, capsys
+        )
+        assert _gaps(doc["errors"]) == []
+        assert "CL-0002" in _rules(doc)
+        assert code == 1
+
+    @pytest.mark.parametrize("command", ["fix", "init"])
+    def test_fix_and_init_report_it_without_failing_on_it(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: Any,
+        command: str,
+    ) -> None:
+        """Neither is the gate, so a gap is stated and not fatal, as for an
+        `include:` they could not follow."""
+        _write(tmp_path / "compose.yml", PRIVILEGED_BY_ENV)
+        _write(tmp_path / ".env", b"# caf\xe9\nPRIV=true\n")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("NO_COLOR", "1")
+        capsys.readouterr()
+        with pytest.raises(SystemExit):
+            cli.main([command, "compose.yml"])
+        err = capsys.readouterr().err
+        assert "Warning: " in err
+        assert "not read because it is not valid UTF-8" in err
 
     def test_a_readable_env_is_graded_and_not_reported(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
@@ -217,11 +328,11 @@ class TestSymlinkedEnvLeavingTheProject:
             ["--format", "json", "compose.yml"], project, monkeypatch, capsys
         )
         assert "CL-0002" not in _rules(doc)
-        (warning,) = _unread(doc)
-        assert warning["file"].endswith(".env")
-        assert "resolves outside the project directory" in warning["message"]
+        (gap,) = _gaps(doc["errors"])
+        assert gap["file"].endswith(".env")
+        assert "resolves outside the project directory" in gap["message"]
         assert "resolves outside the project directory" in err
-        assert code == 0
+        assert code == 2
 
     @pytest.mark.parametrize("fmt", ["text", "json"])
     def test_the_linked_value_is_not_quoted_into_the_report(
@@ -335,20 +446,23 @@ class TestRefusedReferencesAreMachineReadable:
         assert _unread(doc) == []
         assert "CL-0020" in _rules(doc)
 
-    def test_an_out_of_project_compose_file_entry_is_a_warning(
+    def test_an_out_of_project_compose_file_entry_fails_closed(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
     ) -> None:
+        """The list was ignored, so the set graded is not the set Compose loads."""
         _write(tmp_path / "elsewhere.yml", "services:\n  x:\n    image: nginx\n")
         _write(
             tmp_path / "project" / "compose.yml", "services:\n  web:\n    image: a\n"
         )
         _write(tmp_path / "project" / ".env", "COMPOSE_FILE=../elsewhere.yml\n")
-        _, doc, _ = _run(
+        code, doc, _ = _run(
             ["--format", "json", "project/compose.yml"], tmp_path, monkeypatch, capsys
         )
-        (warning,) = _unread(doc)
-        assert "COMPOSE_FILE" in warning["message"]
-        assert warning["file"].endswith(".env")
+        (gap,) = _gaps(doc["errors"])
+        assert "COMPOSE_FILE" in gap["message"]
+        assert gap["file"].endswith(".env")
+        assert _unread(doc) == []
+        assert code == 2
 
     def test_an_in_project_compose_file_list_is_not_a_warning(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any

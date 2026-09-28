@@ -360,7 +360,8 @@ def _add_check_subparser(
         default=False,
         help=(
             "grade a file even though part of its stack could not be linted "
-            "(unresolved 'include:' or cross-file 'extends:'). Without this, "
+            "(unresolved 'include:' or cross-file 'extends:', a '.env' that "
+            "could not be read, a refused COMPOSE_FILE). Without this, "
             "such a gap is an error (exit 2) so a merge gate cannot pass on a "
             "partial view; with it, the gap is reported on stderr only"
         ),
@@ -943,16 +944,26 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     all_file_findings: list[tuple[list[Finding], str]] = []
     parse_errors: list[Diagnostic] = []
     coverage_errors: list[Diagnostic] = []
-    # The warnings channel: accepted coverage gaps, and inputs that were
-    # refused or unreadable (stated on stderr as notes, and here as well so a
-    # JSON or SARIF consumer is not the one reader left without a trace).
-    coverage_warnings: list[Diagnostic] = [
-        Diagnostic(file, message, DiagnosticKind.UNREAD_INPUT)
-        for file, message in selection.warnings
-    ]
+    # The warnings channel: accepted coverage gaps, and `env_file:` targets
+    # that were refused (stated on stderr as notes, and here as well so a JSON
+    # or SARIF consumer is not the one reader left without a trace).
+    coverage_warnings: list[Diagnostic] = []
     rule_errors: list[Diagnostic] = []
     has_errors = False
     seen_services: set[str] = set()
+    gap_is_fatal = not args.allow_partial_coverage
+    # A waived gap is still reported, on the non-fatal channel.
+    gap_channel = coverage_errors if gap_is_fatal else coverage_warnings
+    gap_remedy = _CHECK_GAP_REMEDY if gap_is_fatal else _CHECK_GAP_ACCEPTED_REMEDY
+    # A `.env` that exists but was not read, or a `COMPOSE_FILE` list that was
+    # refused: Compose still deploys what either sets, so what this run did not
+    # grade fails closed, the same as an `include:` it could not follow.
+    for env_path, message in selection.gaps:
+        gap_channel.extend(
+            _report_coverage_gaps(
+                env_path, (message,), fatal=gap_is_fatal, remedy=gap_remedy
+            )
+        )
 
     for filepath in args.files:
         overlays = overlay_of.get(filepath)
@@ -991,18 +1002,8 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             )
             continue
 
-        gap_is_fatal = not args.allow_partial_coverage
-        # A waived gap is still reported, on the non-fatal channel.
-        gap_channel = coverage_errors if gap_is_fatal else coverage_warnings
         gap_channel.extend(
-            _report_coverage_gaps(
-                filepath,
-                gaps,
-                fatal=gap_is_fatal,
-                remedy=_CHECK_GAP_REMEDY
-                if gap_is_fatal
-                else _CHECK_GAP_ACCEPTED_REMEDY,
-            )
+            _report_coverage_gaps(filepath, gaps, fatal=gap_is_fatal, remedy=gap_remedy)
         )
         for note in unresolved_mount_sources(data):
             emit(f"note: {filepath}: {note}")
@@ -1367,6 +1368,8 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             "compose.yml, compose.yaml, "
             "docker-compose.yml, docker-compose.yaml",
         )
+    for env_path, message in selection.gaps:
+        _report_coverage_gaps(env_path, (message,), fatal=False, remedy=_FIX_GAP_REMEDY)
     args.files = [group.primary for group in selection.groups]
     fix_overlay_of = {
         group.primary: list(group.overlays)
@@ -1671,7 +1674,12 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
     # A named file is never dropped (ADR-026 §4), so the plan has exactly one
     # group; its primary may differ from FILE when COMPOSE_FILE orders the
     # project differently, in which case the note above says so.
-    (group,) = _plan(args, [args.file]).groups
+    selection = _plan(args, [args.file])
+    (group,) = selection.groups
+    for env_path, message in selection.gaps:
+        _report_coverage_gaps(
+            env_path, (message,), fatal=False, remedy=_INIT_GAP_REMEDY
+        )
     use_env = not args.no_env
     try:
         if group.overlays:

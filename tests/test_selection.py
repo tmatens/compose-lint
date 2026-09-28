@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from compose_lint._selection import plan_documents
+from compose_lint._selection import Selection, plan_documents
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -149,6 +149,10 @@ class TestComposeFile:
         ]
 
 
+def _gap_text(selection: Selection) -> str:
+    return " ".join(message for _, message in selection.gaps)
+
+
 class TestRefusals:
     """A refused list falls back rather than being honoured in part.
 
@@ -162,7 +166,7 @@ class TestRefusals:
         assert [g.paths for g in selection.groups] == [
             ["compose.yml", "compose.override.yml"]
         ]
-        assert "outside the project directory" in " ".join(selection.notes)
+        assert "outside the project directory" in _gap_text(selection)
 
     def test_an_absolute_entry_is_refused(self, in_project: Path) -> None:
         """The .env must not be able to point the linter at an arbitrary file."""
@@ -170,7 +174,7 @@ class TestRefusals:
         selection = plan_documents([])
         assert selection.groups[0].paths == ["compose.yml", "compose.override.yml"]
         assert "/etc/passwd" not in str(selection.groups)
-        assert "ignored" in " ".join(selection.notes)
+        assert "ignored" in _gap_text(selection)
 
     def test_a_windows_drive_entry_is_refused(self, in_project: Path) -> None:
         write(in_project, ".env", "COMPOSE_FILE=C:/windows/system32/x.yml\n")
@@ -182,7 +186,15 @@ class TestRefusals:
         write(in_project, ".env", "COMPOSE_FILE=compose.yml:absent.yml\n")
         selection = plan_documents([])
         assert selection.groups[0].paths == ["compose.yml", "compose.override.yml"]
-        assert "ignored" in " ".join(selection.notes)
+        assert "ignored" in _gap_text(selection)
+
+    def test_a_refusal_is_a_gap_and_not_a_note(self, in_project: Path) -> None:
+        """Stated once, on the channel that fails the run, not also as a note."""
+        write(in_project, ".env", "COMPOSE_FILE=compose.yml:absent.yml\n")
+        selection = plan_documents([])
+        ((file, _),) = selection.gaps
+        assert file.endswith(".env")
+        assert not any("COMPOSE_FILE" in note for note in selection.notes)
 
     def test_an_empty_value_changes_nothing(self, in_project: Path) -> None:
         write(in_project, ".env", "COMPOSE_FILE=\n")

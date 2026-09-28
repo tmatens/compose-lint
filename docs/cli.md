@@ -18,7 +18,8 @@ check options:
   -q, --quiet                  One line per finding — no fix, reference, or excerpt (text mode)
   --skip-suppressed            Hide suppressed findings from output
   --allow-partial-coverage     Grade a file whose `include:` / cross-file `extends:`
-                               could not be followed, instead of failing (exit 2)
+                               could not be followed, or whose `.env` could not be
+                               read, instead of failing (exit 2)
   --no-merge-overrides         Lint each file alone instead of merging the
                                `compose.override.yml` Compose merges beside it
   --no-env                     Ignore the env files beside the Compose file: the
@@ -119,8 +120,8 @@ shipped inside the wheel, and it needs no network.
 **Exit 2 is not "the lint failed".** Exit 1 means findings at or above the
 threshold — that is the failure to act on. Exit 2 means compose-lint could not
 run, *or* could not see the whole stack: an unresolved `include:` or cross-file
-`extends:` means part of the stack was never graded, so the run cannot honestly
-report a verdict. An `include:` or cross-file `extends:` whose target resolves
+`extends:`, or a `.env` Compose reads that compose-lint could not, means part of
+the stack was never graded, so the run cannot honestly report a verdict. An `include:` or cross-file `extends:` whose target resolves
 inside the project directory *is* followed and merged, so it is not a gap — the
 message on one that is says which residual it hit (outside the project, not
 found, interpolated, a cycle). Treating exit 2 as a findings failure invents remediation work
