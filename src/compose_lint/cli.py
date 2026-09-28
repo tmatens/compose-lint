@@ -1141,7 +1141,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                 )
                 emit(f"Error: {filepath}: {msg}")
                 continue
-            all_sarif.extend(format_sarif(findings, filepath, fixes=fixes))
+            all_sarif.extend(format_sarif(findings, filepath, fixes=fixes, text=text))
         else:
             all_json.extend(format_json(findings, filepath))
 

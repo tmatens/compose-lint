@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -715,3 +716,45 @@ class TestSuppressionJustification:
 
     def test_no_reason_means_no_justification(self) -> None:
         assert self._result(None)["suppressions"] == [{"kind": "external"}]
+
+
+# --- Fix regions count UTF-16 code units, and say so ----------------------
+
+
+class TestColumnKind:
+    """TextEdit columns are code points; the log declares `utf16CodeUnits` and
+    converts, so a region after an astral character (an emoji) is placed where
+    JavaScript consumers index it, not one column short per character."""
+
+    TEXT = "services:\n  web:\n    labels: {a: \U0001f600\U0001f600}\n"
+
+    def _region(self, start_col: int, end_col: int, text: str | None) -> Any:
+        from compose_lint.models import TextEdit
+
+        finding = _sample_finding()
+        edit = TextEdit(3, start_col, 3, end_col, "x")
+        (result,) = format_findings(
+            [finding], "compose.yml", fixes=[(finding, [edit])], text=text
+        )
+        change = result["fixes"][0]["artifactChanges"][0]
+        return change["replacements"][0]["deletedRegion"]
+
+    def test_the_log_declares_utf16(self) -> None:
+        log = build_sarif_log([])
+        assert log["runs"][0]["columnKind"] == "utf16CodeUnits"
+
+    def test_a_column_after_astral_characters_is_converted(self) -> None:
+        # "    labels: {a: " is 16 code points; each emoji is 1 code point, 2 units.
+        region = self._region(17, 19, self.TEXT)
+        assert region["startColumn"] == 17
+        assert region["endColumn"] == 21
+
+    def test_a_bmp_only_line_is_unchanged(self) -> None:
+        region = self._region(5, 11, "services:\n  web:\n    image: café:1\n")
+        assert (region["startColumn"], region["endColumn"]) == (5, 11)
+
+    def test_a_column_past_the_last_line_is_left_alone(self) -> None:
+        from compose_lint.formatters.sarif import _utf16_column
+
+        assert _utf16_column(["a\n"], 2, 1) == 1
+        assert _utf16_column(None, 1, 7) == 7
