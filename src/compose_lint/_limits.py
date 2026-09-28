@@ -98,3 +98,9 @@ MAX_REPEATED_LINES = 262144
 # `--allow-partial-coverage` accepts) rather than a verdict over part of the
 # stack. The largest count in the 11,111-file corpus is 323.
 MAX_FINDINGS = 20000
+
+# The line map's keys spell whole paths, so their total size is the sum of every
+# path's length, and a long name high in the document is repeated in every key
+# under it. 32 M characters is far above any real file (the corpus maximum is
+# 119,239); past it a key is not recorded and its finding reports no line.
+MAX_LINE_KEY_CHARS = 32 * 1024 * 1024

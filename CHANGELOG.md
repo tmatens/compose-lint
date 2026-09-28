@@ -97,6 +97,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are now UTF-16 code units, and the run declares
   `"columnKind": "utf16CodeUnits"`.
 
+- **Two remaining costs are bounded.** A service name thousands of
+  characters long was repeated in every line-map key under it, so one
+  8,000-character name over 60,000 labels made a 1 MB file cost 600 MB; the
+  map's key characters now have a budget (32 M, over 250 times the largest in
+  the test corpus), and a key past it reports no line. And past the
+  substitution budget, each distinct reference to a large `.env` value was
+  still built in full before being discarded, which took seconds; a value
+  that cannot fit is now left as written without being built.
+
 ## [0.31.0] - 2026-09-27
 
 ### Added
