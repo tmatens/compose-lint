@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -758,3 +759,107 @@ class TestColumnKind:
 
         assert _utf16_column(["a\n"], 2, 1) == 1
         assert _utf16_column(None, 1, 7) == 7
+
+
+# --- Every `uri` is an RFC 3986 reference ---------------------------------
+#
+# `github/codeql-action/upload-sarif` validates each `uri` against the JSON
+# Schema `uri`/`uri-reference` formats and prints one that fails, verbatim, to
+# the job log. That line is outside any stop-commands window, so a raw path from
+# the checkout would reach the runner as written. The percent-encoding in
+# `_artifact_location` is what keeps it out; this pins it.
+
+_PCHAR = r"(?:[A-Za-z0-9\-._~!$&'()*+,;=:@]|%[0-9A-Fa-f]{2})"
+_URI_REFERENCE = re.compile(
+    rf"""
+    (?:[A-Za-z][A-Za-z0-9+.\-]*:)?          # scheme
+    (?://(?:{_PCHAR}|/)*?)?                 # authority (loose: a path follows)
+    (?:{_PCHAR}|/)*                         # path
+    (?:\?(?:{_PCHAR}|[/?])*)?               # query
+    (?:\#(?:{_PCHAR}|[/?])*)?               # fragment
+    """,
+    re.VERBOSE,
+)
+# A relative reference's first segment cannot hold a colon (RFC 3986 §4.2), or
+# it reads as a scheme.
+_NOSCHEME_COLON = re.compile(r"^[^/?#:]*:")
+
+
+def _uris(node: object) -> list[str]:
+    if isinstance(node, dict):
+        found = [v for k, v in node.items() if k == "uri" and isinstance(v, str)]
+        for value in node.values():
+            found += _uris(value)
+        return found
+    if isinstance(node, list):
+        return [uri for item in node for uri in _uris(item)]
+    return []
+
+
+def _is_uri_reference(uri: str) -> bool:
+    if not _URI_REFERENCE.fullmatch(uri):
+        return False
+    scheme = re.match(r"[A-Za-z][A-Za-z0-9+.\-]*:", uri)
+    return scheme is not None or not _NOSCHEME_COLON.match(uri)
+
+
+@pytest.mark.parametrize(
+    "uri",
+    ["compose.yml", "a%20b/c.yml", "file:///tmp/x.yml", "file:///C:/x%23y.yml"],
+)
+def test_the_uri_check_accepts_references(uri: str) -> None:
+    assert _is_uri_reference(uri)
+
+
+@pytest.mark.parametrize(
+    "uri",
+    ["a b.yml", "x\n::warning::y", "a#b#c", "100%.yml", "1:d.yml", "a\\b", "é.yml"],
+)
+def test_the_uri_check_rejects_raw_paths(uri: str) -> None:
+    assert not _is_uri_reference(uri)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file names")
+def test_every_uri_is_a_uri_reference(tmp_path: Path) -> None:
+    names = [
+        "my dir/café.yml",
+        "a#b.yml",
+        "100%.yml",
+        "x?y.yml",
+        "brack[1].yml",
+        "colon:name.yml",
+        "back\\slash.yml",
+        "new\nline/::warning::x.yml",
+        "tab\tand ##[warning]x.yml",
+    ]
+    project = tmp_path / "project"
+    for name in names:
+        path = project / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("services:\n  web:\n    image: nginx:latest\n")
+    outside = tmp_path / "out side#1" / "compose.yml"
+    outside.parent.mkdir()
+    outside.write_text("services:\n  web:\n    image: nginx:latest\n")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "compose_lint",
+            "--format",
+            "sarif",
+            "--",
+            *names,
+            str(outside),
+        ],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "NO_COLOR": "1"},
+        timeout=120,
+    )
+    document = json.loads(result.stdout)
+    uris = _uris(document)
+    assert len(uris) > len(names)
+    bad = [uri for uri in uris if not _is_uri_reference(uri)]
+    assert bad == []

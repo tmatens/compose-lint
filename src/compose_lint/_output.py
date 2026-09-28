@@ -51,6 +51,10 @@ _UNSAFE_RANGES = (
     (0x061C, 0x061C),  # ARABIC LETTER MARK (Bidi_Control)
     (0x180E, 0x180E),  # MONGOLIAN VOWEL SEPARATOR
     (0x200B, 0x200F),
+    # LINE and PARAGRAPH SEPARATOR: a line break to `str.splitlines()` and to
+    # some renderers, so text after one can look like, or be read as, a line of
+    # its own.
+    (0x2028, 0x2029),
     (0x202A, 0x202E),
     (0x2060, 0x2064),
     (0x2066, 0x206F),
@@ -77,18 +81,42 @@ def _escape(match: re.Match[str]) -> str:
 
 
 # CI log parsers treat some printable text as commands. GitHub Actions and
-# Azure Pipelines run `##[command]` found anywhere in a line, and GitHub also
-# runs `::command::` at the start of a line, after any indentation, which is
-# where `emit` puts a diagnostic's continuation lines. A Compose file's own
-# strings are printed in the report, so each opening is broken with the same
-# visible escape the control characters get.
-_LEGACY_COMMAND = re.compile(r"##\[")
-_LINE_COMMAND = re.compile(r"^([ \t]*):(?=:)", re.MULTILINE)
+# Azure Pipelines run `##[command]` found anywhere in a line, Azure runs
+# `##vso[command]` anywhere in a line too, and GitHub also runs `::command::`
+# at the start of a line. A Compose file's own strings are printed in the
+# report, so each opening is broken with the same visible escape the control
+# characters get.
+#
+# "The start of a line" is after the runner's `TrimStart()`, which strips every
+# character .NET calls white space, not only space and tab: U+00A0, U+2000 to
+# U+200A, U+3000 and the rest of Unicode's space separators, plus U+0085 and
+# the line and paragraph separators. A no-break space before `::` got past a
+# `[ \t]*` prefix and was acted on. Python's `\s` covers that whole set (and
+# the four information separators besides), so the prefix is any white space
+# but the newline that ends the line.
+_LEGACY_COMMAND = re.compile(r"##(vso)?\[", re.IGNORECASE)
+_LINE_COMMAND = re.compile(r"^([^\S\n]*):(?=:)", re.MULTILINE)
 
 
 def _defuse_commands(text: str) -> str:
-    text = _LEGACY_COMMAND.sub("##\\\\u005b", text)
+    text = _LEGACY_COMMAND.sub(lambda m: "##" + (m.group(1) or "") + "\\u005b", text)
     return _LINE_COMMAND.sub("\\1\\\\u003a", text)
+
+
+def defuse_json(document: str) -> str:
+    """Break every CI command opener inside serialized JSON, keeping it valid.
+
+    JSON and SARIF go to stdout, which a bare CLI run prints to the job log, and
+    ``json.dumps`` leaves ``##[`` in a string as it is. The bracket is written
+    as the JSON escape ``\\u005b`` instead, which decodes to the same string, so
+    a consumer sees identical data. A ``#`` only ever appears inside a string,
+    so no structural bracket is touched. A line-leading ``::`` cannot occur: a
+    string carries its newlines escaped, and every line starts with
+    indentation followed by structure.
+    """
+    return _LEGACY_COMMAND.sub(
+        lambda m: "##" + (m.group(1) or "") + "\\u005b", document
+    )
 
 
 def sanitize(text: str) -> str:
@@ -96,7 +124,8 @@ def sanitize(text: str) -> str:
 
     Newlines and tabs survive, so multi-line content (fix guidance, a unified
     diff) keeps its layout. Clean text is returned unchanged. CI workflow
-    command openers (``##[`` and a line-leading ``::``) are escaped too.
+    command openers (``##[``, ``##vso[`` and a line-leading ``::``) are
+    escaped too.
     """
     return _defuse_commands(_UNSAFE_OUTPUT_CHARS.sub(_escape, text))
 
@@ -111,6 +140,18 @@ def sanitize_line(text: str) -> str:
     ``✓ PASS`` verdict.
     """
     return _defuse_commands(_UNSAFE_LINE_CHARS.sub(_escape, text))
+
+
+def inline(value: object) -> str:
+    """A value from a Compose file, quoted inside rule guidance on one line.
+
+    Guidance keeps its own line breaks, and the text report indents them. A
+    break carried in with a quoted value would start a line whose whole text
+    the file chose, which a problem matcher registered earlier in a CI job
+    reads as one of its own lines. The break is shown as the same visible
+    escape the sanitizer gives other control characters.
+    """
+    return str(value).replace("\n", "\\u000a")
 
 
 # Continuation lines are indented so nothing after an embedded newline can sit

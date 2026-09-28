@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._output import inline
 from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
@@ -242,7 +243,7 @@ class DangerousDevicesRule(BaseRule):
                         line=lines.get(f"services.{service_name}.devices[{i}]")
                         or lines.get(f"services.{service_name}.devices"),
                         fix=(
-                            f"Remove '{host_device}' from devices. Direct host "
+                            f"Remove '{inline(host_device)}' from devices. Direct host "
                             "device access bypasses container isolation entirely."
                         ),
                         references=[CIS_REF],
@@ -291,7 +292,8 @@ class DangerousDevicesRule(BaseRule):
                 line=lines.get(f"services.{service_name}.device_cgroup_rules[{i}]")
                 or lines.get(f"services.{service_name}.device_cgroup_rules"),
                 fix=(
-                    f"Remove '{evidence}' from device_cgroup_rules, or narrow it to "
+                    f"Remove '{inline(evidence)}' from device_cgroup_rules, or narrow "
+                    "it to "
                     "the specific non-disk device the workload needs. If the rule "
                     "must stay, add MKNOD to cap_drop and mount nothing from /dev."
                 ),

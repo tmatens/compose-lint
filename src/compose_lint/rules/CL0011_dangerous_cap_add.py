@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._output import inline
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 from compose_lint.rules._caps import REFERENCES, iter_cap_add
@@ -74,7 +75,7 @@ class DangerousCapAddRule(BaseRule):
                 message=(f"Service adds {as_written}: {STRONG_CAPS[bare]}."),
                 line=line,
                 fix=(
-                    f"Remove {as_written} from cap_add. VPN and networking "
+                    f"Remove {inline(as_written)} from cap_add. VPN and networking "
                     "containers legitimately need NET_ADMIN — where that is "
                     "the case, suppress with a reason naming the workload "
                     "rather than leaving it unexplained.\n"

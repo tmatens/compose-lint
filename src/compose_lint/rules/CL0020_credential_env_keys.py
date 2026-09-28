@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._output import inline
 from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
@@ -293,10 +294,10 @@ class CredentialEnvKeysRule(BaseRule):
                 ),
                 line=line,
                 fix=(
-                    f"Move '{key}' to Compose's `secrets:` primitive. If the "
+                    f"Move '{inline(key)}' to Compose's `secrets:` primitive. If the "
                     "image supports the `*_FILE` convention (Postgres, MySQL, "
                     "MariaDB, MinIO, etc.), set "
-                    f"`{key}_FILE: /run/secrets/<name>` and declare the "
+                    f"`{inline(key)}_FILE: /run/secrets/<name>` and declare the "
                     "secret under the top-level `secrets:` block sourced from "
                     "a gitignored file or `external: true`. Otherwise, have "
                     "the entrypoint read the secret file at startup and "
@@ -353,10 +354,11 @@ class CredentialEnvKeysRule(BaseRule):
                 source_file=entry.path or entry.source_file,
                 source_is_document=False,
                 fix=(
-                    f"Move '{entry.key}' out of '{entry.source_file}' and into "
+                    f"Move '{inline(entry.key)}' out of "
+                    f"'{inline(entry.source_file)}' and into "
                     "Compose's `secrets:` primitive. If the image supports the "
                     "`*_FILE` convention (Postgres, MySQL, MariaDB, MinIO, "
-                    f"etc.), set `{entry.key}_FILE: /run/secrets/<name>` and "
+                    f"etc.), set `{inline(entry.key)}_FILE: /run/secrets/<name>` and "
                     "declare the secret under the top-level `secrets:` block "
                     "sourced from a gitignored file or `external: true`. "
                     "Otherwise, have the entrypoint read the secret file at "

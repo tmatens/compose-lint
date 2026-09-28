@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._output import inline
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 from compose_lint.rules._caps import REFERENCES, iter_cap_add
@@ -73,7 +74,7 @@ class HostExecCapAddRule(BaseRule):
                 ),
                 line=line,
                 fix=(
-                    f"Remove {as_written} from cap_add. There is no "
+                    f"Remove {inline(as_written)} from cap_add. There is no "
                     "least-privilege reading of this capability — if the "
                     "workload genuinely needs it, it needs a VM or a host "
                     "process, not a container.\n"

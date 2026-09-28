@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from compose_lint._lines import split_lines
+from compose_lint._output import inline
 from compose_lint._yaml_edit import (
     is_anchored_or_merged,
     mapping_scalar_span,
@@ -139,7 +140,8 @@ class TmpfsInsecureOptionsRule(BaseRule):
                 ),
                 line=lines.get(line_key) or lines.get(f"services.{service_name}.tmpfs"),
                 fix=(
-                    f"Remove the {opts} option to restore Docker's secure default "
+                    f"Remove the {inline(opts)} option to restore Docker's secure "
+                    "default "
                     "(noexec,nosuid). Keep it only if the workload must "
                     "execute or setuid from this mount."
                 ),

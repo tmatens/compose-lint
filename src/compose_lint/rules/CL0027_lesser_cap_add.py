@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._output import inline
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 from compose_lint.rules._caps import REFERENCES, iter_cap_add
@@ -74,7 +75,7 @@ class LesserCapAddRule(BaseRule):
                 message=(f"Service adds {as_written}: {LESSER_CAPS[bare]}."),
                 line=line,
                 fix=(
-                    f"Remove {as_written} from cap_add unless the workload "
+                    f"Remove {inline(as_written)} from cap_add unless the workload "
                     "demonstrably needs it (debugger sidecars need "
                     "SYS_PTRACE). Scope a debugger to the container it "
                     'inspects with pid: "service:<name>" rather than '

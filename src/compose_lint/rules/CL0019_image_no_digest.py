@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._output import inline
 from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
@@ -82,7 +83,7 @@ class ImageNoDigestRule(BaseRule):
             ),
             line=lines.get(f"services.{service_name}.image"),
             fix=(
-                f"Add a digest pin: image: {image}@sha256:<digest>\n"
+                f"Add a digest pin: image: {inline(image)}@sha256:<digest>\n"
                 "Use Dependabot or Renovate to keep digests current."
             ),
             references=[OWASP_REF],

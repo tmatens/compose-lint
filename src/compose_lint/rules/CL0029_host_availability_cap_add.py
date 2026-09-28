@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._output import inline
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 from compose_lint.rules._caps import REFERENCES, iter_cap_add
@@ -81,7 +82,7 @@ class HostAvailabilityCapAddRule(BaseRule):
                 message=(f"Service adds {as_written}: {HOST_AVAILABILITY_CAPS[bare]}."),
                 line=line,
                 fix=(
-                    f"Remove {as_written} from cap_add. Workloads that ask for "
+                    f"Remove {inline(as_written)} from cap_add. Workloads that ask for "
                     "these usually have a bounded alternative: set "
                     "`deploy.resources` rather than granting SYS_NICE, and "
                     "size `deploy.resources.limits.memory` rather than "
