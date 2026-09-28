@@ -29,6 +29,13 @@ evidence is written in
 `--no-merge-overrides` grades the base alone; `fix` only ever edits the file
 it is fixing.
 
+The override's spelling does not have to match the base's. Compose pairs any
+of `compose.yml`, `compose.yaml`, `docker-compose.yml` and
+`docker-compose.yaml` with whichever override is there, and when several are,
+it takes the first of `compose.override.yml`, `compose.override.yaml`,
+`docker-compose.override.yml`, `docker-compose.override.yaml` (measured on
+Compose 5.5.0). compose-lint pairs them the same way.
+
 ## A sibling `.env` is read, because Compose reads it
 
 ([ADR-026](adr/026-read-the-sibling-env-file.md)). Its `COMPOSE_FILE`

@@ -57,14 +57,17 @@ COMPOSE_FILENAMES = [
 ]
 
 # The overlay Compose merges automatically when it sits beside a base file.
-# Compose pairs the spelling: `compose.yml` takes `compose.override.yml`, and
-# `docker-compose.yaml` takes `docker-compose.override.yaml`.
-OVERRIDE_FILENAMES = {
-    "compose.yml": "compose.override.yml",
-    "compose.yaml": "compose.override.yaml",
-    "docker-compose.yml": "docker-compose.override.yml",
-    "docker-compose.yaml": "docker-compose.override.yaml",
-}
+# Measured against Compose 5.5.0: the spelling of the base does not matter.
+# Any of the four base names takes whichever override exists, and when several
+# do, the first in this order wins (Compose warns and names it). Pairing only
+# the matching spelling missed `compose.yaml` + `docker-compose.override.yml`,
+# which Compose deploys.
+OVERRIDE_SEARCH = (
+    "compose.override.yml",
+    "compose.override.yaml",
+    "docker-compose.override.yml",
+    "docker-compose.override.yaml",
+)
 
 # The only keys read from a `.env` for selection. Fixed and tiny on purpose:
 # the wanted-set filter (ADR-026 §5) needs to know what to keep before anything
@@ -265,13 +268,14 @@ def _with_override(path: str, merge_overrides: bool) -> DocumentGroup:
     if not merge_overrides:
         return DocumentGroup(path)
     base = Path(path)
-    override_name = OVERRIDE_FILENAMES.get(base.name)
-    if override_name is None:
+    if base.name not in COMPOSE_FILENAMES:
         return DocumentGroup(path)
-    candidate = base.parent / override_name
-    if not candidate.is_file():
+    present = [
+        base.parent / name for name in OVERRIDE_SEARCH if (base.parent / name).is_file()
+    ]
+    if not present:
         return DocumentGroup(path)
-    return DocumentGroup(path, (str(candidate),))
+    return DocumentGroup(path, (str(present[0]),))
 
 
 def env_file_for(directory: Path, *, read_env_files: bool) -> str | None:

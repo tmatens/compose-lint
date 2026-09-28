@@ -82,6 +82,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   accepts it) and the findings graded so far are reported; `fix` and
   `init` refuse such a file.
 
+- **An override is merged whatever its spelling.** `compose.yaml` beside
+  a `docker-compose.override.yml` (or any other mismatched pair) was graded
+  as the base alone, while Compose merges and deploys the override. Any of
+  the four base names now takes whichever override exists, and with several,
+  the one Compose picks: `compose.override.yml`, then `.yaml`, then the
+  `docker-compose.override.*` pair.
+
 ## [0.31.0] - 2026-09-27
 
 ### Added

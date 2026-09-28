@@ -287,3 +287,70 @@ class TestNamedSpellings:
         monkeypatch.chdir(dir1)
         selection = plan_documents(["compose.yml", "../dir1/compose.yml"])
         assert [g.primary for g in selection.groups] == ["compose.yml"]
+
+
+class TestOverrideSpelling:
+    """Compose 5.5.0 pairs any base spelling with any override spelling.
+
+    Measured with `docker compose config` on every base x override pair: each
+    of the sixteen merged. With several overrides present Compose warns and
+    takes the first in that search order. Pairing only the matching spelling left
+    `compose.yaml` + `docker-compose.override.yml` graded as the base alone.
+    """
+
+    BASES = ["compose.yml", "compose.yaml", "docker-compose.yml", "docker-compose.yaml"]
+    # Compose's search order, as measured, rather than the module's constant.
+    OVERRIDES = [
+        "compose.override.yml",
+        "compose.override.yaml",
+        "docker-compose.override.yml",
+        "docker-compose.override.yaml",
+    ]
+
+    @pytest.mark.parametrize("base", BASES)
+    @pytest.mark.parametrize("override", OVERRIDES)
+    def test_every_spelling_pairs(
+        self, tmp_path: Path, base: str, override: str
+    ) -> None:
+        write(tmp_path, base, BASE)
+        write(tmp_path, override, OVERLAY)
+        (group,) = plan_documents([str(tmp_path / base)]).groups
+        assert group.overlays == (str(tmp_path / override),)
+
+    @pytest.mark.parametrize(
+        ("present", "chosen"),
+        [
+            (OVERRIDES, "compose.override.yml"),
+            (
+                ["compose.override.yaml", "docker-compose.override.yml"],
+                "compose.override.yaml",
+            ),
+            (
+                ["docker-compose.override.yml", "docker-compose.override.yaml"],
+                "docker-compose.override.yml",
+            ),
+        ],
+    )
+    def test_the_first_present_override_wins(
+        self, tmp_path: Path, present: list[str], chosen: str
+    ) -> None:
+        write(tmp_path, "docker-compose.yaml", BASE)
+        for name in present:
+            write(tmp_path, name, OVERLAY)
+        (group,) = plan_documents([str(tmp_path / "docker-compose.yaml")]).groups
+        assert group.overlays == (str(tmp_path / chosen),)
+
+    def test_a_non_canonical_base_takes_no_override(self, tmp_path: Path) -> None:
+        """Only discovery pairs; a file Compose would load only by `-f` does not."""
+        write(tmp_path, "compose.prod.yml", BASE)
+        write(tmp_path, "compose.override.yml", OVERLAY)
+        (group,) = plan_documents([str(tmp_path / "compose.prod.yml")]).groups
+        assert group.overlays == ()
+
+    def test_no_merge_overrides_still_opts_out(self, tmp_path: Path) -> None:
+        write(tmp_path, "compose.yaml", BASE)
+        write(tmp_path, "docker-compose.override.yml", OVERLAY)
+        selection = plan_documents(
+            [str(tmp_path / "compose.yaml")], merge_overrides=False
+        )
+        assert selection.groups[0].overlays == ()
