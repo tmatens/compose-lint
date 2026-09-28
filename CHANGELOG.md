@@ -47,6 +47,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Any exception nothing else handles now exits 2 with the JSON or SARIF
   envelope and a request to report it, instead of exiting 1.
 
+- **A node shared by many paths no longer multiplies the line map.** A
+  line or tag position was recorded once per path that reached a node, and
+  once per `extends:` child for every line it inherited. One `labels:`
+  anchor aliased into 4,000 services (372 KB), the same through a merge key
+  (218 KB), and 2,000 `extends:` children of a 4,000-label base (112 KB)
+  each ran out of 2 GiB; a mapping of `!reset` keys aliased the same way
+  took 634 MiB. Repeated records now share one budget per load, 262,144,
+  over 200 times the largest a real file in the test corpus uses; past it,
+  a repeat is not recorded and its finding reports no line, which `fix`
+  already treats as "do not edit". All four now load in about a second
+  under 130 MiB. Grouping the line map by service also no longer cuts every
+  path at every dot of a service name, which cost seconds for a name with
+  thousands of dots.
+
 ## [0.31.0] - 2026-09-27
 
 ### Added
