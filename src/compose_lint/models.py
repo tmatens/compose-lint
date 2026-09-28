@@ -58,17 +58,18 @@ class DiagnosticKind(enum.Enum):
 
     # A file that could not be read or parsed as a Compose document.
     PARSE = "parse"
-    # An `include:` or cross-file `extends:` that could not be followed, so
-    # part of the stack was never linted (exit 2, unless waived).
+    # An `include:` or cross-file `extends:` that could not be followed, a
+    # `.env` Compose reads that could not be, or a refused `COMPOSE_FILE` list,
+    # so part of the stack was never linted or graded (exit 2, unless waived).
     COVERAGE_GAP = "coverage_gap"
     # A rule (or its fixer) raised; its findings for that document are missing.
     RULE_CRASH = "rule_crash"
     # Run-level, not about one file: no Compose files found, a configuration
     # error, output truncation. `Diagnostic.file` is "" for these.
     RUN = "run"
-    # A file the run would read for values or for its file list -- the sibling
-    # `.env`, an `env_file:` target, a `COMPOSE_FILE` entry -- was refused or
-    # could not be read, so what it supplies was not graded. Warning only.
+    # An `env_file:` target was refused or could not be read, so the keys it
+    # supplies were not graded. Warning only. (The `.env` and `COMPOSE_FILE`
+    # cases were warnings too until they became coverage gaps.)
     UNREAD_INPUT = "unread_input"
 
 

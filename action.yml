@@ -34,8 +34,8 @@ inputs:
   allow-partial-coverage:
     description: >-
       Pass `--allow-partial-coverage`: downgrade a coverage gap (an
-      `include:` or cross-file `extends:` that could not be followed) from
-      exit 2 to a warning.
+      `include:` or cross-file `extends:` that could not be followed, or a
+      `.env` that could not be read) from exit 2 to a warning.
     required: false
     default: "false"
   strict-config:

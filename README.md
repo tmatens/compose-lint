@@ -211,7 +211,7 @@ actually run, not just the file you named:
   the same on every machine.
 - **A part of the stack it cannot see is exit 2, not a silent pass.** A
   reference that is missing, interpolated, or leaves the project is reported
-  as a coverage gap. Lint the `docker compose config` output to cover it, or
+  as a coverage gap, and so is a `.env` it cannot read. Lint the `docker compose config` output to cover it, or
   pass `--allow-partial-coverage` to grade what is visible.
 
 Any Compose Specification file works: one with a top-level `services:` key, or

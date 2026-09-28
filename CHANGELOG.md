@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A `.env` that could not be read fails the run.** A sibling `.env` that is
+  not UTF-8, is over the 256 KiB read cap, or resolves outside the project,
+  and a `COMPOSE_FILE` list refused for naming a file outside the project or
+  a missing one, are now coverage gaps: exit 2, a JSON `errors[]` entry of
+  kind `coverage_gap`, and SARIF `executionSuccessful: false`. They were an
+  `unread_input` warning on a run that could still pass, though Compose
+  deploys what the file sets. An included file's own `.env` that could not be
+  read was not reported at all; it is the same gap now.
+  `--allow-partial-coverage` accepts them. A refused `env_file:` target stays
+  an `unread_input` warning. No advisory: the file is part of the change
+  under review, and 0.31.0 already reported it as not read.
+
 ## [0.31.0] - 2026-09-27
 
 ### Added

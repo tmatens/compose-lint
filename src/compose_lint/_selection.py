@@ -112,10 +112,13 @@ class Selection:
     # also what makes a laptop-versus-CI difference a diff rather than a
     # mystery.
     env_files: tuple[str, ...] = ()
-    # The subset of `notes` a machine reader must see too: `(file, message)`
-    # for an input that was refused or unreadable, so what it supplies was
-    # not graded. Each is also in `notes`, which is what stderr prints.
-    warnings: tuple[tuple[str, str], ...] = ()
+    # `(file, message)` for an input that was refused or unreadable, so what
+    # it supplies was not graded: a `.env` that exists but could not be read,
+    # or a `COMPOSE_FILE` list that was refused. These are coverage gaps, not
+    # notes — the run exits 2 unless the gap is accepted — because Compose
+    # still deploys what that input sets (P5: what could not be read fails
+    # closed).
+    gaps: tuple[tuple[str, str], ...] = ()
 
     def is_consumed(self, path: str) -> bool:
         """Whether ``path`` is already being graded inside another group."""
@@ -165,7 +168,7 @@ def _plan_discovered(
     asked "what does this project lint to", and the project's own answer is the
     file list Compose would load.
     """
-    selected, notes, warnings = _compose_file_entries(
+    selected, notes, gaps = _compose_file_entries(
         directory, read_env_files=read_env_files
     )
     env_file = env_file_for(directory, read_env_files=read_env_files)
@@ -178,14 +181,14 @@ def _plan_discovered(
             consumed=frozenset(_key(path) for path in selected[1:]),
             notes=tuple(notes),
             env_files=env_files,
-            warnings=tuple(warnings),
+            gaps=tuple(gaps),
         )
     discovered = [name for name in COMPOSE_FILENAMES if (directory / name).is_file()]
     selection = _pair_with_overrides(discovered, merge_overrides, notes)
     return replace(
         selection,
         env_files=env_files if discovered else (),
-        warnings=tuple(warnings),
+        gaps=tuple(gaps),
     )
 
 
@@ -196,7 +199,7 @@ def _plan_named(
     groups: list[DocumentGroup] = []
     consumed: set[str] = set()
     notes: list[str] = []
-    warnings: list[tuple[str, str]] = []
+    gaps: list[tuple[str, str]] = []
     planned: set[str] = set()
     env_files: list[str] = []
 
@@ -204,12 +207,12 @@ def _plan_named(
         if _key(path) in planned:
             continue
         directory = Path(path).parent
-        selected, file_notes, file_warnings = _compose_file_entries(
+        selected, file_notes, file_gaps = _compose_file_entries(
             directory, read_env_files=read_env_files
         )
         # Two files in one directory share its `.env`; say so once.
         notes.extend(note for note in file_notes if note not in notes)
-        warnings.extend(w for w in file_warnings if w not in warnings)
+        gaps.extend(gap for gap in file_gaps if gap not in gaps)
         env_file = env_file_for(directory, read_env_files=read_env_files)
         if env_file is not None and env_file not in env_files:
             env_files.append(env_file)
@@ -242,7 +245,7 @@ def _plan_named(
         consumed=frozenset(consumed),
         notes=tuple(notes),
         env_files=tuple(env_files),
-        warnings=tuple(warnings),
+        gaps=tuple(gaps),
     )
 
 
@@ -284,8 +287,9 @@ def _compose_file_entries(
 ) -> tuple[list[str] | None, list[str], list[tuple[str, str]]]:
     """The document list ``directory``'s ``.env`` selects, and what to say.
 
-    The third value is the notes that are also machine-readable warnings, as
-    ``(file, message)``: a refused list, or a ``.env`` that could not be read.
+    The third value is the coverage gaps, as ``(file, message)``: a refused
+    list, or a ``.env`` that could not be read. They are not repeated in the
+    notes; the caller reports them on the gap channel.
 
     ``None`` means no list applies — there is no ``.env``, it sets no
     ``COMPOSE_FILE``, or the one it sets was refused. A refusal falls back to
@@ -300,13 +304,12 @@ def _compose_file_entries(
         failure = env_read_failure(directory, within=directory)
         if failure is None:
             return None, [], []
-        env_path = str(directory / ENV_FILENAME)
         message = (
-            f"{env_path} was not read because {failure}, so it selected no "
+            f"not read because {failure}, so it selected no "
             "documents and supplied no values. Compose reads it anyway, so any "
             "value it sets was not graded."
         )
-        return None, [message], [(env_path, message)]
+        return None, [], [(str(directory / ENV_FILENAME), message)]
     raw = parsed.values.get("COMPOSE_FILE")
     if not raw:
         return None, [], []
@@ -318,11 +321,11 @@ def _compose_file_entries(
         candidate = _resolve_entry(directory, entry.strip())
         if candidate is None:
             message = (
-                f"{directory / ENV_FILENAME}: COMPOSE_FILE names {entry.strip()!r}, "
-                "which is outside the project directory or missing, so the whole "
-                "list was ignored and file selection fell back to the default."
+                f"COMPOSE_FILE names {entry.strip()!r}, which is outside the "
+                "project directory or missing, so the whole list was ignored "
+                "and file selection fell back to the default."
             )
-            return None, [message], [(str(directory / ENV_FILENAME), message)]
+            return None, [], [(str(directory / ENV_FILENAME), message)]
         resolved.append(candidate)
     if not resolved:
         return None, [], []
