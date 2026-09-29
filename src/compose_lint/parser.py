@@ -2539,12 +2539,21 @@ def loads(
     return data, lines
 
 
-def load_document(path: str | Path, *, use_env: bool = True) -> Document:
+def load_document(
+    path: str | Path, *, use_env: bool = True, project_dir: Path | None = None
+) -> Document:
     """Load one Compose file as a :class:`Document` ready to merge.
 
     The merge-aware sibling of :func:`load_compose`: same parse, same
     validation, but it keeps the ``!reset`` deletions that only matter once a
     second document is folded in.
+
+    ``project_dir`` is the directory the document's relative paths and ``.env``
+    resolve against, defaulting to the file's own. In a merge it is the
+    *first* file's directory for every document: Compose 5.5.0, given
+    ``-f compose.yml -f ops/dev.yml``, resolves the overlay's bind sources,
+    ``env_file:`` and ``extends: {file:}`` against the first file's directory
+    and interpolates it from that directory's ``.env``, never from ``ops/``.
     """
     filepath = Path(path)
     try:
@@ -2555,7 +2564,7 @@ def load_document(path: str | Path, *, use_env: bool = True) -> Document:
         raise ComposeError(f"Invalid encoding: file is not valid UTF-8 ({e})") from e
     except OSError as e:
         raise ComposeError(f"Cannot read file: {e}") from e
-    base_dir = filepath.absolute().parent
+    base_dir = project_dir or filepath.absolute().parent
     env_values: dict[str, dict[str, str]] = {}
     data, lines, resets, overrides, gaps = _loads_full(
         content,
@@ -2603,9 +2612,13 @@ def load_merged(paths: list[str | Path], *, use_env: bool = True) -> Merged:
     quietly, which is ADR-013 and unchanged.
     """
     documents: list[Document] = []
+    # One project directory for the whole set, the first file's, as Compose
+    # takes it (see `load_document`). An overlay under `ops/` loaded against
+    # its own directory read `ops/.env` and mounted `ops/data` for `./data`.
+    project = Path(paths[0]).absolute().parent if paths else None
     for path in paths:
         try:
-            documents.append(load_document(path, use_env=use_env))
+            documents.append(load_document(path, use_env=use_env, project_dir=project))
         except ComposeNotApplicableError as exc:
             # A v1-shaped or own-config document in a merge set is an error,
             # not a skip (#673). Compose refuses a project that includes
@@ -2678,6 +2691,12 @@ def merge_patched(
         sources=_carried_sources(lines),
     )
     merged = merge_documents(
-        [candidate, *(load_document(p, use_env=use_env) for p in overlays)]
+        [
+            candidate,
+            *(
+                load_document(p, use_env=use_env, project_dir=base_dir)
+                for p in overlays
+            ),
+        ]
     )
     return merged.data, merged.lines
