@@ -24,7 +24,9 @@ from compose_lint._output import sanitize
 if TYPE_CHECKING:
     from pathlib import Path
 
-NAME = os.fsdecode(b"c\xe9.yml")
+# What Linux's ``os.fsdecode(b"c\xe9.yml")`` gives. Spelled out rather than
+# decoded here, because Windows refuses to decode that byte at import time.
+NAME = "c\udce9.yml"
 DOC = b"services:\n  web:\n    image: nginx:1.27\n    privileged: true\n"
 
 
