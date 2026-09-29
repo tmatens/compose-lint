@@ -14,6 +14,12 @@
   # replaces this default, so a config that passes flags should end its
   # list with `--` (see README).
   args: [--]
+  # Without this, pre-commit splits a long file list across parallel
+  # processes, and each one sees only part of the project. A
+  # `.compose-lint.yml` naming a service in another partition then reads as
+  # stale, and `--strict-config` fails a valid config with exit 2. The linter
+  # needs the whole list in one run, as the CLI and the Action get it.
+  require_serial: true
   language: python
   types: [yaml]
   # A separator must follow `compose`, so every real variant (compose.prod.yml,

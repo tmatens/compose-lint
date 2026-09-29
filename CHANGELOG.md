@@ -57,6 +57,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   separately. Every `### Security` changelog entry now records
   whether it got an advisory, and CI checks that it does.
 
+### Fixed
+
+- **The pre-commit hook lints every selected file in one run.** pre-commit
+  splits a long file list across parallel processes unless a hook opts
+  out, so each process saw only part of the project. A
+  `.compose-lint.yml` naming a service that another process received read
+  as stale, and with `--strict-config` a valid config failed the hook with
+  exit 2. The hook now sets `require_serial: true`.
+
 ## [0.32.0] - 2026-09-28
 
 ### Changed

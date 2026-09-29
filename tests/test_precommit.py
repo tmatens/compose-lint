@@ -104,6 +104,20 @@ def test_default_args_end_with_the_option_terminator(
         )
 
 
+def test_every_hook_runs_serially(hooks: list[dict[str, Any]]) -> None:
+    """The hook gets every selected file in one process.
+
+    pre-commit defaults ``require_serial`` to false and then splits a long
+    file list across parallel processes. Each process sees only part of the
+    project, so a ``.compose-lint.yml`` naming a service in another partition
+    reads as stale, and ``--strict-config`` exits 2 on a valid config.
+    """
+    for hook in hooks:
+        assert hook.get("require_serial") is True, (
+            f"hook '{hook['id']}' must set require_serial: true"
+        )
+
+
 def test_every_hook_declares_a_files_pattern(hooks: list[dict[str, Any]]) -> None:
     # pre-commit defaults an absent ``files`` to "", which matches every path
     # the ``types`` filter admits — every YAML file in the repo, for us.
