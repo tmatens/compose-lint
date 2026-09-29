@@ -39,7 +39,7 @@ permissions: {}
 jobs:
   forgejo-smoke:
     name: Forgejo guide snippet runs on a live Forgejo
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -59,7 +59,7 @@ jobs:
     needs:
       - forgejo-smoke
     if: failure() && github.event_name == 'schedule'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 3
     permissions:
       contents: read
