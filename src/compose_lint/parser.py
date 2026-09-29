@@ -802,50 +802,6 @@ def _validate_compose(
     return data
 
 
-def _merge_extends(
-    base: Any, over: Any, memo: dict[tuple[int, int], Any] | None = None
-) -> Any:
-    """Merge a resolved ``extends`` base under an overriding child value.
-
-    Follows Compose's ``extends`` semantics: child scalars win, mappings merge
-    (child wins per key), sequences concatenate with the base first (Docker
-    append-merges the base's list into every service that extends it).
-
-    Memoized on the ``(id(base), id(over))`` pair, as ``_strip_lines`` and
-    ``_collect_lines`` already are. YAML aliases make the document a DAG rather
-    than a tree, so without a memo a subtree shared by *n* paths is re-merged
-    once per path: an 805-byte file took 5.4 s, and 869 bytes took 21.5 s —
-    4x per two alias levels, from a document PyYAML parses in 2 ms. The ids are
-    stable for the call because ``data`` holds every node alive throughout.
-
-    This does not subsume the recursion guard in :func:`loads`: memoizing
-    removes repeated work, not depth, so a long chain still needs the
-    ``RecursionError`` translation.
-    """
-    if memo is None:
-        memo = {}
-    key = (id(base), id(over))
-    cached = memo.get(key)
-    if cached is not None:
-        return cached
-
-    if isinstance(base, dict) and isinstance(over, dict):
-        merged = dict(base)
-        for child_key, value in over.items():
-            merged[child_key] = (
-                _merge_extends(base[child_key], value, memo)
-                if child_key in base
-                else value
-            )
-        memo[key] = merged
-        return merged
-    if isinstance(base, list) and isinstance(over, list):
-        joined = [*base, *over]
-        memo[key] = joined
-        return joined
-    return over
-
-
 def _lines_by_service(
     lines: Mapping[str, int], services: Mapping[Any, Any], wanted: Iterable[str]
 ) -> dict[str, dict[str, int]]:
