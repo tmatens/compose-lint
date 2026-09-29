@@ -51,7 +51,7 @@ dependencies = [
 # "Development dependencies" — and Dependabot's weekly pass bumps
 # them.
 lint = [
-    "ruff==0.16.6",
+    "ruff==0.16.9",
     # Workflow auditor beside actionlint in ci.yml's `actionlint` job:
     # template injection, cache poisoning, dangerous triggers, kept
     # credentials, unpinned uses. Config in .github/zizmor.yml.
@@ -62,7 +62,7 @@ security = [
     "pip-audit==2.10.1",
 ]
 publish = [
-    "build==1.6.0",
+    "build==1.6.1",
     "twine==7.0.0",
     # Used by the post-release canary in publish.yml to verify the
     # Sigstore bundles attached to the GitHub Release. Matches the
@@ -74,7 +74,7 @@ publish = [
 # the generated requirements-build.lock hash-pins only what's needed to
 # invoke `python -m build`, without pulling in pytest/ruff/mypy/etc.
 container = [
-    "build==1.6.0",
+    "build==1.6.1",
 ]
 # Chart generation for the State of Compose report (scripts/corpus/charts.py).
 # Manual maintainer task run at report-refresh time, not a CI job — so this
@@ -82,7 +82,7 @@ container = [
 # commands in CLAUDE.md). matplotlib never reaches the runtime wheel, which
 # stays at PyYAML-only per CLAUDE.md.
 corpus = [
-    "matplotlib==3.11.1",
+    "matplotlib==3.11.2",
 ]
 # Docs-site build (mkdocs.yml → GitHub Pages via .github/workflows/docs.yml).
 # Locked in requirements-docs.lock; the site is a build artifact of docs/*.md,
@@ -93,12 +93,12 @@ docs = [
 dev = [
     # Self-reference so the ruff pin lives only in [lint]; no drift.
     "compose-lint[lint]",
-    "check-jsonschema==0.38.0",
+    "check-jsonschema==0.38.2",
     # Patch-coverage gate: grades the lines a PR adds or changes against the
     # same coverage.xml the statement gate already produces. Threshold and
     # rationale live in ci.yml's `coverage` job.
-    "diff-cover==10.5.1",
-    "mutmut==3.7.0",
+    "diff-cover==10.6.0",
+    "mutmut==3.8.0",
     "mypy==2.3.1",
     # Drives the `precommit-smoke` job: `pre-commit try-repo` runs
     # .pre-commit-hooks.yaml from the working tree, so a broken `entry` or
