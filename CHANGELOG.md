@@ -85,6 +85,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `fix` refuses that file with exit 2, writes nothing to it, and goes on
   with the rest of the batch.
 
+- **A file name that is not valid UTF-8 no longer crashes the report.**
+  `--format sarif` exited 2 with no results, and text did the same
+  wherever stdout encodes strictly (a UTF-8 locale other than `C`, or
+  `PYTHONIOENCODING=utf-8`), while JSON graded the file and exited 1. The
+  name is now shown with the byte escaped (`c\udce9.yml`) in text, and
+  percent-encoded as the byte on disk (`c%E9.yml`) in a SARIF URI, so all
+  three formats report the file and give the same exit code.
+
 ## [0.32.0] - 2026-09-28
 
 ### Changed
