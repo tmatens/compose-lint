@@ -99,6 +99,34 @@ def test_aliased_children_each_get_their_own_lines() -> None:
         assert _line(lines, f"services.{name}.cap_add[1]") in (3, None), name
 
 
+def test_children_sharing_an_aliased_list_never_get_a_wrong_item_line() -> None:
+    """The second child merging the same list onto the same base hits the
+    merge memo, which records nothing below the sequence. Its own index lines
+    were kept, so its inherited ``NET_ADMIN`` (index 0) was placed on the
+    ``SYS_ADMIN`` line its own index 0 used to be. Absent is acceptable (the
+    finding falls back to the ``cap_add:`` key); a line naming the wrong item
+    is not."""
+    source = (
+        "x-caps: &caps\n"
+        "  - SYS_ADMIN\n"
+        "services:\n"
+        "  base:\n    image: alpine:3.20\n    cap_add:\n      - NET_ADMIN\n"
+        "  c1:\n    extends: base\n    cap_add: *caps\n"
+        "  c2:\n    extends: base\n    cap_add: *caps\n"
+    )
+    data, lines = loads(source)
+    source_lines = source.splitlines()
+    for name in ("c1", "c2"):
+        assert data["services"][name]["cap_add"] == ["NET_ADMIN", "SYS_ADMIN"]
+        for index, cap in enumerate(data["services"][name]["cap_add"]):
+            line = _line(lines, f"services.{name}.cap_add[{index}]")
+            if line is not None:
+                assert cap in source_lines[line - 1], (name, index, line)
+    # The first child, which did the merge, still gets exact lines.
+    assert _line(lines, "services.c1.cap_add[0]") == 7
+    assert _line(lines, "services.c1.cap_add[1]") == 2
+
+
 def test_the_cli_reports_the_inherited_capability_on_its_own_line(
     tmp_path: Path,
 ) -> None:
