@@ -16,9 +16,15 @@ folklore.
 Each entry is a fixture rather than a predicate over generated projects,
 because the generator deliberately does not build any of these — it always
 gives an interpolation reference a default, never points a reference outside
-the project, and never declares a profile. ``test_the_generator_avoids_every
-_registered_divergence`` pins that, so the 400 agreeing seeds mean the loader
+the generated tree, and never declares a profile. ``test_the_generator_avoids
+_every_registered_divergence`` pins that, so the agreeing seeds mean the loader
 agrees rather than that the generator steered around the places it does not.
+
+One containment case is generated on purpose: a layout seed may write an
+``include:`` entry's ``project_directory:`` with ``..`` above the Compose
+project directory, still inside the tree. Such a seed carries
+``GeneratedProject.policy_gap``, and the suite asserts both halves on it
+directly: Compose resolves the project, compose-lint reports the gap.
 """
 
 from __future__ import annotations

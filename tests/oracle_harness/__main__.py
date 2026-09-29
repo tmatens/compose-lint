@@ -45,11 +45,11 @@ def main(argv: list[str] | None = None) -> int:
         root = args.keep if args.keep is not None else Path(temporary) / "project"
         root.mkdir(parents=True, exist_ok=True)
         primary = project.write(root)
-        print(f"\nproject: {root}")
+        print(f"\nproject: {primary.parent}")
         print(f"oracle:  Compose {oracle_version()}")
 
-        oracle = run_oracle(root)
-        linted = lint_project(primary)
+        oracle = run_oracle(primary.parent)
+        linted = lint_project(primary, run_from=root)
 
         print(f"\ncompose exit {oracle.returncode}")
         if oracle.stderr.strip():
