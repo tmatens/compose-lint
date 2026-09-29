@@ -181,11 +181,25 @@ def _attribute_sources(findings: list[Finding], primary: str) -> list[Finding]:
     tagged: list[Finding] = []
     for finding in findings:
         source = getattr(finding.line, "source", None)
-        if source is not None and Path(source).absolute() != Path(primary).absolute():
+        if not _written_in(finding, primary):
             tagged.append(replace(finding, source_file=source))
         else:
             tagged.append(finding)
     return tagged
+
+
+def _written_in(finding: Finding, path: str) -> bool:
+    """Whether ``finding``'s evidence is written in ``path``.
+
+    Only such a finding can be fixed by editing ``path``: its line is a line in
+    that file's text. One inherited through a cross-file ``extends:`` or an
+    ``include:``, or merged from an overlay, carries a line from another
+    document, and an edit computed at that line against ``path`` would land on
+    whatever ``path`` happens to have there. ``fix`` and SARIF's suggested
+    changes both ask this one question so they cannot disagree about it.
+    """
+    source = getattr(finding.line, "source", None)
+    return source is None or Path(source).absolute() == Path(path).absolute()
 
 
 def _report_parse_error(filepath: str, exc: FileNotFoundError | ComposeError) -> str:
@@ -1186,11 +1200,18 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                 # the merged line map, so on a merged run they would splice at a
                 # line belonging to the other document. `fix` refuses the same
                 # case; SARIF must not offer through a different door what the
-                # fixer declines to do.
+                # fixer declines to do. For the same reason a finding inherited
+                # from another document gets no suggested change here, just as
+                # `fix` defers it to manual review.
                 fixes = (
                     []
                     if merged is not None
-                    else collect_edits(findings, data, lines, text).fixed_edits
+                    else collect_edits(
+                        [f for f in findings if _written_in(f, filepath)],
+                        data,
+                        lines,
+                        text,
+                    ).fixed_edits
                 )
             except LineOutOfRangeError as e:
                 # A fixer addressed a line this file does not have. Report the
@@ -1565,8 +1586,7 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
         # from the overlay is left to manual review — writing it into the base
         # would put the key in a file the overlay overrides anyway.
         def _is_local(f: Finding, _path: str = filepath) -> bool:
-            origin = getattr(f.line, "source", None)
-            return origin is None or Path(origin).absolute() == Path(_path).absolute()
+            return _written_in(f, _path)
 
         fixable_findings = [f for f in findings if _is_local(f)]
         deferred = [f for f in findings if not _is_local(f)]
