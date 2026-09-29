@@ -8,6 +8,7 @@ from compose_lint._lines import split_lines
 from compose_lint._output import inline
 from compose_lint._yaml_edit import (
     DISABLED_SECURITY_PROFILES,
+    INTERPOLATED_DELETION,
     block_span,
     delete_lines,
     disabled_profile_indexes,
@@ -16,7 +17,7 @@ from compose_lint._yaml_edit import (
     normalize_security_opt,
     opens_block_body,
 )
-from compose_lint.models import Finding, RuleMetadata, Severity
+from compose_lint.models import Finding, FixRefusal, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 
 if TYPE_CHECKING:
@@ -158,7 +159,7 @@ class SecurityProfileRule(BaseRule):
         data: dict[str, Any],
         lines: dict[str, int],
         text: str,
-    ) -> list[TextEdit] | None:
+    ) -> list[TextEdit] | FixRefusal | None:
         """Delete the unconfined ``security_opt`` entry the finding flags.
 
         Removes just the offending list item when a legitimate entry survives,
@@ -231,7 +232,7 @@ class SecurityProfileRule(BaseRule):
                 # Interpolated: a disable only under the default this run
                 # assumed; another environment may ship a different value on
                 # this line, so deleting it is not a known-safe edit.
-                return None
+                return FixRefusal(INTERPOLATED_DELETION)
             return [delete_lines(source_lines, item_line, item_line, caveat=_CAVEAT)]
         # legit_remaining == 0: emptying the block would leave CL-0003 to
         # recreate it next pass (non-idempotent), and the right end state needs a

@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from compose_lint._service_env import EnvFileKey
-    from compose_lint.models import Finding, RuleMetadata, TextEdit
+    from compose_lint.models import Finding, FixRefusal, RuleMetadata, TextEdit
 
 _registry: list[type[BaseRule]] = []
 
@@ -71,13 +71,15 @@ class BaseRule(abc.ABC):
         data: dict[str, Any],
         lines: dict[str, int],
         text: str,
-    ) -> list[TextEdit] | None:
-        """Return edits that remediate ``finding``, or ``None``.
+    ) -> list[TextEdit] | FixRefusal | None:
+        """Return edits that remediate ``finding``, a refusal, or ``None``.
 
         ``None`` means the rule has no fixer or cannot safely fix this
         occurrence in this file (see the refusal policy in ADR-014). Rules
         that only report findings inherit this default and produce no edits.
-        Fixers must be idempotent and must leave a valid Compose file.
+        A :class:`~compose_lint.models.FixRefusal` is a refusal the user must
+        be told the reason for; ``fix`` prints it. Fixers must be idempotent
+        and must leave a valid Compose file.
         """
         return None
 

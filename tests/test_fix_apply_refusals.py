@@ -189,6 +189,49 @@ class TestSharedListNote:
         assert "shared through a YAML anchor" not in out
 
 
+class TestRefusalsSayWhy:
+    """A refusal that is the safety property prints its reason.
+
+    Without one the finding is one more in the manual-review count, and the
+    obvious hand edit is exactly the change the fixer declined.
+    """
+
+    @pytest.mark.parametrize(
+        ("text", "note"),
+        [
+            (
+                "services:\n  web:\n    image: nginx:1.27\n"
+                "    logging:\n      driver: ${LOG_DRIVER:-none}\n",
+                "CL-0014 on 'web': the value comes from a ${...} default",
+            ),
+            (
+                "services:\n  web:\n    image: nginx:1.27\n    security_opt:\n"
+                "      - no-new-privileges:true\n"
+                "      - ${SECCOMP_OPT:-seccomp:unconfined}\n",
+                "CL-0009 on 'web': the value comes from a ${...} default",
+            ),
+            (
+                "services:\n  web:\n    image: nginx:1.27\n    ports:\n"
+                "      - target:\n          80\n        published: 8081\n",
+                "CL-0005 on 'web': the entry's first value continues onto the "
+                "next line",
+            ),
+        ],
+    )
+    def test_the_reason_is_printed(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: Any,
+        text: str,
+        note: str,
+    ) -> None:
+        _, written, out = _apply(tmp_path, text, monkeypatch, capsys, dry_run=True)
+        assert note in out
+        assert "fix it by hand" in out
+        assert written == text
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX mode bits")
 def test_setgid_and_sticky_are_dropped_and_rw_bits_kept(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any

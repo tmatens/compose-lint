@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from compose_lint.fix import apply_edits
+from compose_lint.models import FixRefusal
 from compose_lint.parser import load_compose
 from compose_lint.rules.CL0014_logging_disabled import LoggingDisabledRule
 
@@ -80,7 +81,11 @@ class TestLoggingDisabledFix:
             self.rule.check(service, data["services"][service], data, lines)
         )
         assert findings, "expected CL-0014 to fire"
-        return self.rule.fix(findings[0], data, lines, content)
+        result = self.rule.fix(findings[0], data, lines, content)
+        # These tests exercise edits and plain refusals; a reasoned refusal
+        # is asserted through `fix` in test_fix_apply_refusals.py.
+        assert not isinstance(result, FixRefusal)
+        return result
 
     def test_collapses_logging_block_when_driver_is_sole_key(
         self, tmp_path: Path
