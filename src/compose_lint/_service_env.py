@@ -47,7 +47,7 @@ from compose_lint._env_file import (
 )
 from compose_lint._safe_read import (
     UnsafeFileError,
-    escapes_project,
+    out_of_reach,
     read_text_bounded,
 )
 
@@ -244,8 +244,9 @@ def _classify(ref: EnvFileRef, base_dir: Path) -> tuple[Path | None, Unread | No
     # file and passes every lexical test while the committed link beside it
     # points at `/home/runner/.aws/credentials` — the scenario ADR-027 §7
     # names and promises to refuse. Asked here, at the moment of resolution,
-    # about this filesystem.
-    if escapes_project(candidate, base_dir):
+    # about this filesystem. A link into the run directory is followed, as
+    # every other read site follows it (`out_of_reach`).
+    if out_of_reach(candidate, base_dir):
         return None, Unread.OUTSIDE_PROJECT
     return candidate, None
 

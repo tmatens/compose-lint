@@ -29,9 +29,10 @@ from compose_lint._merge import (
     merge_service_from,
 )
 from compose_lint._safe_read import (
+    OUT_OF_REACH,
     OutsideProjectError,
     UnsafeFileError,
-    escapes_project,
+    out_of_reach,
     read_text_bounded,
 )
 from compose_lint._service_env import project_relative
@@ -1296,8 +1297,9 @@ def _entry_directory(
         directory = project_dir.absolute().joinpath(*segments[:-1])
         # The lexical check above answers what the path *says*. A committed
         # directory symlink says nothing, and named here it sent the `.env`
-        # read to wherever the link pointed. Asked of this filesystem.
-        if escapes_project(directory, project_dir):
+        # read to wherever the link pointed. Asked of this filesystem, under
+        # the same link rule as every read (`out_of_reach`).
+        if out_of_reach(directory, project_dir):
             return None
         return directory
     located, _why = _locate_reference(entry.references[0], project_dir, prefix)
@@ -1403,7 +1405,7 @@ def _resolve_includes(  # noqa: PLR0913
             try:
                 content = read_text_bounded(target, newline="", within=project_dir)
             except OutsideProjectError:
-                _gap("it resolves outside the project directory")
+                _gap(f"it {OUT_OF_REACH}")
                 continue
             except FileNotFoundError:
                 _gap("the file was not found")
@@ -1620,7 +1622,7 @@ def _resolve_cross_file_extends(
         try:
             content = read_text_bounded(target, newline="", within=project_dir)
         except OutsideProjectError:
-            _gap("it resolves outside the project directory")
+            _gap(f"it {OUT_OF_REACH}")
             continue
         except FileNotFoundError:
             _gap("the file was not found")

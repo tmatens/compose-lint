@@ -320,7 +320,7 @@ def test_a_symlink_out_of_the_project_is_refused(tmp_path: Path) -> None:
     (tmp_path / "linked.yml").symlink_to(outside)
 
     loaded = load_compose_full(target)
-    assert any("outside the project directory" in gap for gap in loaded.gaps)
+    assert any("outside both the project directory" in gap for gap in loaded.gaps)
     assert "api" not in loaded.data["services"]
 
 

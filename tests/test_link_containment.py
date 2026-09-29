@@ -14,6 +14,7 @@ Every value here is a synthetic marker.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -89,7 +90,7 @@ class TestDiscoveredConfig:
         assert code == 2
         assert MARKER not in out
         assert MARKER not in err
-        assert "resolves outside the project directory" in err
+        assert "resolves outside both the project directory" in err
 
     def test_the_second_spelling_is_contained_too(
         self,
@@ -409,3 +410,188 @@ class TestLinkRoot:
         messages = " ".join(f["message"] for f in json.loads(out)["findings"])
         assert "APP_SIDE_PASSWORD" in messages
         assert "SHARED_SIDE_PASSWORD" not in messages
+
+
+PRIV_BY_ENV = (
+    "services:\n  web:\n    image: nginx:1.27\n    privileged: ${PRIV:-false}\n"
+)
+
+
+def _link(link: Path, target: Path) -> None:
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(Path(os.path.relpath(target, link.parent)))
+
+
+class TestOneLinkRuleAtEveryReadSite:
+    """Every file a run opens follows a link while its target stays inside the
+    directory the run started in, the same rule a linked Compose file already
+    had. Compose follows all of these (measured with Compose 5.5.0); each site
+    used to pick its own root, so the `.env` beside a followed Compose file
+    could be refused for the same link."""
+
+    def _lint(
+        self,
+        repo: Path,
+        cwd: Path,
+        path: str,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> tuple[int, dict[str, Any]]:
+        code, out, _ = _run(["--format", "json", "--", path], cwd, monkeypatch, capsys)
+        return code, json.loads(out)
+
+    def _rules(self, doc: dict[str, Any]) -> set[str]:
+        return {f["rule_id"] for f in doc["findings"]}
+
+    def test_a_linked_env_is_read(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        repo = tmp_path / "repo"
+        _write(repo / ".env", "PRIV=true\n")
+        _write(repo / "svc" / "compose.yml", PRIV_BY_ENV)
+        _link(repo / "svc" / ".env", repo / ".env")
+        code, doc = self._lint(repo, repo, "svc/compose.yml", monkeypatch, capsys)
+        assert doc["errors"] == []
+        assert "CL-0002" in self._rules(doc)
+        assert code == 1
+
+    def test_run_beside_the_link_the_env_is_still_refused(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """From `svc/` the target is outside both roots: a gap, as before."""
+        repo = tmp_path / "repo"
+        _write(repo / ".env", "PRIV=true\n")
+        _write(repo / "svc" / "compose.yml", PRIV_BY_ENV)
+        _link(repo / "svc" / ".env", repo / ".env")
+        code, doc = self._lint(repo, repo / "svc", "compose.yml", monkeypatch, capsys)
+        assert ("coverage_gap", ".env") in _kinds(doc)
+        assert "CL-0002" not in self._rules(doc)
+        assert code == 2
+
+    def test_a_linked_compose_file_entry_is_merged(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        repo = tmp_path / "repo"
+        _write(repo / "svc" / "compose.yml", PLAIN)
+        _write(repo / "svc" / ".env", "COMPOSE_FILE=compose.yml:extra.yml\n")
+        _write(repo / "shared" / "extra.yml", PRIVILEGED)
+        _link(repo / "svc" / "extra.yml", repo / "shared" / "extra.yml")
+        code, doc = self._lint(repo, repo, "svc/compose.yml", monkeypatch, capsys)
+        assert doc["errors"] == []
+        assert "CL-0002" in self._rules(doc)
+        assert code == 1
+
+    def test_a_linked_include_target_is_merged(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        repo = tmp_path / "repo"
+        _write(
+            repo / "svc" / "compose.yml",
+            "include:\n  - common.yml\nservices:\n  app:\n    image: nginx:1.27\n",
+        )
+        _write(repo / "shared" / "common.yml", PRIVILEGED)
+        _link(repo / "svc" / "common.yml", repo / "shared" / "common.yml")
+        code, doc = self._lint(repo, repo, "svc/compose.yml", monkeypatch, capsys)
+        assert doc["errors"] == []
+        assert "CL-0002" in self._rules(doc)
+        assert code == 1
+
+    def test_a_linked_extends_base_is_merged(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        repo = tmp_path / "repo"
+        _write(
+            repo / "svc" / "compose.yml",
+            "services:\n  app:\n    extends:\n      file: base.yml\n"
+            "      service: web\n",
+        )
+        _write(repo / "shared" / "base.yml", PRIVILEGED)
+        _link(repo / "svc" / "base.yml", repo / "shared" / "base.yml")
+        code, doc = self._lint(repo, repo, "svc/compose.yml", monkeypatch, capsys)
+        assert doc["errors"] == []
+        assert "CL-0002" in self._rules(doc)
+        assert code == 1
+
+    def test_a_linked_env_file_is_read(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        repo = tmp_path / "repo"
+        _write(
+            repo / "svc" / "compose.yml",
+            "services:\n  web:\n    image: nginx:1.27\n    env_file: app.env\n",
+        )
+        _write(repo / "shared" / "app.env", "DB_PASSWORD=placeholder\n")
+        _link(repo / "svc" / "app.env", repo / "shared" / "app.env")
+        _, doc = self._lint(repo, repo, "svc/compose.yml", monkeypatch, capsys)
+        assert doc["warnings"] == []
+        assert "CL-0020" in self._rules(doc)
+
+    def test_a_linked_project_directory_is_used(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """The named directory's `.env` supplies the included file's values."""
+        repo = tmp_path / "repo"
+        _write(
+            repo / "svc" / "compose.yml",
+            "include:\n  - path: parts/inc.yml\n    project_directory: lib\n"
+            "services:\n  app:\n    image: nginx:1.27\n",
+        )
+        _write(repo / "svc" / "parts" / "inc.yml", PRIV_BY_ENV)
+        _write(repo / "shared" / "lib" / ".env", "PRIV=true\n")
+        _link(repo / "svc" / "lib", repo / "shared" / "lib")
+        code, doc = self._lint(repo, repo, "svc/compose.yml", monkeypatch, capsys)
+        assert doc["errors"] == []
+        assert "CL-0002" in self._rules(doc)
+        assert code == 1
+
+    @pytest.mark.parametrize("site", ["env", "include", "compose_file"])
+    def test_a_target_outside_the_run_directory_is_still_refused(
+        self,
+        site: str,
+        outside: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """The case containment exists for, at each site: run from the repo, a
+        link out of it is refused and nothing it holds reaches the report."""
+        repo = tmp_path / "repo"
+        _write(outside / "values.env", f"IMG={MARKER}\n")
+        compose = repo / "svc" / "compose.yml"
+        if site == "env":
+            _write(compose, "services:\n  web:\n    image: ${IMG:-nginx:1.27}\n")
+            _link(repo / "svc" / ".env", outside / "values.env")
+        elif site == "include":
+            _write(compose, "include:\n  - stack.yml\n" + PLAIN)
+            _link(repo / "svc" / "stack.yml", outside / "stack.yml")
+        else:
+            _write(compose, PLAIN)
+            _write(repo / "svc" / ".env", "COMPOSE_FILE=compose.yml:stack.yml\n")
+            _link(repo / "svc" / "stack.yml", outside / "stack.yml")
+        code, out, err = _run(
+            ["--format", "json", "--", "svc/compose.yml"], repo, monkeypatch, capsys
+        )
+        assert MARKER not in out + err
+        assert "coverage_gap" in {kind for kind, _ in _kinds(json.loads(out))}
+        assert code == 2

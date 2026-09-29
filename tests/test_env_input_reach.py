@@ -330,8 +330,8 @@ class TestSymlinkedEnvLeavingTheProject:
         assert "CL-0002" not in _rules(doc)
         (gap,) = _gaps(doc["errors"])
         assert gap["file"].endswith(".env")
-        assert "resolves outside the project directory" in gap["message"]
-        assert "resolves outside the project directory" in err
+        assert "resolves outside both the project directory" in gap["message"]
+        assert "resolves outside both the project directory" in err
         assert code == 2
 
     @pytest.mark.parametrize("fmt", ["text", "json"])
@@ -381,7 +381,7 @@ class TestSymlinkedEnvLeavingTheProject:
         )
         assert MARKER not in result.stdout
         assert MARKER not in result.stderr
-        assert "resolves outside the project directory" in result.stderr
+        assert "resolves outside both the project directory" in result.stderr
 
     def test_a_link_inside_the_project_is_graded(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any

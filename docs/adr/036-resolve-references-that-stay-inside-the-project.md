@@ -231,3 +231,20 @@ nothing left to grade and no waiver that could help, although that target is
 content the change under review can already see. Compose follows the link and
 takes the project directory from the path as given, so the followed file's
 relative references resolve beside the link, which is what compose-lint does.
+
+*Amendment (unreleased): one link rule for every read.* The amendment above
+gave a linked Compose file the run directory as a second root and left every
+other read on its own: the `.env`, a `COMPOSE_FILE` entry, an `include:` or
+`extends:` target, an `env_file:` and an `include:` entry's
+`project_directory:` each refused a link whose target left the project
+directory, even when the target stayed in the checkout. So the same monorepo
+link was followed as a Compose file and refused as the `.env` beside it
+(`svc/.env -> ../.env`), a layout Compose deploys, and the refusal was a
+coverage gap with nothing a user could change but the layout. Every read now
+asks one question (`_safe_read.out_of_reach`): a link is followed while its
+target stays inside the site's own root *or* the directory the run started in,
+for the same reason the amendment above gives. What a path *says* is
+unchanged: a reference written with `..` that climbs out of the project, or an
+absolute one, is still refused by the lexical half of the gate, link or not.
+A target outside both roots is refused as before, which is the case the
+filesystem gate exists for.
