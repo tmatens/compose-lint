@@ -1277,15 +1277,24 @@ def _include_entries(data: dict[str, Any]) -> list[_IncludeEntry]:
 
 def _entry_directory(
     entry: _IncludeEntry, project_dir: Path, prefix: tuple[str, ...]
-) -> Path | None:
-    """The directory an entry's relative paths resolve against, or None.
+) -> tuple[Path | None, str]:
+    """The directory an entry's relative paths resolve against, and why not.
 
-    None means the entry names a project directory that cannot be placed —
-    an interpolated path, or one leaving the project. Callers fall back to each
-    file's own directory, which is what a single-path entry resolves to anyway
-    and is the only sensible reading when the entry's own root is unknown.
+    With no ``project_directory:``, the directory is the first path's, or
+    None when that path cannot be located; the reference's own gap reports
+    it, and callers fall back to each file's own directory, which is what a
+    single-path entry resolves to anyway.
+
+    A ``project_directory:`` that cannot be placed — interpolated, leaving the
+    project, or a link out of reach — returns None *with a reason*, and the
+    caller reports the whole entry as a coverage gap. Falling back to the
+    file's own directory there was silent and wrong: Compose reads that
+    entry's ``.env`` and resolves its bind sources from the named directory,
+    so the fallback graded values and paths Compose never uses, with exit 0.
     """
     if entry.project_directory is not None:
+        if "$" in entry.project_directory:
+            return None, "its project_directory: is interpolated"
         # `project_relative` answers about a *file*, so an empty result means
         # the path named nothing and it returns None both for `.` — the project
         # root, which is a perfectly good project directory — and for a path
@@ -1293,17 +1302,17 @@ def _entry_directory(
         # directory separates the two, and then the file is dropped again.
         segments = project_relative(f"{entry.project_directory}/x", prefix)
         if segments is None:
-            return None
+            return None, "its project_directory: leaves the project directory"
         directory = project_dir.absolute().joinpath(*segments[:-1])
         # The lexical check above answers what the path *says*. A committed
         # directory symlink says nothing, and named here it sent the `.env`
         # read to wherever the link pointed. Asked of this filesystem, under
         # the same link rule as every read (`out_of_reach`).
         if out_of_reach(directory, project_dir):
-            return None
-        return directory
+            return None, f"its project_directory: {OUT_OF_REACH}"
+        return directory, ""
     located, _why = _locate_reference(entry.references[0], project_dir, prefix)
-    return None if located is None else located.absolute().parent
+    return (None if located is None else located.absolute().parent), ""
 
 
 def _resolve_includes(  # noqa: PLR0913
@@ -1374,7 +1383,7 @@ def _resolve_includes(  # noqa: PLR0913
         # The entry is one sub-project with one project directory, so every
         # file in it resolves its relative paths against the same place — not
         # against its own directory. See :class:`_IncludeEntry`.
-        entry_dir = _entry_directory(entry, project_dir, prefix)
+        entry_dir, unplaced = _entry_directory(entry, project_dir, prefix)
         for reference in entry.references:
 
             def _gap(reason: str, *, _ref: str = reference) -> None:
@@ -1383,6 +1392,9 @@ def _resolve_includes(  # noqa: PLR0913
                     "services from it were not linted."
                 )
 
+            if unplaced:
+                _gap(unplaced)
+                continue
             if depth >= MAX_REFERENCE_DEPTH:
                 _gap(f"the chain is deeper than {MAX_REFERENCE_DEPTH} files")
                 continue

@@ -865,18 +865,92 @@ def test_a_project_directory_linked_out_of_the_project_is_refused(
     tmp_path: Path,
 ) -> None:
     """The name passes the lexical check; the directory it links to does not.
-    The entry falls back to its file's own directory, which has no `.env`."""
+    The entry is a coverage gap, and nothing the linked `.env` holds is read."""
     outside = tmp_path.parent / f"{tmp_path.name}-outside"
     _write(outside / ".env", "TAG=from-outside\n")
     _tagged_sidecar(tmp_path)
     (tmp_path / "linked").symlink_to(outside, target_is_directory=True)
     target = _project(
         tmp_path,
-        "include:\n  - path: sub/compose.yml\n    project_directory: linked\n",
+        "include:\n  - path: sub/compose.yml\n    project_directory: linked\n"
+        "services:\n  web:\n    image: nginx:1.27\n",
     )
 
-    data = load_compose_full(target).data
-    assert data["services"]["sidecar"]["image"] == "nginx:fallback"
+    loaded = load_compose_full(target)
+    assert "sidecar" not in loaded.data["services"]
+    (gap,) = loaded.gaps
+    assert "'include: sub/compose.yml'" in gap
+    assert "project_directory: resolves outside both" in gap
+
+
+# --- A project_directory: that cannot be placed is a gap, never a fallback ---
+
+
+@pytest.mark.parametrize(
+    ("written", "reason"),
+    [
+        ("../shared", "project_directory: leaves the project directory"),
+        ("/", "project_directory: leaves the project directory"),
+        ("${WHERE}", "project_directory: is interpolated"),
+    ],
+)
+def test_an_unplaceable_project_directory_is_a_gap(
+    tmp_path: Path, written: str, reason: str
+) -> None:
+    """Compose reads the named directory's `.env` and resolves the entry's
+    bind sources from it. Falling back to the file's own directory graded
+    values and paths Compose never uses, with nothing in the output to say
+    so. Every file in the entry is reported instead."""
+    project = tmp_path / "project"
+    _write(tmp_path / "shared" / ".env", "PRIV=true\n")
+    _write(
+        project / "parts" / "a.yml",
+        "services:\n  a:\n    image: nginx:1.27\n    privileged: ${PRIV:-false}\n",
+    )
+    _write(project / "parts" / "b.yml", "services:\n  b:\n    image: nginx:1.27\n")
+    target = _project(
+        project,
+        "include:\n"
+        "  - path: [parts/a.yml, parts/b.yml]\n"
+        f"    project_directory: '{written}'\n"
+        "services:\n  web:\n    image: nginx:1.27\n",
+    )
+
+    loaded = load_compose_full(target)
+    assert set(loaded.data["services"]) == {"web"}
+    assert len(loaded.gaps) == 2
+    assert all(reason in gap for gap in loaded.gaps)
+
+
+def test_an_unplaceable_project_directory_fails_the_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """End to end: exit 2 and a coverage gap, where it was exit 0 with the
+    included service graded against the wrong directory."""
+    project = tmp_path / "project"
+    _write(tmp_path / "shared" / ".env", "CAP=SYS_ADMIN\n")
+    _write(
+        project / "sub" / "inc.yml",
+        'services:\n  inc:\n    image: nginx:1.27\n    cap_add: ["${CAP:-CHOWN}"]\n',
+    )
+    _project(
+        project,
+        "include:\n  - path: sub/inc.yml\n    project_directory: ../shared\n"
+        "services:\n  web:\n    image: nginx:1.27\n",
+    )
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("NO_COLOR", "1")
+    capsys.readouterr()
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["--format", "json", "compose.yml"])
+    doc = json.loads(capsys.readouterr().out)
+    assert exc.value.code == 2
+    assert ("coverage_gap", "compose.yml") in [
+        (entry["kind"], entry["file"]) for entry in doc["errors"]
+    ]
+    assert "inc" not in {finding["service"] for finding in doc["findings"]}
 
 
 def test_a_project_directory_linked_inside_the_project_is_honoured(
