@@ -69,27 +69,65 @@ severity never moves on judgment alone.
 
 ### Coverage gaps are not findings
 
-When compose-lint cannot see part of a stack — today, an `include:` or
-cross-file `extends: {file: ...}` it could not follow, because the target
-leaves the project directory, is missing, is interpolated, is a cycle, or
-could not be read safely, an `include:` entry whose `project_directory:`
-cannot be placed, an in-file `extends:` whose target service the
-file does not declare or whose chain is a cycle, a `.env` Compose reads that
-compose-lint could not, a `COMPOSE_FILE` list it refused, or a document
-that reached the 20,000-findings limit before it was fully graded — it does
-not guess. It reports a **coverage gap**: a
-stderr `Error:` line, a JSON `errors[]` entry, a SARIF
-`toolExecutionNotifications` record with `executionSuccessful: false`, and
-**exit 2**. That is deliberate: reporting 0 findings on a file whose real
-configuration was never read would be a false pass. A reference that *does*
-resolve inside the project is followed and merged, so it is not a gap
+When compose-lint cannot see part of a stack, it does not guess. It reports a
+**coverage gap**: a stderr `Error:` line, a JSON `errors[]` entry of kind
+`coverage_gap`, a SARIF `toolExecutionNotifications` record with
+`executionSuccessful: false`, and **exit 2**. That is deliberate: reporting 0
+findings on a file whose real configuration was never read would be a false
+pass. A reference that *does* resolve inside the project is followed and
+merged, so it is not a gap
 ([ADR-036](adr/036-resolve-references-that-stay-inside-the-project.md)).
+
+This is the complete list of what raises one. Other pages link here rather
+than keep a list of their own. "Out of reach" means a symlink whose target is
+outside both the project directory and the directory compose-lint was run
+from.
+
+- **An `include:` or cross-file `extends: {file: ...}` target that cannot be
+  followed**, because its path:
+  - is written out of the project directory, with `..` or as an absolute path;
+  - is a symlink out of reach;
+  - is interpolated (`${...}`) and has no shipped value;
+  - names a file that is missing, is not valid UTF-8, or fails the bounded
+    read (too large, or not a regular file);
+  - leads back to a file the chain already pulled in (a cycle);
+  - is more than 8 files deep, or would take one document past 64 opened
+    files.
+- **An included file that is not a Compose document compose-lint can read**:
+  a Compose v1 file, a compose-lint config, or YAML that does not parse. A
+  fragment declaring only `volumes:`, `networks:`, `configs:`, `secrets:` or
+  `x-*` keys is merged, not a gap.
+- **An `include:` entry whose `project_directory:` cannot be placed**:
+  written with `..` out of the project, absolute, interpolated, or a directory
+  symlink out of reach. Every file in the entry is reported.
+- **An `extends:` whose base cannot be found**: a cross-file one with no
+  `service:`, or whose file declares no such service; an in-file one naming a
+  service the file does not declare, or forming a cycle. Compose refuses all
+  of these.
+- **A `.env` Compose reads that compose-lint could not**: the project's, or
+  an included file's own, that exists but is not valid UTF-8, is larger than
+  the 256 KiB read cap, or is a symlink out of reach.
+- **A refused `COMPOSE_FILE` list**: one entry that is absolute, climbs out of
+  the project directory, is a symlink out of reach, or is missing refuses the
+  whole list.
+- **A Compose file or `compose.override.yml` that is a symlink out of
+  reach**, whether it was discovered or named on the command line.
+- **A document that reaches the 20,000-findings limit**: grading stops there.
+  The findings graded before the stop are still reported.
 
 Because a gap is not a finding, `--fail-on` does not gate it. It exits 2 at
 every threshold, `--fail-on critical` included. The flag that clears one is
-`--allow-partial-coverage`, which downgrades the gap to a stderr warning; it is
-run-level, so it accepts every gap in that run, not a chosen one. (`fix`
-reports gaps and never fails on them, so it does not take the flag.)
+`--allow-partial-coverage`, which downgrades the gap to a stderr warning and a
+`warnings[]` entry. It is run-level, so it accepts every gap in that run, not
+a chosen one. It cannot produce a verdict from nothing: when every file the
+run selected was refused, nothing is left to grade, and the run still exits 2.
+An `include:`-only file whose references all fail is a parse error rather
+than a gap, and it exits 2 as well.
+
+`fix` reports gaps without failing on them, so it does not take the flag. The
+exception is the findings limit. A partial set of findings cannot be fixed
+safely, so `fix` writes nothing to that file and exits 2, and `init` writes no
+baseline and exits 2.
 
 That makes the two hatches above insufficient for a release that **adds** a gap
 condition: a pinned user is fine, but a threshold-gated one goes red on a

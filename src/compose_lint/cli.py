@@ -377,11 +377,12 @@ def _add_check_subparser(
         action="store_true",
         default=False,
         help=(
-            "grade a file even though part of its stack could not be linted "
-            "(unresolved 'include:' or cross-file 'extends:', a '.env' that "
-            "could not be read, a refused COMPOSE_FILE). Without this, "
-            "such a gap is an error (exit 2) so a merge gate cannot pass on a "
-            "partial view; with it, the gap is reported on stderr only"
+            "grade what could be linted even though part of the stack could "
+            "not be (a coverage gap: an unresolved 'include:' or cross-file "
+            "'extends:', a '.env' that could not be read, a refused "
+            "COMPOSE_FILE, and the rest listed in docs/compatibility.md). "
+            "Without this, a gap is an error (exit 2) so a merge gate cannot "
+            "pass on a partial view; with it, the gap is reported as a warning"
         ),
     )
     _add_document_selection_flags(check)

@@ -205,14 +205,17 @@ actually run, not just the file you named:
   `environment:` values), `env_file:` targets, and `include:` / cross-file
   `extends:` are all resolved, so a socket mount hidden behind a variable or
   an override is graded as the mount it deploys.
-- **It never reads outside the project.** Every document has to resolve inside
-  the named file's own directory. The ambient shell environment is not read,
+- **It never reads outside the project.** A path a document writes has to stay
+  inside the project directory, and a symlink has to land inside it or inside
+  the directory compose-lint was run from. The ambient shell environment is not read,
   and no registry, daemon, or image is consulted, so the same checkout lints
   the same on every machine.
 - **A part of the stack it cannot see is exit 2, not a silent pass.** A
   reference that is missing, interpolated, or leaves the project is reported
-  as a coverage gap, and so is a `.env` it cannot read. Lint the `docker compose config` output to cover it, or
-  pass `--allow-partial-coverage` to grade what is visible.
+  as a coverage gap, and so is a `.env` it cannot read; the full list is in
+  [coverage gaps are not findings](https://github.com/tmatens/compose-lint/blob/main/docs/compatibility.md#coverage-gaps-are-not-findings). Lint the `docker compose config`
+  output to cover it, or pass `--allow-partial-coverage` to grade what is
+  visible.
 
 Any Compose Specification file works: one with a top-level `services:` key, or
 an `include:`-only root. Compose v1 files (services at the top level, retired
