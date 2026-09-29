@@ -37,7 +37,7 @@ jobs:
   # everything runs unconditionally so main always gets a complete pass.
   changes:
     name: Detect changed paths
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 2
     permissions:
       contents: read
@@ -130,7 +130,7 @@ jobs:
   lint:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -156,7 +156,7 @@ jobs:
   type-check:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -181,7 +181,7 @@ jobs:
   test:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -237,7 +237,7 @@ jobs:
     name: Test coverage (>= 80% statement, >= 90% patch)
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -297,7 +297,7 @@ jobs:
     name: Security scan (bandit + pip-audit)
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -375,7 +375,7 @@ jobs:
     name: Lockfiles match pyproject.toml
     needs: changes
     if: needs.changes.outputs.locks == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -422,7 +422,7 @@ jobs:
   # wrong source of truth).
   version-consistency:
     name: Version strings in sync
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 2
     permissions:
       contents: read
@@ -534,7 +534,7 @@ jobs:
   # instead.
   readme-size:
     name: README fits Docker Hub description limit
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 2
     permissions:
       contents: read
@@ -562,7 +562,7 @@ jobs:
   # number on a broken release.
   changelog-gate:
     name: CHANGELOG entry for version bumps
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 2
     if: github.event_name == 'pull_request'
     permissions:
@@ -614,7 +614,7 @@ jobs:
 
   dco:
     name: Developer Certificate of Origin
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 2
     if: github.event_name == 'pull_request'
     permissions:
@@ -685,7 +685,7 @@ jobs:
 
   no-ai-attribution:
     name: No AI authorship attribution
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 2
     if: github.event_name == 'pull_request'
     permissions:
@@ -721,7 +721,7 @@ jobs:
 
   commit-subjects:
     name: Commit subjects
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 2
     if: github.event_name == 'pull_request'
     permissions:
@@ -778,7 +778,7 @@ jobs:
   # a base ref to diff against.
   dependency-review:
     name: Dependency review (PR deps)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     if: github.event_name == 'pull_request'
     permissions:
@@ -815,7 +815,7 @@ jobs:
     name: Lint GitHub Actions workflows (actionlint + zizmor)
     needs: changes
     if: needs.changes.outputs.workflows == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 3
     permissions:
       contents: read
@@ -880,7 +880,7 @@ jobs:
     name: Lint Dockerfile
     needs: changes
     if: needs.changes.outputs.dockerfile == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 3
     permissions:
       contents: read
@@ -912,7 +912,7 @@ jobs:
     name: Verify Dockerfile digests are manifest lists
     needs: changes
     if: needs.changes.outputs.dockerfile == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 2
     permissions:
       contents: read
@@ -1058,7 +1058,7 @@ jobs:
     name: Smoke test action.yml
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -1286,7 +1286,7 @@ jobs:
     name: Smoke test .pre-commit-hooks.yaml
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -1446,7 +1446,7 @@ jobs:
     name: Validate rule premises (live container)
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -1475,7 +1475,7 @@ jobs:
     name: Smoke test fix round trip
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -1554,7 +1554,7 @@ jobs:
       - rule-premises
       - os-smoke
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 1
     permissions: {}
     steps:

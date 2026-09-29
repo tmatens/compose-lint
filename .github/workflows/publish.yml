@@ -57,7 +57,7 @@ jobs:
 
   build:
     needs: verify-tag
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -223,7 +223,7 @@ jobs:
 
   testpypi:
     needs: build
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment:
       name: testpypi
@@ -243,7 +243,7 @@ jobs:
 
   testpypi-smoke:
     needs: testpypi
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # Raised from 10: the index wait below can spend ~5 min before the install
     # starts, which the old fixed-sleep retry never did.
     timeout-minutes: 15
@@ -428,7 +428,7 @@ jobs:
   # would double-upload SARIF under the same category.
   docker-scout:
     needs: build
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -542,7 +542,7 @@ jobs:
   # Configure the 'release' GitHub Environment with required reviewers.
   release-gate:
     needs: [testpypi-smoke, docker-smoke, docker-scout]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     environment:
       name: release
@@ -551,7 +551,7 @@ jobs:
 
   publish:
     needs: release-gate
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment:
       name: pypi
@@ -624,7 +624,7 @@ jobs:
 
   docker-publish:
     needs: docker-build
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -752,7 +752,7 @@ jobs:
   # inputs.
   dockerhub-description:
     needs: docker-publish
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     environment:
       name: dockerhub
@@ -776,7 +776,7 @@ jobs:
   # Release also updates the Marketplace listing for the action.
   create-release:
     needs: [publish, docker-publish]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: write
@@ -849,7 +849,7 @@ jobs:
   # verify, surfacing a red run on the tag.
   verify-release-signatures:
     needs: create-release
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -929,7 +929,7 @@ jobs:
   bump-marketplace-smoke-pin:
     name: Bump marketplace-smoke pin (post-tag, post-publish)
     needs: create-release
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: write
@@ -1103,7 +1103,7 @@ jobs:
   action-major-tag:
     needs: verify-release-signatures
     if: ${{ !startsWith(github.ref_name, 'v0.') }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: write

@@ -23,7 +23,7 @@ jobs:
   # restrictions). The auto-issue step lives in a downstream job instead.
   analysis:
     name: Scorecard analysis
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -50,7 +50,7 @@ jobs:
   report-failure:
     needs: analysis
     if: failure() && github.event_name == 'schedule'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 3
     permissions:
       contents: read

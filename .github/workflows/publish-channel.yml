@@ -36,7 +36,7 @@ jobs:
   publish-pypi:
     needs: verify-tag
     if: inputs.channel == 'pypi'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     environment:
       name: pypi
@@ -186,7 +186,7 @@ jobs:
   publish-docker:
     if: inputs.channel == 'docker'
     needs: build-docker
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     environment:
       name: dockerhub

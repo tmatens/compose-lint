@@ -69,7 +69,7 @@ jobs:
   # another job's step log.
   pypi-propagated:
     name: Release is visible on PyPI's index
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions: {}
     steps:
@@ -100,7 +100,7 @@ jobs:
   marketplace-smoke:
     name: Smoke test published action
     needs: pypi-propagated
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -138,7 +138,7 @@ jobs:
   # pre-commit is the mode where untested gaps reach users first.
   precommit-published-smoke:
     name: Smoke test published pre-commit hook
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -216,7 +216,7 @@ jobs:
   oneshot-runners-smoke:
     name: Smoke test the advertised one-shot runners
     needs: pypi-propagated
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -301,7 +301,7 @@ jobs:
     if: >-
       failure() && (github.event_name == 'schedule'
       || github.event_name == 'push')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 3
     permissions:
       contents: read
