@@ -74,6 +74,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   finding now carries no suggested change, as `fix` already defers it to
   manual review.
 
+- **A fixer that fails no longer changes the verdict or loses findings.**
+  A fixer that raised escaped the run: `check --format sarif` exited 2
+  with no results for any file, while text and JSON graded the same files
+  and exited 1, and `fix` stopped at that file without handling the rest.
+  A fixer that named a position outside the file cost that file's findings
+  in SARIF and exited 2. Now the failure costs only that finding's edit.
+  SARIF reports the finding without a suggested change and adds a
+  `rule_crash` warning, so all three formats give the same exit code.
+  `fix` refuses that file with exit 2, writes nothing to it, and goes on
+  with the rest of the batch.
+
 ## [0.32.0] - 2026-09-28
 
 ### Changed
