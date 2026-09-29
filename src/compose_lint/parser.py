@@ -908,12 +908,25 @@ def _merged_service_lines(
     right for an overlay (the base is the file being fixed) and wrong here: the
     child's ``cap_add:`` is on the child's line. A path through a sequence
     index keeps the recorded line, because the index itself moved.
+
+    For the same reason, the child's own line for an index is dropped when the
+    merge re-recorded that sequence without it. A second child merging the same
+    aliased list onto the same base hits the merge memo, which records the
+    sequence's key and nothing below it; the child's ``cap_add[0]`` would then
+    keep the line of its own first item while index 0 now holds the base's.
+    With no line for the index, a finding falls back to the sequence's key,
+    which is less precise but names the right place.
     """
     merged = dict(own)
     merged.update(recorded)
     for path, line in own.items():
-        if "[" not in path[len(child_path) :]:
+        rest = path[len(child_path) :]
+        if "[" not in rest:
             merged[path] = line
+            continue
+        sequence = child_path + rest[: rest.index("[")]
+        if path not in recorded and sequence in recorded:
+            del merged[path]
     return merged
 
 
@@ -1075,7 +1088,11 @@ def _resolve_in_file_extends(
     for name in list(services):
         services[name] = _resolve(name, ())
     if lines is not None:
-        for service_lines in resolved_lines.values():
+        for name, service_lines in resolved_lines.items():
+            # A child's own line `_merged_service_lines` dropped is stale, and
+            # an update alone would leave it in the map.
+            for stale in by_service.get(name, {}).keys() - service_lines.keys():
+                lines.pop(stale, None)
             lines.update(service_lines)
 
     gaps = []

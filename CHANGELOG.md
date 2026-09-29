@@ -101,6 +101,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ones the fixer gave up on. Each now prints a line naming the rule, the
   service and the reason, as the anchor-shared refusal already did.
 
+- **A second service sharing an aliased list no longer gets a wrong line.**
+  When two services extended the same base and wrote the same aliased list
+  (`cap_add: *caps`), the second one's findings were placed on the lines
+  of its own list before the merge, so an inherited `NET_ADMIN` was
+  reported on the `- SYS_ADMIN` line. Those findings now point at the
+  service's `cap_add:` key. The first service still gets each item's exact
+  line.
+
 ## [0.32.0] - 2026-09-28
 
 ### Changed
