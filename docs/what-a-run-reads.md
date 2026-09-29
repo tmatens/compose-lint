@@ -62,7 +62,10 @@ Compose 5.5.0). compose-lint pairs them the same way.
 ## A sibling `.env` is read, because Compose reads it
 
 ([ADR-026](adr/026-read-the-sibling-env-file.md)). Its `COMPOSE_FILE`
-chooses the documents, exactly as it does for Compose, and `${VAR}`
+chooses the documents, exactly as it does for Compose — and, as for Compose,
+the first file's directory is the project directory for all of them, so an
+overlay listed as `ops/dev.yml` resolves `./data`, its `extends: {file:}` and
+its `${VAR}`s from there rather than from `ops/` — and `${VAR}`
 references resolve to what it supplies — `volumes: ["${MOUNT}:/data"]` with
 `MOUNT=/var/run/docker.sock` is graded as the control-socket mount it
 deploys. Two deliberate limits: values under `environment:` are never

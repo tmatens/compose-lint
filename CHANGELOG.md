@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **An overlay in a subdirectory resolves against the project directory.**
+  With `COMPOSE_FILE=compose.yml:ops/dev.yml`, the overlay was loaded as a
+  project of its own: its relative bind sources, `extends: {file:}` base
+  and `${VAR}` interpolation came from `ops/` and `ops/.env`. Compose
+  resolves every file in the list against the first file's directory and
+  its `.env`, so a value set only in the project `.env` went ungraded and
+  one set only in `ops/.env` was graded though Compose never reads it.
+  Both now match Compose, in `check` and in the re-merge `fix` verifies
+  an edit against.
+
 - **An `include:` entry whose `project_directory:` cannot be placed is a
   coverage gap.** One written with `..` out of the project, absolute,
   interpolated, or a directory symlink out of reach was silently replaced

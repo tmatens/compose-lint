@@ -684,3 +684,68 @@ def test_fix_applies_to_the_base_beside_a_fragment_overlay(tmp_path: Path) -> No
     after = (tmp_path / "compose.yml").read_text()
     assert "127.0.0.1:8080:80" in after
     assert (tmp_path / "compose.override.yml").read_text() == overlay_before
+
+
+# --- An overlay in a subdirectory resolves against the first file ------------
+
+
+def _subdirectory_overlay(tmp_path: Path) -> Path:
+    """`COMPOSE_FILE=compose.yml:ops/dev.yml`, with a decoy beside the overlay
+    for everything it resolves: `.env`, `env_file:`, the `extends:` base and
+    the bind source. Compose 5.5.0 on this fixture ships `image: x:root`,
+    `environment: {A: root}` (already read that way), `image: from-root:1`
+    and a bind of `./data` under the first file's directory, never `ops/`."""
+    (tmp_path / "ops").mkdir()
+    (tmp_path / "compose.yml").write_text(
+        "services:\n  web:\n    image: nginx:1.27\n", encoding="utf-8"
+    )
+    (tmp_path / ".env").write_text("TAG=root\n", encoding="utf-8")
+    (tmp_path / "ops" / ".env").write_text("TAG=ops\n", encoding="utf-8")
+    (tmp_path / "vars.env").write_text("A=root\n", encoding="utf-8")
+    (tmp_path / "ops" / "vars.env").write_text("A=ops\n", encoding="utf-8")
+    (tmp_path / "base.yml").write_text(
+        "services:\n  b:\n    image: from-root:1\n", encoding="utf-8"
+    )
+    (tmp_path / "ops" / "base.yml").write_text(
+        "services:\n  b:\n    image: from-ops:1\n", encoding="utf-8"
+    )
+    return tmp_path / "ops" / "dev.yml"
+
+
+def test_a_subdirectory_overlay_resolves_against_the_first_file(
+    tmp_path: Path,
+) -> None:
+    from compose_lint.parser import load_merged
+
+    overlay = _subdirectory_overlay(tmp_path)
+    overlay.write_text(
+        "services:\n"
+        "  app:\n"
+        "    extends:\n      file: base.yml\n      service: b\n"
+        '    volumes: ["./data:/data"]\n'
+        "  probe:\n"
+        "    image: x:${TAG:-default}\n",
+        encoding="utf-8",
+    )
+    merged = load_merged([tmp_path / "compose.yml", overlay])
+    services = merged.data["services"]
+    assert services["probe"]["image"] == "x:root"
+    assert services["app"]["image"] == "from-root:1"
+    assert services["app"]["volumes"] == [f"{tmp_path.absolute()}/data:/data"]
+
+
+def test_fix_verification_merges_the_overlay_the_same_way(tmp_path: Path) -> None:
+    """`merge_patched` is what `fix` re-grades a candidate edit against, so it
+    must resolve the overlay exactly as the check that found the finding."""
+    from compose_lint.parser import merge_patched
+
+    overlay = _subdirectory_overlay(tmp_path)
+    overlay.write_text(
+        "services:\n  probe:\n    image: x:${TAG:-default}\n", encoding="utf-8"
+    )
+    data, _ = merge_patched(
+        (tmp_path / "compose.yml").read_text(encoding="utf-8"),
+        tmp_path / "compose.yml",
+        [str(overlay)],
+    )
+    assert data["services"]["probe"]["image"] == "x:root"
