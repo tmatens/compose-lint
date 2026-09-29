@@ -29,7 +29,8 @@ was invisible in JSON, with exit code 2 the only signal.
   "version": "2",
   "tool": { "name": "compose-lint", "version": "0.24.0" },
   "findings": [ "..." ],
-  "errors": [ { "file": "...", "message": "..." } ]
+  "errors": [ { "file": "...", "message": "...", "kind": "parse" } ],
+  "warnings": []
 }
 ```
 
@@ -58,7 +59,7 @@ was invisible in JSON, with exit code 2 the only signal.
   |-------|--------------|
   | `suppression_reason` | `suppressed` is true and the config gave a reason |
   | `severity_overridden_from` | the config regraded the finding; carries the original severity |
-  | `graded_file` | `file` differs from the document being graded — a merged or `env_file:` run |
+  | `graded_file` | `file` differs from the document being graded: the evidence is written in an overlay, an included or extended file, or an `env_file:` |
   | `source_file` | *deprecated alias* of `file`, emitted alongside `graded_file`; schema-1 consumers used it to learn where `line` pointed |
 
   **Schema 2 changed what `file` means.** In schema 1 it always named the
@@ -70,8 +71,11 @@ was invisible in JSON, with exit code 2 the only signal.
   unrelated line of the base file. Correcting JSON is a breaking change to a
   required field, which is why it ships **before** the 1.0 freeze rather than
   after it.
-- `errors[]` lists files that could not be parsed (the exit-2 cases),
-  mirroring SARIF's `toolExecutionNotifications`. ADR-013 "not applicable"
+- `errors[]` lists every condition that made the run exit 2 (a file that could
+  not be parsed, a coverage gap, a crashed rule, a run-level failure; see the
+  amendment below for `kind`), mirroring SARIF's `toolExecutionNotifications`.
+  Conditions reported without failing the run go to `warnings[]`, added by the
+  same amendment. ADR-013 "not applicable"
   skips (Compose v1 / fragments, exit 0) are deliberately excluded — they are
   not errors.
 
@@ -141,9 +145,11 @@ each would cost a MAJOR afterwards or leave the frozen shape ambiguous.
   document now reports its truncation once; the CLI and the formatter each used
   to add a notification with different text.
 - *Nullable `line` and `fix`.* Both were documented as non-null but have always
-  been nullable in code and pinned so by tests. `line` is null for a finding
-  inherited through a same-file `extends:` from another service, when no line
-  in `file` names the offending key. Declaring it now is a clarification;
+  been nullable in code and pinned so by tests. `line` is null when no line
+  in `file` is known for the offending key. When this was written, a finding
+  inherited through a same-file `extends:` was the common case; since #910 an
+  inherited key names the line that wrote it, so null is now rare, but it
+  stays part of the type. Declaring it now is a clarification;
   after 1.0 it would be a loosening of a typed field under
   [ADR-030](030-the-policy-is-part-of-the-contract.md).
 

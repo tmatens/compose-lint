@@ -242,8 +242,10 @@ _NOTIFICATION_DESCRIPTORS: list[dict[str, Any]] = [
         "id": DiagnosticKind.COVERAGE_GAP.value,
         "shortDescription": {
             "text": (
-                "An include: or cross-file extends: could not be followed, so "
-                "part of the stack was not linted."
+                "Part of the stack could not be read or graded (an include: or "
+                "extends: that could not be followed, an unreadable .env, a "
+                "refused COMPOSE_FILE, the findings limit, and the rest listed "
+                "in docs/compatibility.md), so it was not linted."
             )
         },
     },
@@ -261,8 +263,8 @@ _NOTIFICATION_DESCRIPTORS: list[dict[str, Any]] = [
         "id": DiagnosticKind.UNREAD_INPUT.value,
         "shortDescription": {
             "text": (
-                "A .env, env_file: or COMPOSE_FILE entry was refused or could "
-                "not be read, so the values it supplies were not graded."
+                "An env_file: target was refused or could not be read, so the "
+                "keys it supplies were not graded."
             )
         },
     },

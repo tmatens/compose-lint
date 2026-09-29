@@ -47,4 +47,8 @@ page is the full contract behind the README's summary.
 
 Structured fixes also ride in SARIF output: `compose-lint check --format sarif`
 populates `fixes[].artifactChanges`, which GitHub Code Scanning renders as an
-inline suggested change on the pull request.
+inline suggested change on the pull request. Region columns count UTF-16 code
+units, the unit JavaScript consumers such as Code Scanning and the VS Code
+SARIF viewer index by, and the run declares it with
+`"columnKind": "utf16CodeUnits"`. A character outside the Basic Multilingual
+Plane, such as an emoji, is two columns.
