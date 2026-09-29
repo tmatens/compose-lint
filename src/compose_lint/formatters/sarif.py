@@ -77,7 +77,13 @@ def _artifact_location(filepath: str) -> dict[str, Any]:
     """
     reported = report_path(filepath)
     if not is_outside(reported):
-        return {"uri": quote(reported), "uriBaseId": _URI_BASE_ID}
+        # A name byte that is not UTF-8 reaches here as a lone surrogate, which
+        # a strict encode refuses. Percent-encoding the original byte names the
+        # file that is actually on disk, as `as_uri()` below already does.
+        return {
+            "uri": quote(reported, errors="surrogateescape"),
+            "uriBaseId": _URI_BASE_ID,
+        }
     return {"uri": Path(reported).as_uri()}
 
 

@@ -61,6 +61,11 @@ _UNSAFE_RANGES = (
     (0xFEFF, 0xFEFF),
     (0xFFF9, 0xFFFB),  # interlinear annotation controls
     (0xE0000, 0xE007F),  # tag characters
+    # Lone surrogates: how Python carries a file name byte that is not valid
+    # UTF-8. They are not text, and a stream that encodes strictly (a UTF-8
+    # locale other than C, or PYTHONIOENCODING=utf-8) raises on one, which
+    # took the whole report down with it.
+    (0xD800, 0xDFFF),
 )
 
 
