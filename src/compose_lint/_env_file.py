@@ -93,6 +93,7 @@ from typing import TYPE_CHECKING
 
 from compose_lint._limits import MAX_SUBSTITUTED_LEN
 from compose_lint._safe_read import (
+    OUT_OF_REACH,
     OutsideProjectError,
     UnsafeFileError,
     read_text_bounded,
@@ -224,11 +225,13 @@ def read_env(
     report down with it.
 
     ``within`` is the project directory the file must resolve inside, defaulting
-    to ``directory`` itself. Every other file a run reads passed this gate and
-    the ``.env`` did not: a committed ``.env`` symlinked to a file elsewhere on
-    the runner was opened and its values quoted into the report. Pointed at
-    ``/proc/self/environ`` that was the process environment. One that resolves
-    outside is treated as absent, like any other unreadable ``.env``.
+    to ``directory`` itself; a link into the directory the run started in is
+    followed too (:func:`~compose_lint._safe_read.out_of_reach`). Every other
+    file a run reads passed this gate and the ``.env`` did not: a committed
+    ``.env`` symlinked to a file elsewhere on the runner was opened and its
+    values quoted into the report. Pointed at ``/proc/self/environ`` that was
+    the process environment. One that resolves outside both is treated as
+    absent, like any other unreadable ``.env``.
     """
     path = directory / ENV_FILENAME
     try:
@@ -255,7 +258,7 @@ def env_read_failure(directory: Path, *, within: Path | None = None) -> str | No
     try:
         read_text_bounded(path, max_bytes=MAX_ENV_BYTES, within=within or directory)
     except OutsideProjectError:
-        return "it resolves outside the project directory"
+        return f"it {OUT_OF_REACH}"
     except UnicodeDecodeError as exc:
         return f"it is not valid UTF-8 (byte {exc.start})"
     except UnsafeFileError as exc:

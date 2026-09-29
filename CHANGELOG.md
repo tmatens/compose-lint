@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A symlink inside the checkout is followed wherever it is read.** A
+  linked Compose file was already followed while its target stayed inside
+  the directory the run started in (the checkout, in CI), but every other
+  read refused the same link when it left the project directory: a `.env`
+  linked to a shared one (`svc/.env -> ../.env`) failed the run with exit 2,
+  and so did a linked `COMPOSE_FILE` entry, `include:` or `extends:` target,
+  while a linked `env_file:` or `project_directory:` was skipped. Compose
+  follows all of them. They now use the Compose file's rule. A link whose
+  target leaves the checkout is still refused, and so is a path written
+  with `..` that climbs out of the project.
+
 - **What counts as a vulnerability is written down.** `SECURITY.md`
   now defines it as a defect that someone with less trust than you can
   cause, that breaks one of eight security properties listed in

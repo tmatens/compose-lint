@@ -18,10 +18,13 @@ from __future__ import annotations
 
 import os
 import stat
-from typing import TYPE_CHECKING
+from pathlib import Path
 
-if TYPE_CHECKING:
-    from pathlib import Path
+# How a refusal by :func:`out_of_reach` reads, wherever it is reported.
+OUT_OF_REACH = (
+    "resolves outside both the project directory and the directory "
+    "compose-lint was run from"
+)
 
 # Generous by design. The largest file in a 5,417-file corpus of real-world
 # Compose documents is well under 200 KB, so this bounds the pathological case
@@ -61,6 +64,32 @@ def escapes_project(path: Path, project: Path) -> bool:
     return not resolved.is_relative_to(root)
 
 
+def out_of_reach(path: Path, root: Path) -> bool:
+    """Whether ``path`` resolves outside both ``root`` and the run directory.
+
+    This is the one link rule for every file a run opens. ``root`` is the
+    directory the site already contains the read to: the project directory
+    for a ``.env``, an ``include:`` or ``extends:`` target, a ``COMPOSE_FILE``
+    entry or an ``env_file:``, and the link's own directory for a Compose file
+    the run picked up. A link whose target stays there is followed, as before.
+
+    A link whose target leaves ``root`` but stays inside the directory the run
+    started in is followed too. In CI that directory is the checkout (the
+    Action runs in the workspace, pre-commit at the repository root), so the
+    target is content the change under review can already see and reading it
+    discloses nothing, while refusing it failed ordinary monorepo layouts:
+    ``svc/.env -> ../.env``, or an ``include:`` target linked to a shared copy.
+    Compose follows both. A target outside both roots is still refused, which
+    is the case containment exists for: a committed link pointing somewhere
+    else on the machine.
+
+    Each site used to pick its own root, so the same link was followed as a
+    Compose file and refused as the ``.env`` beside it. Asking this one
+    question everywhere keeps them from drifting apart again.
+    """
+    return escapes_project(path, root) and escapes_project(path, Path.cwd())
+
+
 def read_text_bounded(
     path: Path,
     *,
@@ -96,17 +125,16 @@ def read_text_bounded(
     silently breaking the ``newline=""`` real-bytes contract.
 
     ``within`` adds the physical containment gate: the path must *resolve*
-    inside that directory. Symlinks are still followed for the shape check —
+    inside that directory or inside the directory the run started in
+    (:func:`out_of_reach`). Symlinks are still followed for the shape check —
     a symlink to a real Compose file is ordinary — but a link whose target
-    leaves the project is refused with :class:`OutsideProjectError` when the
-    caller names a project. Callers that were pointed at a file by the user
-    (an argv path, ``--config``) pass nothing and are unaffected; callers
-    opening a path *the document named* pass the project directory.
+    leaves both is refused with :class:`OutsideProjectError` when the caller
+    names a project. Callers that were pointed at a file by the user (an argv
+    path, ``--config``) pass nothing and are unaffected; callers opening a
+    path *the document named* pass the project directory.
     """
-    if within is not None and escapes_project(path, within):
-        raise OutsideProjectError(
-            f"{path} resolves outside the project directory (refused rather than read)"
-        )
+    if within is not None and out_of_reach(path, within):
+        raise OutsideProjectError(f"{path} {OUT_OF_REACH} (refused rather than read)")
     flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
     fd = os.open(path, flags)
     try:

@@ -36,7 +36,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from compose_lint._env_file import ENV_FILENAME, env_read_failure, read_env
-from compose_lint._safe_read import escapes_project
+from compose_lint._safe_read import out_of_reach
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -318,13 +318,13 @@ def _links_outside(path: Path) -> bool:
     directories *above* the file resolve the same on both sides, so a checkout
     under a linked home directory is unaffected.
 
-    This root is for the file the run picks up. The references a document makes
-    (``include:``, ``extends:``, ``env_file:``, ``COMPOSE_FILE``) keep their own
-    root, the directory of the file that names them (ADR-036).
+    The same rule holds for every other file a run opens
+    (:func:`~compose_lint._safe_read.out_of_reach`); here the site's own root
+    is the link's directory.
     """
     if not path.is_file():
         return False
-    return escapes_project(path, path.parent) and escapes_project(path, Path.cwd())
+    return out_of_reach(path, path.parent)
 
 
 def _with_override(
@@ -402,9 +402,10 @@ def _compose_file_entries(
         candidate = _resolve_entry(directory, entry.strip())
         if candidate is None:
             message = (
-                f"COMPOSE_FILE names {entry.strip()!r}, which is outside the "
-                "project directory or missing, so the whole list was ignored "
-                "and file selection fell back to the default."
+                f"COMPOSE_FILE names {entry.strip()!r}, which leaves the project "
+                "directory, links outside both it and the directory "
+                "compose-lint was run from, or is missing, so the whole list "
+                "was ignored and file selection fell back to the default."
             )
             return None, [], [(str(directory / ENV_FILENAME), message)]
         resolved.append(candidate)
@@ -455,7 +456,8 @@ def _resolve_entry(directory: Path, entry: str) -> str | None:
     # invisible to it: a committed link named like a project-relative document
     # passes every test above while pointing anywhere on the runner. Selecting
     # one would let the artifact choose a file outside itself, which is the
-    # traversal ADR-026 §4 requires this function to refuse.
-    if escapes_project(candidate, directory):
+    # traversal ADR-026 §4 requires this function to refuse. A link into the
+    # run directory stays inside the checkout and is followed (`out_of_reach`).
+    if out_of_reach(candidate, directory):
         return None
     return str(candidate)

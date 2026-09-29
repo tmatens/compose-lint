@@ -8,9 +8,9 @@ is merged, the sibling `.env` is resolved, `env_file:` targets are graded,
 *cannot* see is an error, never a silent pass.
 
 Everything it opens is a document the one you named routes it to, and every
-one of them has to resolve inside that file's own directory. Nothing outside
-the project is read, no matter what the document says, and no registry, daemon
-or image is consulted at all.
+one of them has to resolve inside that file's own directory or, through a
+symlink, inside the checkout. Nothing outside either is read, no matter what
+the document says, and no registry, daemon or image is consulted at all.
 
 That holds for the files a run *finds* as well as the ones a document names.
 A discovered `compose.yml`, its `compose.override.yml`, and the
@@ -26,6 +26,14 @@ them. A target outside both is refused rather than followed: exit 2, a
 coverage gap for a Compose document. The policy file is contained to the
 working directory, and one that leaves it is a configuration error. A plain
 path you type is read as given, and so is `--config`.
+
+The same link rule holds for every file a document routes the run to: the
+`.env`, a `COMPOSE_FILE` entry, an `include:` or `extends:` target, an
+`env_file:`, and an `include:` entry's `project_directory:`. A monorepo that
+links `svc/.env` to a shared `.env` at the repository root is graded as
+Compose deploys it when you run from the root. What a path *says* is a
+separate test: a reference written with `..` that climbs out of the project,
+or an absolute one, is refused whether or not a link is involved.
 
 | Source | Read because | Switch it off |
 |---|---|---|
@@ -78,12 +86,12 @@ notification with `executionSuccessful: false`. `--allow-partial-coverage`
 accepts it and grades the rest. The same holds for an included file's own
 `.env`, which Compose reads for that file.
 
-A `.env` that resolves outside the project — a committed symlink to a file
-elsewhere on the machine — is not read at all, the same containment every
-other file a run opens gets, and is the same coverage gap. An
-`include:` entry's `project_directory:` that resolves outside through a
-directory symlink is not followed either: the entry's files resolve against
-their own directories instead.
+A `.env` that resolves outside both the project and the directory the run
+started in — a committed symlink to a file elsewhere on the machine — is not
+read at all, the same containment every other file a run opens gets, and is
+the same coverage gap. An `include:` entry's `project_directory:` that
+resolves outside both through a directory symlink is not followed either: the
+entry's files resolve against their own directories instead.
 
 ## An `env_file:` is read too, and its keys are graded
 

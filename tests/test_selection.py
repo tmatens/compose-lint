@@ -166,7 +166,7 @@ class TestRefusals:
         assert [g.paths for g in selection.groups] == [
             ["compose.yml", "compose.override.yml"]
         ]
-        assert "outside the project directory" in _gap_text(selection)
+        assert "leaves the project directory" in _gap_text(selection)
 
     def test_an_absolute_entry_is_refused(self, in_project: Path) -> None:
         """The .env must not be able to point the linter at an arbitrary file."""

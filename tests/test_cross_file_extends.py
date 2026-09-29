@@ -414,7 +414,7 @@ def test_a_symlink_out_of_the_project_is_refused(tmp_path: Path) -> None:
 
     loaded = load_compose_full(target)
     assert len(loaded.gaps) == 1
-    assert "outside the project directory" in loaded.gaps[0]
+    assert "outside both the project directory" in loaded.gaps[0]
     assert "privileged" not in loaded.data["services"]["web"]
 
 
