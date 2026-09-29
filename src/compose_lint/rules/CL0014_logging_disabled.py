@@ -6,12 +6,13 @@ from typing import TYPE_CHECKING, Any
 
 from compose_lint._lines import split_lines
 from compose_lint._yaml_edit import (
+    INTERPOLATED_DELETION,
     block_span,
     delete_lines,
     is_anchored_or_merged,
     opens_block_body,
 )
-from compose_lint.models import Finding, RuleMetadata, Severity
+from compose_lint.models import Finding, FixRefusal, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 
 if TYPE_CHECKING:
@@ -90,7 +91,7 @@ class LoggingDisabledRule(BaseRule):
         data: dict[str, Any],
         lines: dict[str, int],
         text: str,
-    ) -> list[TextEdit] | None:
+    ) -> list[TextEdit] | FixRefusal | None:
         """Delete a ``logging:`` block whose only directive is ``driver: none``.
 
         ``driver: none`` is an opt-out of the platform default, so removing the
@@ -146,5 +147,5 @@ class LoggingDisabledRule(BaseRule):
             # `driver: ${LOG_DRIVER:-none}` is `none` only under the default;
             # the deployed driver may be set elsewhere, so the block is not
             # known to be the opt-out it looks like here (ADR-014).
-            return None
+            return FixRefusal(INTERPOLATED_DELETION)
         return [delete_lines(source_lines, first, last, caveat=_CAVEAT)]

@@ -93,6 +93,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   percent-encoded as the byte on disk (`c%E9.yml`) in a SARIF URI, so all
   three formats report the file and give the same exit code.
 
+- **`fix` says why it refused an interpolated deletion or a wrapped port.**
+  CL-0014 and CL-0009 decline to delete a line whose value comes from a
+  `${...}` default, and CL-0005 declines to insert `host_ip:` into a
+  long-syntax port whose first value continues onto the next line. Both
+  refusals are deliberate, but they printed nothing, so the findings read as
+  ones the fixer gave up on. Each now prints a line naming the rule, the
+  service and the reason, as the anchor-shared refusal already did.
+
 ## [0.32.0] - 2026-09-28
 
 ### Changed

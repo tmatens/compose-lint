@@ -171,3 +171,18 @@ class TextEdit:
     end_col: int
     replacement: str
     caveat: str | None = None
+
+
+@dataclass(frozen=True)
+class FixRefusal:
+    """A fixer's refusal that the user needs a reason for (ADR-014).
+
+    A fixer returns ``None`` when a finding is simply outside what it edits
+    (flow style, a shape it does not recognise), and the manual-review count
+    says enough. It returns this instead when the finding looks fixable and
+    the refusal is the safety property: without the reason, the count reads
+    as a fixer that gave up, and hand-editing the same change discards the
+    guard. ``reason`` completes "<rule> on '<service>': ..." in the note.
+    """
+
+    reason: str

@@ -33,6 +33,7 @@ from compose_lint._yaml_edit import (
     sequence_scalar_span,
     value_is_shared,
 )
+from compose_lint.models import FixRefusal
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -545,6 +546,18 @@ def collect_edits(
                 f"the {finding.rule_id} fixer failed on service "
                 f"'{finding.service}': {type(exc).__name__}: {exc}"
             )
+            continue
+        if isinstance(edits, FixRefusal):
+            # A refusal whose reason the user needs: without it the finding is
+            # one more in a count, and the obvious hand edit is the one the
+            # fixer declined for a reason.
+            manual.append(finding)
+            note = (
+                f"{finding.rule_id} on '{finding.service}': {edits.reason}; "
+                "fix it by hand"
+            )
+            if note not in notes:
+                notes.append(note)
             continue
         if edits:
             units.append(_FixUnit([finding], edits, caveat_rule_id=finding.rule_id))

@@ -28,7 +28,10 @@ page is the full contract behind the README's summary.
   rewrite — including a `ports:` or `tmpfs:` list shared between services
   through an anchor, which one edit would change for all of them, and every apply is re-parsed and re-linted before it is written —
   anything that wouldn't round-trip clean is refused with the diff surfaced for
-  diagnosis.
+  diagnosis. Where the refusal is the safety property rather than a shape the
+  fixer does not handle, stderr says why, one line per finding: a list shared
+  through an anchor, a deletion whose value comes from a `${...}` default, and
+  a long-syntax port whose first value continues onto the next line.
 - **A key deleted with `!reset` is deferred, not written back.** `!reset`
   removes the key from the configuration Compose runs, so an absence rule fires
   on it — but writing the key into a document the reset applies to changes

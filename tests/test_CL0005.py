@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from compose_lint.fix import apply_edits
-from compose_lint.models import Finding, Severity
+from compose_lint.models import Finding, FixRefusal, Severity
 from compose_lint.parser import load_compose, loads
 from compose_lint.rules.CL0005_unbound_ports import UnboundPortsRule
 
@@ -148,7 +148,11 @@ class TestUnboundPortsFix:
             self.rule.check(service, data["services"][service], data, lines)
         )
         assert findings, "expected CL-0005 to fire"
-        return self.rule.fix(findings[0], data, lines, content)
+        result = self.rule.fix(findings[0], data, lines, content)
+        # These tests exercise edits and plain refusals; a reasoned refusal
+        # is asserted through `fix` in test_fix_apply_refusals.py.
+        assert not isinstance(result, FixRefusal)
+        return result
 
     def test_prepends_when_no_bind_address(self, tmp_path: Path) -> None:
         content = "services:\n  web:\n    ports:\n      - 8080:80\n"
@@ -228,7 +232,7 @@ class TestUnboundPortsFix:
         findings = list(self.rule.check("web", data["services"]["web"], data, lines))
         assert len(findings) == 1
         edits = self.rule.fix(findings[0], data, lines, content)
-        assert edits is not None
+        assert isinstance(edits, list)
         assert apply_edits(content, edits) == (
             "services:\n"
             "  web:\n"

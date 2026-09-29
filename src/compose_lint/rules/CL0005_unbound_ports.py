@@ -15,7 +15,7 @@ from compose_lint._yaml_edit import (
     sequence_scalar_span,
     value_is_shared,
 )
-from compose_lint.models import Finding, RuleMetadata, Severity, TextEdit
+from compose_lint.models import Finding, FixRefusal, RuleMetadata, Severity, TextEdit
 from compose_lint.rules import BaseRule, register_rule
 
 if TYPE_CHECKING:
@@ -335,7 +335,7 @@ class UnboundPortsRule(BaseRule):
         data: dict[str, Any],
         lines: dict[str, int],
         text: str,
-    ) -> list[TextEdit] | None:
+    ) -> list[TextEdit] | FixRefusal | None:
         """Bind a wildcard or unbound published port to ``127.0.0.1``.
 
         Short syntax (``- 8080:80``) is edited in the scalar: prepend
@@ -436,7 +436,7 @@ def _fix_long_syntax(
     port_config: dict[str, Any],
     source_lines: list[str],
     item_line: int,
-) -> list[TextEdit] | None:
+) -> list[TextEdit] | FixRefusal | None:
     """Add or correct ``host_ip`` on a long-syntax port mapping.
 
     ``item_line`` is the mapping's first-key line (the one carrying the ``-``).
@@ -454,7 +454,10 @@ def _fix_long_syntax(
         # quoted scalar, or a block scalar). A key inserted after the dash line
         # would land between the value and its continuation, and Compose then
         # reads the continuation as part of the inserted key's value.
-        return None
+        return FixRefusal(
+            "the entry's first value continues onto the next line, so an "
+            "inserted host_ip: would split it"
+        )
 
     if "host_ip" not in port_config:
         edit = _insert_host_ip(source_lines, item_line, key_col)

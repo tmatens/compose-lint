@@ -18,6 +18,15 @@ from typing import Any
 from compose_lint._scalar import as_scalar_text
 from compose_lint.models import TextEdit
 
+# The reason a fixer gives for refusing to delete a line that interpolates:
+# `driver: ${LOG_DRIVER:-none}` is a finding only under the default this run
+# assumed. Shared so CL-0009 and CL-0014 state it the same way.
+INTERPOLATED_DELETION = (
+    "the value comes from a ${...} default, and another environment may deploy "
+    "a different one, so deleting the line is not a known-safe edit"
+)
+
+
 # security_opt directives that disable a default platform profile — CL-0009's
 # territory. Shared here so CL-0003 can decline to append into a block whose
 # entries are *all* profile-disables: CL-0009 will act on those, and appending a
