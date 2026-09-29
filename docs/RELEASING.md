@@ -233,7 +233,7 @@ tag, while the tightening that reverses it stays cheap forever.
 
 Removing anything stable follows the deprecation lifecycle in
 [compatibility.md](compatibility.md#deprecation-lifecycle): announce it under
-`Deprecated` in `CHANGELOG.md`, emit a stderr `warning:` for user-invoked
+`Deprecated` in `CHANGELOG.md`, emit a stderr `Warning:` line for user-invoked
 surfaces, keep it working for at least one MINOR, and remove it only in a MAJOR
 (listed under `Removed`).
 

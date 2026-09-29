@@ -20,3 +20,11 @@
   generous word for it, and a pipeline that treats exit 0 as "safe to ship" is reading
   a claim this tool does not make. Validation is `docker compose config`'s job and
   running both is the intended arrangement.
+
+**Amendment (pre-1.0): what exit 2 covers now.** The decision above names
+"usage/file errors". Exit 2 has since grown to every case where compose-lint
+could not complete an honest verdict: a coverage gap
+([ADR-036](036-resolve-references-that-stay-inside-the-project.md)), a crashed
+rule (above), a config error, and a size refusal. `fix` and `init` never exit 1
+([ADR-014](014-fix-remediation.md), [ADR-011](011-config-bootstrap-ux.md)). The current
+table for all three subcommands is [CLI reference: Exit codes](../cli.md#exit-codes).

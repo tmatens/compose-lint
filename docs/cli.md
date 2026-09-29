@@ -29,7 +29,8 @@ check options:
   --config PATH                Path to config file (default: .compose-lint.yml,
                                then .compose-lint.yaml, in the working directory)
   --strict-config              Treat config diagnostics (unknown rule id or key, inert reason
-                               or severity, stale exclude_services name) as errors, not warnings
+                               or severity, stale exclude_services name, both config
+                               spellings present) as errors, not warnings
   --explain CL-XXXX            Print the full documentation for a single rule
                                (through a pager on an interactive terminal)
   --no-pager                   Print --explain output directly, bypassing the pager
@@ -44,8 +45,8 @@ fix options:
   --no-env                     Ignore the sibling `.env` and every `env_file:`
   --config PATH                Path to config file (suppressions are honored)
   --strict-config              Treat config diagnostics (unknown rule id or key, inert reason
-                               or severity) and an `--only` id that names no rule
-                               as errors, not warnings
+                               or severity, both config spellings present) and an
+                               `--only` id that names no rule as errors, not warnings
 
 init options:
   -o, --output PATH            Where to write the config (default: .compose-lint.yml)
@@ -69,15 +70,29 @@ without `--explain` does nothing.
 
 Values are case-insensitive wherever the CLI takes a fixed set or a rule id:
 `--fail-on HIGH`, `--format JSON`, `--explain cl-0001` and `--only cl-0007`
-all work. Rule ids used as keys in `.compose-lint.yml` are matched exactly, as
+all work, and so do a `severity: CRITICAL` in `.compose-lint.yml` and
+`FORCE_COLOR=FALSE`. Rule ids used as keys in `.compose-lint.yml` are matched exactly, as
 written, because they are keys in a document you author; `cl-0001:` there is
 reported as an unknown rule id.
+
+## Exit codes
+
+Every subcommand exits 0, 1 or 2, and nothing else
+([ADR-006](adr/006-exit-codes.md)). `fix` and `init` produce an artifact
+rather than a verdict, so neither exits 1: for them, findings are the input,
+not the failure.
+
+| | `check` | `fix` | `init` |
+|---|---|---|---|
+| **0** | No finding at or above `--fail-on`. | The diff was printed, or the fixes were written, or there was nothing to fix. Findings left for manual review, and coverage gaps it reported, do not change this. | The config was written, or there were no findings to write one from. |
+| **1** | A finding at or above `--fail-on`. | Never. | Never. |
+| **2** | compose-lint could not run, or could not see the whole stack: bad arguments; a file missing, not valid Compose, or over a [size limit](what-a-run-reads.md#size-limits); a crashed rule; a config error, or a config warning under `--strict-config`; or a [coverage gap](compatibility.md#coverage-gaps-are-not-findings) not accepted with `--allow-partial-coverage`. | Bad arguments; a file missing or not valid Compose; a crashed rule or fixer; the 20,000-findings limit; a computed fix that fails the re-parse or verify check; a refused write (read-only file, symlink, hard link, unwritable directory); a config error. Nothing is written to that file, and the rest of the batch still runs. | Bad arguments; the file missing or not valid Compose; a crashed rule; the 20,000-findings limit; an existing config without `--force`; a failed write. |
 
 ## Color
 
 Color is on when stdout is a terminal. Set `NO_COLOR` to any non-empty value to
 disable it (even on a terminal); it wins over everything. `FORCE_COLOR`, when
-set, overrides terminal detection: `0` or `false` turns color off, and any other
+set, overrides terminal detection: `0` or `false`, in any case, turns color off, and any other
 value, the empty string included, turns it on. That is the convention of
 [no-color.org](https://no-color.org) and of Node's `supports-color`. Use it to
 keep color through a pipe, e.g. into `less -R` or a CI log that renders ANSI.

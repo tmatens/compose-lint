@@ -361,9 +361,10 @@ def _add_check_subparser(
         default=False,
         help=(
             "treat config diagnostics (unknown/typo'd rule id, unknown key, an "
-            "inert reason or severity, a stale exclude_services name) as errors "
-            "instead of stderr warnings, so a malformed config fails loudly "
-            "rather than silently disabling the wrong rule"
+            "inert reason or severity, a stale exclude_services name, both "
+            "config spellings present) as errors instead of stderr warnings, "
+            "so a malformed config fails loudly rather than silently disabling "
+            "the wrong rule"
         ),
     )
     check.add_argument(
@@ -479,7 +480,8 @@ def _add_fix_subparser(
         default=False,
         help=(
             "treat config diagnostics (unknown/typo'd rule id, unknown key, an "
-            "inert reason or severity) as errors instead of stderr warnings"
+            "inert reason or severity, both config spellings present) as errors "
+            "instead of stderr warnings"
         ),
     )
 
