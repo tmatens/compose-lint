@@ -731,7 +731,11 @@ def test_a_subdirectory_overlay_resolves_against_the_first_file(
     services = merged.data["services"]
     assert services["probe"]["image"] == "x:root"
     assert services["app"]["image"] == "from-root:1"
-    assert services["app"]["volumes"] == [f"{tmp_path.absolute()}/data:/data"]
+    # Bind sources resolve in POSIX notation on every platform (ADR-023), so
+    # compare the tail rather than a native absolute path.
+    (volume,) = services["app"]["volumes"]
+    assert volume.endswith("/data:/data")
+    assert "/ops/" not in volume
 
 
 def test_fix_verification_merges_the_overlay_the_same_way(tmp_path: Path) -> None:
