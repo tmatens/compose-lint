@@ -203,7 +203,7 @@ def test_extends_targets_is_memoized_per_document() -> None:
 
 
 def test_a_deep_alias_dag_with_extends_resolves_quickly() -> None:
-    """`_merge_extends` re-walked a shared subtree once per path: 805 B -> 5.4 s."""
+    """The extends merge re-walked a shared subtree once per path: 805 B -> 5.4 s."""
     source = _alias_dag(
         18,
         "services:\n"
