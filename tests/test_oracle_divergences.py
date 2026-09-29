@@ -17,6 +17,7 @@ The registry itself, with the reasoning, is
 
 from __future__ import annotations
 
+import posixpath
 import re
 from typing import TYPE_CHECKING
 
@@ -31,7 +32,7 @@ from tests.oracle_harness import (
     run_oracle,
 )
 from tests.oracle_harness._divergences import registered_names
-from tests.test_oracle_harness import SEEDS
+from tests.test_oracle_harness import ALL_SEEDS
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -136,6 +137,14 @@ def _no_reference_leaves_the_project(project: GeneratedProject) -> None:
                 assert not stripped[2:].startswith(("..", "/")), (
                     f"seed {project.seed}: {name} references {stripped[2:]}"
                 )
+    # A link is a reference too. One may leave the Compose project directory
+    # for elsewhere in the generated tree — that is a layout seed's subject —
+    # but never the tree itself, whose outside is the lint host's filesystem.
+    for link, target in project.links.items():
+        landed = posixpath.normpath(posixpath.join(posixpath.dirname(link), target))
+        assert not target.startswith("/") and not landed.startswith(".."), (
+            f"seed {project.seed}: {link} -> {target} leaves the generated tree"
+        )
 
 
 def _no_profiles(project: GeneratedProject) -> None:
@@ -171,5 +180,5 @@ def test_every_registered_divergence_says_how_the_generator_avoids_it() -> None:
 def test_the_generator_avoids_every_registered_divergence(name: str) -> None:
     """No seed builds a project whose answer is settled policy."""
     check = GENERATOR_AVOIDS[name]
-    for seed in SEEDS:
+    for seed in ALL_SEEDS:
         check(generate(seed))

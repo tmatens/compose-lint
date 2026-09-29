@@ -41,10 +41,21 @@ YAML 1.1 booleans, octal) are deliberately not varied here. They are the shape
 comparator's rows, and shape is not compared until phase 3; a findings-only
 comparison would take the cost of generating them and detect almost none of
 it.
+
+**Layout seeds.** Seeds from ``LAYOUT_SEED_BASE`` up build a second family of
+projects, aimed at *where* files sit rather than what they say: symlinked
+documents, dotenvs and directories, ``include:`` entries with
+``project_directory:``, a ``COMPOSE_FILE`` list selecting an overlay in a
+subdirectory, and an included document with no ``services:``. They are a
+separate range rather than more steps on the builder above because every one
+of them would consume the seed, and an existing seed must keep building the
+bytes it always has — a replay of an old failure proves nothing otherwise. See
+:class:`_LayoutBuilder` for the tree they build.
 """
 
 from __future__ import annotations
 
+import posixpath
 import random
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -143,6 +154,37 @@ ENV_FILE_SPELLINGS = [
     "[{path: app.env, required: false}]",
 ]
 
+# Seeds at or above this build a layout project (see `_LayoutBuilder`). Far
+# enough above the original range that growing it never reaches here.
+LAYOUT_SEED_BASE = 100_000
+
+# What the layout projects define in a dotenv, as (definition, default written
+# into the reference). The names are split by scope so that a disagreement
+# says which dotenv was read: `PRIV`, `CAP` and `INCTAG` belong to an included
+# entry's project directory, `DEVTAG` and `DEVCAP` to the project dotenv that
+# selects an overlay with `COMPOSE_FILE`. Each definition differs from its
+# default, and `PRIV` and `CAP` move a finding as well as the shape.
+LAYOUT_VARIABLES = {
+    "PRIV": ("true", "false"),
+    "CAP": ("SYS_ADMIN", "NET_BIND_SERVICE"),
+    "INCTAG": ("2.0", "1.0"),
+    "DEVTAG": ("2.0", "1.0"),
+    "DEVCAP": ("SYS_PTRACE", "NET_BIND_SERVICE"),
+}
+
+# Written into a dotenv Compose does not read for the document beside it: the
+# included file's own directory when `project_directory:` names another, and
+# an overlay's subdirectory. A value distinct from both the definition and the
+# default, so a loader that reads the file anyway ships something neither side
+# of a correct answer can produce.
+LAYOUT_DECOYS = {
+    "PRIV": "true",
+    "CAP": "NET_ADMIN",
+    "INCTAG": "from-file-dir",
+    "DEVTAG": "from-overlay-dir",
+    "DEVCAP": "NET_ADMIN",
+}
+
 
 @dataclass(frozen=True)
 class GeneratedProject:
@@ -155,7 +197,17 @@ class GeneratedProject:
     # compose-lint must report a coverage gap rather than grading a partial
     # stack (A10).
     expects_gap: bool = False
+    # Compose resolves it, and compose-lint reports a coverage gap by policy:
+    # a reference written with `..` that climbs out of the Compose project
+    # directory (ADR-036), here an `include:` entry's `project_directory:`.
+    # Asserted in both directions, so neither side can drift silently.
+    policy_gap: bool = False
     notes: tuple[str, ...] = field(default=())
+    # Symbolic links, relative path -> target spelled relative to the link's
+    # own directory, the way `ln -s` would be given it. Every target stays
+    # inside the generated tree: one leaving it is a fact about the machine
+    # the run happens on, which is registered policy rather than a case.
+    links: dict[str, str] = field(default_factory=dict)
 
     def write(self, root: Path) -> Path:
         """Materialise the project under ``root`` and return the primary file."""
@@ -163,6 +215,14 @@ class GeneratedProject:
             target = root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text)
+        # After the files, so a directory link can be told from a file link by
+        # looking at what it points at.
+        for relative, pointee in self.links.items():
+            link = root / relative
+            link.parent.mkdir(parents=True, exist_ok=True)
+            link.symlink_to(
+                pointee, target_is_directory=(link.parent / pointee).is_dir()
+            )
         return root / self.primary
 
     def render(self) -> str:
@@ -170,6 +230,8 @@ class GeneratedProject:
         blocks = [f"# seed {self.seed}: {', '.join(self.notes) or 'plain'}"]
         for relative in sorted(self.files):
             blocks.append(f"--- {relative} ---\n{self.files[relative]}")
+        for relative in sorted(self.links):
+            blocks.append(f"--- {relative} -> {self.links[relative]} ---")
         return "\n".join(blocks)
 
 
@@ -453,6 +515,337 @@ class _Builder:
         )
 
 
+def _dotenv(values: dict[str, str]) -> str:
+    return "".join(f"{name}={value}\n" for name, value in values.items())
+
+
+class _LayoutBuilder(_Builder):
+    """One layout seed: a small project whose interest is where its files sit.
+
+    The tree it writes is a checkout, and the Compose project is either the
+    whole of it or ``svc/`` inside it. The run starts at the top, the way CI
+    starts in the workspace, so a link from ``svc/`` up into ``shared/`` stays
+    inside the tree without staying inside the project directory — which is
+    exactly the distinction a loader can get wrong::
+
+        .env                     0-1, only as the target of `svc/.env -> ../.env`
+        shared/                  link targets (outside the project when it is svc/)
+        shared/incdir/.env       0-1, a `project_directory:` above the project
+        svc/store/               link targets inside the project directory
+        [svc/]compose.yaml       base, always; 0-1 a link to a document elsewhere
+        [svc/].env               0-1, possibly a link; may set COMPOSE_FILE
+        [svc/]ops/dev.yaml       0-1 overlay a COMPOSE_FILE list selects
+        [svc/]ops/.env           0-1, beside the overlay; never read by Compose
+        [svc/]ops/extra.yaml     0-1 link, a further COMPOSE_FILE entry
+        [svc/]parts/inc.yaml     0-1 included with `project_directory:`
+        [svc/]parts/.env         0-1, the included file's own directory
+        [svc/]<chosen>/.env      the dotenv of that project directory
+        [svc/]parts/volumes.yaml 0-1 included, declares no services
+        [svc/]linked.yaml        0-1 link to an included document
+        [svc/]lib                0-1 link to a directory holding one, or
+                                 holding the dotenv of a `project_directory:`
+
+    Every link target stays inside the tree, every reference carries a
+    default, and no service name repeats across documents, so each seed is a
+    project Compose resolves and each disagreement has one cause.
+    """
+
+    # Fields a layout document writes itself. Drawing one again for the same
+    # service would be a duplicate mapping key or, for the list fields, a
+    # repeat Compose validates away as a rejection.
+    OWNED = frozenset({"volumes", "cap_add", "privileged"})
+
+    def __init__(self, seed: int) -> None:
+        super().__init__(seed)
+        self.links: dict[str, str] = {}
+        self.entries: list[str] = []
+        self.project_env: dict[str, str] = {}
+        self.first_volumes = ["./data:/data"]
+        self.lib_real: str | None = None
+        self.lib_is_project_directory = False
+        self.project = self.rng.choice([".", "svc"])
+        if self.project != ".":
+            self.notes.append("project-in-subdir")
+
+    # -- helpers ----------------------------------------------------------
+
+    def _at(self, relative: str) -> str:
+        """``relative`` inside the project directory, spelled from the tree."""
+        return posixpath.normpath(posixpath.join(self.project, relative))
+
+    def _store(self, name: str) -> str:
+        """Where a link target lives: inside the project, or beside it."""
+        if self.project != "." and self.rng.random() < 0.5:
+            return f"{self.project}/store/{name}"
+        if self.project != "." and "link-leaves-project" not in self.notes:
+            self.notes.append("link-leaves-project")
+        return f"shared/{name}"
+
+    def _link(self, link: str, target: str) -> None:
+        self.links[link] = posixpath.relpath(target, posixpath.dirname(link) or ".")
+
+    def _extra_fields(self, service: str, *, included: bool) -> list[str]:
+        """A few drawn fields, none of which the layout writes itself.
+
+        An included document never draws ``depends_on:``: it names a service of
+        the including project, which the included one does not declare.
+        """
+        available = [
+            f
+            for f in self._pool_for(service)
+            if f not in self.OWNED and not (included and f in _NEEDS_DB)
+        ]
+        return _fields_for(
+            self.rng,
+            self.picker,
+            service,
+            available=available,
+            count=self.rng.randint(0, 2),
+            directives=False,
+        )
+
+    # -- the documents reached by reference --------------------------------
+
+    def linked_directory(self) -> None:
+        """A directory link: an included document behind it, or a dotenv.
+
+        The second use hands the directory to ``include_with_project_directory``
+        as its ``project_directory:``, and is kept apart from the first rather
+        than combined with it: a loader that refuses the linked document
+        reports a gap, and that gap would hide what it did with the directory.
+        """
+        if self.rng.random() >= 0.35:
+            return
+        self.notes.append("linked-dir")
+        self.lib_real = self._store("lib")
+        self._link(self._at("lib"), self.lib_real)
+        if self.rng.random() < 0.4:
+            self.lib_is_project_directory = True
+            return
+        self.files[f"{self.lib_real}/part.yaml"] = _document(
+            _service_block(
+                "libsvc",
+                [
+                    "image: myapp:1.0",
+                    'volumes: ["./lib-data:/data"]',
+                    *self._extra_fields("libsvc", included=True),
+                ],
+            )
+        )
+        self.entries.append("  - lib/part.yaml\n")
+
+    def include_with_project_directory(self) -> None:
+        """An ``include:`` entry whose relative paths and dotenv live elsewhere.
+
+        Compose resolves every relative path in the entry, and reads the
+        dotenv, from ``project_directory:`` — whether that is the included
+        file's own directory, one below it, a sibling, the project root, a
+        linked directory, or a directory above the project in the same tree.
+        The chosen directory's dotenv defines what the service interpolates,
+        and a decoy beside the included file defines something else, so
+        reading the wrong one is visible.
+        """
+        if self.lib_is_project_directory:
+            chosen = "lib"
+        else:
+            if self.rng.random() >= 0.5:
+                return
+            choices = ["parts", "parts/env", "conf", "."]
+            if self.project != ".":
+                choices.append("../shared/incdir")
+            chosen = self.rng.choice(choices)
+        inside = chosen in ("parts", "parts/env")
+        self.notes.append(
+            "include-project-dir-inside" if inside else "include-project-dir-outside"
+        )
+        defined = sorted(
+            self.rng.sample(["PRIV", "CAP", "INCTAG"], self.rng.randint(1, 3))
+        )
+        values = {name: LAYOUT_VARIABLES[name][0] for name in defined}
+        if chosen == ".":
+            self.project_env.update(values)
+        elif chosen == "lib" and self.lib_real is not None:
+            self.notes.append("linked-project-dir")
+            self.files[f"{self.lib_real}/.env"] = _dotenv(values)
+        else:
+            if chosen.startswith(".."):
+                # Above the project directory, still inside the tree: the
+                # layout a checkout with one shared config directory has.
+                self.notes.append("include-project-dir-leaves-project")
+            self.files[self._at(f"{chosen}/.env")] = _dotenv(values)
+        if chosen != "parts" and self.rng.random() < 0.5:
+            self.notes.append("include-file-dir-decoy")
+            self.files[self._at("parts/.env")] = _dotenv(
+                {name: LAYOUT_DECOYS[name] for name in ("PRIV", "CAP", "INCTAG")}
+            )
+        self.files[self._at("parts/inc.yaml")] = _document(
+            _service_block(
+                "inc",
+                [
+                    "image: myapp:${INCTAG:-1.0}",
+                    "privileged: ${PRIV:-false}",
+                    'cap_add: ["${CAP:-NET_BIND_SERVICE}"]',
+                    'volumes: ["./inc-data:/data"]',
+                    *self._extra_fields("inc", included=True),
+                ],
+            )
+        )
+        self.entries.append(
+            f"  - path: parts/inc.yaml\n    project_directory: {chosen}\n"
+        )
+
+    def include_without_services(self) -> None:
+        """An included document that contributes only a top-level key."""
+        if self.rng.random() >= 0.35:
+            return
+        self.notes.append("include-no-services")
+        self.files[self._at("parts/volumes.yaml")] = "volumes:\n  cache: {}\n"
+        self.entries.append("  - parts/volumes.yaml\n")
+        if self.rng.random() < 0.5:
+            # The named volume is declared nowhere else, so the project only
+            # resolves if the include was read.
+            self.first_volumes.append("cache:/cache")
+
+    def linked_include(self) -> None:
+        """An ``include:`` target that is a link to a document elsewhere."""
+        if self.rng.random() >= 0.35:
+            return
+        self.notes.append("linked-include")
+        real = self._store("part.yaml")
+        self.files[real] = _document(
+            _service_block(
+                "linked",
+                [
+                    "image: myapp:1.0",
+                    'volumes: ["./linked-data:/data"]',
+                    *self._extra_fields("linked", included=True),
+                ],
+            )
+        )
+        self._link(self._at("linked.yaml"), real)
+        self.entries.append("  - linked.yaml\n")
+
+    # -- the project's own inputs ------------------------------------------
+
+    def compose_file_selection(self) -> None:
+        """``COMPOSE_FILE`` naming the base and an overlay one directory down.
+
+        Compose resolves every file in the list against the *first* file's
+        project directory — its relative bind sources and its interpolation
+        both — so the overlay's ``./dev-data`` mounts beside ``compose.yaml``
+        and its ``${DEVTAG}`` comes from the project dotenv, not from one
+        beside the overlay.
+        """
+        if self.rng.random() >= 0.45:
+            return
+        self.notes.append("compose-file")
+        first = self.names[0]
+        defined = sorted(self.rng.sample(["DEVTAG", "DEVCAP"], self.rng.randint(1, 2)))
+        self.project_env.update({n: LAYOUT_VARIABLES[n][0] for n in defined})
+        self.files[self._at("ops/dev.yaml")] = _document(
+            _service_block(
+                first,
+                [
+                    "image: myapp:${DEVTAG:-1.0}",
+                    'cap_add: ["${DEVCAP:-NET_BIND_SERVICE}"]',
+                    'volumes: ["./dev-data:/dev-data"]',
+                ],
+            )
+        )
+        selected = ["compose.yaml", "ops/dev.yaml"]
+        if self.rng.random() < 0.5:
+            self.notes.append("overlay-own-env")
+            self.files[self._at("ops/.env")] = _dotenv(
+                {name: LAYOUT_DECOYS[name] for name in ("DEVTAG", "DEVCAP")}
+            )
+        if self.rng.random() < 0.5:
+            self.notes.append("linked-compose-file-entry")
+            real = self._store("extra.yaml")
+            self.files[real] = _document(
+                _service_block(
+                    first,
+                    ["privileged: true", 'volumes: ["./extra-data:/extra-data"]'],
+                )
+            )
+            self._link(self._at("ops/extra.yaml"), real)
+            selected.append("ops/extra.yaml")
+        # First in the file so a reader sees the selection before the values.
+        self.project_env = {"COMPOSE_FILE": ":".join(selected), **self.project_env}
+
+    def project_dotenv(self) -> None:
+        """The project's dotenv, written in place or as a link to one elsewhere."""
+        if self.rng.random() < 0.5:
+            self.project_env["APPTAG"] = VARIABLES["APPTAG"][0]
+        linked = self.rng.random() < 0.4
+        if linked and not self.project_env:
+            self.project_env["APPTAG"] = VARIABLES["APPTAG"][0]
+        if not self.project_env:
+            return
+        text = _dotenv(self.project_env)
+        where = self._at(".env")
+        if not linked:
+            self.files[where] = text
+            return
+        self.notes.append("linked-env")
+        if self.project != "." and self.rng.random() < 0.5:
+            # `svc/.env -> ../.env`: one dotenv at the top of a checkout,
+            # shared into a service directory.
+            real = ".env"
+            if "link-leaves-project" not in self.notes:
+                self.notes.append("link-leaves-project")
+        else:
+            real = self._store("project.env")
+        self.files[real] = text
+        self._link(where, real)
+
+    # -- the document the run is pointed at ---------------------------------
+
+    def layout_base(self) -> None:
+        body = ""
+        for index, name in enumerate(self.names):
+            if index == 0:
+                listed = ", ".join(f'"{v}"' for v in self.first_volumes)
+                lines = ["image: myapp:${APPTAG:-1.0}", f"volumes: [{listed}]"]
+            else:
+                lines = [f"image: {self.rng.choice(IMAGES)}"]
+            lines += self._extra_fields(name, included=False)
+            body += _service_block(name, lines)
+        self.rng.shuffle(self.entries)
+        prelude = "include:\n" + "".join(self.entries) if self.entries else ""
+        text = _document(body, prelude=prelude)
+        where = self._at("compose.yaml")
+        if self.rng.random() < 0.3:
+            self.notes.append("linked-compose")
+            real = self._store("stack.yaml")
+            self.files[real] = text
+            self._link(where, real)
+        else:
+            self.files[where] = text
+
+    def build(self) -> GeneratedProject:
+        self.linked_directory()
+        self.include_with_project_directory()
+        self.include_without_services()
+        self.linked_include()
+        self.compose_file_selection()
+        self.project_dotenv()
+        self.layout_base()
+        return GeneratedProject(
+            seed=self.seed,
+            files=self.files,
+            primary=self._at("compose.yaml"),
+            policy_gap="include-project-dir-leaves-project" in self.notes,
+            notes=tuple(self.notes),
+            links=self.links,
+        )
+
+
 def generate(seed: int) -> GeneratedProject:
-    """Build the project for ``seed``. Same seed, same bytes, always."""
+    """Build the project for ``seed``. Same seed, same bytes, always.
+
+    Seeds from ``LAYOUT_SEED_BASE`` build the layout family; every seed below
+    it builds exactly what it always has.
+    """
+    if seed >= LAYOUT_SEED_BASE:
+        return _LayoutBuilder(seed).build()
     return _Builder(seed).build()

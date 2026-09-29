@@ -71,14 +71,27 @@ def findings_of(
     )
 
 
-def lint_project(primary: Path) -> LintedProject:
+def lint_project(primary: Path, *, run_from: Path | None = None) -> LintedProject:
     """Grade ``primary`` the way the CLI would, overlay discovery included.
 
     Going through ``plan_documents`` rather than handing ``load_merged`` a file
     list is deliberate: which documents Compose pairs together is part of what
     the harness is checking, so the selection layer has to be inside the
     comparison rather than assumed by it.
+
+    ``run_from`` is the directory the run starts in, which the CLI takes from
+    the working directory: a primary document that is a link is followed while
+    its target stays inside it. A generated tree is a checkout, and CI starts
+    at the top of one, so a caller linting a generated project passes the
+    tree's root. Omitted, the run starts wherever this process already is.
     """
+    if run_from is None:
+        return _lint(primary)
+    with contextlib.chdir(run_from):
+        return _lint(primary)
+
+
+def _lint(primary: Path) -> LintedProject:
     selection = plan_documents([str(primary)])
     if not selection.groups:
         return LintedProject(findings=Counter(), error="no document selected")
@@ -87,8 +100,17 @@ def lint_project(primary: Path) -> LintedProject:
         merged = load_merged(list(group.paths))
     except ComposeError as exc:
         return LintedProject(findings=Counter(), error=str(exc))
-    if merged.gaps:
-        return LintedProject(findings=Counter(), gaps=merged.gaps)
+    # Selection has gaps of its own — a project `.env` that exists and was not
+    # read, a `COMPOSE_FILE` list that was refused — and the CLI reports them
+    # as exit 2 alongside the loader's. Leaving them out graded the fallback
+    # selection as if it were the project, and reported the refusal as a
+    # findings disagreement rather than as the gap it is.
+    gaps = (
+        *(f"{path}: {message}" for path, message in selection.gaps),
+        *merged.gaps,
+    )
+    if gaps:
+        return LintedProject(findings=Counter(), gaps=gaps)
     return LintedProject(
         findings=findings_of(merged.data, merged.lines, primary.absolute().parent),
         merged=merged.data,

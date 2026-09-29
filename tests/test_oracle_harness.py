@@ -42,6 +42,7 @@ import pytest
 from compose_lint.parser import ComposeError, load_compose_full
 from tests.oracle_harness import (
     DUMP_NAME,
+    LAYOUT_SEED_BASE,
     describe_difference,
     describe_shape_difference,
     document_changes,
@@ -69,24 +70,35 @@ pytestmark = pytest.mark.skipif(
 # unrelated commit red for reasons that vanish on re-run.
 SEEDS = list(range(400))
 
+# The layout family (see `oracle_harness/_project.py`): symlinks,
+# `project_directory:`, `COMPOSE_FILE` overlays in a subdirectory, and an
+# included document with no services. A range of its own, so the seeds above
+# keep building the projects they always have.
+LAYOUT_SEEDS = list(range(LAYOUT_SEED_BASE, LAYOUT_SEED_BASE + 200))
+
+ALL_SEEDS = [*SEEDS, *LAYOUT_SEEDS]
+
 
 def _replay(seed: int) -> str:
     return f"replay with: python -m tests.oracle_harness --seed {seed} --keep DIR"
 
 
-@pytest.mark.parametrize("seed", SEEDS)
+@pytest.mark.parametrize("seed", ALL_SEEDS)
 def test_generated_project_matches_compose(seed: int, tmp_path: Path) -> None:
     """A generated project yields the findings Compose's own resolution would."""
     project = generate(seed)
     root = tmp_path / "project"
     root.mkdir()
     primary = project.write(root)
+    # The Compose project directory, which a layout seed may put below the
+    # tree the run starts in.
+    workdir = primary.parent
 
     # Before the dump exists: it lives in the project root so that a relative
     # `env_file:` still resolves, and the truth has to be the project as
     # written.
-    oracle = run_oracle(root)
-    linted = lint_project(primary)
+    oracle = run_oracle(workdir)
+    linted = lint_project(primary, run_from=root)
     context = f"seed {seed}\n{project.render()}\n{_replay(seed)}"
 
     if project.expects_gap:
@@ -99,6 +111,12 @@ def test_generated_project_matches_compose(seed: int, tmp_path: Path) -> None:
         return
 
     assert oracle.accepted, f"{context}\ncompose stderr:\n{oracle.stderr.strip()}"
+    if project.policy_gap:
+        assert any("project_directory:" in gap for gap in linted.gaps), (
+            f"{context}\ncompose-lint graded a reference its containment policy "
+            f"refuses: {linted.gaps}"
+        )
+        return
     assert not linted.refused, (
         f"{context}\ncompose resolved the project; compose-lint refused it: "
         f"{linted.error or linted.gaps}"
@@ -109,8 +127,8 @@ def test_generated_project_matches_compose(seed: int, tmp_path: Path) -> None:
         f"{context}\n{describe_difference(linted.findings, expected)}"
     )
 
-    write_dump(linted.merged, root)
-    dumped = run_oracle(root, files=(DUMP_NAME,))
+    write_dump(linted.merged, workdir)
+    dumped = run_oracle(workdir, files=(DUMP_NAME,))
     # A merged document Compose refuses is a loader defect that happens not to
     # show up as a diff — #805 arrived exactly this way, as
     # `services.web.user must be a string` on a project whose original was
@@ -126,6 +144,9 @@ def test_generated_project_matches_compose(seed: int, tmp_path: Path) -> None:
 def test_seeds_are_deterministic() -> None:
     """The same seed builds the same bytes, or a replay proves nothing."""
     assert generate(17).files == generate(17).files
+    layout = LAYOUT_SEED_BASE + 17
+    assert generate(layout).files == generate(layout).files
+    assert generate(layout).links == generate(layout).links
 
 
 def test_the_generator_reaches_every_shape_it_claims() -> None:
@@ -149,6 +170,44 @@ def test_the_generator_reaches_every_shape_it_claims() -> None:
         "missing-include",
         "override",
     }
+
+    layouts = [generate(seed) for seed in LAYOUT_SEEDS]
+    reached = {note for project in layouts for note in project.notes}
+    assert reached >= {
+        "project-in-subdir",
+        "link-leaves-project",
+        "linked-compose",
+        "linked-env",
+        "linked-include",
+        "linked-compose-file-entry",
+        "linked-dir",
+        "linked-project-dir",
+        "include-project-dir-inside",
+        "include-project-dir-outside",
+        "include-project-dir-leaves-project",
+        "include-file-dir-decoy",
+        "compose-file",
+        "overlay-own-env",
+        "include-no-services",
+    }
+    # A note is a claim about the bytes; these hold the claim to them, so a
+    # dimension cannot keep its note after it stops writing the file.
+    assert any(project.links for project in layouts)
+    assert any(
+        "project_directory:" in text
+        for project in layouts
+        for text in project.files.values()
+    )
+    assert any(
+        text.startswith("COMPOSE_FILE=") and "ops/" in text
+        for project in layouts
+        for text in project.files.values()
+    )
+    assert any(
+        "include:" not in text and "services:" not in text and "volumes:" in text
+        for project in layouts
+        for text in project.files.values()
+    )
 
 
 def test_the_shape_comparator_sees_what_findings_cannot(tmp_path: Path) -> None:
@@ -223,7 +282,7 @@ def test_a_faithful_merge_round_trips(tmp_path: Path) -> None:
 # --- The fix gate, run where the user runs it -------------------------------
 
 
-@pytest.mark.parametrize("seed", SEEDS)
+@pytest.mark.parametrize("seed", ALL_SEEDS)
 def test_fix_holds_in_the_project_directory(
     seed: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -256,7 +315,8 @@ def test_fix_holds_in_the_project_directory(
     root.mkdir()
     project.write(root)
 
-    before = run_oracle(root)
+    workdir = (root / project.primary).parent
+    before = run_oracle(workdir)
     if not before.accepted:
         # Not a fix concern; the sibling test owns Compose's acceptance.
         return
@@ -280,7 +340,7 @@ def test_fix_holds_in_the_project_directory(
     if not written:
         return
 
-    after = run_oracle(root)
+    after = run_oracle(workdir)
     assert after.accepted, (  # G1
         f"{context}\ncompose accepted the project and refused the fixed one:\n"
         f"{after.stderr.strip()}"
