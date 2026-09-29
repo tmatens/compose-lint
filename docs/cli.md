@@ -128,9 +128,10 @@ directory *is* followed and merged, so it is not a gap; the message on one
 that is says which condition it hit. Treating exit 2 as a findings failure
 invents remediation work that does not exist. Either resolve the coverage gap
 or downgrade it deliberately with `--allow-partial-coverage`, which demotes it
-to a stderr warning as long as something is left to grade. `fix` reports gaps
-without failing on them, except at the 20,000-findings limit, where it writes
-nothing to that file and exits 2; it is not the gate.
+to a warning (on stderr, and in `warnings[]`) as long as something is left to
+grade. `fix` reports gaps without failing on them, except at the
+20,000-findings limit, where it writes nothing to that file and exits 2; it is
+not the gate.
 
 **`fix` is a dry run by default, and its refusals are the safety property.**
 A bare `compose-lint fix` prints a diff and writes nothing; `--apply` writes

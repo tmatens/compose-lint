@@ -149,6 +149,25 @@ A gap is not a finding, so `--fail-on` does not gate it; the stability rules
 for adding or retiring a gap condition are in
 [Compatibility](compatibility.md#coverage-gaps-are-not-findings).
 
+## Size limits
+
+A few inputs are refused outright, not because Compose refuses them but
+because grading them would take gigabytes of memory. Each is exit 2 with a
+JSON `errors[]` entry of kind `parse`, and `--allow-partial-coverage` does not
+accept it, because nothing in that document was graded:
+
+- a Compose file larger than 8 MiB (an included or extended file that large is
+  a [coverage gap](compatibility.md#coverage-gaps-are-not-findings) instead);
+- a document declaring more than 4,096 services, counted again once its
+  `include:` files are merged in;
+- a document whose `<<:` merge keys copy more than 65,536 key/value pairs into
+  the mappings that use them.
+
+Real files are far below each: across an 11,111-file corpus the most services
+in one document is 64, and the most merged pairs 968. A document that produces more than
+20,000 findings is different: the findings graded before the stop are still
+reported, so it is a coverage gap rather than a refusal.
+
 ## Which files are graded
 
 compose-lint targets the [Compose
