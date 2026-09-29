@@ -14,7 +14,7 @@ compose-lint reads `.compose-lint.yml` from the current working directory by def
 
 ## Which files get linted
 
-Given explicit paths, compose-lint lints exactly those. With no arguments it looks in the **current directory only**, for exactly four names:
+Given explicit paths, compose-lint lints exactly those. With no arguments it looks in the **current directory only**. A `COMPOSE_FILE` list in the `.env` there chooses the documents, as it does for Compose ([What a run reads](what-a-run-reads.md#a-sibling-env-is-read-because-compose-reads-it)); without one, it looks for exactly four names:
 
 ```
 compose.yml   compose.yaml   docker-compose.yml   docker-compose.yaml
@@ -28,7 +28,7 @@ Finding none is an error (exit 2), not a pass — a gate reporting success over 
 | --- | --- | --- |
 | `compose.yml` | linted | linted |
 | `compose.prod.yml` | not found | linted |
-| `docker-compose.override.yml` | merged into `docker-compose.yml` when that exists | linted |
+| `docker-compose.override.yml` | merged into whichever of the four names exists (when there are several overrides, Compose's own pick: `compose.override.yml`, then `.yaml`, then this pair) | linted |
 | `stack/compose.yml` | not found | linted |
 | `compose2.yml`, `composed.yml` | not found | skipped: no separator after `compose` |
 
