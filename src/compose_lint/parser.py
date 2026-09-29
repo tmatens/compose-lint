@@ -1436,6 +1436,12 @@ def _resolve_includes(  # noqa: PLR0913
             try:
                 inc_data, inc_lines, inc_resets, inc_overrides, inc_gaps = _loads_full(
                     content,
+                    # An included document is one half of a merge, like a
+                    # cross-file `extends:` base: Compose 5.5.0 includes a file
+                    # declaring only `volumes:` and deploys the rest unaltered,
+                    # so a fragment contributes its keys rather than being a
+                    # gap. A v1-shaped or own-config document still raises.
+                    merging=True,
                     # The entry's project directory, which for a single-path
                     # entry *is* this file's own directory. The two only differ
                     # inside an object-form `path:` list.
