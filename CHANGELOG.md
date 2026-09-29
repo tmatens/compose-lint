@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **An included fragment is merged, not a coverage gap.** An `include:`
+  target declaring only `volumes:`, `networks:`, `configs:`, `secrets:` or
+  `x-*` keys failed the run with exit 2, although Compose includes it and
+  the same file linted on its own is skipped. It is now merged like a
+  fragment overlay. A v1-shaped or `.compose-lint.yml`-shaped include is
+  still a gap, because Compose refuses those.
+
 - **An overlay in a subdirectory resolves against the project directory.**
   With `COMPOSE_FILE=compose.yml:ops/dev.yml`, the overlay was loaded as a
   project of its own: its relative bind sources, `extends: {file:}` base

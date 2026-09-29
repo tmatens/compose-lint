@@ -992,3 +992,35 @@ def test_an_included_files_env_may_link_elsewhere_in_the_project(
 
     data = load_compose_full(target).data
     assert data["services"]["sidecar"]["image"] == "nginx:from-shared"
+
+
+# --- An included fragment is merged, as Compose merges it --------------------
+
+
+def test_an_included_fragment_contributes_its_keys(tmp_path: Path) -> None:
+    """Compose 5.5.0 includes a file declaring only `volumes:` and deploys the
+    project with that volume. It was a coverage gap (exit 2) here, while the
+    same file linted on its own is skipped as a fragment."""
+    _write(tmp_path / "vols.yml", "volumes:\n  data: {}\n")
+    target = _project(
+        tmp_path,
+        "include:\n  - vols.yml\nservices:\n  web:\n    image: nginx:1.27\n",
+    )
+
+    loaded = load_compose_full(target)
+    assert not loaded.gaps
+    assert "data" in loaded.data["volumes"]
+    assert set(loaded.data["services"]) == {"web"}
+
+
+def test_an_included_v1_document_is_still_a_gap(tmp_path: Path) -> None:
+    """Only the fragment bucket is admitted: Compose refuses a v1-shaped file."""
+    _write(tmp_path / "legacy.yml", "web:\n  image: nginx:1.27\n")
+    target = _project(
+        tmp_path,
+        "include:\n  - legacy.yml\nservices:\n  app:\n    image: nginx:1.27\n",
+    )
+
+    (gap,) = load_compose_full(target).gaps
+    assert "'include: legacy.yml'" in gap
+    assert "not a Compose document compose-lint can read" in gap

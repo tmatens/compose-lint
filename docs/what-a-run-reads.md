@@ -164,6 +164,8 @@ root. Three shapes are skipped with a stderr note rather than failing the run:
   2023](https://www.docker.com/blog/new-docker-compose-v2-and-v1-deprecation/).
 - **Structural fragments** — files containing only `volumes:` / `networks:` /
   `configs:` / `secrets:` / `x-*` keys, typically merged via `-f overlay.yml`.
+  Reached through `include:` or as an overlay, a fragment is merged like any
+  other document, as Compose merges it; only linted on its own is it skipped.
 - **compose-lint's own `.compose-lint.yml`**, if a glob happens to sweep it in.
 
 A skipped file contributes no findings and does not change the exit code.
