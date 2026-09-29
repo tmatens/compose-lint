@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **An `include:` entry whose `project_directory:` cannot be placed is a
+  coverage gap.** One written with `..` out of the project, absolute,
+  interpolated, or a directory symlink out of reach was silently replaced
+  by the included file's own directory, so the entry was graded against a
+  `.env` and bind-source base Compose does not use, with exit 0: a value
+  the named directory's `.env` supplies, such as a `cap_add:`, went
+  ungraded. Every file in the entry is now reported instead (exit 2,
+  `coverage_gap`), like an `include:` target that cannot be placed.
+  `--allow-partial-coverage` accepts it.
+
 - **A symlink inside the checkout is followed wherever it is read.** A
   linked Compose file was already followed while its target stayed inside
   the directory the run started in (the checkout, in CI), but every other

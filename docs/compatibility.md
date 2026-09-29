@@ -72,7 +72,8 @@ severity never moves on judgment alone.
 When compose-lint cannot see part of a stack — today, an `include:` or
 cross-file `extends: {file: ...}` it could not follow, because the target
 leaves the project directory, is missing, is interpolated, is a cycle, or
-could not be read safely, an in-file `extends:` whose target service the
+could not be read safely, an `include:` entry whose `project_directory:`
+cannot be placed, an in-file `extends:` whose target service the
 file does not declare or whose chain is a cycle, a `.env` Compose reads that
 compose-lint could not, a `COMPOSE_FILE` list it refused, or a document
 that reached the 20,000-findings limit before it was fully graded — it does

@@ -89,9 +89,12 @@ accepts it and grades the rest. The same holds for an included file's own
 A `.env` that resolves outside both the project and the directory the run
 started in — a committed symlink to a file elsewhere on the machine — is not
 read at all, the same containment every other file a run opens gets, and is
-the same coverage gap. An `include:` entry's `project_directory:` that
-resolves outside both through a directory symlink is not followed either: the
-entry's files resolve against their own directories instead.
+the same coverage gap. So is an `include:` entry whose `project_directory:`
+cannot be placed — written with `..` out of the project, absolute,
+interpolated, or a directory symlink out of reach: Compose reads that
+directory's `.env` and resolves the entry's paths from it, so every file in
+the entry is reported rather than graded against a directory Compose does not
+use.
 
 ## An `env_file:` is read too, and its keys are graded
 
@@ -133,7 +136,8 @@ resolved again by the including file.
 What is *not* followed is still an error rather than a quiet pass, because
 reporting clean over a partial view is the one failure mode a merge gate
 cannot have: a reference that leaves the project directory, is missing, is
-interpolated, is a cycle, or fails the bounded read — and an in-file
+interpolated, is a cycle, or fails the bounded read, an `include:` entry
+whose `project_directory:` cannot be placed — and an in-file
 `extends:` naming a service the file does not declare, or forming a cycle,
 both of which Compose refuses outright. A gap means exit 2, a
 JSON `errors[]` entry, and a SARIF `toolExecutionNotifications` record, and
