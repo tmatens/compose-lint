@@ -9,6 +9,7 @@
   "schedule": ["before 4am on monday"],
   "automergeSchedule": ["at any time"],
   "labels": ["manual-merge"],
+  "addLabels": ["renovate"],
   "osvVulnerabilityAlerts": true,
   "logLevelRemap": [
     {
