@@ -246,7 +246,8 @@ _NOTIFICATION_DESCRIPTORS: list[dict[str, Any]] = [
         "shortDescription": {
             "text": (
                 "A rule raised while checking a service; its findings for "
-                "that document are missing."
+                "that document are missing. As a warning, a rule's fixer "
+                "raised: the finding is reported without a suggested change."
             )
         },
     },

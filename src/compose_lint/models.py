@@ -62,7 +62,9 @@ class DiagnosticKind(enum.Enum):
     # `.env` Compose reads that could not be, or a refused `COMPOSE_FILE` list,
     # so part of the stack was never linted or graded (exit 2, unless waived).
     COVERAGE_GAP = "coverage_gap"
-    # A rule (or its fixer) raised; its findings for that document are missing.
+    # A rule raised; its findings for that document are missing. As a SARIF
+    # warning, a rule's fixer raised: the finding ships without its suggested
+    # change, and the exit code is unaffected.
     RULE_CRASH = "rule_crash"
     # Run-level, not about one file: no Compose files found, a configuration
     # error, output truncation. `Diagnostic.file` is "" for these.

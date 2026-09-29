@@ -133,6 +133,10 @@ class FixResult:
     per-finding consumers (SARIF ``artifactChanges``) need. ``notes`` carries
     one line per refusal a count cannot explain — a finding is in ``manual``
     for a reason the user can act on, and only the collector knows it.
+    ``crashes`` carries one line per fixer that raised or named a position
+    outside the file. Its findings are in ``manual``: a fixer is part of its
+    rule, so this is a bug in compose-lint, and a caller must report it rather
+    than present the finding as merely unfixable.
     """
 
     edits: list[TextEdit] = field(default_factory=list)
@@ -141,6 +145,7 @@ class FixResult:
     caveats: list[tuple[str, str]] = field(default_factory=list)
     fixed_edits: list[tuple[Finding, list[TextEdit]]] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    crashes: list[str] = field(default_factory=list)
 
 
 def _spans_conflict(a: tuple[int, int], b: tuple[int, int]) -> bool:
@@ -525,10 +530,22 @@ def collect_edits(
             consumed.update(id(finding) for finding in unit.findings)
 
     manual: list[Finding] = []
+    crashes: list[str] = []
     for finding in eligible:
         if id(finding) in consumed:
             continue
-        edits = rules_by_id[finding.rule_id].fix(finding, data, lines, text)
+        try:
+            edits = rules_by_id[finding.rule_id].fix(finding, data, lines, text)
+        except Exception as exc:
+            # Isolated like a crashing rule in the engine: one fixer's bug
+            # costs its own finding's edit, not the file's other fixes, and not
+            # the findings a SARIF run reports beside them.
+            manual.append(finding)
+            crashes.append(
+                f"the {finding.rule_id} fixer failed on service "
+                f"'{finding.service}': {type(exc).__name__}: {exc}"
+            )
+            continue
         if edits:
             units.append(_FixUnit([finding], edits, caveat_rule_id=finding.rule_id))
             continue
@@ -563,7 +580,16 @@ def collect_edits(
             for edit in edits
         ]
 
-    spanned = [(unit, spans_of(unit.edits)) for unit in units]
+    spanned: list[tuple[_FixUnit, list[tuple[int, int]]]] = []
+    for unit in units:
+        try:
+            spanned.append((unit, spans_of(unit.edits)))
+        except LineOutOfRangeError as exc:
+            # The same fixer bug in another shape: an edit at a position this
+            # text does not have. Isolated per unit for the same reason.
+            manual.extend(unit.findings)
+            rule_ids = ", ".join(sorted({f.rule_id for f in unit.findings}))
+            crashes.append(f"the {rule_ids} fix could not be placed: {exc}")
     refused: set[int] = set()
 
     # Sweep sorted spans instead of comparing every pair of units. The pairwise
@@ -618,6 +644,7 @@ def collect_edits(
     result.manual.extend(manual)
     result.manual.extend(reset_manual)
     result.notes.extend(notes)
+    result.crashes.extend(crashes)
     return result
 
 

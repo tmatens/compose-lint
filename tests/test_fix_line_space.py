@@ -164,6 +164,9 @@ def test_batch_sarif_survives_a_file_whose_fixes_cannot_be_computed(
     is injected here rather than spelled as a document, because the line space
     is now consistent by construction — the point under test is the CLI's
     containment of the error, not a way to still trigger it.
+
+    It costs only suggested changes: the poisoned file's findings still ship,
+    and the exit code is the one JSON gives for the same files.
     """
     from compose_lint import cli as cli_module
     from compose_lint.fix import LineOutOfRangeError
@@ -188,9 +191,30 @@ def test_batch_sarif_survives_a_file_whose_fixes_cannot_be_computed(
 
     captured = capsys.readouterr()
     doc = json.loads(captured.out)
-    rule_ids = {r["ruleId"] for r in doc["runs"][0]["results"]}
-    # The clean file's CRITICAL finding still ships.
-    assert "CL-0002" in rule_ids
-    # The failure is reported, not swallowed, and takes the usage-error exit.
+    results = doc["runs"][0]["results"]
+    by_file: dict[str, set[str]] = {}
+    for r in results:
+        uri = r["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+        by_file.setdefault(uri.rsplit("/", 1)[-1], set()).add(r["ruleId"])
+    # The clean file's CRITICAL finding still ships, and so do the poisoned
+    # file's findings; only its suggested changes are missing.
+    assert "CL-0002" in by_file["good.yml"]
+    assert by_file.get("poisoned.yml")
+    assert not any(
+        r.get("fixes")
+        for r in results
+        if r["locations"][0]["physicalLocation"]["artifactLocation"]["uri"].endswith(
+            "poisoned.yml"
+        )
+    )
+    # The failure is reported, not swallowed: on stderr, and as a rule_crash
+    # warning in the document.
     assert "could not compute fixes" in captured.err
-    assert exc.value.code == 2
+    notes = doc["runs"][0]["invocations"][0]["toolExecutionNotifications"]
+    assert [(n["descriptor"]["id"], n["level"]) for n in notes] == [
+        ("rule_crash", "warning")
+    ]
+
+    with pytest.raises(SystemExit) as json_exc:
+        cli.main(["check", "--format", "json", str(good), str(poisoned)])
+    assert exc.value.code == json_exc.value.code == 1

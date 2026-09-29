@@ -96,6 +96,7 @@ if TYPE_CHECKING:
     from _typeshed import SupportsWrite
 
     from compose_lint._merge import Merged
+    from compose_lint.models import TextEdit
 
 
 def _plan(args: argparse.Namespace, files: list[str] | None = None) -> Selection:
@@ -1050,9 +1051,10 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     all_file_findings: list[tuple[list[Finding], str]] = []
     parse_errors: list[Diagnostic] = []
     coverage_errors: list[Diagnostic] = []
-    # The warnings channel: accepted coverage gaps, and `env_file:` targets
-    # that were refused (stated on stderr as notes, and here as well so a JSON
-    # or SARIF consumer is not the one reader left without a trace).
+    # The warnings channel: accepted coverage gaps, `env_file:` targets that
+    # were refused (stated on stderr as notes, and here as well so a JSON or
+    # SARIF consumer is not the one reader left without a trace), and a SARIF
+    # suggested change a failed fixer could not compute.
     coverage_warnings: list[Diagnostic] = []
     rule_errors: list[Diagnostic] = []
     has_errors = False
@@ -1195,39 +1197,40 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                 parse_errors.append(Diagnostic(filepath, str(e), DiagnosticKind.PARSE))
                 emit(f"Error: {filepath}: {e}")
                 continue
-            try:
-                # Suggested changes are computed against one file's text using
-                # the merged line map, so on a merged run they would splice at a
-                # line belonging to the other document. `fix` refuses the same
-                # case; SARIF must not offer through a different door what the
-                # fixer declines to do. For the same reason a finding inherited
-                # from another document gets no suggested change here, just as
-                # `fix` defers it to manual review.
-                fixes = (
-                    []
-                    if merged is not None
-                    else collect_edits(
+            fixes: list[tuple[Finding, list[TextEdit]]] = []
+            fix_crashes: list[str] = []
+            # Suggested changes are computed against one file's text using the
+            # merged line map, so on a merged run they would splice at a line
+            # belonging to the other document. `fix` refuses the same case;
+            # SARIF must not offer through a different door what the fixer
+            # declines to do. For the same reason a finding inherited from
+            # another document gets no suggested change here, just as `fix`
+            # defers it to manual review.
+            if merged is None:
+                try:
+                    collected = collect_edits(
                         [f for f in findings if _written_in(f, filepath)],
                         data,
                         lines,
                         text,
-                    ).fixed_edits
+                    )
+                    fixes, fix_crashes = collected.fixed_edits, collected.crashes
+                except Exception as e:
+                    # `collect_edits` isolates each fixer, so this is a bug in
+                    # the collector itself; it still costs only suggested
+                    # changes. SARIF is serialized once for the whole batch, so
+                    # letting it escape would destroy every *other* file's
+                    # findings too (VULN-017 consequence c).
+                    fix_crashes = [f"could not compute fixes: {type(e).__name__}: {e}"]
+            # A fixer is part of its rule, so a failed one is a rule crash. The
+            # finding was graded and still ships, only without a suggested
+            # change, so the verdict is the one text and JSON give for the same
+            # file: reported on the warnings channel, not as a run error.
+            for crash in fix_crashes:
+                emit(f"Warning: {filepath}: {crash}; no suggested change offered")
+                coverage_warnings.append(
+                    Diagnostic(filepath, crash, DiagnosticKind.RULE_CRASH)
                 )
-            except LineOutOfRangeError as e:
-                # A fixer addressed a line this file does not have. Report the
-                # file and keep going: SARIF is serialized once for the whole
-                # batch, so letting this escape would destroy every *other*
-                # file's findings too (VULN-017 consequence c).
-                # A fixer is part of its rule, so this is a rule crash, not a
-                # parse failure: the document parsed, the rule's code did not
-                # hold up. It stays in `parse_errors` only for the text
-                # verdict's count; the machine channels see the kind.
-                msg = f"could not compute fixes: {e}"
-                parse_errors.append(
-                    Diagnostic(filepath, msg, DiagnosticKind.RULE_CRASH)
-                )
-                emit(f"Error: {filepath}: {msg}")
-                continue
             all_sarif.extend(format_sarif(findings, filepath, fixes=fixes, text=text))
         else:
             all_json.extend(format_json(findings, filepath))
@@ -1601,14 +1604,15 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
                 f"{filepath}: {len(deferred)} finding(s) come from "
                 f"{', '.join(origins)} and need manual review there"
             )
-        try:
-            result = collect_edits(
-                fixable_findings, data, lines, text, only=only, resets=resets
-            )
-        except LineOutOfRangeError as e:
-            # Same fail-closed treatment as the check path: refuse this file,
-            # write nothing, let the rest of the batch run (VULN-017).
-            emit(f"Error: {filepath}: could not compute fixes: {e}")
+        result = collect_edits(
+            fixable_findings, data, lines, text, only=only, resets=resets
+        )
+        if result.crashes:
+            # A fixer failed: a bug in compose-lint, so the same fail-closed
+            # treatment as a crashed rule. Refuse this file, write nothing, let
+            # the rest of the batch run (VULN-017).
+            for crash in result.crashes:
+                emit(f"Error: {filepath}: {crash}; no fixes written")
             had_error = True
             continue
 
