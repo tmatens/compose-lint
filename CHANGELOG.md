@@ -66,6 +66,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as stale, and with `--strict-config` a valid config failed the hook with
   exit 2. The hook now sets `require_serial: true`.
 
+- **SARIF no longer suggests an edit at the wrong lines for an inherited
+  finding.** A finding whose line is written in a base that the file
+  `extends:` from another file carried a suggested change computed against
+  the file being linted, at the base's line numbers, so accepting it in
+  Code Scanning edited whatever that file had at those lines. Such a
+  finding now carries no suggested change, as `fix` already defers it to
+  manual review.
+
 ## [0.32.0] - 2026-09-28
 
 ### Changed

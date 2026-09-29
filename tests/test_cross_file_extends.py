@@ -566,6 +566,78 @@ def test_fix_defers_a_finding_written_in_the_base_and_names_it(
     )
 
 
+@pytest.mark.parametrize(
+    ("base", "child_tail", "rule_id"),
+    [
+        # CL-0014's fix deletes the `logging:` block. Computed against the
+        # child's text at the base's lines 8-9, it deleted the child's
+        # `labels:` block instead.
+        (
+            "    logging:\n      driver: none\n",
+            "    labels:\n      keep: me\n",
+            "CL-0014",
+        ),
+        # CL-0022's fix rewrites a tmpfs entry. At the base's line 8 the child
+        # has an `environment:` entry with the same text.
+        (
+            "    tmpfs:\n      - /run:exec\n",
+            "    environment:\n      - /run:exec\n",
+            "CL-0022",
+        ),
+    ],
+)
+def test_sarif_offers_no_fix_for_a_finding_written_in_the_base(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    base: str,
+    child_tail: str,
+    rule_id: str,
+) -> None:
+    """A suggested change is computed against the file the result is headed
+    by, so a finding whose line belongs to the base cannot carry one — it
+    would edit whatever the child has at that line number. ``fix`` already
+    defers these; SARIF offered them."""
+    (tmp_path / "base.yml").write_text(
+        "services:\n"
+        "  base:\n"
+        "    image: nginx:1.27\n"
+        "    security_opt: [no-new-privileges:true]\n"
+        "    read_only: true\n"
+        "    cap_drop: [ALL]\n"
+        "    mem_limit: 256m\n" + base,
+        encoding="utf-8",
+    )
+    target = tmp_path / "compose.yml"
+    target.write_text(
+        "services:\n"
+        "  app:\n"
+        "    extends:\n"
+        "      file: base.yml\n"
+        "      service: base\n"
+        "    image: nginx:1.27\n"
+        "    read_only: true\n" + child_tail,
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit):
+        cli.main(["check", "--format", "sarif", str(target)])
+
+    results = json.loads(capsys.readouterr().out)["runs"][0]["results"]
+    inherited = [r for r in results if r["ruleId"] == rule_id]
+    assert inherited, f"{rule_id} did not fire, so nothing was tested"
+    for result in inherited:
+        uri = result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+        assert uri.endswith("base.yml")
+        assert "fixes" not in result
+    # A fix still lands wherever one is offered: every change targets the
+    # file its result is in.
+    for result in results:
+        uri = result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+        for fix in result.get("fixes", []):
+            for change in fix["artifactChanges"]:
+                assert change["artifactLocation"]["uri"] == uri
+
+
 # --- Provenance ------------------------------------------------------------
 
 
