@@ -138,13 +138,10 @@ resolved again by the including file.
 
 What is *not* followed is still an error rather than a quiet pass, because
 reporting clean over a partial view is the one failure mode a merge gate
-cannot have: a reference that leaves the project directory, is missing, is
-interpolated, is a cycle, or fails the bounded read, an `include:` entry
-whose `project_directory:` cannot be placed — and an in-file
-`extends:` naming a service the file does not declare, or forming a cycle,
-both of which Compose refuses outright. A gap means exit 2, a
-JSON `errors[]` entry, and a SARIF `toolExecutionNotifications` record, and
-the message says which of those it was. Lint the merged output (`docker
+cannot have. The complete list of conditions is in [coverage gaps are not
+findings](compatibility.md#coverage-gaps-are-not-findings). A gap means exit 2,
+a JSON `errors[]` entry, and a SARIF `toolExecutionNotifications` record, and
+the message says which condition it hit. Lint the merged output (`docker
 compose config`) to cover everything, or pass `--allow-partial-coverage` to
 accept the gap and grade what is visible.
 

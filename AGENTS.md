@@ -18,7 +18,7 @@ CRITICAL > HIGH > MEDIUM > LOW. A rule's severity is **derived**, not chosen: it
 
 - 0: No findings at/above threshold
 - 1: Findings at/above threshold
-- 2: Usage error (bad args, file not found, invalid Compose) **or a coverage gap** — an `include:` or cross-file `extends:` that could not be followed (leaves the project directory, missing, interpolated, a cycle, unreadable), or a `.env` / `COMPOSE_FILE` list Compose would use that could not be read or was refused, where part of the stack was never linted or graded. One resolving inside the project is merged rather than refused (ADR-036); an include-only file whose references all fail is still a parse error, not a downgradable gap (#516). `--allow-partial-coverage` downgrades the gap to a stderr warning. `fix` reports gaps but never fails on them; it is not the gate.
+- 2: Usage error (bad args, file not found, invalid Compose) **or a coverage gap**, where part of the stack was never linted or graded. The closed list of gap conditions is `docs/compatibility.md` "Coverage gaps are not findings"; every other surface links there, so a new condition is added to that list. A reference resolving inside the project is merged rather than refused (ADR-036); an include-only file whose references all fail is still a parse error, not a downgradable gap (#516). `--allow-partial-coverage` downgrades a gap to a warning, but a run whose every selected file was refused still exits 2. `fix` reports gaps without failing on them, except at the 20,000-findings limit, where `fix` and `init` write nothing and exit 2; it is not the gate.
 - Default threshold: HIGH. Configurable via `--fail-on`.
 
 ## CLI output

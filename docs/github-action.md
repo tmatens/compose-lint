@@ -16,7 +16,7 @@ the reference behind it.
 | `fail-on` | `high` | Minimum severity that fails the job: `low`, `medium`, `high`, `critical`. |
 | `config` | `""` | Path to a config file. Empty means the CLI's own discovery: `.compose-lint.yml`, then `.compose-lint.yaml`, in the checkout root. |
 | `skip-suppressed` | `false` | Hide suppressed findings from the output. |
-| `allow-partial-coverage` | `false` | Pass `--allow-partial-coverage`: a coverage gap — an `include:` or cross-file `extends:` the linter could not follow, or a `.env` it could not read — becomes a warning instead of exit 2. See [coverage gaps are not findings](compatibility.md#coverage-gaps-are-not-findings). |
+| `allow-partial-coverage` | `false` | Pass `--allow-partial-coverage`: a coverage gap (part of the stack the linter could not see, such as an `include:` it could not follow or a `.env` it could not read) becomes a warning instead of exit 2, as long as something is left to grade. The full list of gaps is in [coverage gaps are not findings](compatibility.md#coverage-gaps-are-not-findings). |
 | `strict-config` | `false` | Pass `--strict-config`: config-file warnings (unknown rule id, unknown key, an inert `reason:` or `severity:`, a stale `exclude_services` name, both config spellings present) become a hard error. See [`--strict-config`](configuration.md#validation). |
 | `quiet` | `false` | Text output: one line per finding. Mutually exclusive with `verbose`: setting both fails the job with `quiet and verbose are mutually exclusive` before anything is linted. |
 | `verbose` | `false` | Text output: repeat the fix block and reference on every finding. Mutually exclusive with `quiet`, as above. |

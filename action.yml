@@ -33,9 +33,10 @@ inputs:
     default: "false"
   allow-partial-coverage:
     description: >-
-      Pass `--allow-partial-coverage`: downgrade a coverage gap (an
-      `include:` or cross-file `extends:` that could not be followed, or a
-      `.env` that could not be read) from exit 2 to a warning.
+      Pass `--allow-partial-coverage`: downgrade a coverage gap (part of
+      the stack that could not be linted, such as an `include:` that could
+      not be followed or a `.env` that could not be read) from exit 2 to a
+      warning. Every gap is listed in docs/compatibility.md.
     required: false
     default: "false"
   strict-config:
