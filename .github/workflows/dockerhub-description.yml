@@ -7,24 +7,17 @@ name: Docker Hub description (manual)
 # dockerhub-description job in publish.yml, which runs during a release (tag
 # push); run this any time the overview changes between releases.
 #
-# No `environment: dockerhub`: that environment's deployment-branch policy is
-# tags-only (v*), which would block a default-branch dispatch. The DOCKERHUB_*
-# secrets are repo-level, so the job reads them directly. Reuses the same
+# Runs in the `dockerhub-description` environment, which holds the
+# Delete-capable token the description PATCH needs and admits only the default
+# branch and `v*` tags. A dispatch from any other branch is refused before a
+# step runs, so the secret never reaches code from an unreviewed ref. Not `dockerhub`: that environment is tags-only and holds the
+# Read & Write push token, which cannot PATCH the description. Reuses the same
 # first-party composite action as publish.yml, so no third-party code holds the
 # delete-capable PAT.
 #
-# Because the secrets are repo-level, nothing scopes them to a ref — so the
-# checkout below is pinned to the default branch rather than to the dispatched
-# ref, which is where the sync script and the overview markdown come from.
-# The composite action itself is referenced as `uses: $/…`, which resolves
-# at the running commit: for a dispatch, the dispatched ref. That is also
-# where this workflow file itself comes from, so the pin never scoped the
-# *code* to main — only the two files the composite reads from the workspace.
-# Whoever can dispatch from a branch can already edit this file on it.
-#
-# The gap is therefore not fixable in this file: it needs a
-# `dockerhub-description` environment whose deployment-branch policy allows only
-# the default branch, holding the Docker Hub secrets so they leave repo scope.
+# The checkout below stays pinned to the default branch. The environment already
+# refuses other branches, so this is belt-and-braces: it keeps the sync script
+# and the overview markdown on main even if the environment's policy is widened.
 # See docs/RELEASING.md.
 
 on:
@@ -36,6 +29,9 @@ jobs:
   dockerhub-description:
     runs-on: ubuntu-26.04
     timeout-minutes: 5
+    environment:
+      name: dockerhub-description
+      url: https://hub.docker.com/r/composelint/compose-lint
     permissions:
       contents: read
     steps:
@@ -47,6 +43,6 @@ jobs:
       - uses: $/.github/actions/update-dockerhub-description
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
-          token: ${{ secrets.DOCKERHUB_TOKEN }}
+          token: ${{ secrets.DOCKERHUB_DESCRIPTION_TOKEN }}
           repository: composelint/compose-lint
           readme-filepath: ./docs/dockerhub-overview.md
