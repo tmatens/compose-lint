@@ -131,7 +131,7 @@
       "labels": []
     },
     {
-      "description": "Docker digest refreshes automerge where the three-day gate can actually be enforced, which is Docker Hub only. Renovate's docker datasource takes releaseTimestamp from Docker Hub's tag_last_pushed and from nowhere else (gcr.io and ghcr.io yield none), and it attaches that timestamp to a digest update only when the tag parses as a version, which is why the build stage is pinned as debian:13-slim rather than trixie-slim (same manifest list). Under the default minimumReleaseAgeBehaviour=timestamp-required a digest with no timestamp is pending forever and never even opens a PR, so distroless (gcr.io, tag nonroot), the oss-fuzz builder (gcr.io) and vhs (ghcr.io) are deliberately NOT matched and keep opening as manual-merge. The review a human used to do on these PRs is now mechanical: dockerfile-digests fails a per-arch pin, docker-smoke builds and runs the image on amd64 and arm64, and both are required via ci-ok. Verified 2026-10-03 against Renovate 44.132 (lookup/digest.ts, datasource/docker releaseTimestampNote).",
+      "description": "Docker digest refreshes automerge where the three-day gate can actually be enforced, which is Docker Hub only. Renovate's docker datasource takes releaseTimestamp from Docker Hub's tag_last_pushed and from nowhere else (gcr.io and ghcr.io yield none), and it attaches that timestamp to a digest update only when the tag parses as a version, which is why the build stage is pinned as debian:13-slim rather than trixie-slim (same manifest list). Under the default minimumReleaseAgeBehaviour=timestamp-required a digest with no timestamp is pending forever and never even opens a PR, so distroless (gcr.io, tag nonroot), the oss-fuzz builder (gcr.io) and vhs (ghcr.io) are deliberately NOT matched and keep opening as manual-merge. The review a human used to do on these PRs is now mechanical: dockerfile-digests fails a per-arch pin, docker-smoke builds and runs the image on amd64 and arm64, and both are required via ci-ok. Verified 2026-10-03 against Renovate 44.132 (lookup/digest.ts, datasource/docker releaseTimestampNote). The branch-stage half of the age check cannot see a digest's timestamp; the last rule in this list covers that.",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["debian", "postgres", "docker/dockerfile"],
       "matchUpdateTypes": ["digest"],
@@ -140,6 +140,11 @@
       "automergeType": "pr",
       "platformAutomerge": false,
       "labels": []
+    },
+    {
+      "description": "Workaround for renovatebot/renovate#45236 (fix in flight: renovatebot/renovate#46645), scoped to the update types it affects. Renovate checks minimumReleaseAge twice. The lookup stage has the real data: it ages a digest/pinDigest against the newest release matching the current value and, under the default internalChecksFilter=strict, holds the branch back (Dependency Dashboard 'Pending Status Checks') until the age passes; pin and lockFileMaintenance are exempt there by design because they introduce no new release. The branch stage then re-checks from upgrade.releaseTimestamp, which only version updates carry, and under the default timestamp-required marks every one of these update types yellow forever: renovate/stability-days never clears and automerge silently never fires. #933 (lockFileMaintenance, 2026-09-28) sat pending until a human merged it; #786 and #709 had automerged cleanly before the behaviour changed upstream. timestamp-optional here lets the branch stage stand aside for exactly the upgrades it has no data for. It does not shorten any wait: the three-day gate on digests is still enforced at lookup for every image that has a timestamp (Docker Hub), and the images without one are in no automerge rule. Remove once the upstream fix ships. Verified against 44.132 (workers/repository/update/branch/index.ts stability block vs lookup/digest.ts).",
+      "matchUpdateTypes": ["digest", "pinDigest", "pin", "lockFileMaintenance"],
+      "minimumReleaseAgeBehaviour": "timestamp-optional"
     }
   ]
 }
