@@ -318,7 +318,9 @@ chain. Every downstream job inherits the check via `needs:`.
 a deployment branch policy — only `v*` tags may enter them — so a job
 reaches a publishing credential only from a tag, and only after
 `verify-tag` has checked that tag's signature against
-`.github/allowed_signers`. The gate is the signed tag plus one approval;
+`.github/allowed_signers`. The Docker Hub push token is an environment
+secret of `dockerhub` (not a repo secret), so this holds for the per-arch
+build jobs too — see docs/RELEASING.md "Docker Hub credential scoping". The gate is the signed tag plus one approval;
 with a single maintainer, a second approval on the same run would be the
 same person clicking twice.
 

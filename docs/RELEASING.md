@@ -488,9 +488,10 @@ After approval, `publish` and `docker-publish` run in parallel.
       to `scripts/update-dockerhub-description.sh`). Syncs
       `docs/dockerhub-overview.md` (NOT `README.md` — the Hub overview is
       a separate, trimmed, version-free file, so it needs no per-release
-      bump). Requires `DOCKERHUB_TOKEN` to have **Read, Write, Delete**
-      scope — Read & Write is not enough for the description PATCH
-      endpoint. Verify
+      bump). Uses `DOCKERHUB_DESCRIPTION_TOKEN` from the
+      `dockerhub-description` environment, which must have **Read, Write,
+      Delete** scope — Read & Write is not enough for the description
+      PATCH endpoint. Verify
       `https://hub.docker.com/r/composelint/compose-lint` reflects the
       current overview file.
 - [ ] **README demo GIFs** — only if this release changed the text-output
@@ -604,52 +605,34 @@ entry. The steps for one that does:
   act, see above) and re-push it as a signed tag from your workstation
   (see "Tag and release" above).
 
-## Credential scoping (open items)
+## Docker Hub credential scoping
 
-Two hardening steps live in GitHub and Docker Hub settings, not in this
-repository, so they cannot be landed by a PR. Both are recorded here rather
-than left implicit — the workflow side of each is already in place.
+Docker Hub has no OIDC trust for this org's plan, so publishing uses personal
+access tokens. Each lives as an **environment secret** in the one environment
+whose jobs need it, so its reach is limited by that environment's deployment
+policy rather than open to every workflow in the repository.
+`tests/test_release_layer.py` holds the routing: which token each job reads,
+and that it reads it inside the matching environment.
 
-### A `dockerhub-description` environment
+| Secret | Docker Hub scope | Where it lives | Used by |
+|---|---|---|---|
+| `DOCKERHUB_PUSH_TOKEN` | Read & Write | `dockerhub` environment (`v*` tags only) | the four build/publish jobs — they push by digest, then assemble the manifest |
+| `DOCKERHUB_DESCRIPTION_TOKEN` | Read, Write, Delete | `dockerhub-description` environment (`main` + `v*` tags) | the two overview syncs — the description PATCH needs Delete |
+| `DOCKERHUB_READ_TOKEN` | Public Repo Read-only | repo secret | the scheduled `scout-scan` and `vuln-report`, and `publish.yml`'s pre-approval `docker-scout` job |
+| `DOCKERHUB_USERNAME` | — | repo secret | every Docker Hub login |
 
-`dockerhub-description.yml` is dispatched manually and reads the Docker Hub
-credential. Its checkout is pinned to the default branch, so a dispatcher
-cannot choose the code that runs — but the secrets are still **repo-level**,
-which means nothing scopes them to a ref.
+The names are distinct on purpose. An environment secret overrides a repo
+secret of the same name, and resolves to an empty string in a job outside its
+environment — so with one name per environment, a job that loses its
+`environment:` line fails at login instead of silently reading a repo-level
+token.
 
-To close the rest:
-
-1. Create an environment named `dockerhub-description`.
-2. Set its deployment-branch policy to the default branch only. (The existing
-   `dockerhub` environment is tags-only, which is why this job could not simply
-   reuse it.)
-3. Move `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` into it, removing them from
-   repo scope.
-4. Add `environment: dockerhub-description` to the job, and required reviewers
-   if you want a human gate.
-
-Until step 3, a repo-level secret is readable by any workflow in the
-repository, so steps 1–2 alone change nothing.
-
-### Split the Docker Hub PAT by capability (half done)
-
-The scope of a shared credential is set by its most privileged consumer, so a
-leak from a scan job used to carry delete capability for the whole namespace.
-Today two tokens are routed by need; `tests/test_release_layer.py` holds the
-routing:
-
-| Secret | Scope | Used by |
-|---|---|---|
-| `DOCKERHUB_READ_TOKEN` | Public Repo Read-only | the daily `scout-scan` and `vuln-report` logins, and `publish.yml`'s pre-approval `docker-scout` job — the jobs that pull and scan |
-| `DOCKERHUB_TOKEN` | Read, Write, Delete | the four build/publish jobs (they push by digest, then assemble the manifest) and the two description syncs |
-
-Still open: the write token carries Delete only for the description sync, so a
-`Read, Write` token for the four push jobs and a Delete-capable one confined to
-the `dockerhub-description` environment above would finish the split. Both need
-the current token's value re-entered or a fresh token minted, so they happen at
-the next rotation. Add the new secrets first, land the workflow change, then
-revoke the old PAT — renaming a secret the release pipeline reads is a breaking
-change if done in the other order.
+**Rotating one:** mint the replacement in Docker Hub (give it an expiry), update
+the secret in its environment (`gh secret set <NAME> --env <environment>`
+prompts for the value, so it stays off the command line), dispatch a run that
+uses it — `dockerhub-description.yml` for the description token,
+`scout-scan.yml` for the read token; the push token is exercised by the next
+release — then revoke the old token in Docker Hub.
 
 ## Why this checklist exists
 

@@ -24,7 +24,8 @@ WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 
 # Anything that reaches a publishing credential, a signing key, or the registry.
 _CREDENTIAL_MARKERS = (
-    "DOCKERHUB_TOKEN",
+    "DOCKERHUB_PUSH_TOKEN",
+    "DOCKERHUB_DESCRIPTION_TOKEN",
     "gh-action-pypi-publish",
     "cosign sign",
     "cosign attest",
@@ -168,14 +169,13 @@ def test_no_workflow_resolves_dependencies_from_an_unpinned_index() -> None:
 
 
 def test_the_dockerhub_description_dispatch_is_pinned_to_the_default_branch() -> None:
-    """`workflow_dispatch` can name any ref; the checkout pin is what it still buys.
+    """`workflow_dispatch` can name any ref; the checkout pin is a second line.
 
-    The Docker Hub secrets here are repo-level, so nothing scopes them to a ref.
-    The composite is a `$/` reference, resolved at the running commit — the
-    dispatched ref, which is also where this workflow file comes from — so the
-    pin does not scope the code. It scopes the two files the composite reads
-    from the workspace: the sync script and the overview markdown. The rest of
-    the gap is the `dockerhub-description` environment (docs/RELEASING.md).
+    The first line is the `dockerhub-description` environment, whose policy
+    refuses a dispatch from any branch but the default one before a step runs.
+    The pin keeps the two files the composite reads from the workspace — the
+    sync script and the overview markdown — on main even if that policy is
+    ever widened.
     """
     jobs = _load("dockerhub-description.yml")["jobs"]
     checkout = next(
@@ -190,10 +190,10 @@ def test_the_dockerhub_credential_is_only_read_by_first_party_code() -> None:
     """The token must not be handed to a third-party action."""
     raw = (WORKFLOWS / "dockerhub-description.yml").read_text(encoding="utf-8")
     for line in raw.splitlines():
-        if "DOCKERHUB_TOKEN" not in line:
+        if "DOCKERHUB_DESCRIPTION_TOKEN" not in line:
             continue
         # The token is passed as an input to the local composite action only.
-        assert "secrets.DOCKERHUB_TOKEN" in line
+        assert "secrets.DOCKERHUB_DESCRIPTION_TOKEN" in line
     assert "uses: $/.github/actions/update-dockerhub-description" in raw
 
 
@@ -541,13 +541,27 @@ def test_every_scheduled_workflow_reports_a_failure_as_an_issue(workflow: str) -
         )
 
 
-# --- The Docker Hub write token is read only where something is pushed ------
+# --- Each Docker Hub token is read only by the jobs that need it -------------
 
-_PUSH_MARKERS = ("push=true", "imagetools create", "update-dockerhub-description")
+_PUSH_MARKERS = ("push=true", "imagetools create")
+_DESCRIPTION_MARKER = "update-dockerhub-description"
+
+# Token -> the environment that holds it as an environment secret. The read
+# token is repo-level: the scheduled scans that use it have no environment.
+_TOKEN_ENVIRONMENT = {
+    "DOCKERHUB_PUSH_TOKEN": "dockerhub",
+    "DOCKERHUB_DESCRIPTION_TOKEN": "dockerhub-description",
+    "DOCKERHUB_READ_TOKEN": None,
+}
 
 
-def _dockerhub_logins() -> list[tuple[str, str, str, bool]]:
-    """(workflow, job, secret name, job pushes) for every Docker Hub credential use."""
+def _job_environment(workflow: str, job_name: str) -> str | None:
+    env = _load(workflow)["jobs"][job_name].get("environment")
+    return env.get("name") if isinstance(env, dict) else env
+
+
+def _dockerhub_logins() -> list[tuple[str, str, str, str]]:
+    """(workflow, job, secret name, job role) for every Docker Hub credential use."""
     found = []
     for path in sorted(WORKFLOWS.glob("*.yml")):
         raw = path.read_text(encoding="utf-8")
@@ -556,9 +570,14 @@ def _dockerhub_logins() -> list[tuple[str, str, str, bool]]:
             assert match, job_name
             nxt = re.search(r"^  [A-Za-z0-9_-]+:$", raw[match.end() :], re.MULTILINE)
             body = raw[match.start() : match.end() + nxt.start() if nxt else len(raw)]
-            for secret in re.findall(r"secrets\.(DOCKERHUB_(?:READ_)?TOKEN)", body):
-                pushes = any(marker in body for marker in _PUSH_MARKERS)
-                found.append((path.name, job_name, secret, pushes))
+            for secret in re.findall(r"secrets\.(DOCKERHUB_[A-Z_]*TOKEN)", body):
+                if any(marker in body for marker in _PUSH_MARKERS):
+                    role = "push"
+                elif _DESCRIPTION_MARKER in body:
+                    role = "description"
+                else:
+                    role = "scan"
+                found.append((path.name, job_name, secret, role))
     return found
 
 
@@ -568,19 +587,48 @@ def test_the_dockerhub_login_scan_finds_something() -> None:
 
 
 @pytest.mark.parametrize(
-    ("workflow", "job_name", "secret", "pushes"), _dockerhub_logins()
+    ("workflow", "job_name", "secret", "role"), _dockerhub_logins()
 )
-def test_the_write_token_is_read_only_where_something_is_pushed(
-    workflow: str, job_name: str, secret: str, pushes: bool
+def test_each_dockerhub_token_is_read_only_by_its_role(
+    workflow: str, job_name: str, secret: str, role: str
 ) -> None:
     """A credential's blast radius is set by its most privileged consumer.
 
-    A job that only pulls and scans logs in with the read-only token; the
-    delete-capable token is referenced only by jobs that push by digest,
-    assemble the manifest, or sync the description. A scan job that starts
-    referencing the write token widens what a leak from it carries.
+    Jobs that push by digest or assemble the manifest use the Read & Write push
+    token; the description syncs use the Delete-capable one, which nothing else
+    holds; jobs that only pull and scan use the read-only token. A job that
+    starts referencing a stronger token than its role widens what a leak from
+    it carries.
     """
-    expected = "DOCKERHUB_TOKEN" if pushes else "DOCKERHUB_READ_TOKEN"
+    expected = {
+        "push": "DOCKERHUB_PUSH_TOKEN",
+        "description": "DOCKERHUB_DESCRIPTION_TOKEN",
+        "scan": "DOCKERHUB_READ_TOKEN",
+    }[role]
     assert secret == expected, (
-        f"{workflow}: job {job_name!r} uses {secret}, expected {expected}"
+        f"{workflow}: job {job_name!r} ({role}) uses {secret}, expected {expected}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("workflow", "job_name", "secret", "role"), _dockerhub_logins()
+)
+def test_each_dockerhub_token_is_read_inside_its_environment(
+    workflow: str, job_name: str, secret: str, role: str
+) -> None:
+    """The write tokens are environment secrets, not repo secrets.
+
+    An environment secret resolves to an empty string in a job outside that
+    environment, so a job that loses its `environment:` line would fail at
+    login rather than silently fall back — but only if no repo-level secret of
+    the same name exists. Distinct names per environment keep that true, and
+    this keeps each job inside the environment that holds its token, whose
+    deployment policy is what limits which refs can reach it.
+    """
+    del role
+    expected = _TOKEN_ENVIRONMENT[secret]
+    actual = _job_environment(workflow, job_name)
+    assert actual == expected, (
+        f"{workflow}: job {job_name!r} reads {secret} from environment "
+        f"{actual!r}, expected {expected!r}"
     )
