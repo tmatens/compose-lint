@@ -6,7 +6,7 @@ compose-lint today ships 27 security rules, PyPI distribution, a published GitHu
 
 compose-lint's differentiation is depth in Compose-specific security, not distribution breadth. Competitors (KICS, Checkov, Trivy) cover Compose as one format among many; they are wide and shallow per-format. Compose-lint wins by being the one tool that tells you exactly what's wrong with a Compose file and exactly how to fix it. Roadmap priorities are ordered around that thesis.
 
-The usage-driven asks that shaped the last two milestones — #5 (per-service overrides), #4 (CL-0006 capability guidance) and #111 (real-world examples library) — are all closed and shipped. The live signal now runs through the 1.0 stability commitment (Milestone 4) and the one Milestone 3 item still open, shellcheck ([ADR-007](adr/007-shellcheck-integration.md), pending decision). Distribution items beyond the already-shipped Docker image have no demand signal and are deprioritized accordingly.
+The usage-driven asks that shaped the last two milestones — #5 (per-service overrides), #4 (CL-0006 capability guidance) and #111 (real-world examples library) — are all closed and shipped. The live signal now runs through the 1.0 stability commitment (Milestone 4). Milestone 3's last open item, shellcheck ([ADR-007](adr/007-shellcheck-integration.md)), moved to Milestone 5: it adds a rule source rather than changing the contract, so it does not gate 1.0. Distribution items beyond the already-shipped Docker image have no demand signal and are deprioritized accordingly.
 
 ---
 
@@ -43,7 +43,7 @@ _Deferred:_ `.deb`/`.rpm` Linux packages (see [ADR-008](adr/008-linux-packages.m
 
 ---
 
-## Milestone 3 — Remediation (v0.5)
+## Milestone 3 — Remediation (v0.5) [complete]
 
 Turn findings into fixes. This is where the product's differentiation grows the most against KICS/Checkov.
 
@@ -57,10 +57,7 @@ Turn findings into fixes. This is where the product's differentiation grows the 
 
 **Remediation snippets in SARIF** _(shipped in 0.11.0)_ — `check --format sarif` populates `fixes[].artifactChanges` so GitHub Code Scanning displays a suggested-change diff inline on pull requests.
 
-**Shellcheck integration** _(pending decision — [ADR-007](adr/007-shellcheck-integration.md))_
-- Lint shell commands inside `command` and `entrypoint` (string form) and `healthcheck.test` with `CMD-SHELL`.
-- Unique coverage vs. KICS/Checkov — reinforces the "depth" thesis.
-- Optional dependency; rule skips silently if shellcheck is not in `PATH`.
+_Deferred:_ Shellcheck integration — moved to Milestone 5 (post-1.0). [ADR-007](adr/007-shellcheck-integration.md) stays pending; a new rule source lands as an additive MINOR after 1.0 ([compatibility.md](compatibility.md)), so nothing about it has to be settled before the freeze.
 
 ---
 
@@ -106,6 +103,7 @@ Pursue based on user demand after v1.0.
 | LSP server | Language Server Protocol support — follows VS Code extension post-v1.0 |
 | Linux packages (`.deb`/`.rpm`) | Revisit [ADR-008](adr/008-linux-packages.md) on first concrete user request |
 | Homebrew tap | `brew install tmatens/tap/compose-lint` (macOS Intel/ARM + Homebrew-on-Linux). Closes the "not everyone has pip" gap with working `brew upgrade` UX. Formula in a separate `homebrew-tap` repo; release workflow syncs via `brew bump-formula-pr`. Pursue on demand signal, like the row above |
+| Shellcheck integration | Lint shell strings in `command`/`entrypoint` (string form) and `healthcheck.test` with `CMD-SHELL` — unique coverage vs. KICS/Checkov, reinforcing the depth thesis. Optional: skips silently when shellcheck is not in `PATH`. Delivery mechanism is the open question in [ADR-007](adr/007-shellcheck-integration.md) (pending decision); `rule_id` is already opaque so SC-coded findings are an additive MINOR |
 | Agent skill / plugin | A packaged distillation of [Automation and agent use](cli.md#automation-and-agent-use), so the judgment layer reaches an agent working in a repo that has wired neither the pre-commit hook nor the Action. Deferred in [ADR-035](adr/035-defer-the-agent-skill-channel.md): no demand signal, and the channel has no staging or signing analog for [DISTRIBUTION.md](DISTRIBUTION.md). The shipped docs section and the two gates cover everything else |
 
 ---
@@ -140,7 +138,7 @@ Python 3.10 was dropped ahead of its October 2026 upstream EOL (issue #643): bec
 | Rule Coverage (19 rules) | v0.3 | complete |
 | Per-service rule overrides | v0.4 | complete |
 | CL-0006 capability guidance + real-world examples | v0.4.x | complete (Homebrew tap moved to v1.x) |
-| Remediation (`--explain`, `fix`, SARIF fixes, shellcheck) | v0.5–0.11 | `fix` GA in 0.11.0; shellcheck pending |
+| Remediation (`--explain`, `fix`, SARIF fixes, shellcheck) | v0.5–0.11 | complete (shellcheck moved to v1.x) |
 | Severity grounding — derived severities, capability + host-path splits | v0.16 | complete |
 | GA / 1.0 — stable contract + `fix` + upgrade policy | v1.0 | next |
-| Ecosystem integrations (VS Code, custom rules) | v1.x | |
+| Ecosystem integrations (VS Code, custom rules, shellcheck) | v1.x | |

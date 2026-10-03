@@ -1,6 +1,6 @@
 # ADR-007: Shellcheck Integration
 
-**Status:** Pending decision
+**Status:** Pending decision — deferred to post-1.0 ([Milestone 5](../ROADMAP.md#milestone-5-ecosystem-integrations-v1x)); not a 1.0 blocker
 
 **Context:** Docker Compose files can contain shell commands in `command` and `entrypoint` (string form) and in `healthcheck.test` entries using `CMD-SHELL`. These fields are passed through a shell at runtime, making them subject to the same class of bugs that shellcheck detects in Dockerfiles: unquoted variables (SC2086), legacy backtick substitution (SC2006), silent `cd` failures (SC2164), and others. No existing tool checks these fields.
 
