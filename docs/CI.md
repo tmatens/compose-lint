@@ -573,7 +573,7 @@ condition.
 | Vulnerability with an available fix | Rolling issue labelled `fixable-vulns`                 |
 | Scheduled workflow failure          | Issue `Scheduled run failed: <workflow>` — one per workflow, repeat failures comment on it (`.github/actions/report-scheduled-failure`); plus the author email and red X |
 | Post-release smoke failure          | Issue `Post-release run failed: Marketplace smoke test` — same action, separate thread from the weekly one so a break in a shipped release is not triaged as a flake |
-| Renovate PR                         | Opens a PR tagged accordingly; patch, pin, digest and lock-maintenance bumps automerge once green **and** the release is three days old (`renovate/stability-days` stays pending until then) |
+| Renovate PR                         | Opens a PR tagged accordingly; patch, pin, digest and lock-maintenance bumps automerge once green **and** the release is three days old (`renovate/stability-days` stays pending until then). Minors of Python dev tooling and of CI-path actions automerge on the same terms; Docker Hub digests too. Majors, release-path actions (`publish.yml` and the workflows it calls), `twine`/`sigstore`, and digests from gcr.io/ghcr.io (no release timestamp to age against) open with `manual-merge` |
 
 The Security tab is the single pane of glass for everything except
 PR-gating failures (which stay on the PR) and Renovate bumps (which

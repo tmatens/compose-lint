@@ -4,12 +4,15 @@
 #
 # Runtime: Google distroless Python on Debian 13 (Python 3.13, no shell,
 # no package manager, runs as nonroot UID 65532). See docs/adr/009-runtime-base-image.md.
-# Build stage uses debian:trixie-slim so the build-time Python path
+# Build stage uses debian:13-slim (trixie) so the build-time Python path
 # (/usr/bin/python3) matches the runtime — the venv transfers across
 # stages without shebang rewriting. Both digests are bumped by Renovate.
+# The numeric tag rather than the codename is deliberate: Renovate dates a
+# digest update only against a tag it can parse as a version, and the
+# automerge age gate in renovate.json needs that date.
 
 # --- build stage: produce wheel, install into a venv ---
-FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a AS build
+FROM debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a AS build
 # apt versions intentionally unpinned: the base image digest above is
 # immutable, apt verifies package signatures, and Renovate has no
 # datasource for Debian apt. Pinning would bitrot when Debian purges

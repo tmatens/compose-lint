@@ -62,6 +62,12 @@
       "groupName": "github-actions"
     },
     {
+      "description": "Workflows that run only after the tag is pushed (publish.yml and the reusable workflows it calls) get their own group. A minor bump of an action used only there is exercised for the first time at release, after the irreversible trigger, so it stays patch/pin/digest-only under the automerge rules below while the CI-path group may also take minors. Separate groups because Renovate automerges a group only when every update in it is eligible: one release-path minor would otherwise hold the whole weekly batch for a human.",
+      "matchManagers": ["github-actions"],
+      "matchFileNames": [".github/workflows/publish.yml", ".github/workflows/verify-tag.yml", ".github/workflows/release-docker-smoke.yml"],
+      "groupName": "github-actions-release"
+    },
+    {
       "description": "Python runtime + dev deps batched into one PR. pip-compile tracks the uv-generated requirements*.lock files: their .lock extension is matched by no pip-family manager by default, leaving transitive pins (e.g. urllib3) invisible to Renovate and weekly lockFileMaintenance a no-op for these files.",
       "matchManagers": ["pep621", "pip_requirements", "pip-compile"],
       "groupName": "python"
@@ -73,7 +79,7 @@
       "pinDigests": true
     },
     {
-      "description": "Production runtime + build-stage base images bypass the weekly schedule. Debian and distroless rebuilds carry CVE patches we cannot apply ourselves (no shell, no apt at runtime), so opening the bump PR same-day shrinks the window between upstream patch and our published image. Still manual-merge — the manifest-list-vs-per-arch digest gotcha (memory/feedback_dockerfile_manifest_list_digest.md) needs human verification.",
+      "description": "Production runtime + build-stage base images bypass the weekly schedule. Debian and distroless rebuilds carry CVE patches we cannot apply ourselves (no shell, no apt at runtime), so opening the bump PR same-day shrinks the window between upstream patch and our published image. Whether the bump then merges itself is decided by the Docker Hub digest rule at the end of this list: debian does, distroless cannot (gcr.io gives Renovate no release timestamp to age against).",
       "matchManagers": ["dockerfile"],
       "matchFileNames": ["Dockerfile"],
       "matchPackageNames": ["debian", "gcr.io/distroless/python3-debian13"],
@@ -92,9 +98,43 @@
       "enabled": false
     },
     {
-      "description": "Automerge low-risk routine updates once CI is green. Patch-level Python dep bumps, pinned-digest refreshes for GitHub Actions, and lockFileMaintenance go in without human review. Docker base images stay manual because the OCI manifest-list vs per-arch digest check (see MEMORY.md) is not mechanically verified in CI. minimumReleaseAge is the one human-shaped gate on that path: a release merges itself only after it has been public for three days, which is the window in which a compromised or broken upstream release is usually pulled or yanked. Hash-locked installs do not help here — they pin whatever release was current. The PR still opens at once; Renovate holds a renovate/stability-days check pending until the age passes, then automerge proceeds. platformAutomerge is deliberately FALSE so that gate cannot be routed around: GitHub's native auto-merge lands a PR as soon as its REQUIRED checks pass, and the only required check here is ci-ok — renovate/stability-days is not one, so a platform-armed PR could merge inside the three days the option exists to enforce. Renovate merging on its own, after its own checks, is the behaviour this repo has always had (platform auto-merge was unavailable at repo level until the marketplace-pin job needed it), so this pins it rather than changes it. Security PRs are unaffected: vulnerabilityAlerts defaults minimumReleaseAge to null, so an OSV fix still lands immediately. Its updates carry no label: `labels: []` replaces the repo-wide `manual-merge` default. Not an `automerge` label, because a grouped PR (python, github-actions) takes the union of its updates' labels, while Renovate automerges a group only when EVERY update in it is eligible (`config.automerge = upgrades.every(...)` in workers/repository/updates/generate.ts). A mixed group therefore carried both labels and still needed a human. With no label on the eligible side, a PR has `manual-merge` exactly when at least one update in it is not automerge-eligible, which is exactly when Renovate will not merge it. A template cannot pick the label per PR instead: `automerge` is not an allowed template field. Verified against Renovate 44.117.",
+      "description": "Automerge low-risk routine updates once CI is green. Patch-level Python dep bumps, pinned-digest refreshes for GitHub Actions, and lockFileMaintenance go in without human review. Docker digests have their own rule at the end of this list (Docker Hub only; it explains why). minimumReleaseAge is the one human-shaped gate on that path: a release merges itself only after it has been public for three days, which is the window in which a compromised or broken upstream release is usually pulled or yanked. Hash-locked installs do not help here — they pin whatever release was current. The PR still opens at once; Renovate holds a renovate/stability-days check pending until the age passes, then automerge proceeds. platformAutomerge is deliberately FALSE so that gate cannot be routed around: GitHub's native auto-merge lands a PR as soon as its REQUIRED checks pass, and the only required check here is ci-ok — renovate/stability-days is not one, so a platform-armed PR could merge inside the three days the option exists to enforce. Renovate merging on its own, after its own checks, is the behaviour this repo has always had (platform auto-merge was unavailable at repo level until the marketplace-pin job needed it), so this pins it rather than changes it. Security PRs are unaffected: vulnerabilityAlerts defaults minimumReleaseAge to null, so an OSV fix still lands immediately. Its updates carry no label: `labels: []` replaces the repo-wide `manual-merge` default. Not an `automerge` label, because a grouped PR (python, github-actions) takes the union of its updates' labels, while Renovate automerges a group only when EVERY update in it is eligible (`config.automerge = upgrades.every(...)` in workers/repository/updates/generate.ts). A mixed group therefore carried both labels and still needed a human. With no label on the eligible side, a PR has `manual-merge` exactly when at least one update in it is not automerge-eligible, which is exactly when Renovate will not merge it. A template cannot pick the label per PR instead: `automerge` is not an allowed template field. Verified against Renovate 44.117.",
       "matchManagers": ["pep621", "pip_requirements", "pip-compile", "github-actions"],
       "matchUpdateTypes": ["patch", "pin", "digest", "lockFileMaintenance"],
+      "minimumReleaseAge": "3 days",
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": false,
+      "labels": []
+    },
+    {
+      "description": "Minor bumps of Python dev tooling automerge too. Every optional-dependency group (lint, security, docs, dev, corpus, container) is installed and exercised by a PR gate (ruff, mypy, pytest, bandit, pip-audit, mkdocs, the Docker build), so a green run is the review. The runtime dependency (project.dependencies: pyyaml) ships in the wheel and stays patch-only under the rule above. twine and sigstore are excluded: they run only in publish.yml, after the tag, so a minor there is the Python analogue of a release-path action bump and opens for review. pep621 and pip-compile tag deps with the same depType (verified with `renovate --platform=local --dry-run=extract` on 44.132), so the pyproject edit and the lock regeneration are both eligible and the grouped PR automerges as a whole.",
+      "matchManagers": ["pep621", "pip-compile"],
+      "matchDepTypes": ["project.optional-dependencies"],
+      "matchPackageNames": ["!twine", "!sigstore"],
+      "matchUpdateTypes": ["minor"],
+      "minimumReleaseAge": "3 days",
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": false,
+      "labels": []
+    },
+    {
+      "description": "Minor bumps of actions on the CI path automerge. Every action here is SHA-pinned and runs in the PR's own workflow, so the bump tests itself. The release-path workflows are carved into the github-actions-release group above and excluded here, so their minors keep the manual-merge label. Majors, including the ubuntu runner image (datasource github-runners), stay manual.",
+      "matchManagers": ["github-actions"],
+      "matchFileNames": ["!.github/workflows/publish.yml", "!.github/workflows/verify-tag.yml", "!.github/workflows/release-docker-smoke.yml"],
+      "matchUpdateTypes": ["minor"],
+      "minimumReleaseAge": "3 days",
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": false,
+      "labels": []
+    },
+    {
+      "description": "Docker digest refreshes automerge where the three-day gate can actually be enforced, which is Docker Hub only. Renovate's docker datasource takes releaseTimestamp from Docker Hub's tag_last_pushed and from nowhere else (gcr.io and ghcr.io yield none), and it attaches that timestamp to a digest update only when the tag parses as a version, which is why the build stage is pinned as debian:13-slim rather than trixie-slim (same manifest list). Under the default minimumReleaseAgeBehaviour=timestamp-required a digest with no timestamp is pending forever and never even opens a PR, so distroless (gcr.io, tag nonroot), the oss-fuzz builder (gcr.io) and vhs (ghcr.io) are deliberately NOT matched and keep opening as manual-merge. The review a human used to do on these PRs is now mechanical: dockerfile-digests fails a per-arch pin, docker-smoke builds and runs the image on amd64 and arm64, and both are required via ci-ok. Verified 2026-10-03 against Renovate 44.132 (lookup/digest.ts, datasource/docker releaseTimestampNote).",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["debian", "postgres", "docker/dockerfile"],
+      "matchUpdateTypes": ["digest"],
       "minimumReleaseAge": "3 days",
       "automerge": true,
       "automergeType": "pr",
