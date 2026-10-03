@@ -37,8 +37,18 @@ markdown_extensions:
   - toc:
       permalink: true
   - tables
-  - fenced_code
   - admonition
+  # Replaces fenced_code (SuperFences is a superset and must not run beside
+  # it); the custom fence renders ```mermaid blocks as diagrams. It also parses
+  # fences inside blockquotes, which fenced_code left as raw text.
+  # Pygments stays off so code blocks keep the plain look they had.
+  - pymdownx.highlight:
+      use_pygments: false
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
 
 # Curated nav: user-facing pages only. Everything else in docs/ (ADRs,
 # ROADMAP, CI/RELEASING internals) still builds and stays linkable, just
@@ -86,6 +96,7 @@ nav:
   - Guides:
       - Configuration: configuration.md
       - "CLI reference": cli.md
+      - "How it works": how-it-works.md
       - "What a run reads": what-a-run-reads.md
       - "Fixing findings": fix.md
       - "GitHub Action": github-action.md
