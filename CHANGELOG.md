@@ -116,6 +116,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An empty overlay or included file contributes nothing instead of
+  failing the run.** A `compose.override.yaml` holding only commented-out
+  examples, an empty COMPOSE_FILE entry, or an empty `include:` target made
+  compose-lint exit 2 ("file is empty"), although Compose 5.5.0 accepts each
+  and merges nothing from it. Any file of a merged set may now be empty, the
+  first included, as long as another supplies the project. A lone empty
+  file, a set that is empty as a whole, and an empty `extends:` base still
+  fail, as they do in Compose.
+
 - **CL-0016 no longer flags a device granted without read or write.**
   `devices: ["/dev/sda:/dev/sda:m"]` was reported CRITICAL, but a grant
   whose permissions carry no `r` or `w` cannot read or write the disk:
