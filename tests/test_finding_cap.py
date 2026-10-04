@@ -22,6 +22,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 LIMIT = 50
+SECRET = "cl-finding-cap-marker-4c1"
+ENV_NAME = "." + "env"
 
 
 def _shared_ports(items: int, services: int) -> str:
@@ -79,7 +81,8 @@ def test_check_reports_a_coverage_gap(
         ["--format", fmt, "compose.yml"], tmp_path, monkeypatch, capsys
     )
     assert code == 2
-    assert f"grading stopped at {LIMIT} findings" in err
+    assert "grading stopped after " in err
+    assert f"findings (the limit is {LIMIT})" in err
     if fmt == "json":
         doc: dict[str, Any] = json.loads(out)
         assert [e["kind"] for e in doc["errors"]] == ["coverage_gap"]
@@ -131,3 +134,33 @@ def test_fix_and_init_refuse_a_partial_set(
     assert outcome in err
     assert compose.read_text() == before
     assert not (tmp_path / ".compose-lint.yml").exists()
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--format", "text"],
+        ["--format", "json"],
+        ["--format", "sarif"],
+        ["--format", "json", "--allow-partial-coverage"],
+    ],
+    ids=["text", "json", "sarif", "partial"],
+)
+def test_a_stopped_run_still_quotes_env_references(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    args: list[str],
+) -> None:
+    """The findings a stopped run reports quote ``${NAME}``, not its value.
+
+    Every value here is a synthetic marker.
+    """
+    compose = _shared_ports(20, 20).replace("image: nginx:1.27", "image: ${IMG}")
+    (tmp_path / "compose.yml").write_text(compose)
+    (tmp_path / ENV_NAME).write_text(f"IMG={SECRET}\n")
+    _, out, err = _run([*args, "compose.yml"], tmp_path, monkeypatch, capsys)
+    assert "grading stopped after " in err
+    assert SECRET not in out
+    assert SECRET not in err
+    assert "${IMG}" in out

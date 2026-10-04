@@ -109,6 +109,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   service's `cap_add:` key. The first service still gets each item's exact
   line.
 
+- **The finding-limit message gives the real count.** A run past the
+  20,000-finding limit said grading "stopped at 20000 findings", but it
+  reports every finding of the rule that crossed the limit, so the report
+  held more. It now says how many were graded and what the limit is.
+
+### Security
+
+- **A run stopped at the finding limit quotes `${NAME}`, not the `.env`
+  value.** 0.32.0 replaces each value a sibling `.env` filled in with its
+  reference before reporting a finding, but a document producing more than
+  20,000 findings stopped grading before that step, so the findings it
+  still reported quoted the resolved value in text, JSON and SARIF, with
+  `--allow-partial-coverage` or without. They are now quoted like every
+  other run's. No advisory: it needs a workflow that writes secrets into
+  `.env` for a pull request whose author is not trusted with them. GitHub
+  withholds secrets from fork pull requests, an author with write access
+  can already read them through the workflow, and running a secret-bearing
+  `pull_request_target` job on untrusted changes is the setup GitHub warns
+  against.
+
 ## [0.32.0] - 2026-09-28
 
 ### Changed

@@ -20,14 +20,15 @@ if TYPE_CHECKING:
 class FindingLimitError(Exception):
     """A document produced more findings than one run grades.
 
-    ``findings`` are the ones graded before grading stopped, sorted as
-    :func:`run_rules` sorts its result, so a caller that accepts the gap can
-    still report them.
+    ``findings`` are the ones graded before grading stopped, sorted and
+    quoted as :func:`run_rules` sorts and quotes its result, so a caller that
+    accepts the gap can still report them.
     """
 
     def __init__(self, findings: list[Finding]) -> None:
         super().__init__(
-            f"grading stopped at {MAX_FINDINGS} findings, so the rest of this "
+            f"grading stopped after {len(findings)} findings (the limit is "
+            f"{MAX_FINDINGS}), so the rest of this "
             "document was not graded. That many findings means a shared list "
             "multiplied by the services that use it; lint the document with "
             "fewer aliases of it, or split the stack."
@@ -162,6 +163,10 @@ def run_rules(
                     )
                 findings.append(finding)
             if len(findings) > MAX_FINDINGS:
+                # Quote before raising: the caller reports these findings, so
+                # they must not carry a value a reference resolved to either.
+                if env_values:
+                    findings = _quote_references(findings, services, env_values)
                 findings.sort(key=lambda f: (f.line is None, f.line or 0))
                 raise FindingLimitError(findings)
 
