@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **CL-0016 flags a `c` device cgroup rule that opens `/dev/kmsg` or
+  `/dev/loop-control`.** `device_cgroup_rules:` was graded for block
+  devices only, so `c 1:11 w` plus the default `MKNOD` capability reached
+  `/dev/kmsg`, a node CL-0016 flags when it is mapped, with no finding. A `c`
+  rule with `r` or `w` that covers `1:11` or `10:237` (`/dev/loop-control`),
+  including `c 1:*` and `c *:*`, is now flagged on the same terms as a `b`
+  rule: only when the container can obtain the node. Measured: with the
+  rule a created node opened, and without it the device cgroup refused the
+  open (premise check `_cl0016_cgroup_char`).
+
 - **CL-0016 flags `/dev/char/<major>:<minor>` spellings of the character
   devices it already flags.** `/dev/char` holds the kernel's `<major>:<minor>`
   symlink for each character device, so a long-syntax

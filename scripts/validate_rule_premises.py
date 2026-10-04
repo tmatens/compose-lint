@@ -1086,8 +1086,7 @@ def _cl0016_dev_char() -> tuple[bool | None, str]:
         [
             "sh",
             "-c",
-            "for n in 1:11 10:237; do "
-            "test -L /hostdev/char/$n && echo $n; done",
+            "for n in 1:11 10:237; do test -L /hostdev/char/$n && echo $n; done",
         ],
     )
     present = links.split()
@@ -1179,6 +1178,46 @@ def _cl0016_cgroup_rule_gates() -> tuple[bool, str]:
     return ok, (
         f"cap-drop MKNOD: {dropped!r} bytes; 'm' only: {create_only!r} bytes; "
         f"/dev bind at cap-drop ALL: {bound!r} bytes"
+    )
+
+
+def _cl0016_cgroup_char() -> tuple[bool, str]:
+    """A ``c`` cgroup rule plus the default ``MKNOD`` opens a flagged node.
+
+    ``c 1:11`` is ``/dev/kmsg`` and ``c 10:237`` is ``/dev/loop-control``. The
+    container creates each node itself, and an open succeeds only with the
+    rule: write-only for kmsg (which skips the syslog check, so
+    ``dmesg_restrict`` does not matter) and read-write for loop-control. The
+    same open without the rule is refused by the device cgroup. Nothing is
+    written and no ioctl is issued.
+    """
+
+    def opens(rule: list[str], node: str, mode: str) -> str:
+        _, out = _run(
+            rule,
+            [
+                "sh",
+                "-c",
+                f"mknod /dev/probe c {node} && "
+                f"if (exec 3{mode}/dev/probe) 2>/dev/null; "
+                "then echo OPEN-OK; else echo BLOCKED; fi",
+            ],
+        )
+        return out
+
+    kmsg = opens(["--device-cgroup-rule", "c 1:11 w"], "1 11", ">")
+    kmsg_none = opens([], "1 11", ">")
+    loop = opens(["--device-cgroup-rule", "c 10:237 rw"], "10 237", "<>")
+    loop_none = opens([], "10 237", "<>")
+    ok = (kmsg, kmsg_none, loop, loop_none) == (
+        "OPEN-OK",
+        "BLOCKED",
+        "OPEN-OK",
+        "BLOCKED",
+    )
+    return ok, (
+        f"c 1:11 w: {kmsg} (no rule: {kmsg_none}); "
+        f"c 10:237 rw: {loop} (no rule: {loop_none})"
     )
 
 
@@ -1661,6 +1700,11 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool | None, str]]]] = [
         "CL-0016",
         "premise: MKNOD drop and 'm' leave a rule inert; a /dev bind does not",
         _cl0016_cgroup_rule_gates,
+    ),
+    (
+        "CL-0016",
+        "premise: a c cgroup rule plus mknod opens kmsg and loop-control",
+        _cl0016_cgroup_char,
     ),
     (
         "CL-0016",

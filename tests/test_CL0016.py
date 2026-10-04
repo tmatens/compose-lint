@@ -382,8 +382,41 @@ class TestDeviceCgroupRules:
     def test_mknod_only_access_is_not_flagged(self) -> None:
         assert self._findings('    device_cgroup_rules: ["b 8:* m"]\n') == []
 
-    def test_character_rules_are_not_claimed(self) -> None:
-        assert self._findings('    device_cgroup_rules: ["c 1:11 rw"]\n') == []
+    def test_char_rules_opening_a_flagged_device_are_flagged(self) -> None:
+        # c 1:11 is /dev/kmsg and c 10:237 /dev/loop-control: with the rule a
+        # created node opened, without it the open was refused (#999).
+        findings = self._findings(
+            '    device_cgroup_rules: ["c 1:11 w", "c 10:237 rw", "c 1:* r"]\n'
+        )
+        assert [f.evidence for f in findings] == ["c 1:11", "c 10:237", "c 1:*"]
+        assert all(f.severity.value == "critical" for f in findings)
+        assert "/dev/kmsg" in findings[0].message
+        assert "/dev/loop-control" in findings[1].message
+
+    def test_a_char_wildcard_names_both_devices(self) -> None:
+        [finding] = self._findings('    device_cgroup_rules: ["c *:* rw"]\n')
+        assert finding.evidence == "c *:*"
+        assert "/dev/kmsg and /dev/loop-control" in finding.message
+
+    def test_other_char_rules_are_not_claimed(self) -> None:
+        # mem, port (CAP_SYS_RAWIO), tun (safe), fuse (dropped), mapper/control
+        # (CAP_SYS_ADMIN), a minor that only starts with 11, and m-only access.
+        for rule in (
+            "c 1:1 rw",
+            "c 1:4 r",
+            "c 10:200 rwm",
+            "c 10:229 rw",
+            "c 10:236 rw",
+            "c 1:110 r",
+            "c 1:11 m",
+            "c 10:* m",
+        ):
+            body = f'    device_cgroup_rules: ["{rule}"]\n'
+            assert self._findings(body) == [], rule
+
+    def test_a_char_rule_without_a_node_is_inert(self) -> None:
+        body = '    device_cgroup_rules: ["c 1:11 rw"]\n    cap_drop: [MKNOD]\n'
+        assert self._findings(body) == []
 
     def test_whitespace_is_normalized_and_access_left_out(self) -> None:
         [finding] = self._findings('    device_cgroup_rules: ["  b  8:*   r "]\n')
