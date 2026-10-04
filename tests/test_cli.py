@@ -1696,3 +1696,25 @@ def test_discard_stdout_points_the_descriptor_at_null(
         cli._discard_stdout()
         os.write(fd, b"after")
     assert sink.read_bytes() == b""
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["fix", "--app", "compose.yml"],
+        ["check", "--form", "json", "compose.yml"],
+        ["--form", "json", "compose.yml"],
+        ["init", "--forc", "compose.yml"],
+    ],
+    ids=["fix-apply", "check-format", "bare-format", "init-force"],
+)
+def test_a_flag_prefix_is_not_the_flag(tmp_path: Path, args: list[str]) -> None:
+    """Only full spellings are flags, so adding one later cannot make an
+    abbreviation that used to work ambiguous."""
+    compose = tmp_path / "compose.yml"
+    compose.write_text("services:\n  web:\n    image: nginx:1.27\n")
+    before = compose.read_text()
+    result = run_cli(*args, cwd=tmp_path)
+    assert result.returncode == 2
+    assert "unrecognized arguments" in result.stderr
+    assert compose.read_text() == before

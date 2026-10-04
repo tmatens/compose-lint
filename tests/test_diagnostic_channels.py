@@ -269,6 +269,27 @@ def test_truncation_is_reported_exactly_once(
     _validate_sarif(doc)
 
 
+def test_truncation_keeps_the_most_severe_results(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """In file order a critical late in the batch was the result dropped."""
+    monkeypatch.setattr(sarif_formatter, "MAX_SARIF_RESULTS", 1)
+    (tmp_path / "a.yml").write_text(_CLEAN, encoding="utf-8")
+    (tmp_path / "b.yml").write_text(
+        "services:\n  web:\n    image: nginx:1.27\n    privileged: true\n",
+        encoding="utf-8",
+    )
+    _, doc = _run(
+        ["check", "--format", "sarif", "a.yml", "b.yml"], tmp_path, monkeypatch, capsys
+    )
+    [kept] = doc["runs"][0]["results"]
+    assert kept["ruleId"] == "CL-0002"
+    assert kept["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] == (
+        "b.yml"
+    )
+    _validate_sarif(doc)
+
+
 def test_a_strict_config_error_found_after_the_scan_is_kind_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

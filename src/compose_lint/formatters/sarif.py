@@ -620,11 +620,44 @@ def format_findings(
     return results
 
 
+_TRUNCATION_RANK: dict[Severity, int] = {
+    Severity.CRITICAL: 0,
+    Severity.HIGH: 1,
+    Severity.MEDIUM: 2,
+    Severity.LOW: 3,
+}
+
+
+def _most_severe(
+    results: list[dict[str, Any]], severities: Sequence[Severity] | None
+) -> list[dict[str, Any]]:
+    """The :data:`MAX_SARIF_RESULTS` results to keep, in their original order.
+
+    Kept by severity, critical first and suppressed results last, so the
+    alerts that matter are not the ones dropped: in file and line order a
+    critical late in a large batch fell off while lows before it stayed. Ties
+    keep emission order, and so does the output, so a kept set reads like an
+    untruncated one.
+    """
+    if severities is None or len(severities) != len(results):
+        return results[:MAX_SARIF_RESULTS]
+    order = sorted(
+        range(len(results)),
+        key=lambda i: (
+            "suppressions" in results[i],
+            _TRUNCATION_RANK.get(severities[i], len(_TRUNCATION_RANK)),
+            i,
+        ),
+    )
+    return [results[i] for i in sorted(order[:MAX_SARIF_RESULTS])]
+
+
 def build_sarif_log(
     all_results: list[dict[str, Any]],
     errors: Sequence[Diagnostic] | None = None,
     severity_overrides: dict[str, Severity] | None = None,
     warnings: Sequence[Diagnostic] | None = None,
+    severities: Sequence[Severity] | None = None,
 ) -> dict[str, Any]:
     """Build a complete SARIF log object.
 
@@ -640,6 +673,10 @@ def build_sarif_log(
     ``severity_overrides`` (from ``.compose-lint.yml``) are resolved into the
     rule descriptors so their advertised severity matches the per-result level
     (issue #279 S-b).
+
+    ``severities`` is each result's finding severity, in the same order. A
+    result's ``level`` cannot tell critical from high, and truncation keeps the
+    most severe results, so the caller supplies it.
     """
     taxonomy, taxa_index = _build_attack_taxonomy()
     rules, _ = _build_rules(severity_overrides, taxa_index)
@@ -652,7 +689,7 @@ def build_sarif_log(
     # keeps the gate honest; silently shipping something the consumer will drop
     # is the same false-clean as producing nothing.
     truncation = truncation_notice(len(all_results))
-    results = all_results[:MAX_SARIF_RESULTS] if truncation else all_results
+    results = _most_severe(all_results, severities) if truncation else all_results
 
     # A warning, not a failure (#888): every finding was graded against
     # --fail-on before any was dropped, so the run completed and its exit code
