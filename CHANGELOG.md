@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **CL-0005 grades a port written with an unbraced variable.** Compose reads
+  `$HTTP_PORT` and `${HTTP_PORT}` alike, but CL-0005's port pattern accepted
+  only the braced form, so `"$HTTP_PORT:80"` did not parse and was skipped
+  while `"${HTTP_PORT}:80"` was flagged as bound to all interfaces. Both now
+  fire, and `"127.0.0.1:$HTTP_PORT:80"` still passes. Across the 11,111-file
+  corpus this adds 37 CL-0005 findings in 23 files and removes none.
+
 - **A long flag must be spelled in full.** argparse accepted any unambiguous
   prefix, so `compose-lint fix --app` applied fixes and `--form json` chose
   the format. Accepted prefixes would be part of the CLI that 1.0 freezes, and
