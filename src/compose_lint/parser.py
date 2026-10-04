@@ -1425,6 +1425,7 @@ def _resolve_includes(  # noqa: PLR0913
                     # so a fragment contributes its keys rather than being a
                     # gap. A v1-shaped or own-config document still raises.
                     merging=True,
+                    empty_ok=True,
                     # The entry's project directory, which for a single-path
                     # entry *is* this file's own directory. The two only differ
                     # inside an object-form `path:` list.
@@ -2221,6 +2222,7 @@ def _loads_full(  # noqa: PLR0913
     base_dir: Path | None = None,
     *,
     merging: bool = False,
+    empty_ok: bool = False,
     use_env: bool = True,
     project_dir: Path | None = None,
     env_dirs: tuple[Path, ...] = (),
@@ -2322,6 +2324,13 @@ def _loads_full(  # noqa: PLR0913
             loader.dispose()
 
     if raw is None:
+        if empty_ok:
+            # An overlay or `include:` target with no content (empty, or only
+            # comments) contributes nothing: Compose 5.5.0 accepts one as a
+            # `-f` overlay, a COMPOSE_FILE entry, compose.override.yml or an
+            # included file. Only the primary file and an `extends:` base,
+            # which Compose refuses empty, keep the error.
+            return {}, {}, frozenset(), frozenset(), ()
         raise ComposeError("Not a valid Compose file: file is empty")
 
     # Includes are followed only when the caller said where the project is;
@@ -2606,7 +2615,11 @@ def loads(
 
 
 def load_document(
-    path: str | Path, *, use_env: bool = True, project_dir: Path | None = None
+    path: str | Path,
+    *,
+    use_env: bool = True,
+    project_dir: Path | None = None,
+    overlay: bool = False,
 ) -> Document:
     """Load one Compose file as a :class:`Document` ready to merge.
 
@@ -2636,6 +2649,9 @@ def load_document(
         content,
         base_dir=base_dir,
         merging=True,
+        # Any file of a merged set may be empty (`load_merged` refuses a set
+        # that is empty as a whole).
+        empty_ok=overlay,
         use_env=use_env,
         project_dir=base_dir,
         document_path=filepath.absolute(),
@@ -2684,7 +2700,14 @@ def load_merged(paths: list[str | Path], *, use_env: bool = True) -> Merged:
     project = Path(paths[0]).absolute().parent if paths else None
     for path in paths:
         try:
-            documents.append(load_document(path, use_env=use_env, project_dir=project))
+            documents.append(
+                load_document(
+                    path,
+                    use_env=use_env,
+                    project_dir=project,
+                    overlay=True,
+                )
+            )
         except ComposeNotApplicableError as exc:
             # A v1-shaped or own-config document in a merge set is an error,
             # not a skip (#673). Compose refuses a project that includes
@@ -2704,6 +2727,11 @@ def load_merged(paths: list[str | Path], *, use_env: bool = True) -> Merged:
             ) from exc
         except ComposeError as exc:
             raise ComposeFileError(path, str(exc)) from exc
+    if all(not document.data for document in documents):
+        # Compose 5.5.0 accepts an empty file anywhere in the set, the first
+        # included, as long as another supplies the project; only a set with
+        # nothing in it is refused ("empty compose file").
+        raise ComposeFileError(paths[0], "Not a valid Compose file: file is empty")
     merged = merge_documents(documents)
     if "services" not in merged.data:
         # No document contributed services, so the merged result has none to
