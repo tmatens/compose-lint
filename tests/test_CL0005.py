@@ -464,6 +464,24 @@ class TestDockerPortGrammar:
         assert len(_port_findings('      - "${PORT:?unset}:80"\n')) == 1
         assert _port_findings('      - "127.0.0.1:${PORT:?unset}:80"\n') == []
 
+    def test_an_unbraced_variable_is_graded_like_a_braced_one(self) -> None:
+        """Compose reads `$NAME` and `${NAME}` alike; the unbraced spelling
+        did not parse, so `"$HTTP_PORT:80"` was skipped while the braced one
+        fired."""
+        for port in (
+            "$HTTP_PORT:80",
+            "${HTTP_PORT}:80",
+            "3000:$PORT",
+            "$HOST_PORT:$CONTAINER_PORT",
+            "$DNS_PORT:53/udp",
+            "$PORT",
+        ):
+            assert len(_port_findings(f'      - "{port}"\n')) == 1, port
+
+    def test_a_bound_unbraced_variable_is_not_flagged(self) -> None:
+        for port in ("127.0.0.1:$HTTP_PORT:80", "[::1]:$HTTP_PORT:80"):
+            assert _port_findings(f'      - "{port}"\n') == [], port
+
     def test_non_port_junk_is_still_ignored(self) -> None:
         for port in ("a:b", "0.0.0.0:web:80", "1.2.3.4:80:http"):
             assert _port_findings(f'      - "{port}"\n') == [], port
