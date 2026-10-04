@@ -705,6 +705,7 @@ def _collect_tagged(
     tagged: dict[int, set[str]],
     prefix: str = "",
     repeats: _RepeatBudget | None = None,
+    dropped: list[str] | None = None,
 ) -> frozenset[str]:
     """Collect dot-notation paths of keys carrying a Compose merge directive.
 
@@ -712,6 +713,11 @@ def _collect_tagged(
     would invalidate the id() keys) with the same iterative work-stack shape as
     :func:`_collect_lines`, and spends the same ``repeats`` budget on a tagged
     mapping reached by a second path.
+
+    Unlike a line, a directive changes what the merge builds: a ``!reset``
+    left uncollected keeps hardening Compose deletes. So each path whose
+    directives the budget refused is appended to ``dropped``, for the caller
+    to report as a coverage gap.
     """
     if not tagged:
         return frozenset()
@@ -726,6 +732,8 @@ def _collect_tagged(
             if id(current) not in expanded or repeats.take(len(keys)):
                 for key in keys:
                     found.add(f"{current_prefix}.{key}" if current_prefix else key)
+            elif keys and dropped is not None:
+                dropped.append(current_prefix)
             if id(current) in expanded:
                 continue
             expanded.add(id(current))
@@ -1791,6 +1799,7 @@ def _substitute_interpolation_defaults(
     env: Mapping[str, str] | None = None,
     *,
     record: dict[str, dict[str, str]] | None = None,
+    starved: list[str] | None = None,
 ) -> None:
     """Rewrite every string leaf to the value Compose ships.
 
@@ -1840,14 +1849,18 @@ def _substitute_interpolation_defaults(
     value, and the engine uses this to quote ``${NAME}`` in their messages
     instead of the value: a ``.env`` is often written by CI and holds secrets,
     and the report reaches the job log, JSON and Code Scanning.
+
+    ``starved`` collects each value the budget below left as written although
+    substitution would have changed it. Rules grade that value as written, not
+    as deployed, so the caller reports it as a coverage gap.
     """
     seen: set[int] = set()
     # Each value is bounded (MAX_SUBSTITUTED_LEN); the document was not. One
     # 130 KB `.env` value referenced as `${X}b` in 20,000 labels was a 389 KB
     # file that substituted to 2.6 GB. Identical leaves now share one result,
     # and what substitution adds to the document is budgeted: past
-    # MAX_SUBSTITUTED_TOTAL a value stays as written, the same "unknowable"
-    # answer a single value over its own cap gets.
+    # MAX_SUBSTITUTED_TOTAL a value stays as written and is reported through
+    # ``starved``: the value was resolvable, and only the budget stopped it.
     results: dict[tuple[str, bool], str] = {}
     remaining = [MAX_SUBSTITUTED_TOTAL]
 
@@ -1860,6 +1873,8 @@ def _substitute_interpolation_defaults(
             # Building a value only to discard it cost its full size per leaf:
             # 40,000 distinct references to one 130 KB value took seconds after
             # the budget was spent.
+            if starved is not None:
+                starved.append(value)
             results[key] = value
             return value
         substituted = substitute_defaults(value, supplied)
@@ -1868,6 +1883,8 @@ def _substitute_interpolation_defaults(
         else:
             growth = len(substituted) - len(value)
             if growth > remaining[0]:
+                if starved is not None:
+                    starved.append(value)
                 result = value
             else:
                 remaining[0] -= max(growth, 0)
@@ -2318,8 +2335,13 @@ def _loads_full(  # noqa: PLR0913
         # included file cannot spend a fresh allowance.
         repeats = repeats if repeats is not None else _RepeatBudget()
         lines = _collect_lines(raw, seq_lines, repeats=repeats)
-        reset_paths = _collect_tagged(raw, raw_resets, repeats=repeats)
-        override_paths = _collect_tagged(raw, raw_overrides, repeats=repeats)
+        dropped: list[str] = []
+        reset_paths = _collect_tagged(raw, raw_resets, repeats=repeats, dropped=dropped)
+        override_paths = _collect_tagged(
+            raw, raw_overrides, repeats=repeats, dropped=dropped
+        )
+        if dropped:
+            gaps.append(_dropped_directive_gap(dropped))
         data = _strip_lines(raw)
         # Canonicalize before anything classifies: rules and the extends and
         # bind-source passes below all see the value the file actually ships
@@ -2348,7 +2370,12 @@ def _loads_full(  # noqa: PLR0913
                     elif parsed_env.values:
                         layered.update(parsed_env.values)
                 supplied = layered or None
-        _substitute_interpolation_defaults(data, supplied, record=env_seen)
+        starved: list[str] = []
+        _substitute_interpolation_defaults(
+            data, supplied, record=env_seen, starved=starved
+        )
+        if starved:
+            gaps.append(_starved_substitution_gap(len(starved)))
         prefix: tuple[str, ...] = ()
         if base_dir is not None and project_dir is not None:
             try:
@@ -2460,6 +2487,39 @@ def _loads_full(  # noqa: PLR0913
         ) from e
 
     return data, lines, reset_paths, override_paths, tuple(gaps)
+
+
+def _dropped_directive_gap(paths: list[str]) -> str:
+    """The coverage gap for ``!reset``/``!override`` tags the line budget refused.
+
+    See :data:`~compose_lint._limits.MAX_REPEATED_LINES`. A mapping reached by
+    many paths spends the budget, and a tagged mapping reached again past it
+    keeps its tags only on the paths already recorded, so the merge would keep
+    what Compose replaces or deletes.
+    """
+    shown = paths[0] or "the document root"
+    more = f" and {len(paths) - 1} more" if len(paths) > 1 else ""
+    return (
+        f"the !reset/!override tags at '{shown}'{more} were not applied, because "
+        "the document repeats an aliased mapping past the line budget, so the "
+        "services using them were graded on a merge Compose does not build."
+    )
+
+
+def _starved_substitution_gap(count: int) -> str:
+    """The coverage gap for values the substitution budget left as written.
+
+    See :data:`~compose_lint._limits.MAX_SUBSTITUTED_TOTAL`. Past it, a value
+    that interpolation would have changed is graded as written, which is not
+    the value Compose deploys.
+    """
+    noun = "value was" if count == 1 else "values were"
+    budget = MAX_SUBSTITUTED_TOTAL // (1024 * 1024)
+    return (
+        f"{count} interpolated {noun} left as written, because substitution "
+        f"would add more than {budget} MiB to this document, so the services "
+        "using them were graded on values Compose does not deploy."
+    )
 
 
 def _unread_env_gap(directory: Path, project_dir: Path | None) -> str | None:

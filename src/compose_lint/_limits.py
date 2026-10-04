@@ -48,7 +48,9 @@ MAX_SUBSTITUTED_LEN = MAX_SCAN_LEN * 16
 # is 2.6 GB. This bounds what substitution adds to one document in total, at
 # the size of the largest document compose-lint reads, so a substituted file
 # costs at most about twice a file at the read cap. Past it a value is left as
-# written. Identical leaves share one result and are counted once.
+# written and the document reports a coverage gap, because a rule then grades
+# the spelling, not what Compose deploys. Identical leaves share one result and
+# are counted once.
 MAX_SUBSTITUTED_TOTAL = 8 * 1024 * 1024
 
 # A merge key (`<<: *common`) copies every pair of its anchor into each mapping
@@ -81,7 +83,9 @@ MAX_SERVICES = 4096
 # Counted across one load (a document and everything it includes or extends),
 # at every site that repeats a record. Past the cap a repeat is not recorded, so
 # the finding it would have located reports no line, which every consumer
-# already handles: the fix engine refuses to edit what it cannot locate. The
+# already handles: the fix engine refuses to edit what it cannot locate. A
+# `!reset`/`!override` tag is different, because it changes what the merge
+# builds, so one the budget refuses is a coverage gap. The
 # largest count in the 11,111-file corpus is 1,225, so no real file
 # comes near it; at the cap the line map costs tens of megabytes.
 MAX_REPEATED_LINES = 262144

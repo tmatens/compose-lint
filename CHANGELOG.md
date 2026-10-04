@@ -57,6 +57,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   separately. Every `### Security` changelog entry now records
   whether it got an advisory, and CI checks that it does.
 
+- **Two work budgets are coverage gaps instead of silent.** Past 8 MiB
+  of interpolated text in one document, a `${VAR}` value was left as written,
+  so a capability a `.env` supplied after that point was graded as the
+  literal `${CAP}` and its finding was missing, with exit 0. And a document
+  that repeats one aliased mapping past the line budget dropped the
+  `!reset`/`!override` tags of a mapping reached again after it, so the merge
+  kept hardening Compose deletes. Both now exit 2 with a `coverage_gap`,
+  which `--allow-partial-coverage` accepts. No file in the 11,111-file corpus
+  comes near either budget.
+
 ### Fixed
 
 - **The pre-commit hook lints every selected file in one run.** pre-commit

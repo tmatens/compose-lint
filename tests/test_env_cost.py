@@ -90,8 +90,53 @@ class TestSubstitutionBudget:
         code, doc = _run(
             ["--format", "json", "compose.yml"], tmp_path, monkeypatch, capsys
         )
-        assert doc["errors"] == []
-        assert code in (0, 1)
+        assert [e["kind"] for e in doc["errors"]] == ["coverage_gap"]
+        assert code == 2
+
+    def test_a_value_left_as_written_is_reported(self) -> None:
+        size = 100_000
+        count = MAX_SUBSTITUTED_TOTAL // size + 10
+        data: dict[str, Any] = {"labels": {f"K{i}": f"${{X}}{i}" for i in range(count)}}
+        starved: list[str] = []
+        _substitute_interpolation_defaults(data, {"X": "a" * size}, starved=starved)
+        assert starved
+        assert all(value.startswith("${X}") for value in starved)
+
+    def test_ordinary_substitution_reports_nothing(self) -> None:
+        data: dict[str, Any] = {"image": "nginx:${TAG}", "x": "${Y:-default}"}
+        starved: list[str] = []
+        _substitute_interpolation_defaults(data, {"TAG": "1.27"}, starved=starved)
+        assert starved == []
+
+    @pytest.mark.parametrize("partial", [False, True])
+    def test_a_finding_past_the_budget_is_a_coverage_gap(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        partial: bool,
+    ) -> None:
+        """A capability supplied after the budget is spent was graded as
+        written, so the CL-0024 it should raise was missing with exit 0."""
+        (tmp_path / ENV_NAME).write_text("X=" + "a" * 130_000 + "\nCAP=SYS_ADMIN\n")
+        pad = "".join(f"  K{i}: ${{X}}{i}\n" for i in range(70))
+        (tmp_path / "compose.yml").write_text(
+            f"x-pad:\n{pad}"
+            "services:\n  web:\n    image: nginx:1.27\n"
+            '    cap_add: ["${CAP}"]\n'
+        )
+        args = ["--format", "json", "compose.yml"]
+        code, doc = _run(
+            [*args, "--allow-partial-coverage"] if partial else args,
+            tmp_path,
+            monkeypatch,
+            capsys,
+        )
+        channel = doc["warnings"] if partial else doc["errors"]
+        assert [d["kind"] for d in channel] == ["coverage_gap"]
+        assert "left as written" in channel[0]["message"]
+        if not partial:
+            assert code == 2
 
 
 class TestSharedEnvFiles:

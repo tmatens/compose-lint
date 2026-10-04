@@ -114,6 +114,13 @@ from.
   reach**, whether it was discovered or named on the command line.
 - **A document that reaches the 20,000-findings limit**: grading stops there.
   The findings graded before the stop are still reported.
+- **A document whose interpolation would add more than 8 MiB**: past that,
+  a `${VAR}` value is left as written, so a rule grades the spelling rather
+  than the value Compose deploys.
+- **A `!reset` or `!override` tag that could not be applied**: a document
+  that repeats one aliased mapping across hundreds of thousands of paths
+  exhausts the line budget, and a tagged mapping reached again after that
+  keeps its tags only where they were already recorded.
 
 Because a gap is not a finding, `--fail-on` does not gate it. It exits 2 at
 every threshold, `--fail-on critical` included. The flag that clears one is
