@@ -46,6 +46,12 @@ services:
     image: nginx:1.27-alpine
     devices:
       - /dev/kmsg:/dev/kmsg
+  dev_char_kmsg:
+    image: nginx:1.27-alpine
+    devices:
+      - source: /dev/char/1:11
+        target: /dev/kmsg
+        permissions: rw
   capability_gated:
     image: nginx:1.27-alpine
     devices:

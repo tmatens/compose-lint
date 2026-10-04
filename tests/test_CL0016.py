@@ -77,6 +77,14 @@ class TestDangerousDevicesRule:
         assert findings[0].evidence == "/dev/block/259:0"
         assert "/dev/block/" in findings[0].message
 
+    def test_detects_dev_char_kmsg(self) -> None:
+        # /dev/char/1:11 is /dev/kmsg by its <maj>:<min> symlink; long syntax
+        # only, like /dev/block (premise check `_cl0016_dev_char`).
+        findings = self._check("dev_char_kmsg")
+        assert len(findings) == 1
+        assert findings[0].severity.name == "CRITICAL"
+        assert findings[0].evidence == "/dev/char/1:11"
+
     def test_detects_dev_kmsg(self) -> None:
         findings = self._check("dev_kmsg")
         assert len(findings) == 1
@@ -310,6 +318,31 @@ class TestAdditionalBlockFamilies:
         ):
             findings = _device_findings(f'      - "{device}:{device}"\n')
             assert [f.evidence for f in findings] == [device], device
+
+    def test_only_flagged_char_symlinks_are_flagged(self) -> None:
+        # Same major as kmsg (mem, port: CAP_SYS_RAWIO), misc major 10 (tun is
+        # safe, fuse is dropped, mapper/control needs CAP_SYS_ADMIN), and
+        # minors that merely start with a flagged one. The positive controls
+        # keep the negatives from passing on a body the rule never reads.
+        def body(device: str) -> str:
+            return (
+                f'      - source: "{device}"\n        target: /dev/x\n'
+                "        permissions: rw\n"
+            )
+
+        for flagged in ("/dev/char/1:11", "/dev/char/10:237"):
+            [hit] = _device_findings(body(flagged))
+            assert hit.evidence == flagged
+        for device in (
+            "/dev/char/1:1",
+            "/dev/char/1:4",
+            "/dev/char/1:110",
+            "/dev/char/10:200",
+            "/dev/char/10:229",
+            "/dev/char/10:236",
+            "/dev/char/10:2370",
+        ):
+            assert _device_findings(body(device)) == [], device
 
     def test_near_misses_are_not_flagged(self) -> None:
         for device in ("/dev/zero", "/dev/hdmi0", "/dev/hidraw0", "/dev/mtd0"):

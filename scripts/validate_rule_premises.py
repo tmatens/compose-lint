@@ -1041,6 +1041,70 @@ def _cl0016_dev_block() -> tuple[bool, str]:
     )
 
 
+def _char_probe(link: str, mode: str) -> list[str]:
+    """Map ``/dev/char/<link>`` by long syntax; report the node and an open.
+
+    Prints the mapped node's type and hex ``major:minor``, then whether an
+    ``open`` in ``mode`` (``>`` write-only, ``<>`` read-write) succeeds. Opening
+    issues no write and no ioctl, so it changes nothing on the host.
+    """
+    probe = (
+        "stat -c '%F %t:%T' /dev/probe; "
+        f"if (exec 3{mode}/dev/probe) 2>/dev/null; "
+        "then echo OPEN-OK; else echo BLOCKED; fi"
+    )
+    compose_yaml = (
+        "services:\n"
+        "  probe:\n"
+        f"    image: {IMAGE}\n"
+        "    network_mode: none\n"
+        "    devices:\n"
+        f'      - source: "/dev/char/{link}"\n'
+        "        target: /dev/probe\n"
+        "        permissions: rw\n"
+        f'    command: ["sh", "-c", "{probe}"]\n'
+    )
+    _, out = _compose_run(compose_yaml, "probe")
+    return out.splitlines()
+
+
+def _cl0016_dev_char() -> tuple[bool | None, str]:
+    """Long-syntax ``/dev/char/<maj>:<min>`` sources grant the flagged nodes.
+
+    ``/dev/char`` is the kernel's ``<major>:<minor>`` symlink farm for
+    character devices. ``1:11`` is ``/dev/kmsg``: the mapped node must be
+    ``c 1,11`` and a write-only open must succeed. The kernel skips the syslog
+    permission check for a write-only open of ``/dev/kmsg``, so this proves
+    the device-cgroup grant whatever ``dmesg_restrict`` is. ``10:237`` is
+    ``/dev/loop-control``, whose link appears only once the ``loop`` module is
+    loaded: where it exists it must map ``c 10,237`` and open read-write, and
+    where it does not, it is reported rather than skipped. Nothing is written and no ioctl is
+    issued. SKIP only where the host has no ``/dev/char/1:11`` link.
+    """
+    _, links = _run(
+        ["-v", "/dev:/hostdev:ro"],
+        [
+            "sh",
+            "-c",
+            "for n in 1:11 10:237; do "
+            "test -L /hostdev/char/$n && echo $n; done",
+        ],
+    )
+    present = links.split()
+    if "1:11" not in present:
+        return None, "the daemon host has no /dev/char/1:11 symlink"
+    kmsg = _char_probe("1:11", ">")
+    ok = kmsg == ["character special file 1:b", "OPEN-OK"]
+    detail = f"/dev/char/1:11: {kmsg!r}"
+    if "10:237" in present:
+        loop = _char_probe("10:237", "<>")
+        ok = ok and loop == ["character special file a:ed", "OPEN-OK"]
+        detail += f"; /dev/char/10:237: {loop!r}"
+    else:
+        detail += "; /dev/char/10:237: no link on this host"
+    return ok, detail
+
+
 def _host_block_numbers(dev: str) -> tuple[int, int] | None:
     """``(major, minor)`` of ``/dev/<dev>`` on the daemon's host, or None."""
     _, out = _run(
@@ -1582,6 +1646,11 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool | None, str]]]] = [
         "CL-0016",
         "premise: long-syntax /dev/block/<maj>:<min> source reads the host disk",
         _cl0016_dev_block,
+    ),
+    (
+        "CL-0016",
+        "premise: long-syntax /dev/char/<maj>:<min> sources grant the flagged nodes",
+        _cl0016_dev_char,
     ),
     (
         "CL-0016",

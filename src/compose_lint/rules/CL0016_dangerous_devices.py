@@ -97,6 +97,23 @@ _DANGEROUS_DEVICE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # start of names like /dev/hdmi0 that are not disks.
     (re.compile(r"^/dev/hd[a-z]\d*$"), "/dev/hd* — legacy IDE block device"),
     (re.compile(r"^/dev/kmsg$"), "/dev/kmsg — kernel log buffer read/inject"),
+    # /dev/char is the kernel's <major>:<minor> symlink farm for character
+    # devices, the sibling of /dev/block. A long-syntax source of
+    # /dev/char/1:11 maps the same c 1,11 node as /dev/kmsg, and a write-only
+    # open of it succeeds at default caps (#999, measured). 10:237 is
+    # /dev/loop-control, kept by the ^/dev/loop row; its link appears once the
+    # loop module is loaded, and then names the same node. Exact minors
+    # only: 1:1 and 1:4 are /dev/mem and /dev/port (CAP_SYS_RAWIO), misc major
+    # 10 holds net/tun (safe), fuse (dropped) and mapper/control (CAP_SYS_ADMIN).
+    # /dev/zfs and the NVMe controller sit on dynamic numbers no entry can name.
+    (
+        re.compile(r"^/dev/char/1:11$"),
+        "/dev/char/1:11 — /dev/kmsg by its major:minor symlink",
+    ),
+    (
+        re.compile(r"^/dev/char/10:237$"),
+        "/dev/char/10:237 — /dev/loop-control by its major:minor symlink",
+    ),
 ]
 
 
