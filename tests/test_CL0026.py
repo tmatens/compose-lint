@@ -9,6 +9,8 @@ either.
 
 from __future__ import annotations
 
+import pytest
+
 from compose_lint.parser import loads
 from compose_lint.rules.CL0026_resource_limits import ResourceLimitsRule
 
@@ -210,3 +212,31 @@ class TestGoUnitsMemoryGrammar:
     def test_a_zero_quantity_is_still_unbounded(self) -> None:
         for value in ("0GiB", "0t", "0"):
             assert self._flagged(value), value
+
+
+class TestSubByteMemory:
+    """A memory limit under one byte is dropped by Compose: no limit at all.
+
+    Compose 5.5.0 converts to whole bytes and drops a 0, for `mem_limit` and
+    `deploy.resources.limits.memory` alike: `0.5` and `0.99` render nothing
+    (the container's `memory.max` is `max`), while `1.5` is 1 byte and `0.5k`
+    is 512. CL-0026 credited `0.5` as a memory limit and reported only CPU.
+    """
+
+    @pytest.mark.parametrize("value", ['"0.5"', '"0.99"', "0.5", '"${MEM:-0.5}"'])
+    def test_a_fractional_byte_limit_is_no_memory_limit(self, value: str) -> None:
+        for body in (
+            f"    mem_limit: {value}\n    cpus: 1\n",
+            "    cpus: 1\n"
+            f"    deploy: {{resources: {{limits: {{memory: {value}}}}}}}\n",
+        ):
+            findings = _findings(_svc(body))
+            assert len(findings) == 1, body
+            assert "no memory limit" in findings[0].message, body
+
+    @pytest.mark.parametrize("value", ['"1.5"', '"0.5k"', '"0.001k"', '"1e3"', "512m"])
+    def test_a_limit_of_a_byte_or_more_counts(self, value: str) -> None:
+        assert not _findings(_svc(f"    mem_limit: {value}\n    cpus: 1\n"))
+
+    def test_a_fractional_cpu_still_counts(self) -> None:
+        assert not _findings(_svc('    mem_limit: 512m\n    cpus: "0.5"\n'))
