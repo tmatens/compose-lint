@@ -1381,6 +1381,15 @@ def _resolve_includes(  # noqa: PLR0913
             if depth >= MAX_REFERENCE_DEPTH:
                 _gap(f"the chain is deeper than {MAX_REFERENCE_DEPTH} files")
                 continue
+            if _REMOTE_REFERENCE.match(reference):
+                # Compose fetches a git or OCI include over the network; a
+                # linter reading the checkout cannot, so it stays a gap. Said
+                # as such, rather than as a local file that was not found.
+                _gap(
+                    "it is a remote resource (git or OCI), which compose-lint "
+                    "does not fetch"
+                )
+                continue
             target, why = _locate_reference(reference, project_dir, prefix)
             if target is None:
                 _gap(why)
@@ -2556,6 +2565,11 @@ def _oversized_value_gap(count: int) -> str:
         f"than {scan} KiB or nests or expands too far to resolve, so the "
         "services using them were graded on values Compose does not deploy."
     )
+
+
+# An `include:` Compose resolves over the network: a URL (`https://…git`,
+# `oci://…`) or an scp-style git address (`git@host:repo`).
+_REMOTE_REFERENCE = re.compile(r"^(?:[A-Za-z][A-Za-z0-9+.-]*://|git@)")
 
 
 def _unread_env_gap(directory: Path, project_dir: Path | None) -> str | None:

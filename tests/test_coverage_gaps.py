@@ -334,3 +334,25 @@ def test_the_parser_states_the_gap_without_prescribing_a_flag(
     gaps = load_compose_full(target).gaps
     assert len(gaps) == 2
     assert not any("--" in gap for gap in gaps)
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "https://github.com/example/stack.git#v1.0",
+        "oci://ghcr.io/example/stack:latest",
+        "git@github.com:example/stack.git",
+    ],
+    ids=["git-https", "oci", "git-scp"],
+)
+def test_a_remote_include_says_it_was_not_fetched(
+    tmp_path: Path, reference: str
+) -> None:
+    """Compose fetches these over the network; the gap said "not found"."""
+    compose = _write(
+        tmp_path / "compose.yml",
+        f"include:\n  - {reference}\nservices:\n  web:\n    image: nginx:1.27\n",
+    )
+    (gap,) = load_compose_full(compose).gaps
+    assert "remote resource" in gap
+    assert "not found" not in gap
