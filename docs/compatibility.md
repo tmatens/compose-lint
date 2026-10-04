@@ -190,6 +190,31 @@ retiring a gap: it can only turn exit 2 into a verdict, but that verdict can
 carry findings that were invisible before, which is the new-findings class
 above.
 
+### Files Compose or Docker refuses that compose-lint grades
+
+The reverse also happens, and by design. compose-lint does not validate the
+full Compose schema ([ROADMAP](ROADMAP.md)), so a file Compose or the Docker
+daemon refuses can still be graded on what it parses to. That never hides a
+finding on a running container, because such a file never runs; Compose's or
+Docker's own error appears at the first `docker compose up`. Measured examples
+(Compose 5.5.0):
+
+- a port bound to `*`, or a long-syntax `host_ip: "[::]"` (Compose: invalid IP
+  address); CL-0005 still reports it;
+- case or spacing Docker rejects: `security_opt: ["NO-NEW-PRIVILEGES:true"]`,
+  `user: ROOT`, a device cgroup rule with doubled spaces (the daemon refuses
+  each); they are graded as their canonical spelling;
+- a long-syntax `devices:` entry with no `permissions:` (the container
+  fails to start); CL-0016 still reports the device;
+- a service with no body in the base file that an override fills in (Compose:
+  `must be a mapping`); the merged service is graded;
+- a missing required `env_file:` target (a note, not a gap), and a
+  `depends_on:` or `networks:` entry naming something the project does not
+  declare.
+
+Refusing these would make compose-lint a partial schema validator. Grading
+them costs nothing a deployment could be hurt by.
+
 ### Resource limits
 
 A few limits keep a crafted file from costing gigabytes. They are part of the
