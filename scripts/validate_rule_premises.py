@@ -38,9 +38,11 @@ observe and are listed as intentionally out of scope.
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -1116,15 +1118,118 @@ def _cl0016_cgroup_rule_gates() -> tuple[bool, str]:
     )
 
 
+def _mapper_block_nodes() -> str:
+    """Block nodes ``--device /dev/mapper`` maps into a container ("0" expected)."""
+    _, mapper = _run(
+        ["--device", "/dev/mapper:/dev/mapper"],
+        ["sh", "-c", "find /dev/mapper -type b | wc -l; ls /dev/mapper | tr '\\n' ' '"],
+    )
+    return mapper
+
+
+def _synthetic_dm_target() -> tuple[str, Callable[[], list[str]]] | None:
+    """A throwaway loop-backed device-mapper target on the daemon host, or None.
+
+    Returns ``(name, cleanup)``; ``None`` when it cannot be built — no local
+    daemon (a remote ``DOCKER_HOST`` puts ``/dev/mapper`` on another host), no
+    passwordless ``sudo``, or no ``losetup``/``dmsetup``/``udevadm``. Zero
+    data: a 16 MiB sparse file and a linear map over it, both removed by
+    ``cleanup``, which returns the teardown steps that failed (empty when
+    clean). It lets the #913 check prove ``/dev/mapper`` maps no block node
+    *with an active dm target present*, not merely on a host that happens to
+    hold only ``control``. ``udevadm settle`` runs before returning, so the
+    ``/dev/mapper/<name>`` entry udev creates is in place when the caller looks.
+    """
+    host = os.environ.get("DOCKER_HOST", "")
+    if host and not host.startswith("unix://"):
+        return None  # the dm target would not be on the daemon's host
+    if any(shutil.which(tool) is None for tool in ("losetup", "dmsetup", "udevadm")):
+        return None
+
+    def _sudo(*cmd: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["sudo", "-n", *cmd], capture_output=True, text=True, timeout=30
+        )
+
+    name = f"clprobe{uuid.uuid4().hex[:8]}"
+    img = Path(tempfile.gettempdir()) / f"{name}.img"
+    try:
+        subprocess.run(
+            ["truncate", "-s", "16M", str(img)],
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
+        setup = _sudo("losetup", "-f", "--show", str(img))
+        if setup.returncode != 0:
+            img.unlink(missing_ok=True)
+            return None
+        loop = setup.stdout.strip()
+        if _sudo(
+            "dmsetup", "create", name, "--table", f"0 32768 linear {loop} 0"
+        ).returncode:
+            _sudo("losetup", "-d", loop)
+            img.unlink(missing_ok=True)
+            return None
+        _sudo("udevadm", "settle", "--timeout=10")
+    except (subprocess.SubprocessError, OSError):
+        img.unlink(missing_ok=True)
+        return None
+
+    def cleanup() -> list[str]:
+        failed = [
+            " ".join(cmd)
+            for cmd in (("dmsetup", "remove", name), ("losetup", "-d", loop))
+            if _sudo(*cmd).returncode != 0
+        ]
+        img.unlink(missing_ok=True)
+        return failed
+
+    return name, cleanup
+
+
+def _dm_entry_is_udev_symlink(name: str) -> bool:
+    """Whether the host's ``/dev/mapper/<name>`` is a symlink to a block node.
+
+    Checked on the host side through a read-only ``/dev`` bind, because the
+    container's ``--device /dev/mapper`` walk skips symlinks and so cannot see
+    the entry at all. Without this, "zero block nodes mapped" would also pass
+    when the entry was never created, proving nothing.
+    """
+    _, out = _run(
+        ["-v", "/dev:/hostdev:ro"],
+        [
+            "sh",
+            "-c",
+            f"test -L /hostdev/mapper/{name}"
+            f' && test -b "/hostdev/mapper/$(readlink /hostdev/mapper/{name})"'
+            " && echo SYMLINK",
+        ],
+    )
+    return out == "SYMLINK"
+
+
 def _cl0016_symlink_dirs_grant_no_disk() -> tuple[bool | None, str]:
     """``/dev/disk``, ``/dev/block``, ``/dev/mapper`` as directories grant no disk (#913).
 
     Docker's ``--device`` directory walk maps real nodes and skips symlinks, and
     these directories hold symlinks. ``/dev/disk`` and ``/dev/block`` have
     nothing else, so Docker refuses the container; ``/dev/mapper`` maps only
-    ``control``. That is why
-    CL-0016 claims ``/dev`` as a directory but not these (a symlink named
-    directly is resolved, and those rows stay). SKIP where a host lacks either.
+    ``control``. That is why CL-0016 claims ``/dev`` as a directory but not
+    these (a symlink named directly is resolved, and those rows stay). SKIP
+    where a host lacks one.
+
+    Both postures are pinned. The bare posture is whatever the daemon host
+    already has. The second builds a synthetic loop-backed dm target and shows
+    ``/dev/mapper`` *still* maps zero block nodes while it is active — because
+    udev keeps the new entry a symlink, which the walk skips. A host without
+    udev (where device-mapper would create real nodes) is the one posture this
+    check cannot stage, and it cannot occur on the grounded runner; the drop is
+    scoped to that caveat in the rule doc. The dm leg also asserts, host-side,
+    that the target's ``/dev/mapper`` entry exists as a udev symlink, so a
+    zero count cannot pass vacuously. Where the target cannot be built it is
+    reported and skipped locally; CI sets ``CL_REQUIRE_DM_TARGET=1``, which
+    turns that skip into a failure.
     """
     _, present = _run(
         ["-v", "/dev:/hostdev:ro"],
@@ -1139,17 +1244,36 @@ def _cl0016_symlink_dirs_grant_no_disk() -> tuple[bool | None, str]:
         return None, "the daemon host has no /dev/disk, /dev/block or /dev/mapper"
     rc_disk, err_disk = _run_err(["--device", "/dev/disk:/dev/disk"], ["true"])
     rc_block, err_block = _run_err(["--device", "/dev/block:/dev/block"], ["true"])
-    _, mapper = _run(
-        ["--device", "/dev/mapper:/dev/mapper"],
-        ["sh", "-c", "find /dev/mapper -type b | wc -l; ls /dev/mapper | tr '\\n' ' '"],
-    )
+    mapper = _mapper_block_nodes()
     disk_refused = rc_disk != 0 and "not a device node" in err_disk
     block_refused = rc_block != 0 and "not a device node" in err_block
     no_block = mapper.split("\n")[0].strip() == "0"
-    return disk_refused and block_refused and no_block, (
+
+    dm = _synthetic_dm_target()
+    if dm is None:
+        active = "dm target not staged (no local daemon, sudo, dmsetup or udevadm)"
+        # CI sets CL_REQUIRE_DM_TARGET=1 so the stronger posture the rule doc
+        # cites is re-proven on every run, not silently skipped there.
+        active_ok = os.environ.get("CL_REQUIRE_DM_TARGET") != "1"
+    else:
+        name, cleanup = dm
+        try:
+            symlink = _dm_entry_is_udev_symlink(name)
+            with_target = _mapper_block_nodes()
+        finally:
+            leaked = cleanup()
+        active_ok = symlink and with_target.split("\n")[0].strip() == "0"
+        active = (
+            f"with active dm target (host entry is a udev symlink={symlink}), "
+            f"block nodes/entries: {with_target.splitlines()!r}"
+        )
+        if leaked:
+            active += f"; teardown failed: {leaked!r}"
+
+    return disk_refused and block_refused and no_block and active_ok, (
         f"/dev/disk refused={disk_refused}; /dev/block refused={block_refused}; "
         f"/dev/mapper block nodes/entries: "
-        f"{' | '.join(mapper.splitlines())!r}"
+        f"{' | '.join(mapper.splitlines())!r}; {active}"
     )
 
 

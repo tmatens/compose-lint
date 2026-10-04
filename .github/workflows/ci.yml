@@ -1458,6 +1458,10 @@ jobs:
         with:
           python-version: "3.13"
       - name: Validate each runtime rule's premise against a live container
+        env:
+          # The CL-0016 /dev/mapper check stages a synthetic dm target; fail
+          # rather than skip if the runner cannot build it (#995).
+          CL_REQUIRE_DM_TARGET: "1"
         run: python scripts/validate_rule_premises.py
 
   # `fix` is the only mode that writes to a user's files, and until #611 it
