@@ -28,6 +28,7 @@ from tests.oracle_harness._oracle import (
     run_oracle,
 )
 from tests.oracle_harness._project import (
+    LAYOUT2_SEED_BASE,
     LAYOUT_SEED_BASE,
     GeneratedProject,
     generate,
@@ -46,6 +47,7 @@ __all__ = [
     "Divergence",
     "FindingCounts",
     "GeneratedProject",
+    "LAYOUT2_SEED_BASE",
     "LAYOUT_SEED_BASE",
     "LintedProject",
     "OracleResult",

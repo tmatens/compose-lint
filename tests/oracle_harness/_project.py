@@ -840,12 +840,185 @@ class _LayoutBuilder(_Builder):
         )
 
 
+# Seeds at or above this build the second layout family (`_ChainBuilder`).
+LAYOUT2_SEED_BASE = 200_000
+
+
+class _ChainBuilder(_LayoutBuilder):
+    """The second layout family: chains and selections the first one never builds.
+
+    A range of its own so every first-family seed keeps its bytes. Each step
+    is drawn independently, and every shape was checked against Compose 5.5.0
+    before it was encoded here::
+
+        [svc/]parts/outer.yaml      0-1 included; itself includes inner/inner.yaml
+        [svc/]parts/inner/.env      0-1, possibly a link; the inner file's own
+        [svc/]bases/base.yaml       0-1, an `extends: {file:}` target, maybe a link
+        [svc/]app.env               0-1 `env_file:` target, maybe a link
+        [svc/]compose.override.yaml 0-1, beside a COMPOSE_FILE that skips it
+        [svc/]gone.yaml / gone.env  0-1 dangling links
+
+    A dangling `include:` or `extends:` target is refused by Compose, so the
+    seed expects a gap; a dangling optional `env_file:` or project dotenv is
+    accepted by both. A dangling *required* `env_file:` is not built: Compose
+    refuses it while compose-lint reports a note, by design (J2/K8).
+    """
+
+    def __init__(self, seed: int) -> None:
+        super().__init__(seed)
+        self.first_lines: list[str] = []
+        self.expects_gap = False
+
+    def nested_include(self) -> None:
+        """An included file that includes another, whose own dotenv it reads."""
+        if self.rng.random() >= 0.4:
+            return
+        self.notes.append("nested-include")
+        values = {"INCTAG": LAYOUT_VARIABLES["INCTAG"][0]}
+        if self.rng.random() < 0.5:
+            values["CAP"] = LAYOUT_VARIABLES["CAP"][0]
+        text = _dotenv(values)
+        where = self._at("parts/inner/.env")
+        if self.rng.random() < 0.4:
+            self.notes.append("nested-include-linked-env")
+            real = self._store("inner.env")
+            self.files[real] = text
+            self._link(where, real)
+        else:
+            self.files[where] = text
+        self.files[self._at("parts/inner/inner.yaml")] = _document(
+            _service_block(
+                "inner",
+                [
+                    "image: myapp:${INCTAG:-1.0}",
+                    'cap_add: ["${CAP:-NET_BIND_SERVICE}"]',
+                    'volumes: ["./inner-data:/data"]',
+                ],
+            )
+        )
+        self.files[self._at("parts/outer.yaml")] = _document(
+            _service_block("outer", ["image: myapp:1.0"]),
+            prelude="include:\n  - inner/inner.yaml\n",
+        )
+        self.entries.append("  - parts/outer.yaml\n")
+
+    def _has(self, key: str) -> bool:
+        return any(line.startswith(f"{key}:") for line in self.first_lines)
+
+    def linked_extends(self) -> None:
+        """A cross-file ``extends:`` whose file is a link to a base elsewhere."""
+        if self.rng.random() >= 0.4 or self._has("extends"):
+            return
+        self.notes.append("linked-extends")
+        real = self._store("base.yaml")
+        self.files[real] = _document(
+            _service_block(
+                "base",
+                ["image: myapp:1.0", "privileged: true", 'volumes: ["./b:/b"]'],
+            )
+        )
+        self._link(self._at("bases/base.yaml"), real)
+        self.first_lines.append("extends: {file: bases/base.yaml, service: base}")
+
+    def linked_env_file(self) -> None:
+        """An ``env_file:`` target that is a link to a file elsewhere."""
+        if self.rng.random() >= 0.4 or self._has("env_file"):
+            return
+        self.notes.append("linked-env-file")
+        real = self._store("app.env")
+        self.files[real] = "AWS_SECRET_ACCESS_KEY=placeholder-not-a-real-key\n"
+        self._link(self._at("app.env"), real)
+        self.first_lines.append("env_file: app.env")
+
+    def separator_selection(self) -> None:
+        """``COMPOSE_FILE`` split by ``COMPOSE_PATH_SEPARATOR``, override skipped.
+
+        Compose applies ``compose.override.yaml`` only when no file list is
+        given, so an override beside a ``COMPOSE_FILE`` that leaves it out
+        contributes nothing; its ``privileged: true`` must not be graded.
+        """
+        if self.rng.random() >= 0.4:
+            return
+        self.notes.append("path-separator")
+        first = self.names[0]
+        separator = self.rng.choice([",", ";", "|"])
+        self.files[self._at("ops/dev.yaml")] = _document(
+            _service_block(first, ['cap_add: ["SYS_PTRACE"]'])
+        )
+        self.project_env = {
+            "COMPOSE_PATH_SEPARATOR": separator,
+            "COMPOSE_FILE": separator.join(["compose.yaml", "ops/dev.yaml"]),
+            **self.project_env,
+        }
+        if self.rng.random() < 0.6:
+            self.notes.append("override-not-selected")
+            self.files[self._at("compose.override.yaml")] = _document(
+                _service_block(first, ["privileged: true"])
+            )
+
+    def dangling_links(self) -> None:
+        """A link with nothing behind it, in a place each side treats alike."""
+        if self.rng.random() >= 0.3:
+            return
+        kind = self.rng.choice(["include", "extends", "optional-env-file"])
+        self.notes.append(f"dangling-{kind}")
+        if kind == "include":
+            self._link(self._at("gone.yaml"), self._at("missing.yaml"))
+            self.entries.append("  - gone.yaml\n")
+            self.expects_gap = True
+        elif kind == "extends":
+            self._link(self._at("gone.yaml"), self._at("missing.yaml"))
+            self.first_lines.append("extends: {file: gone.yaml, service: base}")
+            self.expects_gap = True
+        else:
+            self._link(self._at("gone.env"), self._at("missing.env"))
+            self.first_lines.append("env_file: [{path: gone.env, required: false}]")
+
+    def layout_base(self) -> None:
+        body = ""
+        for index, name in enumerate(self.names):
+            if index == 0:
+                lines = [
+                    "image: myapp:${APPTAG:-1.0}",
+                    'volumes: ["./data:/data"]',
+                    *self.first_lines,
+                ]
+            else:
+                lines = [f"image: {self.rng.choice(IMAGES)}"]
+            body += _service_block(name, lines)
+        self.rng.shuffle(self.entries)
+        prelude = "include:\n" + "".join(self.entries) if self.entries else ""
+        self.files[self._at("compose.yaml")] = _document(body, prelude=prelude)
+
+    def build(self) -> GeneratedProject:
+        # Dangling first: it claims its key, so a later step cannot write a
+        # second `extends:` or `env_file:` over the one the gap depends on.
+        self.dangling_links()
+        self.nested_include()
+        self.linked_extends()
+        self.linked_env_file()
+        self.separator_selection()
+        self.project_dotenv()
+        self.layout_base()
+        return GeneratedProject(
+            seed=self.seed,
+            files=self.files,
+            primary=self._at("compose.yaml"),
+            expects_gap=self.expects_gap,
+            notes=tuple(self.notes),
+            links=self.links,
+        )
+
+
 def generate(seed: int) -> GeneratedProject:
     """Build the project for ``seed``. Same seed, same bytes, always.
 
-    Seeds from ``LAYOUT_SEED_BASE`` build the layout family; every seed below
-    it builds exactly what it always has.
+    Seeds from ``LAYOUT_SEED_BASE`` build the layout family, and from
+    ``LAYOUT2_SEED_BASE`` the second one; every seed below each builds exactly
+    what it always has.
     """
+    if seed >= LAYOUT2_SEED_BASE:
+        return _ChainBuilder(seed).build()
     if seed >= LAYOUT_SEED_BASE:
         return _LayoutBuilder(seed).build()
     return _Builder(seed).build()
