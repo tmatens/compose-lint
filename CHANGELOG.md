@@ -116,6 +116,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A remote `include:` says it was not fetched.** An `include:` naming a
+  git URL, an `oci://` reference or an scp-style `git@` address is still a
+  coverage gap, because compose-lint reads the checkout and Compose fetches
+  these over the network, but the message said "the file was not found". It
+  now says the include is a remote resource compose-lint does not fetch.
+
 - **An empty overlay or included file contributes nothing instead of
   failing the run.** A `compose.override.yaml` holding only commented-out
   examples, an empty COMPOSE_FILE entry, or an empty `include:` target made
