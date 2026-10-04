@@ -116,6 +116,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A service no file gives a body is a parse error, not a crash in every
+  rule.** A merge half may write `web:` with no body, which Compose merges as
+  "no changes" when another file defines `web`. When no file did, every rule
+  raised on the empty service (exit 2 with one `rule_crash` per rule).
+  Compose refuses such a project (`services.api must be a mapping`), so
+  compose-lint now reports that as a parse error, whether the bodiless
+  service is in the base, an override or an included file.
+
 - **A remote `include:` says it was not fetched.** An `include:` naming a
   git URL, an `oci://` reference or an scp-style `git@` address is still a
   coverage gap, because compose-lint reads the checkout and Compose fetches

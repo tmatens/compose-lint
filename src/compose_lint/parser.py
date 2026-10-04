@@ -2198,6 +2198,7 @@ def load_compose_full(path: str | Path, *, use_env: bool = True) -> Loaded:
         document_path=filepath.absolute(),
         env_seen=env_values,
     )
+    _refuse_bodiless_services(data)
     return Loaded(
         data=data,
         lines=lines,
@@ -2550,6 +2551,27 @@ def _starved_substitution_gap(count: int) -> str:
     )
 
 
+def _refuse_bodiless_services(data: dict[str, Any]) -> None:
+    """Refuse a service that is still bodiless once everything is folded in.
+
+    A merge half may write ``web:`` with no body, which Compose 5.5.0 merges as
+    "no changes to web" when another file defines it. One that nothing
+    defines reached the rules as ``None`` and crashed every one of them (exit
+    2, ``rule_crash``); Compose refuses it ("must be a mapping"), so the run
+    reports that instead.
+    """
+    services = data.get("services")
+    if not isinstance(services, dict):
+        return
+    for name, config in services.items():
+        if name is not _LINES and config is None:
+            raise ComposeError(
+                f"Not a valid Compose file: service '{name}' has no body, and "
+                f"no other file defines it (Compose: services.{name} must be a "
+                "mapping)"
+            )
+
+
 def _oversized_value_gap(count: int) -> str:
     """The coverage gap for values too long or too deep to interpolate.
 
@@ -2747,6 +2769,10 @@ def load_merged(paths: list[str | Path], *, use_env: bool = True) -> Merged:
         # nothing in it is refused ("empty compose file").
         raise ComposeFileError(paths[0], "Not a valid Compose file: file is empty")
     merged = merge_documents(documents)
+    try:
+        _refuse_bodiless_services(merged.data)
+    except ComposeError as exc:
+        raise ComposeFileError(paths[0], str(exc)) from exc
     if "services" not in merged.data:
         # No document contributed services, so the merged result has none to
         # lint. v1-shaped and own-config documents never reach here: they
