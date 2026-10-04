@@ -54,12 +54,17 @@ _DANGEROUS_DEVICE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # the directory itself (normalized, so no trailing slash) needs its own row.
     #
     # Only /dev itself. The walk maps real nodes and skips symlinks, and
-    # /dev/disk, /dev/mapper and /dev/md hold (almost) nothing else: measured
-    # on two hosts (#913), `--device /dev/disk` is refused outright ("not a
-    # device node") and `--device /dev/mapper` maps only `control`, whose
-    # ioctls need CAP_SYS_ADMIN (CL-0024). A symlink named *directly* is
-    # resolved and does grant the disk, which is why the rows below keep
-    # `/dev/disk/`, `/dev/mapper/` and `/dev/md/`.
+    # /dev/disk, /dev/mapper, /dev/md and /dev/block hold (almost) nothing
+    # else: measured on two hosts (#913), `--device /dev/disk` is refused
+    # outright ("not a device node") and `--device /dev/mapper` maps only
+    # `control`, whose ioctls need CAP_SYS_ADMIN (CL-0024). A symlink named
+    # *directly* is resolved and does grant the disk, which is why the rows
+    # below keep `/dev/disk/`, `/dev/mapper/`, `/dev/md/` and `/dev/block/`.
+    # /dev/block is the kernel's own <major>:<minor> symlink per block device;
+    # short syntax cannot name one (the colon is the field delimiter), but a
+    # long-syntax `source: /dev/block/<maj>:<min>` resolves to the disk and
+    # reads it at default caps (measured, ubuntu-26.04 runner at Docker
+    # defaults; premise check `_cl0016_dev_block`).
     (re.compile(r"^/dev$"), "/dev — every host device node, every disk included"),
     (re.compile(r"^/dev/sd[a-z]"), "/dev/sd* — SCSI/SATA block device"),
     (re.compile(r"^/dev/nvme"), "/dev/nvme* — NVMe block device"),
@@ -72,6 +77,10 @@ _DANGEROUS_DEVICE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # loosening that one to [\d/], because the \d is what keeps /dev/mdadm out.
     (re.compile(r"^/dev/md/"), "/dev/md/* — named software RAID array"),
     (re.compile(r"^/dev/disk/"), "/dev/disk/* — block device symlinks"),
+    (
+        re.compile(r"^/dev/block/"),
+        "/dev/block/* — major:minor block device symlink",
+    ),
     (
         re.compile(r"^/dev/loop"),
         "/dev/loop* — loop device (mount arbitrary disk images)",

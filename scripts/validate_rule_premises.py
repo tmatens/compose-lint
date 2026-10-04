@@ -987,6 +987,58 @@ def _cl0016_raw_disk() -> tuple[bool, str]:
     return ("512 bytes" in out), f"/dev/{dev} via --device at default caps: {out!r}"
 
 
+def _compose_run(compose_yaml: str, service: str) -> tuple[int, str]:
+    """``docker compose run --rm <service>`` on an inline compose file.
+
+    Returns ``(returncode, combined output)``. A temp directory holds the
+    compose file so ``docker compose`` has a project to resolve. Used where a
+    mapping ``docker run --device`` cannot express — a ``devices:`` long-syntax
+    ``source`` whose path carries a colon (``/dev/block/<maj>:<min>``).
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "compose.yml"
+        path.write_text(compose_yaml)
+        proc = subprocess.run(
+            ["docker", "compose", "-f", str(path), "run", "--rm", service],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        return proc.returncode, (proc.stdout + proc.stderr).strip()
+
+
+def _cl0016_dev_block() -> tuple[bool, str]:
+    """A long-syntax ``source: /dev/block/<maj>:<min>`` reads the host disk.
+
+    ``/dev/block`` holds a ``<major>:<minor>`` symlink per block device. Short
+    syntax cannot name one (the colon is the field delimiter), but the
+    long-syntax ``source`` passes it through, Docker resolves the symlink, and
+    the disk is read at default capabilities — the same CRITICAL cell as a
+    ``/dev/sd*`` mapping, reached by a spelling CL-0016 did not match until
+    ``^/dev/block/`` was added. Reads one sector to /dev/null; no content
+    reaches the output, and nothing is written.
+    """
+    disk = _cgroup_disk()
+    if disk is None:
+        return False, "no whole-disk block device found under the daemon host's /dev"
+    dev, (major, minor) = disk
+    compose_yaml = (
+        "services:\n"
+        "  probe:\n"
+        f"    image: {IMAGE}\n"
+        "    network_mode: none\n"
+        "    devices:\n"
+        f'      - source: "/dev/block/{major}:{minor}"\n'
+        "        target: /dev/probe\n"
+        "        permissions: r\n"
+        "    command: sh -c 'dd if=/dev/probe of=/dev/null bs=512 count=1 2>&1 | tail -1'\n"
+    )
+    _, out = _compose_run(compose_yaml, "probe")
+    return ("512 bytes" in out), (
+        f"/dev/block/{major}:{minor} (-> /dev/{dev}) via long-syntax source: {out!r}"
+    )
+
+
 def _host_block_numbers(dev: str) -> tuple[int, int] | None:
     """``(major, minor)`` of ``/dev/<dev>`` on the daemon's host, or None."""
     _, out = _run(
@@ -1407,6 +1459,11 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool | None, str]]]] = [
     ),
     ("CL-0016", "device exposes a host device", _cl0016),
     ("CL-0016", "premise: raw host-disk read at default caps", _cl0016_raw_disk),
+    (
+        "CL-0016",
+        "premise: long-syntax /dev/block/<maj>:<min> source reads the host disk",
+        _cl0016_dev_block,
+    ),
     (
         "CL-0016",
         "premise: device_cgroup_rules + default MKNOD reads the host disk",
