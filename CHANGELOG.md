@@ -23,6 +23,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   documentation already said. A missing target stays a note: Compose refuses
   a required one and deploys without an optional one.
 
+- **The 1.0 contract now says what it does not cover.** `compatibility.md`
+  lists the SARIF fields a consumer may rely on (ADR-015 amendment), and
+  excludes prose inside JSON and SARIF, result order, and the dry-run `fix`
+  diff as a patch format, which escapes workflow-command lines and so is not
+  promised to `git apply` (use `fix --apply`, then `git diff`). A new
+  diagnostic `kind` is declared a MINOR: handle an unknown one by its
+  channel. The resource limits are listed with their values, and lowering
+  one is announced a release ahead like a new coverage gap. Adding a CLI
+  environment variable is a MINOR, and removing one or changing its meaning
+  a MAJOR.
+
 - **A truncated SARIF log keeps the most severe results.** Past 5,000
   results the log kept the first 5,000 in file and line order, so a critical
   late in a large batch could be dropped from Code Scanning while lows before

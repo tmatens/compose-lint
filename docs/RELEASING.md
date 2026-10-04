@@ -165,6 +165,11 @@ Once `1.0.0` ships, the contract tightens:
 | Change the default `--fail-on` threshold     | MINOR   | MAJOR    |
 | Add an exit-2 coverage-gap condition         | MINOR   | MINOR, announced one release ahead (ADR-036) |
 | Retire an exit-2 coverage-gap condition      | MINOR   | MINOR (ADR-036) |
+| Lower a resource limit, or refuse YAML Compose accepts | MINOR | MINOR, announced one release ahead (ADR-036) |
+| Raise a resource limit, or lift a refusal    | MINOR   | MINOR    |
+| Add a diagnostic `kind` value                | MINOR   | MINOR (ADR-015) |
+| Add an environment variable the CLI reads    | MINOR   | MINOR    |
+| Remove a CLI environment variable, or change its meaning | MINOR | MAJOR (ADR-037) |
 | Drop a Python version on schedule (ADR-029)  | MINOR   | MINOR    |
 | Drop a Python version off-schedule           | MINOR   | MAJOR    |
 | Add a field to JSON/SARIF output             | MINOR   | MINOR    |

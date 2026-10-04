@@ -28,6 +28,15 @@ SemVer rules below:
   shellcheck integration of [ADR-007](adr/007-shellcheck-integration.md))
   may emit ids of a different shape as an additive, MINOR change.
 
+  The SARIF fields a consumer may rely on are listed in ADR-015's
+  [SARIF contract](adr/015-machine-readable-output-contract.md#sarif-contract)
+  amendment. A diagnostic's `kind` is a closed set within a version and open
+  across versions: a new value is a MINOR, so handle an unknown `kind` by its
+  channel. An `errors[]` entry of any kind means the run exited 2, and a
+  `warnings[]` entry never changes the exit code. `kind` and the channel are
+  independent: the same kind can appear on either. `severity` stays a closed
+  set of four, because it is the grading model rather than a catalogue.
+
 ## What is explicitly NOT covered
 
 These may change in any release, including PATCH, without a major bump:
@@ -35,6 +44,16 @@ These may change in any release, including PATCH, without a major bump:
 - **Human text output** — the exact wording, layout, colour, and ordering of
   `--format text`. It is for humans; parse JSON or SARIF if you need a stable
   shape. (The JSON `version` field exists precisely so you can.)
+- **Prose inside JSON and SARIF** — every `message` and `message.text`, rule
+  and notification descriptor text, fix guidance, the order of results, and
+  which results a truncated SARIF log keeps beyond "the most severe 5,000,
+  plus a notification". Match `rule_id`, `kind` and the other fields
+  [the SARIF contract](adr/015-machine-readable-output-contract.md#sarif-contract)
+  names, never text.
+- **The dry-run `fix` diff as a patch format** — it is for review. Lines that
+  a CI runner could read as a workflow command are escaped, so the output is
+  not promised to `git apply`. To change the files, use `fix --apply`; for a
+  patch, run `git diff` after it.
 - **Internal Python API** — anything beyond `compose_lint.__version__` and the
   documented CLI. compose-lint is a CLI / GitHub Action, not an importable
   library; rule classes, the engine, parser, and formatters are implementation
@@ -166,6 +185,32 @@ never passes a file unread. Lifting one is a MINOR, for the same reason as
 retiring a gap: it can only turn exit 2 into a verdict, but that verdict can
 carry findings that were invisible before, which is the new-findings class
 above.
+
+### Resource limits
+
+A few limits keep a crafted file from costing gigabytes. They are part of the
+contract, so the bump rules match coverage gaps: lowering a limit, or adding a
+refusal, is a MINOR announced one release ahead, the same runway as a new gap
+condition; raising one is a plain MINOR, because the extra input graded can
+carry findings. Today's values, and what reaching each does:
+
+| Limit | Value | Reaching it |
+| --- | --- | --- |
+| Compose file size | 8 MiB | exit 2, `parse` (an included or extended file: a coverage gap) |
+| Services in one document, after `include:` | 4,096 | exit 2, `parse` |
+| Key/value pairs `<<:` merge keys copy | 65,536 | exit 2, `parse` |
+| `include:` / `extends: {file:}` depth, and files one document opens | 8 deep, 64 files | coverage gap |
+| `.env` size | 256 KiB | coverage gap |
+| Findings in one document | 20,000 | coverage gap; the findings graded before it are reported |
+| Text interpolation adds to one document | 8 MiB | coverage gap |
+| Repeated line records in one load | 262,144 | a `!reset`/`!override` not applied is a coverage gap; a lost line is not |
+| `env_file:` target size | 256 KiB | `unread_input` warning |
+| One interpolated value | 128 KiB | left as written ([ADR-026](adr/026-read-the-sibling-env-file.md) §3) |
+| One scalar a rule scans | 8 KiB | not scanned ([ADR-026](adr/026-read-the-sibling-env-file.md) §3) |
+| SARIF results | 5,000 | the most severe are kept, with a warning notification; the exit code counts every finding |
+
+The environment variables the CLI reads follow the flag rows: adding one is a
+MINOR, and removing one or changing what it means is a MAJOR.
 
 ### Alert identity
 

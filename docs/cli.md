@@ -163,11 +163,13 @@ Two consequences for an agent reporting on a `fix` run. An edit that alters
 runtime behavior carries a `⚠ behavior-changing` line naming what breaks —
 surface it, because the label *is* the mitigation; nothing else withholds the
 risky fix. And the diff goes to stdout while status goes to stderr, so
-`compose-lint fix file.yml > changes.diff` captures the patch without the
+`compose-lint fix file.yml > changes.diff` captures the diff without the
 summary. The `⚠` lines lead that stdout block, above the diff, so the redirect
-captures them too: strip them before handing the file to `git apply`, and
-repeat them to the reader either way. Under `--apply` there is no diff, and
-those same lines go to stderr with the rest of the status.
+captures them too; repeat them to the reader. The dry-run diff is for review,
+not a patch format: a line a CI runner could read as a workflow command is
+escaped, so it is not promised to `git apply`. To change the files, run
+`fix --apply`; to get a patch, run `git diff` after it. Under `--apply` there
+is no diff, and the `⚠` lines go to stderr with the rest of the status.
 
 **Suppression has one shape.** Findings are suppressed in `.compose-lint.yml`
 with a `reason`, which flows through to `suppression_reason` in JSON,
