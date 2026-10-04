@@ -16,6 +16,12 @@ related name.
 
 from __future__ import annotations
 
+import json
+from typing import TYPE_CHECKING
+
+import pytest
+
+from compose_lint import cli
 from compose_lint.parser import (
     _collect_lines,
     _collect_tagged,
@@ -24,6 +30,9 @@ from compose_lint.parser import (
     _RepeatBudget,
     loads,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _shared_labels(services: int, keys: int) -> str:
@@ -103,6 +112,88 @@ class TestTaggedKeys:
         data = {"one": shared, "two": shared}
         found = _collect_tagged(data, {id(shared): {"a"}}, repeats=_RepeatBudget(0))
         assert len(found) == 1
+
+    def test_a_refused_repeat_is_reported(self) -> None:
+        shared: dict[str, str] = {"a": "x"}
+        data = {"one": shared, "two": shared}
+        dropped: list[str] = []
+        _collect_tagged(
+            data, {id(shared): {"a"}}, repeats=_RepeatBudget(0), dropped=dropped
+        )
+        assert len(dropped) == 1
+        assert dropped[0] in ("one", "two")
+
+    def test_a_repeat_within_the_budget_is_not_reported(self) -> None:
+        shared: dict[str, str] = {"a": "x"}
+        data = {"one": shared, "two": shared}
+        dropped: list[str] = []
+        found = _collect_tagged(
+            data, {id(shared): {"a"}}, repeats=_RepeatBudget(10), dropped=dropped
+        )
+        assert len(found) == 2
+        assert dropped == []
+
+
+def _dropped_reset(keys: int, aliases: int) -> str:
+    """A ``!reset`` service reached by a second path after aliases spent the budget.
+
+    Compose deletes the base's hardening in ``app``; with the reset dropped
+    the merge kept it, and CL-0003/CL-0006 were missing with exit 0.
+    """
+    out = ["x-big: &big"] + [f"  k{i}: v" for i in range(keys)]
+    out.append("x-rep: [" + ", ".join(["*big"] * aliases) + "]")
+    out += [
+        "x-child: &child",
+        "  image: alpine:3.20",
+        "  extends: base",
+        "  cap_drop: !reset []",
+        "  security_opt: !reset []",
+        "services:",
+        "  base:",
+        "    image: alpine:3.20",
+        "    cap_drop: [ALL]",
+        '    security_opt: ["no-new-privileges:true"]',
+        "  app: *child",
+        "x-zzz: [*child]",
+    ]
+    return "\n".join(out) + "\n"
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_a_dropped_reset_is_a_coverage_gap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    partial: bool,
+) -> None:
+    (tmp_path / "compose.yml").write_text(_dropped_reset(1000, 300))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("NO_COLOR", "1")
+    args = ["--format", "json", "compose.yml"]
+    with pytest.raises(SystemExit) as exc:
+        cli.main([*args, "--allow-partial-coverage"] if partial else args)
+    doc = json.loads(capsys.readouterr().out)
+    channel = doc["warnings"] if partial else doc["errors"]
+    assert [d["kind"] for d in channel] == ["coverage_gap"]
+    assert "!reset/!override" in channel[0]["message"]
+    if not partial:
+        assert exc.value.code == 2
+
+
+def test_a_reset_reached_twice_within_the_budget_is_applied(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    (tmp_path / "compose.yml").write_text(_dropped_reset(10, 3))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("NO_COLOR", "1")
+    with pytest.raises(SystemExit):
+        cli.main(["--format", "json", "compose.yml"])
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["errors"] == []
+    rules = {f["rule_id"] for f in doc["findings"] if f["service"] == "app"}
+    assert {"CL-0003", "CL-0006"} <= rules
 
 
 class TestExtendsChildren:

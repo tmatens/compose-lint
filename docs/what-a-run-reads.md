@@ -166,7 +166,11 @@ accept it, because nothing in that document was graded:
 Real files are far below each: across an 11,111-file corpus the most services
 in one document is 64, and the most merged pairs 968. A document that produces more than
 20,000 findings is different: the findings graded before the stop are still
-reported, so it is a coverage gap rather than a refusal.
+reported, so it is a coverage gap rather than a refusal. So are two budgets that
+bound the work behind a document: interpolation that would add more than 8 MiB
+to it, and a line map past 262,144 repeated records, where a `!reset` or
+`!override` tag reached again is no longer applied. The most repeated records in
+the corpus is 1,225.
 
 ## Which files are graded
 
