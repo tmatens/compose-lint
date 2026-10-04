@@ -1041,6 +1041,69 @@ def _cl0016_dev_block() -> tuple[bool, str]:
     )
 
 
+def _char_probe(link: str, mode: str) -> list[str]:
+    """Map ``/dev/char/<link>`` by long syntax; report the node and an open.
+
+    Prints the mapped node's type and hex ``major:minor``, then whether an
+    ``open`` in ``mode`` (``>`` write-only, ``<>`` read-write) succeeds. Opening
+    issues no write and no ioctl, so it changes nothing on the host.
+    """
+    probe = (
+        "stat -c '%F %t:%T' /dev/probe; "
+        f"if (exec 3{mode}/dev/probe) 2>/dev/null; "
+        "then echo OPEN-OK; else echo BLOCKED; fi"
+    )
+    compose_yaml = (
+        "services:\n"
+        "  probe:\n"
+        f"    image: {IMAGE}\n"
+        "    network_mode: none\n"
+        "    devices:\n"
+        f'      - source: "/dev/char/{link}"\n'
+        "        target: /dev/probe\n"
+        "        permissions: rw\n"
+        f'    command: ["sh", "-c", "{probe}"]\n'
+    )
+    _, out = _compose_run(compose_yaml, "probe")
+    return out.splitlines()
+
+
+def _cl0016_dev_char() -> tuple[bool | None, str]:
+    """Long-syntax ``/dev/char/<maj>:<min>`` sources grant the flagged nodes.
+
+    ``/dev/char`` is the kernel's ``<major>:<minor>`` symlink farm for
+    character devices. ``1:11`` is ``/dev/kmsg``: the mapped node must be
+    ``c 1,11`` and a write-only open must succeed. The kernel skips the syslog
+    permission check for a write-only open of ``/dev/kmsg``, so this proves
+    the device-cgroup grant whatever ``dmesg_restrict`` is. ``10:237`` is
+    ``/dev/loop-control``, whose link appears only once the ``loop`` module is
+    loaded: where it exists it must map ``c 10,237`` and open read-write, and
+    where it does not, it is reported rather than skipped. Nothing is written and no ioctl is
+    issued. SKIP only where the host has no ``/dev/char/1:11`` link.
+    """
+    _, links = _run(
+        ["-v", "/dev:/hostdev:ro"],
+        [
+            "sh",
+            "-c",
+            "for n in 1:11 10:237; do test -L /hostdev/char/$n && echo $n; done",
+        ],
+    )
+    present = links.split()
+    if "1:11" not in present:
+        return None, "the daemon host has no /dev/char/1:11 symlink"
+    kmsg = _char_probe("1:11", ">")
+    ok = kmsg == ["character special file 1:b", "OPEN-OK"]
+    detail = f"/dev/char/1:11: {kmsg!r}"
+    if "10:237" in present:
+        loop = _char_probe("10:237", "<>")
+        ok = ok and loop == ["character special file a:ed", "OPEN-OK"]
+        detail += f"; /dev/char/10:237: {loop!r}"
+    else:
+        detail += "; /dev/char/10:237: no link on this host"
+    return ok, detail
+
+
 def _host_block_numbers(dev: str) -> tuple[int, int] | None:
     """``(major, minor)`` of ``/dev/<dev>`` on the daemon's host, or None."""
     _, out = _run(
@@ -1115,6 +1178,46 @@ def _cl0016_cgroup_rule_gates() -> tuple[bool, str]:
     return ok, (
         f"cap-drop MKNOD: {dropped!r} bytes; 'm' only: {create_only!r} bytes; "
         f"/dev bind at cap-drop ALL: {bound!r} bytes"
+    )
+
+
+def _cl0016_cgroup_char() -> tuple[bool, str]:
+    """A ``c`` cgroup rule plus the default ``MKNOD`` opens a flagged node.
+
+    ``c 1:11`` is ``/dev/kmsg`` and ``c 10:237`` is ``/dev/loop-control``. The
+    container creates each node itself, and an open succeeds only with the
+    rule: write-only for kmsg (which skips the syslog check, so
+    ``dmesg_restrict`` does not matter) and read-write for loop-control. The
+    same open without the rule is refused by the device cgroup. Nothing is
+    written and no ioctl is issued.
+    """
+
+    def opens(rule: list[str], node: str, mode: str) -> str:
+        _, out = _run(
+            rule,
+            [
+                "sh",
+                "-c",
+                f"mknod /dev/probe c {node} && "
+                f"if (exec 3{mode}/dev/probe) 2>/dev/null; "
+                "then echo OPEN-OK; else echo BLOCKED; fi",
+            ],
+        )
+        return out
+
+    kmsg = opens(["--device-cgroup-rule", "c 1:11 w"], "1 11", ">")
+    kmsg_none = opens([], "1 11", ">")
+    loop = opens(["--device-cgroup-rule", "c 10:237 rw"], "10 237", "<>")
+    loop_none = opens([], "10 237", "<>")
+    ok = (kmsg, kmsg_none, loop, loop_none) == (
+        "OPEN-OK",
+        "BLOCKED",
+        "OPEN-OK",
+        "BLOCKED",
+    )
+    return ok, (
+        f"c 1:11 w: {kmsg} (no rule: {kmsg_none}); "
+        f"c 10:237 rw: {loop} (no rule: {loop_none})"
     )
 
 
@@ -1585,6 +1688,11 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool | None, str]]]] = [
     ),
     (
         "CL-0016",
+        "premise: long-syntax /dev/char/<maj>:<min> sources grant the flagged nodes",
+        _cl0016_dev_char,
+    ),
+    (
+        "CL-0016",
         "premise: device_cgroup_rules + default MKNOD reads the host disk",
         _cl0016_cgroup_rule,
     ),
@@ -1592,6 +1700,11 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool | None, str]]]] = [
         "CL-0016",
         "premise: MKNOD drop and 'm' leave a rule inert; a /dev bind does not",
         _cl0016_cgroup_rule_gates,
+    ),
+    (
+        "CL-0016",
+        "premise: a c cgroup rule plus mknod opens kmsg and loop-control",
+        _cl0016_cgroup_char,
     ),
     (
         "CL-0016",

@@ -97,6 +97,23 @@ _DANGEROUS_DEVICE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # start of names like /dev/hdmi0 that are not disks.
     (re.compile(r"^/dev/hd[a-z]\d*$"), "/dev/hd* — legacy IDE block device"),
     (re.compile(r"^/dev/kmsg$"), "/dev/kmsg — kernel log buffer read/inject"),
+    # /dev/char is the kernel's <major>:<minor> symlink farm for character
+    # devices, the sibling of /dev/block. A long-syntax source of
+    # /dev/char/1:11 maps the same c 1,11 node as /dev/kmsg, and a write-only
+    # open of it succeeds at default caps (#999, measured). 10:237 is
+    # /dev/loop-control, kept by the ^/dev/loop row; its link appears once the
+    # loop module is loaded, and then names the same node. Exact minors
+    # only: 1:1 and 1:4 are /dev/mem and /dev/port (CAP_SYS_RAWIO), misc major
+    # 10 holds net/tun (safe), fuse (dropped) and mapper/control (CAP_SYS_ADMIN).
+    # /dev/zfs and the NVMe controller sit on dynamic numbers no entry can name.
+    (
+        re.compile(r"^/dev/char/1:11$"),
+        "/dev/char/1:11 — /dev/kmsg by its major:minor symlink",
+    ),
+    (
+        re.compile(r"^/dev/char/10:237$"),
+        "/dev/char/10:237 — /dev/loop-control by its major:minor symlink",
+    ),
 ]
 
 
@@ -163,8 +180,20 @@ def _grants_no_access(device: Any) -> bool:
 _CGROUP_RULE = re.compile(r"^([abc]) (\*|\d+):(\*|\d+) ([rwm]{1,3})$")
 
 
-def _cgroup_disk_grant(entry: Any) -> tuple[str, str] | None:
-    """``(evidence, description)`` for a rule that opens the gate to a disk.
+# Character devices CL-0016 flags that sit on static numbers, by
+# (major, minor). A ``c`` cgroup rule plus a created node opens them exactly
+# as a ``devices:`` mapping does (#999, measured): a write-only open of
+# c 1:11 and a read-write open of c 10:237 succeed with the rule and are
+# refused without it. Every other flagged character device is on a dynamic
+# number or is dropped above, the same set the /dev/char rows encode.
+_FLAGGED_CHAR_DEVICES: dict[tuple[str, str], str] = {
+    ("1", "11"): "/dev/kmsg",
+    ("10", "237"): "/dev/loop-control",
+}
+
+
+def _cgroup_grant(entry: Any) -> tuple[str, str] | None:
+    """``(evidence, description)`` for a rule that opens a flagged device.
 
     A device cgroup rule only *permits* a device class; it maps no node. With
     the node present (see :func:`_node_reachable`) a ``b`` rule carrying ``r``
@@ -172,8 +201,8 @@ def _cgroup_disk_grant(entry: Any) -> tuple[str, str] | None:
     is every device. Any block major counts, not a table of disk majors: NVMe
     and device-mapper, zvol and nbd disks all sit on dynamically allocated
     majors, so a table would miss the host disk itself (#882, measured). ``m``
-    alone permits creating a node, not using it, and grants nothing. ``c``
-    rules are not claimed here.
+    alone permits creating a node, not using it, and grants nothing. A ``c``
+    rule counts only where it covers a number in ``_FLAGGED_CHAR_DEVICES``.
 
     Evidence is ``<type> <major>:<minor>`` without the access letters: ``r``
     alone is already the whole read, so ``rwm`` → ``r`` is the same finding and
@@ -186,9 +215,18 @@ def _cgroup_disk_grant(entry: Any) -> tuple[str, str] | None:
     if match is None:
         return None
     kind, major, minor, access = match.groups()
-    if kind == "c" or not set(access) & {"r", "w"}:
+    if not set(access) & {"r", "w"}:
         return None
     evidence = f"{kind} {major}:{minor}"
+    if kind == "c":
+        devices = [
+            path
+            for (dev_major, dev_minor), path in _FLAGGED_CHAR_DEVICES.items()
+            if major in ("*", dev_major) and minor in ("*", dev_minor)
+        ]
+        if not devices:
+            return None
+        return evidence, "the host's " + " and ".join(devices)
     if kind == "a":
         return evidence, "every host device, every disk included"
     if major == "*":
@@ -309,7 +347,7 @@ class DangerousDevicesRule(BaseRule):
         rules = service_config.get("device_cgroup_rules", [])
         if not isinstance(rules, list) or not rules:
             return
-        grants = [(i, _cgroup_disk_grant(entry)) for i, entry in enumerate(rules)]
+        grants = [(i, _cgroup_grant(entry)) for i, entry in enumerate(rules)]
         if not any(grant for _, grant in grants):
             return
         if not _node_reachable(service_name, service_config, global_config, lines):
@@ -333,7 +371,7 @@ class DangerousDevicesRule(BaseRule):
                 fix=(
                     f"Remove '{inline(evidence)}' from device_cgroup_rules, or narrow "
                     "it to "
-                    "the specific non-disk device the workload needs. If the rule "
+                    "the specific device the workload needs. If the rule "
                     "must stay, add MKNOD to cap_drop and mount nothing from /dev."
                 ),
                 references=[CIS_REF],

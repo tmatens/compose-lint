@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **CL-0016 flags a `c` device cgroup rule that opens `/dev/kmsg` or
+  `/dev/loop-control`.** `device_cgroup_rules:` was graded for block
+  devices only, so `c 1:11 w` plus the default `MKNOD` capability reached
+  `/dev/kmsg`, a node CL-0016 flags when it is mapped, with no finding. A `c`
+  rule with `r` or `w` that covers `1:11` or `10:237` (`/dev/loop-control`),
+  including `c 1:*` and `c *:*`, is now flagged on the same terms as a `b`
+  rule: only when the container can obtain the node. Measured: with the
+  rule a created node opened, and without it the device cgroup refused the
+  open (premise check `_cl0016_cgroup_char`).
+
+- **CL-0016 flags `/dev/char/<major>:<minor>` spellings of the character
+  devices it already flags.** `/dev/char` holds the kernel's `<major>:<minor>`
+  symlink for each character device, so a long-syntax
+  `devices: [{source: "/dev/char/1:11", ...}]` maps the same node as
+  `/dev/kmsg`, and `/dev/char/10:237` the same node as `/dev/loop-control`,
+  without matching either row. Both numbers are matched exactly: `1:1` and
+  `1:4` are `/dev/mem` and `/dev/port`, and misc major 10 also holds
+  `/dev/net/tun`, so no wider pattern is safe. Proven on a live daemon at
+  Docker defaults (premise check `_cl0016_dev_char`). No corpus file uses a
+  `/dev/char` source.
+
 - **CL-0016 flags a `/dev/block/<major>:<minor>` device source.** `/dev/block`
   holds the kernel's `<major>:<minor>` symlink for every block device, so a
   long-syntax `devices: [{source: "/dev/block/259:0", ...}]` resolves to the

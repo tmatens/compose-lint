@@ -77,6 +77,14 @@ class TestDangerousDevicesRule:
         assert findings[0].evidence == "/dev/block/259:0"
         assert "/dev/block/" in findings[0].message
 
+    def test_detects_dev_char_kmsg(self) -> None:
+        # /dev/char/1:11 is /dev/kmsg by its <maj>:<min> symlink; long syntax
+        # only, like /dev/block (premise check `_cl0016_dev_char`).
+        findings = self._check("dev_char_kmsg")
+        assert len(findings) == 1
+        assert findings[0].severity.name == "CRITICAL"
+        assert findings[0].evidence == "/dev/char/1:11"
+
     def test_detects_dev_kmsg(self) -> None:
         findings = self._check("dev_kmsg")
         assert len(findings) == 1
@@ -311,6 +319,31 @@ class TestAdditionalBlockFamilies:
             findings = _device_findings(f'      - "{device}:{device}"\n')
             assert [f.evidence for f in findings] == [device], device
 
+    def test_only_flagged_char_symlinks_are_flagged(self) -> None:
+        # Same major as kmsg (mem, port: CAP_SYS_RAWIO), misc major 10 (tun is
+        # safe, fuse is dropped, mapper/control needs CAP_SYS_ADMIN), and
+        # minors that merely start with a flagged one. The positive controls
+        # keep the negatives from passing on a body the rule never reads.
+        def body(device: str) -> str:
+            return (
+                f'      - source: "{device}"\n        target: /dev/x\n'
+                "        permissions: rw\n"
+            )
+
+        for flagged in ("/dev/char/1:11", "/dev/char/10:237"):
+            [hit] = _device_findings(body(flagged))
+            assert hit.evidence == flagged
+        for device in (
+            "/dev/char/1:1",
+            "/dev/char/1:4",
+            "/dev/char/1:110",
+            "/dev/char/10:200",
+            "/dev/char/10:229",
+            "/dev/char/10:236",
+            "/dev/char/10:2370",
+        ):
+            assert _device_findings(body(device)) == [], device
+
     def test_near_misses_are_not_flagged(self) -> None:
         for device in ("/dev/zero", "/dev/hdmi0", "/dev/hidraw0", "/dev/mtd0"):
             assert _device_findings(f'      - "{device}:{device}"\n') == [], device
@@ -349,8 +382,41 @@ class TestDeviceCgroupRules:
     def test_mknod_only_access_is_not_flagged(self) -> None:
         assert self._findings('    device_cgroup_rules: ["b 8:* m"]\n') == []
 
-    def test_character_rules_are_not_claimed(self) -> None:
-        assert self._findings('    device_cgroup_rules: ["c 1:11 rw"]\n') == []
+    def test_char_rules_opening_a_flagged_device_are_flagged(self) -> None:
+        # c 1:11 is /dev/kmsg and c 10:237 /dev/loop-control: with the rule a
+        # created node opened, without it the open was refused (#999).
+        findings = self._findings(
+            '    device_cgroup_rules: ["c 1:11 w", "c 10:237 rw", "c 1:* r"]\n'
+        )
+        assert [f.evidence for f in findings] == ["c 1:11", "c 10:237", "c 1:*"]
+        assert all(f.severity.value == "critical" for f in findings)
+        assert "/dev/kmsg" in findings[0].message
+        assert "/dev/loop-control" in findings[1].message
+
+    def test_a_char_wildcard_names_both_devices(self) -> None:
+        [finding] = self._findings('    device_cgroup_rules: ["c *:* rw"]\n')
+        assert finding.evidence == "c *:*"
+        assert "/dev/kmsg and /dev/loop-control" in finding.message
+
+    def test_other_char_rules_are_not_claimed(self) -> None:
+        # mem, port (CAP_SYS_RAWIO), tun (safe), fuse (dropped), mapper/control
+        # (CAP_SYS_ADMIN), a minor that only starts with 11, and m-only access.
+        for rule in (
+            "c 1:1 rw",
+            "c 1:4 r",
+            "c 10:200 rwm",
+            "c 10:229 rw",
+            "c 10:236 rw",
+            "c 1:110 r",
+            "c 1:11 m",
+            "c 10:* m",
+        ):
+            body = f'    device_cgroup_rules: ["{rule}"]\n'
+            assert self._findings(body) == [], rule
+
+    def test_a_char_rule_without_a_node_is_inert(self) -> None:
+        body = '    device_cgroup_rules: ["c 1:11 rw"]\n    cap_drop: [MKNOD]\n'
+        assert self._findings(body) == []
 
     def test_whitespace_is_normalized_and_access_left_out(self) -> None:
         [finding] = self._findings('    device_cgroup_rules: ["  b  8:*   r "]\n')

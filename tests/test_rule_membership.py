@@ -386,6 +386,9 @@ class TestDeviceMembership:
             r"^/dev/loop",
             # Not a block device, kept for the reason in the test below.
             r"^/dev/kmsg$",
+            # kmsg and loop-control by their /dev/char <maj>:<min> links (#999).
+            r"^/dev/char/1:11$",
+            r"^/dev/char/10:237$",
         }
 
     def test_block_devices_cover_the_mainstream_hypervisors(self) -> None:
