@@ -40,11 +40,15 @@ page is the full contract behind the README's summary.
   still applies. The refusal is the finding's, not the file's.
 - **Diff is data, status is human.** The diff goes to stdout; progress and
   counts go to stderr, so `compose-lint fix file.yml > changes.diff` captures
-  the patch without the summary. The `⚠ behavior-changing` lines are the
+  the diff without the summary. The `⚠ behavior-changing` lines are the
   exception: on a dry run they lead the stdout block, above the diff, so a
-  redirect cannot silently drop the one warning that matters — which also
-  means `git apply` needs them stripped first. Under `--apply` there is no
-  diff and they go to stderr with the status.
+  redirect cannot silently drop the one warning that matters. Under `--apply`
+  there is no diff and they go to stderr with the status.
+- **The dry-run diff is for review, not a patch.** A line that a CI runner
+  could read as a workflow command (`##[`, or `::` at the start of a line) is
+  escaped before it is printed, so the output is not promised to `git apply`.
+  Use `fix --apply` to change the files, and `git diff` afterwards if you want
+  a patch.
 
 ## SARIF suggested changes
 
