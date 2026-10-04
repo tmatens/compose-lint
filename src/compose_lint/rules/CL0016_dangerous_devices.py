@@ -117,6 +117,36 @@ def _extract_host_device(device: Any) -> str | None:
     return normalize_host_path(host) if host else host
 
 
+def _grants_no_access(device: Any) -> bool:
+    """Whether a ``devices:`` entry's permissions open the node to no read or write.
+
+    Only the third short-syntax field and the long-syntax ``permissions`` key
+    are permissions. With two fields Compose reads the second as the container
+    path, unlike the docker CLI: ``/dev/sda:m`` maps the disk at ``/m`` with
+    full access, and the disk was read through it (Compose 5.5.0, Docker
+    Engine on cgroup v2, measured live).
+
+    Measured the same way: ``m``, ``M``, ``mm``, ``R``, ``MR``, ``" m"`` start
+    and cannot read the disk, while ``r``, ``mr``, ``mmr`` and ``Mr`` read it,
+    so only a lowercase ``r`` grants a read. Write was not measured, because
+    that means writing a real disk, so any ``w`` or ``W`` keeps the finding. A
+    container may also ``mknod`` its own node under an ``m`` grant; opening it
+    is refused as well. That leaves a grant with none of ``r``, ``w``, ``W``,
+    which reaches nothing, the same answer the ``device_cgroup_rules:`` half
+    gives for ``m`` alone.
+    """
+    if isinstance(device, dict):
+        permissions = device.get("permissions")
+    elif isinstance(device, str):
+        parts = device.split(":")
+        permissions = parts[2] if len(parts) == 3 else None
+    else:
+        return False
+    if not isinstance(permissions, str) or not permissions.strip():
+        return False
+    return not set(permissions) & {"r", "w", "W"}
+
+
 # `device_cgroup_rules:` entries, in the one shape Docker accepts:
 # `<type> <major>:<minor> <access>`. Whitespace is normalized first, so
 # `b  8:*   rwm` is the same rule; anything else Docker refuses to start, so it
@@ -226,7 +256,7 @@ class DangerousDevicesRule(BaseRule):
 
         for i, device in enumerate(devices):
             host_device = _extract_host_device(device)
-            if host_device is None:
+            if host_device is None or _grants_no_access(device):
                 continue
 
             for pattern, description in _DANGEROUS_DEVICE_PATTERNS:

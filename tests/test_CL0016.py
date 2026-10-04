@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from compose_lint.parser import load_compose, loads
 from compose_lint.rules.CL0016_dangerous_devices import DangerousDevicesRule
 
@@ -196,6 +198,47 @@ class TestLongSyntax:
     def test_long_syntax_without_source_is_ignored(self) -> None:
         assert _device_findings("      - target: /dev/sda\n") == []
         assert _device_findings("      - source: 42\n") == []
+
+
+class TestMknodOnlyGrants:
+    """A grant with no ``r``, ``w`` or ``W`` reaches nothing (measured live).
+
+    Compose 5.5.0 on cgroup v2: each "no access" spelling below starts and
+    cannot read the disk; each "access" spelling reads it. Two fields are
+    ``host:container``, not ``host:permissions``, so ``/dev/sda:m`` maps the
+    disk at ``/m`` with full access and stays flagged.
+    """
+
+    @pytest.mark.parametrize("perms", ["m", "M", "mm", "R", "MR", " m"])
+    def test_short_syntax_without_access_is_not_flagged(self, perms: str) -> None:
+        assert _device_findings(f'      - "/dev/sda:/dev/sda:{perms}"\n') == []
+
+    @pytest.mark.parametrize("perms", ["m", "M", "R"])
+    def test_long_syntax_without_access_is_not_flagged(self, perms: str) -> None:
+        body = (
+            "      - source: /dev/sda\n"
+            "        target: /dev/sda\n"
+            f'        permissions: "{perms}"\n'
+        )
+        assert _device_findings(body) == []
+
+    @pytest.mark.parametrize("perms", ["r", "mr", "mmr", "Mr", "w", "W", "rwm"])
+    def test_a_grant_that_can_read_or_write_is_flagged(self, perms: str) -> None:
+        findings = _device_findings(f'      - "/dev/sda:/dev/sda:{perms}"\n')
+        assert [f.evidence for f in findings] == ["/dev/sda"]
+
+    @pytest.mark.parametrize("second", ["m", "r", "rwm"])
+    def test_two_fields_are_host_and_container(self, second: str) -> None:
+        findings = _device_findings(f'      - "/dev/sda:{second}"\n')
+        assert [f.evidence for f in findings] == ["/dev/sda"]
+
+    def test_empty_long_permissions_stay_flagged(self) -> None:
+        body = (
+            "      - source: /dev/sda\n"
+            "        target: /dev/sda\n"
+            '        permissions: ""\n'
+        )
+        assert len(_device_findings(body)) == 1
 
 
 class TestDirectoryGrants:
