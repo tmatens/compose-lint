@@ -42,6 +42,7 @@ import pytest
 from compose_lint.parser import ComposeError, load_compose_full
 from tests.oracle_harness import (
     DUMP_NAME,
+    LAYOUT2_SEED_BASE,
     LAYOUT_SEED_BASE,
     describe_difference,
     describe_shape_difference,
@@ -76,7 +77,12 @@ SEEDS = list(range(400))
 # keep building the projects they always have.
 LAYOUT_SEEDS = list(range(LAYOUT_SEED_BASE, LAYOUT_SEED_BASE + 200))
 
-ALL_SEEDS = [*SEEDS, *LAYOUT_SEEDS]
+# The second layout family: nested includes, `extends:` and `env_file:`
+# through links, `COMPOSE_PATH_SEPARATOR`, an override a file list skips, and
+# dangling links.
+LAYOUT2_SEEDS = list(range(LAYOUT2_SEED_BASE, LAYOUT2_SEED_BASE + 150))
+
+ALL_SEEDS = [*SEEDS, *LAYOUT_SEEDS, *LAYOUT2_SEEDS]
 
 
 def _replay(seed: int) -> str:
@@ -147,6 +153,9 @@ def test_seeds_are_deterministic() -> None:
     layout = LAYOUT_SEED_BASE + 17
     assert generate(layout).files == generate(layout).files
     assert generate(layout).links == generate(layout).links
+    chain = LAYOUT2_SEED_BASE + 17
+    assert generate(chain).files == generate(chain).files
+    assert generate(chain).links == generate(chain).links
 
 
 def test_the_generator_reaches_every_shape_it_claims() -> None:
@@ -190,6 +199,25 @@ def test_the_generator_reaches_every_shape_it_claims() -> None:
         "overlay-own-env",
         "include-no-services",
     }
+    chains = [generate(seed) for seed in LAYOUT2_SEEDS]
+    reached = {note for project in chains for note in project.notes}
+    assert reached >= {
+        "nested-include",
+        "nested-include-linked-env",
+        "linked-extends",
+        "linked-env-file",
+        "path-separator",
+        "override-not-selected",
+        "dangling-include",
+        "dangling-extends",
+        "dangling-optional-env-file",
+    }
+    assert any(project.expects_gap for project in chains)
+    assert any(
+        "COMPOSE_PATH_SEPARATOR" in text
+        for project in chains
+        for text in project.files.values()
+    )
     # A note is a claim about the bytes; these hold the claim to them, so a
     # dimension cannot keep its note after it stops writing the file.
     assert any(project.links for project in layouts)
