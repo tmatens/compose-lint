@@ -116,6 +116,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CL-0016 no longer flags a device granted without read or write.**
+  `devices: ["/dev/sda:/dev/sda:m"]` was reported CRITICAL, but a grant
+  whose permissions carry no `r` or `w` cannot read or write the disk:
+  measured on Compose 5.5.0 and Docker Engine (cgroup v2), `m`, `M`, `mm`
+  and `R` start and every read is refused, including through a node the
+  container creates itself. Such a grant is now skipped, in short and long
+  syntax. Two fields stay flagged: Compose reads `/dev/sda:m` as
+  host and container path, which maps the disk at `/m` with full access.
+
 - **The pre-commit hook lints every selected file in one run.** pre-commit
   splits a long file list across parallel processes unless a hook opts
   out, so each process saw only part of the project. A
