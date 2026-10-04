@@ -88,6 +88,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   separately. Every `### Security` changelog entry now records
   whether it got an advisory, and CI checks that it does.
 
+- **A value too long to interpolate is a coverage gap instead of silent.**
+  A scalar carrying `${...}` that is longer than 8 KiB, nests more than 32
+  deep, or resolves past 128 KiB was left as written with no signal, so
+  `privileged: "${<an 8,200-character name>:-}true"`, which Compose deploys
+  as privileged, was graded as that literal text: no CL-0002, exit 0. It now
+  exits 2 with a `coverage_gap`, which `--allow-partial-coverage` accepts. A
+  long value with no reference, and an ordinary `${VAR}` with no default, are
+  unaffected. No file in the 11,111-file corpus changes.
+
 - **Two work budgets are coverage gaps instead of silent.** Past 8 MiB
   of interpolated text in one document, a `${VAR}` value was left as written,
   so a capability a `.env` supplied after that point was graded as the

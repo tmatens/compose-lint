@@ -16,6 +16,7 @@ from compose_lint._limits import (
     MAX_LINE_KEY_CHARS,
     MAX_MERGED_PAIRS,
     MAX_REPEATED_LINES,
+    MAX_SCAN_LEN,
     MAX_SERVICES,
     MAX_SUBSTITUTED_TOTAL,
 )
@@ -39,6 +40,7 @@ from compose_lint._service_env import project_relative
 from compose_lint._yaml_error import describe_yaml_error
 from compose_lint.config import KNOWN_TOP_LEVEL_KEYS
 from compose_lint.rules._interpolation import (
+    exceeds_limits,
     reference_names,
     ships_no_literal,
     substitute_defaults,
@@ -1800,6 +1802,7 @@ def _substitute_interpolation_defaults(
     *,
     record: dict[str, dict[str, str]] | None = None,
     starved: list[str] | None = None,
+    oversized: list[str] | None = None,
 ) -> None:
     """Rewrite every string leaf to the value Compose ships.
 
@@ -1852,7 +1855,9 @@ def _substitute_interpolation_defaults(
 
     ``starved`` collects each value the budget below left as written although
     substitution would have changed it. Rules grade that value as written, not
-    as deployed, so the caller reports it as a coverage gap.
+    as deployed, so the caller reports it as a coverage gap. ``oversized``
+    collects each value left as written because it is too long or too deeply
+    nested to resolve at all (ADR-026 §3), for the same reason.
     """
     seen: set[int] = set()
     # Each value is bounded (MAX_SUBSTITUTED_LEN); the document was not. One
@@ -1879,6 +1884,8 @@ def _substitute_interpolation_defaults(
             return value
         substituted = substitute_defaults(value, supplied)
         if substituted is None:
+            if oversized is not None and exceeds_limits(value, supplied):
+                oversized.append(value)
             result = value
         else:
             growth = len(substituted) - len(value)
@@ -2371,11 +2378,14 @@ def _loads_full(  # noqa: PLR0913
                         layered.update(parsed_env.values)
                 supplied = layered or None
         starved: list[str] = []
+        oversized: list[str] = []
         _substitute_interpolation_defaults(
-            data, supplied, record=env_seen, starved=starved
+            data, supplied, record=env_seen, starved=starved, oversized=oversized
         )
         if starved:
             gaps.append(_starved_substitution_gap(len(starved)))
+        if oversized:
+            gaps.append(_oversized_value_gap(len(oversized)))
         prefix: tuple[str, ...] = ()
         if base_dir is not None and project_dir is not None:
             try:
@@ -2519,6 +2529,23 @@ def _starved_substitution_gap(count: int) -> str:
         f"{count} interpolated {noun} left as written, because substitution "
         f"would add more than {budget} MiB to this document, so the services "
         "using them were graded on values Compose does not deploy."
+    )
+
+
+def _oversized_value_gap(count: int) -> str:
+    """The coverage gap for values too long or too deep to interpolate.
+
+    ADR-026 §3, amended: a value longer than ``MAX_SCAN_LEN``, nested deeper
+    than the resolver follows, or resolving past ``MAX_SUBSTITUTED_LEN`` is
+    left as written. Compose resolves it, so a rule that grades the written
+    spelling (``${X:-}true`` is not ``true``) misses what deploys.
+    """
+    noun = "value was" if count == 1 else "values were"
+    scan = MAX_SCAN_LEN // 1024
+    return (
+        f"{count} interpolated {noun} left as written, because each is longer "
+        f"than {scan} KiB or nests or expands too far to resolve, so the "
+        "services using them were graded on values Compose does not deploy."
     )
 
 

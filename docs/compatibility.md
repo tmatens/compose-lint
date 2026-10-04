@@ -133,6 +133,10 @@ from.
   reach**, whether it was discovered or named on the command line.
 - **A document that reaches the 20,000-findings limit**: grading stops there.
   The findings graded before the stop are still reported.
+- **A value too long or too deep to interpolate**: one carrying `${...}`
+  that is longer than 8 KiB as written, nests more than 32 deep, or resolves
+  past 128 KiB is left as written, so a rule grades the spelling
+  (`"${X:-}true"` is not `true`) rather than what Compose deploys.
 - **A document whose interpolation would add more than 8 MiB**: past that,
   a `${VAR}` value is left as written, so a rule grades the spelling rather
   than the value Compose deploys.
@@ -205,8 +209,9 @@ carry findings. Today's values, and what reaching each does:
 | Text interpolation adds to one document | 8 MiB | coverage gap |
 | Repeated line records in one load | 262,144 | a `!reset`/`!override` not applied is a coverage gap; a lost line is not |
 | `env_file:` target size | 256 KiB | `unread_input` warning |
-| One interpolated value | 128 KiB | left as written ([ADR-026](adr/026-read-the-sibling-env-file.md) §3) |
-| One scalar a rule scans | 8 KiB | not scanned ([ADR-026](adr/026-read-the-sibling-env-file.md) §3) |
+| A value carrying `${...}`, as written | 8 KiB | coverage gap |
+| One interpolated value, resolved | 128 KiB, or nested 32 deep | coverage gap |
+| One `environment:` value the credential rules scan | 8 KiB | not scanned |
 | SARIF results | 5,000 | the most severe are kept, with a warning notification; the exit code counts every finding |
 
 The environment variables the CLI reads follow the flag rows: adding one is a

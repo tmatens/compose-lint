@@ -12,14 +12,20 @@ relies on it, rather than reasoned from the substitution syntax.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
-from compose_lint.parser import loads
+from compose_lint.parser import load_compose_full, loads
 from compose_lint.rules._interpolation import (
     _MAX_SCAN_LEN,
+    exceeds_limits,
     ships_no_literal,
     substitute_defaults,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # --- The parser normalizes the whole document ------------------------------
 
@@ -223,3 +229,46 @@ def test_oversized_scalar_is_left_intact_by_the_parser() -> None:
         f"services:\n  web:\n    image: nginx:1.25\n    command: {big}\n"
     )
     assert data["services"]["web"]["command"] == big
+
+
+def _gaps(text: str, tmp_path: Path) -> tuple[str, ...]:
+    path = tmp_path / "compose.yml"
+    path.write_text(text, encoding="utf-8")
+    return load_compose_full(str(path)).gaps
+
+
+class TestValuesTooLargeToResolve:
+    """ADR-026 §3, amended: a value left as written at a limit is a coverage gap.
+
+    `privileged: "${<8,200-char name>:-}true"` deploys a privileged container
+    on Compose 5.5.0, and was graded as the literal text: no CL-0002, exit 0.
+    """
+
+    def test_an_oversized_reference_is_a_gap(self, tmp_path: Path) -> None:
+        name = "A" * (_MAX_SCAN_LEN + 8)
+        text = (
+            "services:\n  web:\n    image: nginx:1.27\n"
+            f'    privileged: "${{{name}:-}}true"\n'
+        )
+        (gap,) = _gaps(text, tmp_path)
+        assert "left as written" in gap
+
+    def test_a_reference_nested_too_deep_is_a_gap(self, tmp_path: Path) -> None:
+        value = "${A:-" * 40 + "true" + "}" * 40
+        text = f'services:\n  web:\n    image: nginx:1.27\n    privileged: "{value}"\n'
+        (gap,) = _gaps(text, tmp_path)
+        assert "left as written" in gap
+
+    def test_exceeds_limits_ignores_an_ordinary_unknowable(self) -> None:
+        assert exceeds_limits("${HOST_PATH}/data") is False
+        assert exceeds_limits("x" * (_MAX_SCAN_LEN + 8)) is False
+        assert exceeds_limits("$$" * (_MAX_SCAN_LEN)) is False
+
+    @pytest.mark.parametrize(
+        "value",
+        ["${HOST_PATH}/data", "x" * 9000, "$$" * 5000],
+        ids=["no-default", "long-literal", "long-escapes"],
+    )
+    def test_an_ordinary_value_is_not_a_gap(self, tmp_path: Path, value: str) -> None:
+        text = f'services:\n  web:\n    image: nginx:1.27\n    command: "{value}"\n'
+        assert _gaps(text, tmp_path) == ()
