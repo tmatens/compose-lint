@@ -1104,6 +1104,23 @@ class _ExtendsBudget:
         return self.files <= MAX_REFERENCE_FILES
 
 
+def _unwanted_services(data: dict[str, Any], wanted: str) -> frozenset[str]:
+    """Services of a base document that ``wanted`` does not inherit from.
+
+    ``wanted`` and the chain of in-file bases it extends are kept; everything
+    else is left as written by both ``extends:`` passes.
+    """
+    services = data.get("services")
+    if not isinstance(services, dict):
+        return frozenset()
+    keep: set[str] = set()
+    name: Any = wanted
+    while isinstance(name, str) and name in services and name not in keep:
+        keep.add(name)
+        name = _in_file_target(services[name])
+    return frozenset(n for n in services if n is not _LINES and n not in keep)
+
+
 def _extends_file_ref(config: Any) -> tuple[str, Any] | None:
     """The ``(file, service)`` of a cross-file ``extends:``, or ``None``.
 
@@ -1660,6 +1677,7 @@ def _resolve_cross_file_extends(
                 depth=depth + 1,
                 chain=(*chain, step),
                 document_path=target,
+                extends_service=base_service,
             )
         except ComposeError as exc:
             _gap(f"it is not a Compose document compose-lint can read ({exc})")
@@ -2243,6 +2261,7 @@ def _loads_full(  # noqa: PLR0913
     chain: tuple[tuple[str, str], ...] = (),
     include_chain: tuple[str, ...] = (),
     document_path: Path | None = None,
+    extends_service: str | None = None,
 ) -> tuple[
     dict[str, Any], dict[str, int], frozenset[str], frozenset[str], tuple[str, ...]
 ]:
@@ -2463,6 +2482,15 @@ def _loads_full(  # noqa: PLR0913
             )
             gaps.extend(include_gaps)
             _check_service_count(data, folded=True)
+        # A document opened as an `extends:` base resolves only the service it
+        # was opened for and the in-file bases that service inherits from, as
+        # Compose 5.5.0 does: a sibling's own `extends:` is never followed, so
+        # one that points at a missing file, or back into this file, is no gap
+        # in the project that extends a different service here.
+        if extends_service is not None:
+            already_resolved = already_resolved | _unwanted_services(
+                data, extends_service
+            )
         # Cross-file bases merge before the in-file pass, so a service that
         # inherits from another service in this document inherits what that
         # service itself pulled in from elsewhere — the order Compose resolves

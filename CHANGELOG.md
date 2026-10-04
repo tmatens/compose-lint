@@ -116,6 +116,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An `extends:` base resolves only the service it was opened for.**
+  Compose follows the `extends:` chain of the service a document names, but
+  compose-lint resolved every service in the base file. A sibling that
+  extends another service in its own file was followed back into that file
+  and reported as a cycle, and a sibling with a broken `extends:` was a
+  coverage gap in a project that never uses it, both exiting 2 on projects
+  Compose accepts. The requested service and the in-file bases it inherits
+  from are resolved as before, and a real cycle is still a gap.
+
 - **A service no file gives a body is a parse error, not a crash in every
   rule.** A merge half may write `web:` with no body, which Compose merges as
   "no changes" when another file defines `web`. When no file did, every rule
