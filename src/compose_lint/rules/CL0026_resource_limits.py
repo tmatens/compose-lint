@@ -66,8 +66,8 @@ _SIZE_SUFFIXES = frozenset(
 )
 
 
-def _quantity(text: str) -> float | None:
-    """The numeric part of a size, split the way go-units splits it.
+def _size(text: str) -> tuple[float, str] | None:
+    """A size's number and lower-case suffix, split the way go-units splits it.
 
     The number ends at the last digit, dot or space; one space before the
     suffix is allowed. Returns ``None`` for anything go-units would refuse.
@@ -76,12 +76,19 @@ def _quantity(text: str) -> float | None:
     if sep == -1:
         return None
     number = text[:sep] if text[sep] == " " else text[: sep + 1]
-    if text[sep + 1 :].lower() not in _SIZE_SUFFIXES:
+    suffix = text[sep + 1 :].lower()
+    if suffix not in _SIZE_SUFFIXES:
         return None
     try:
-        return float(number)
+        return float(number), suffix
     except ValueError:
         return None
+
+
+def _quantity(text: str) -> float | None:
+    """The numeric part of a size (see :func:`_size`)."""
+    size = _size(text)
+    return size[0] if size else None
 
 
 def _is_set(value: Any) -> bool:
@@ -125,6 +132,39 @@ def _is_set(value: Any) -> bool:
     return True
 
 
+# Binary multipliers, as go-units' RAMInBytes scales them (`0.5k` is 512).
+_SCALE = {"": 1, "k": 1 << 10, "m": 1 << 20, "g": 1 << 30, "t": 1 << 40, "p": 1 << 50}
+
+
+def _memory_is_set(value: Any) -> bool:
+    """Whether a memory limit bounds anything once Compose converts it to bytes.
+
+    Compose multiplies by the unit and truncates to whole bytes, and a result
+    of 0 is dropped, which leaves the container unlimited. Measured on Compose
+    5.5.0 for ``mem_limit`` and ``deploy.resources.limits.memory`` alike:
+    ``0.5`` and ``0.99`` render no limit at all (the container's ``memory.max``
+    is ``max``), while ``1.5`` is 1 byte and ``0.5k`` is 512. A CPU count has no
+    such floor (``cpus: 0.5`` is half a CPU), so this applies to memory only.
+    Values under Docker's 6 MB minimum are refused by the daemon and never
+    deploy, so they still count as set.
+    """
+    if isinstance(value, bool) or not _is_set(value):
+        return False
+    if isinstance(value, (int, float)):
+        return int(value) >= 1
+    if not isinstance(value, str):
+        return True
+    text = value.strip()
+    default = _interpolation_default(text)
+    if default is not None:
+        return _memory_is_set(default)
+    size = _size(text)
+    if size is None:
+        return True  # unknowable (a bare ${VAR}); `_is_set` already judged it
+    number, suffix = size
+    return int(number * _SCALE.get(suffix[:1].replace("b", ""), 1)) >= 1
+
+
 @register_rule
 class ResourceLimitsRule(BaseRule):
     """Detects services that bound neither memory nor CPU.
@@ -159,7 +199,7 @@ class ResourceLimitsRule(BaseRule):
     ) -> Iterator[Finding]:
         limits = _deploy_limits(service_config)
 
-        has_memory = _is_set(service_config.get("mem_limit")) or _is_set(
+        has_memory = _memory_is_set(service_config.get("mem_limit")) or _memory_is_set(
             limits.get("memory")
         )
         # ``cpu_quota`` bounds CPU as surely as ``cpus`` does — it writes the

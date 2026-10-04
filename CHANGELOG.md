@@ -116,6 +116,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CL-0026 no longer counts a memory limit under one byte.** Compose
+  converts `mem_limit` and `deploy.resources.limits.memory` to whole bytes
+  and drops a 0, so `mem_limit: "0.5"` deploys with no memory limit at all,
+  but CL-0026 credited it and reported only the missing CPU limit. It now
+  reports no memory limit. `cpus: 0.5` is unaffected (half a CPU is a
+  limit), and so is any value of one byte or more.
+
 - **An `extends:` base resolves only the service it was opened for.**
   Compose follows the `extends:` chain of the service a document names, but
   compose-lint resolved every service in the base file. A sibling that
