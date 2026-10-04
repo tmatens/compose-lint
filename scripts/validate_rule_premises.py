@@ -1196,16 +1196,9 @@ def _dm_entry_is_udev_symlink(name: str) -> bool:
     the entry at all. Without this, "zero block nodes mapped" would also pass
     when the entry was never created, proving nothing.
     """
-    _, out = _run(
-        ["-v", "/dev:/hostdev:ro"],
-        [
-            "sh",
-            "-c",
-            f"test -L /hostdev/mapper/{name}"
-            f' && test -b "/hostdev/mapper/$(readlink /hostdev/mapper/{name})"'
-            " && echo SYMLINK",
-        ],
-    )
+    entry = f"/hostdev/mapper/{name}"
+    script = f'test -L {entry} && test -b "/hostdev/mapper/$(readlink {entry})"'
+    _, out = _run(["-v", "/dev:/hostdev:ro"], ["sh", "-c", f"{script} && echo SYMLINK"])
     return out == "SYMLINK"
 
 
@@ -1231,15 +1224,8 @@ def _cl0016_symlink_dirs_grant_no_disk() -> tuple[bool | None, str]:
     reported and skipped locally; CI sets ``CL_REQUIRE_DM_TARGET=1``, which
     turns that skip into a failure.
     """
-    _, present = _run(
-        ["-v", "/dev:/hostdev:ro"],
-        [
-            "sh",
-            "-c",
-            "test -d /hostdev/disk && test -d /hostdev/block"
-            " && test -d /hostdev/mapper && echo ALL",
-        ],
-    )
+    dirs = "test -d /hostdev/disk && test -d /hostdev/block && test -d /hostdev/mapper"
+    _, present = _run(["-v", "/dev:/hostdev:ro"], ["sh", "-c", f"{dirs} && echo ALL"])
     if present != "ALL":
         return None, "the daemon host has no /dev/disk, /dev/block or /dev/mapper"
     rc_disk, err_disk = _run_err(["--device", "/dev/disk:/dev/disk"], ["true"])

@@ -867,7 +867,6 @@ class _ChainBuilder(_LayoutBuilder):
     def __init__(self, seed: int) -> None:
         super().__init__(seed)
         self.first_lines: list[str] = []
-        self.expects_gap = False
 
     def nested_include(self) -> None:
         """An included file that includes another, whose own dotenv it reads."""
