@@ -52,11 +52,12 @@ from compose_lint._safe_read import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Collection, Mapping
     from pathlib import Path
 
 __all__ = [
     "EnvFileKey",
+    "MACHINE_READABLE",
     "EnvFileRef",
     "ServiceEnvFiles",
     "SkippedLines",
@@ -79,6 +80,13 @@ class Unread(Enum):
     ABSENT = "absent"
     #: Present but unreadable: over the byte cap, undecodable, a FIFO, a device.
     UNREADABLE = "unreadable"
+
+
+#: The reasons also reported as ``unread_input`` warnings: a file Compose would
+#: deploy that compose-lint did not read. An absent target is not one of them,
+#: because Compose refuses a required one and deploys without an optional one,
+#: and an unresolved path names no file at all.
+MACHINE_READABLE = frozenset({Unread.OUTSIDE_PROJECT, Unread.UNREADABLE})
 
 
 @dataclass(frozen=True)
@@ -429,7 +437,7 @@ def _environment_keys(env_block: Any) -> set[str]:
 def describe_unread(
     resolved: Mapping[str, ServiceEnvFiles],
     *,
-    only: Unread | None = None,
+    only: Collection[Unread] | None = None,
 ) -> list[str]:
     """One stderr note per target that contributed nothing, per service.
 
@@ -458,15 +466,15 @@ def describe_unread(
     Notes never touch the exit code, like the unread-``.env`` and
     unresolved-mount-source notes they sit beside.
 
-    ``only`` restricts the result to one reason and drops the skipped-line
-    notes: the CLI passes ``Unread.OUTSIDE_PROJECT`` to get the refusals it
-    also reports on the machine-readable ``warnings[]`` channel.
+    ``only`` restricts the result to those reasons and drops the skipped-line
+    notes: the CLI passes :data:`MACHINE_READABLE` to get the targets it also
+    reports on the machine-readable ``warnings[]`` channel.
     """
     unevaluated = "so CL-0020 and CL-0021 were not evaluated for its keys"
     notes: list[str] = []
     for service in sorted(resolved):
         for entry in resolved[service].unread:
-            if only is not None and entry.reason is not only:
+            if only is not None and entry.reason not in only:
                 continue
             path = repr(entry.path)
             if entry.reason is Unread.ABSENT and entry.required:

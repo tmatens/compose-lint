@@ -107,10 +107,12 @@ credential written there reaches every surface CL-0020 describes — moving a
 line out of `environment:` no longer silences CL-0020/CL-0021 without
 changing what deploys. Only those two rules read env files; a finding names
 the key and the file, **never the value**, and a path resolving outside the
-project directory is refused rather than read. A refusal is reported as an
-`unread_input` warning, so a JSON or SARIF consumer sees it as well as a
-reader of stderr; it does not fail the run, because only those two rules read
-the keys. A `COMPOSE_FILE` entry refused for leaving the project, or missing,
+project directory is refused rather than read. A refusal, and a target that
+exists but could not be read (not UTF-8, over the size cap, not a regular
+file), is reported as an `unread_input` warning, so a JSON or SARIF consumer
+sees it as well as a reader of stderr. A missing target is a note only,
+because Compose refuses a required one and deploys without an optional one.
+Neither fails the run, because only those two rules read the keys. A `COMPOSE_FILE` entry refused for leaving the project, or missing,
 is a coverage gap instead: the whole list is ignored, so the documents graded
 are not the ones Compose loads. An
 `env_file:` written in an included or extended document is read from beside

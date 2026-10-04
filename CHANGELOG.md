@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A long flag must be spelled in full.** argparse accepted any unambiguous
+  prefix, so `compose-lint fix --app` applied fixes and `--form json` chose
+  the format. Accepted prefixes would be part of the CLI that 1.0 freezes, and
+  a later flag sharing one (`--apply-only` beside `--apply`) would turn a
+  working invocation into an "ambiguous option" error. A prefix is now an
+  unrecognized argument (exit 2). Spell the flag in full.
+
+- **An `env_file:` that exists but cannot be read is an `unread_input`
+  warning.** Compose 5.5.0 deploys a target that is not valid UTF-8, but
+  compose-lint only reported it on stderr, while a target outside the project
+  also reached JSON `warnings[]` and SARIF. Both are now warnings, as the
+  documentation already said. A missing target stays a note: Compose refuses
+  a required one and deploys without an optional one.
+
+- **A truncated SARIF log keeps the most severe results.** Past 5,000
+  results the log kept the first 5,000 in file and line order, so a critical
+  late in a large batch could be dropped from Code Scanning while lows before
+  it stayed. It now keeps critical results first and suppressed ones last,
+  in file and line order within a severity. Untruncated logs are unchanged.
+
 - **An included fragment is merged, not a coverage gap.** An `include:`
   target declaring only `volumes:`, `networks:`, `configs:`, `secrets:` or
   `x-*` keys failed the run with exit 2, although Compose includes it and

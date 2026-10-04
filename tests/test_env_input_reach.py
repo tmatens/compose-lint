@@ -436,6 +436,41 @@ class TestRefusedReferencesAreMachineReadable:
             ("warning", "unread_input")
         ]
 
+    def test_an_undecodable_env_file_is_a_warning(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+    ) -> None:
+        """Compose 5.5.0 deploys a non-UTF-8 env file; this run did not read it."""
+        self._project(tmp_path, "./bad.env")
+        _write(tmp_path / "project" / "bad.env", b"DB_PASSWORD=\xff\xfe\n")
+        code, doc, _ = _run(
+            ["--format", "json", "project/compose.yml"], tmp_path, monkeypatch, capsys
+        )
+        (warning,) = _unread(doc)
+        assert "could not be read" in warning["message"]
+        assert code == 0
+
+    @pytest.mark.parametrize("required", [True, False])
+    def test_a_missing_env_file_is_a_note_not_a_warning(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: Any,
+        required: bool,
+    ) -> None:
+        """Compose 5.5.0 refuses a required missing one and deploys without an
+        optional one, so neither leaves a deployed file unread."""
+        spelling = (
+            "./gone.env"
+            if required
+            else "\n      - path: ./gone.env\n        required: false"
+        )
+        self._project(tmp_path, spelling)
+        _, doc, err = _run(
+            ["--format", "json", "project/compose.yml"], tmp_path, monkeypatch, capsys
+        )
+        assert _unread(doc) == []
+        assert "not present" in err
+
     def test_an_in_project_env_file_is_not_a_warning(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
     ) -> None:

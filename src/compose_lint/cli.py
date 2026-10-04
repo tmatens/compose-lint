@@ -21,7 +21,11 @@ from compose_lint import __version__
 from compose_lint._env_file import ENV_FILENAME
 from compose_lint._output import defuse_json, emit, emit_block, sanitize
 from compose_lint._selection import Selection, plan_documents
-from compose_lint._service_env import Unread, describe_unread, resolve_env_files
+from compose_lint._service_env import (
+    MACHINE_READABLE,
+    describe_unread,
+    resolve_env_files,
+)
 from compose_lint.config import (
     CONFIG_FILENAMES,
     ConfigError,
@@ -538,7 +542,17 @@ class _Parser(argparse.ArgumentParser):
     straight to stderr, the one print site that bypassed :func:`emit`, so a
     directory named ``--##[warning]…`` issued a workflow command. Subparsers
     inherit the class, so every level is covered.
+
+    Prefix abbreviations of long flags are off (``--app`` is not ``--apply``).
+    Accepted, they would be CLI surface 1.0 freezes, and a later flag sharing
+    the prefix would turn a working invocation into an "ambiguous option"
+    error. They also let a path that happens to start like a flag be read as
+    one, which is what the ``--`` terminator in the hook and Action guards.
     """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("allow_abbrev", False)
+        super().__init__(*args, **kwargs)
 
     def print_usage(self, file: SupportsWrite[str] | None = None) -> None:
         self._emit(self.format_usage(), file)
@@ -1051,6 +1065,9 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
 
     all_json: list[dict[str, object]] = []
     all_sarif: list[dict[str, object]] = []
+    # Each SARIF result's finding severity, in step with all_sarif, so a
+    # truncated log keeps the most severe results.
+    sarif_severities: list[Severity] = []
     all_file_findings: list[tuple[list[Finding], str]] = []
     parse_errors: list[Diagnostic] = []
     coverage_errors: list[Diagnostic] = []
@@ -1132,7 +1149,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             emit(f"note: {filepath}: {note}")
         coverage_warnings.extend(
             Diagnostic(filepath, note, DiagnosticKind.UNREAD_INPUT)
-            for note in describe_unread(service_env_files, only=Unread.OUTSIDE_PROJECT)
+            for note in describe_unread(service_env_files, only=MACHINE_READABLE)
         )
         seen_services.update(data.get("services", {}).keys())
 
@@ -1235,6 +1252,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                     Diagnostic(filepath, crash, DiagnosticKind.RULE_CRASH)
                 )
             all_sarif.extend(format_sarif(findings, filepath, fixes=fixes, text=text))
+            sarif_severities.extend(finding.severity for finding in findings)
         else:
             all_json.extend(format_json(findings, filepath))
 
@@ -1315,6 +1333,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             run_errors,
             severity_overrides=severity_overrides,
             warnings=coverage_warnings,
+            severities=sarif_severities,
         )
         _stdout_print(defuse_json(json.dumps(sarif_log, indent=2, allow_nan=False)))
 
