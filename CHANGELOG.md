@@ -122,12 +122,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   20,000 findings stopped grading before that step, so the findings it
   still reported quoted the resolved value in text, JSON and SARIF, with
   `--allow-partial-coverage` or without. They are now quoted like every
-  other run's. No advisory: it needs a workflow that writes secrets into
-  `.env` for a pull request whose author is not trusted with them. GitHub
-  withholds secrets from fork pull requests, an author with write access
-  can already read them through the workflow, and running a secret-bearing
-  `pull_request_target` job on untrusted changes is the setup GitHub warns
-  against.
+  other run's. See GHSA-rm8w-w798-g545.
 
 ## [0.32.0] - 2026-09-28
 
