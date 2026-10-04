@@ -359,6 +359,23 @@ def _alternate_of(interior: str) -> str | None:
     return interior[head.end() :]
 
 
+def exceeds_limits(value: str, env: Mapping[str, str] | None = None) -> bool:
+    """Whether :func:`substitute_defaults` gave up on ``value`` at a limit.
+
+    ``None`` from it means either "a reference has no default", which is the
+    file's own answer, or "too long or too deep to resolve": over
+    ``MAX_SCAN_LEN`` as written, nested past ``_MAX_NESTING``, or resolving
+    past ``MAX_SUBSTITUTED_LEN``. Only the second is something Compose would
+    have resolved and this run did not, so only it is a coverage gap. Called
+    on the ``None`` path alone, so the common case pays nothing.
+    """
+    if not _VAR_REF_RE.search(value.replace("$$", "")):
+        return False
+    if len(value) > _MAX_SCAN_LEN:
+        return True
+    return _resolve_defaults(value, env=env) is None
+
+
 def substitute_defaults(value: str, env: Mapping[str, str] | None = None) -> str | None:
     """Resolve ``${VAR}`` against ``env`` and ``${VAR:-default}`` to its default.
 
@@ -382,7 +399,7 @@ def substitute_defaults(value: str, env: Mapping[str, str] | None = None) -> str
     if len(value) > _MAX_SCAN_LEN:
         # Conservative: report the value as unknowable rather than spend
         # quadratic time proving it. Callers leave such a scalar as written,
-        # which is exactly the behavior before substitution was document-wide.
+        # and the document reports it as a coverage gap (`exceeds_limits`).
         return None
     escaped = value.replace("$$", "")
     if not _VAR_REF_RE.search(escaped):
