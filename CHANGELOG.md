@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **CL-0016 flags a `/dev/block/<major>:<minor>` device source.** `/dev/block`
+  holds the kernel's `<major>:<minor>` symlink for every block device, so a
+  long-syntax `devices: [{source: "/dev/block/259:0", ...}]` resolves to the
+  host disk and reads it at default capabilities — the same CRITICAL exposure
+  as `/dev/sda`, reached by a spelling the pattern table did not match. (Short
+  syntax cannot name it: the colon is the field delimiter.) Proven on an
+  `ubuntu-26.04` runner at Docker defaults (premise check `_cl0016_dev_block`).
+  Across the 11,111-file corpus this adds no findings and removes none — no
+  corpus file uses the `/dev/block` spelling, consistent with it being a
+  deliberate, uncommon form rather than one seen in published files.
+
 - **CL-0005 grades a port written with an unbraced variable.** Compose reads
   `$HTTP_PORT` and `${HTTP_PORT}` alike, but CL-0005's port pattern accepted
   only the braced form, so `"$HTTP_PORT:80"` did not parse and was skipped

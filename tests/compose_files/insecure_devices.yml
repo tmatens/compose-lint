@@ -31,6 +31,12 @@ services:
     image: nginx:1.27-alpine
     devices:
       - /dev/disk/by-id/ata-drive:/dev/xvda
+  dev_block:
+    image: nginx:1.27-alpine
+    devices:
+      - source: /dev/block/259:0
+        target: /dev/probe
+        permissions: r
   multiple:
     image: nginx:1.27-alpine
     devices:

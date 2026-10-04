@@ -66,6 +66,17 @@ class TestDangerousDevicesRule:
         assert len(findings) == 1
         assert "/dev/disk/" in findings[0].message
 
+    def test_detects_dev_block(self) -> None:
+        # /dev/block/<maj>:<min> can only be named in long syntax (the colon is
+        # the short-syntax delimiter). Compose resolves the symlink to the disk
+        # and reads it at default caps (premise check `_cl0016_dev_block`).
+        findings = self._check("dev_block")
+        assert len(findings) == 1
+        assert findings[0].rule_id == "CL-0016"
+        assert findings[0].severity.name == "CRITICAL"
+        assert findings[0].evidence == "/dev/block/259:0"
+        assert "/dev/block/" in findings[0].message
+
     def test_detects_dev_kmsg(self) -> None:
         findings = self._check("dev_kmsg")
         assert len(findings) == 1
