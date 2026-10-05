@@ -33,6 +33,7 @@ from compose_lint._safe_read import (
     OUT_OF_REACH,
     OutsideProjectError,
     UnsafeFileError,
+    containment_root,
     out_of_reach,
     read_text_bounded,
 )
@@ -1144,11 +1145,13 @@ def _locate_reference(
 ) -> tuple[Path | None, str]:
     """Resolve a document reference under ``project_dir``, or say why not.
 
-    ``prefix`` is the directory of the document that *wrote* the reference,
-    spelled relative to the project root, and it is what makes the two
-    questions separable. A reference is written relative to its own file;
-    containment is measured against the project. Seeding the segment walk with
-    the prefix answers both in one pass: ``../other/base2.yml`` written in
+    ``project_dir`` is the containment root (ADR-038: the repository that holds
+    the project, or the project directory when there is none), and ``prefix``
+    is the directory of the document that *wrote* the reference, spelled
+    relative to that root. The prefix is what makes the two questions
+    separable. A reference is written relative to its own file; containment is
+    measured against the root. Seeding the segment walk with the prefix
+    answers both in one pass: ``../other/base2.yml`` written in
     ``shared/base.yml`` cleans to ``other/base2.yml`` and stays inside, while
     the same spelling in a file at the root pops past the start and leaves.
 
@@ -1181,12 +1184,14 @@ def _locate_reference(
         return None, "its path is interpolated and has no shipped value"
     segments = project_relative(reference, prefix)
     if segments is None:
-        return None, "it resolves outside the project directory"
+        return None, "it resolves outside the repository"
     return project_dir.joinpath(*segments), ""
 
 
-def _rebase_env_files(data: dict[str, Any], prefix: tuple[str, ...]) -> None:
-    """Re-express a document's own ``env_file:`` paths against the project root.
+def _rebase_env_files(
+    data: dict[str, Any], prefix: tuple[str, ...], project: tuple[str, ...]
+) -> None:
+    """Re-express a document's own ``env_file:`` paths against the project.
 
     Bind sources are made absolute during the base's own parse, so the merge
     carries them across correctly. ``env_file:`` is resolved later and
@@ -1196,17 +1201,32 @@ def _rebase_env_files(data: dict[str, Any], prefix: tuple[str, ...]) -> None:
     is not where Compose reads it and could open a different file that happens
     to exist there.
 
+    Both ``prefix`` (the writing document's directory) and ``project`` (the
+    primary file's) are spelled as segments under the containment root, and
+    the result is spelled relative to ``project``, because that is the frame
+    the merged document is read in — by :func:`resolve_env_files`, and by
+    Compose when the oracle harness hands it the merge. A base at ``shared/``
+    writing ``./app.env`` for a project at ``svc/`` yields ``../shared/app.env``,
+    which is what the primary would have to write to read the same file.
+
     Rewriting the spelling rather than resolving it keeps the whole path
     lexical and deploy-host-independent (ADR-023 §1): ``../app.env`` written in
-    ``shared/base.yml`` becomes ``app.env``, and one that pops past the project
-    root is left exactly as written so it grades as leaving, which is what it
-    does.
+    ``shared/base.yml`` becomes ``app.env``, and one that pops past the root
+    is left exactly as written so it grades as leaving, which is what it does.
     """
 
     def _rebased(value: Any) -> Any:
         if isinstance(value, str):
             segments = project_relative(value, prefix)
-            return "/".join(segments) if segments else value
+            if not segments:
+                return value
+            shared = 0
+            for ours, theirs in zip(project, segments, strict=False):
+                if ours != theirs:
+                    break
+                shared += 1
+            climb = [".."] * (len(project) - shared)
+            return "/".join([*climb, *segments[shared:]])
         if isinstance(value, list):
             return [_rebased(item) for item in value]
         if isinstance(value, dict) and "path" in value:
@@ -1302,7 +1322,7 @@ def _entry_directory(
         # directory separates the two, and then the file is dropped again.
         segments = project_relative(f"{entry.project_directory}/x", prefix)
         if segments is None:
-            return None, "its project_directory: leaves the project directory"
+            return None, "its project_directory: leaves the repository"
         directory = project_dir.absolute().joinpath(*segments[:-1])
         # The lexical check above answers what the path *says*. A committed
         # directory symlink says nothing, and named here it sent the `.env`
@@ -1589,9 +1609,9 @@ def _resolve_cross_file_extends(
       own ``.env`` *is* read, under the project's — which is why ``env_dirs``
       is a layered list rather than one directory.)
 
-    Containment is always measured against ``project_dir``, the directory of
-    the file the run was pointed at — never against the base's own directory,
-    which a chain could otherwise walk outwards one hop at a time.
+    Containment is always measured against ``project_dir``, the containment
+    root of the file the run was pointed at — never against the base's own
+    directory, which a chain could otherwise walk outwards one hop at a time.
     """
     services = data.get("services")
     if not isinstance(services, dict):
@@ -2212,7 +2232,7 @@ def load_compose_full(path: str | Path, *, use_env: bool = True) -> Loaded:
         content,
         base_dir=base_dir,
         use_env=use_env,
-        project_dir=base_dir,
+        project_dir=containment_root(base_dir),
         document_path=filepath.absolute(),
         env_seen=env_values,
     )
@@ -2283,8 +2303,11 @@ def _loads_full(  # noqa: PLR0913
     paths resolve and not where its values come from (ADR-036, verified
     against Compose 5.5.0): ``base_dir`` resolves its relative paths,
     ``env_dirs`` supplies its interpolated values, and ``project_dir`` is the
-    containment boundary every reference it makes is measured against. For the
-    file the run was pointed at, all three are the same directory.
+    containment root every reference it makes is measured against — the
+    repository holding the file the run was pointed at, or that file's own
+    directory when it is not in one (:func:`~compose_lint._safe_read
+    .containment_root`, ADR-038). For a file at the root of its repository, all
+    three are the same directory.
 
     ``env_dirs`` is a *list*, read in order with later winning, because the two
     constructs layer differently and both were measured:
@@ -2396,8 +2419,13 @@ def _loads_full(  # noqa: PLR0913
         # document says which names are worth reading (ADR-026 §5). The names
         # come from outside `environment:` alone, so a credential the file
         # externalises is never even retained.
+        # The primary file's directory: Compose's project directory, where the
+        # project's own `.env` sits and the frame `env_file:` paths are read
+        # in. An included document prepends its own directory to `env_dirs`,
+        # so the last entry is always the primary's.
+        own_dir: Path | None = env_dirs[-1] if env_dirs else base_dir
         supplied: Mapping[str, str] | None = None
-        if use_env and base_dir is not None:
+        if use_env and base_dir is not None and own_dir is not None:
             wanted = _referenced_names(data)
             if wanted:
                 layered: dict[str, str] = {}
@@ -2409,7 +2437,7 @@ def _loads_full(  # noqa: PLR0913
                         directory, wanted, within=project_dir or directory
                     )
                     if parsed_env is None:
-                        gap = _unread_env_gap(directory, project_dir)
+                        gap = _unread_env_gap(directory, project_dir, own=own_dir)
                         if gap is not None and gap not in gaps:
                             gaps.append(gap)
                     elif parsed_env.values:
@@ -2426,15 +2454,10 @@ def _loads_full(  # noqa: PLR0913
             gaps.append(_oversized_value_gap(len(oversized)))
         prefix: tuple[str, ...] = ()
         if base_dir is not None and project_dir is not None:
-            try:
-                # Where this document sits under the project, which is what a
-                # reference it writes is relative to. Empty for the file the
-                # run was pointed at, since that file *is* the project root.
-                prefix = tuple(
-                    base_dir.absolute().relative_to(project_dir.absolute()).parts
-                )
-            except ValueError:  # pragma: no cover - the read gate refuses first
-                prefix = ()
+            # Where this document sits under the containment root, which is
+            # what a reference it writes is relative to. Empty for a file at
+            # the root of its repository.
+            prefix = _under(base_dir, project_dir)
         # This document's own relative bind sources become absolute first, so
         # that every value either `include:` or `extends:` moves around below
         # is already resolved against the file that wrote it. Absolute sources
@@ -2442,13 +2465,17 @@ def _loads_full(  # noqa: PLR0913
         # re-resolved against this one's directory.
         if base_dir is not None:
             _resolve_bind_sources(data, base_dir)
-        # Likewise its own `env_file:` paths, re-expressed against the project
-        # root because that is where `resolve_env_files` reads them from. Done
-        # here, once per document and before anything is folded in, so a path
-        # arriving from a nested `include:` or `extends:` was already rebased
-        # by the document that wrote it and is never rebased a second time.
-        if prefix:
-            _rebase_env_files(data, prefix)
+        # Likewise its own `env_file:` paths, re-expressed against the primary
+        # file's directory because that is where `resolve_env_files` reads them
+        # from. Done here, once per document and before anything is folded in,
+        # so a path arriving from a nested `include:` or `extends:` was already
+        # rebased by the document that wrote it and is never rebased a second
+        # time. A document in the project directory writes in that frame
+        # already, and is left exactly as written.
+        if base_dir is not None and project_dir is not None and own_dir is not None:
+            own_prefix = _under(own_dir, project_dir)
+            if prefix != own_prefix:
+                _rebase_env_files(data, prefix, own_prefix)
         # `include:` folds in *before* either `extends:` pass, which is the
         # order Compose resolves them in — measured, and not the order a
         # reading of the docs suggests. An included document's contribution to
@@ -2622,19 +2649,22 @@ def _oversized_value_gap(count: int) -> str:
 _REMOTE_REFERENCE = re.compile(r"^(?:[A-Za-z][A-Za-z0-9+.-]*://|git@)")
 
 
-def _unread_env_gap(directory: Path, project_dir: Path | None) -> str | None:
+def _unread_env_gap(
+    directory: Path, project_dir: Path | None, *, own: Path
+) -> str | None:
     """The coverage gap for an included document's ``.env`` that exists unread.
 
     Compose reads an included file's own ``.env`` and deploys what it sets, so
     one that is there but cannot be read (not UTF-8, over the read cap,
-    resolving outside the project) leaves values this run never graded. That
+    resolving outside the repository) leaves values this run never graded. That
     used to be silent: the document was linted as though the file were absent.
 
-    The project's own ``.env`` is not reported here. File selection reads it
-    first and reports it once per run, whether or not a document references
-    anything it sets.
+    The project's own ``.env`` — the one beside ``own``, the file the run was
+    pointed at — is not reported here. File selection reads it first and
+    reports it once per run, whether or not a document references anything it
+    sets. ``project_dir`` is the containment root the path is shown against.
     """
-    if project_dir is None or _same_directory(directory, project_dir):
+    if project_dir is None or _same_directory(directory, own):
         return None
     failure = env_read_failure(directory, within=project_dir)
     if failure is None:
@@ -2643,12 +2673,20 @@ def _unread_env_gap(directory: Path, project_dir: Path | None) -> str | None:
         shown = (directory.absolute() / ENV_FILENAME).relative_to(
             project_dir.absolute()
         )
-    except ValueError:  # pragma: no cover - env_dirs never leave the project
+    except ValueError:  # pragma: no cover - env_dirs never leave the root
         shown = directory / ENV_FILENAME
     return (
         f"'{shown.as_posix()}' was not read because {failure}, so the values "
         "it supplies to the documents beside it were not graded."
     )
+
+
+def _under(directory: Path, root: Path) -> tuple[str, ...]:
+    """``directory`` as segments under ``root``, lexically; empty at the root."""
+    try:
+        return tuple(directory.absolute().relative_to(root.absolute()).parts)
+    except ValueError:  # pragma: no cover - the read gate refuses first
+        return ()
 
 
 def _same_directory(left: Path, right: Path) -> bool:
@@ -2673,7 +2711,10 @@ def loads(
     base's findings disappearing as something the patch did.
     """
     data, lines, _, _, _ = _loads_full(
-        content, base_dir=base_dir, use_env=use_env, project_dir=base_dir
+        content,
+        base_dir=base_dir,
+        use_env=use_env,
+        project_dir=None if base_dir is None else containment_root(base_dir),
     )
     return data, lines
 
@@ -2717,7 +2758,7 @@ def load_document(
         # that is empty as a whole).
         empty_ok=overlay,
         use_env=use_env,
-        project_dir=base_dir,
+        project_dir=containment_root(base_dir),
         document_path=filepath.absolute(),
         env_seen=env_values,
     )
@@ -2841,7 +2882,7 @@ def merge_patched(
         base_dir=base_dir,
         merging=True,
         use_env=use_env,
-        project_dir=base_dir,
+        project_dir=containment_root(base_dir),
         document_path=Path(base_path).absolute(),
     )
     candidate = Document(

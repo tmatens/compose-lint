@@ -96,15 +96,19 @@ def test_generated_project_matches_compose(seed: int, tmp_path: Path) -> None:
     root = tmp_path / "project"
     root.mkdir()
     primary = project.write(root)
+    # The generated tree is a repository: that is what contains every reference
+    # a layout seed writes (ADR-038), and the run starts *above* it so the
+    # containment root is found from the marker, not from the run directory.
+    (root / ".git").mkdir()
     # The Compose project directory, which a layout seed may put below the
-    # tree the run starts in.
+    # tree's root.
     workdir = primary.parent
 
     # Before the dump exists: it lives in the project root so that a relative
     # `env_file:` still resolves, and the truth has to be the project as
     # written.
     oracle = run_oracle(workdir)
-    linted = lint_project(primary, run_from=root)
+    linted = lint_project(primary, run_from=tmp_path)
     context = f"seed {seed}\n{project.render()}\n{_replay(seed)}"
 
     if project.expects_gap:
@@ -117,12 +121,6 @@ def test_generated_project_matches_compose(seed: int, tmp_path: Path) -> None:
         return
 
     assert oracle.accepted, f"{context}\ncompose stderr:\n{oracle.stderr.strip()}"
-    if project.policy_gap:
-        assert any("project_directory:" in gap for gap in linted.gaps), (
-            f"{context}\ncompose-lint graded a reference its containment policy "
-            f"refuses: {linted.gaps}"
-        )
-        return
     assert not linted.refused, (
         f"{context}\ncompose resolved the project; compose-lint refused it: "
         f"{linted.error or linted.gaps}"

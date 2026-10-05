@@ -83,20 +83,17 @@ COMPOSE_FILE_KEYS = ("COMPOSE_FILE", "COMPOSE_PATH_SEPARATOR")
 # because an absolute entry is refused by `_resolve_entry` either way.
 DEFAULT_PATH_SEPARATOR = ":"
 
-# The gaps for a Compose file that is a link resolving outside both its own
-# directory and the directory the run started in. Neither names where it
-# resolves to: that path is the outside file, and the report is not the place
-# to learn it.
+# The gaps for a Compose file that is a link resolving outside the repository.
+# Neither names where it resolves to: that path is the outside file, and the
+# report is not the place to learn it.
 _OUTSIDE_NOT_LINTED = (
-    "not linted because it links to a file outside both its own directory and "
-    "the directory compose-lint was run from (refused rather than read), so the "
-    "services Compose would load from it were not graded. Run compose-lint from "
-    "a directory that contains the target."
+    "not linted because it links to a file outside the repository (refused "
+    "rather than read), so the services Compose would load from it were not "
+    "graded."
 )
 _OUTSIDE_NOT_MERGED = (
-    "not merged because it links to a file outside both its own directory and "
-    "the directory compose-lint was run from (refused rather than read), so "
-    "what Compose would merge from it was not graded."
+    "not merged because it links to a file outside the repository (refused "
+    "rather than read), so what Compose would merge from it was not graded."
 )
 
 
@@ -308,19 +305,16 @@ def _links_outside(path: Path) -> bool:
 
     So the test is on the link, not on who handed the path over. A plain path
     resolves to itself and is read as given, wherever it is. A link is followed
-    while its target stays inside the directory the run started in, which in
-    CI is the checkout (the Action runs in the workspace, pre-commit at the
-    repository root): a target there is content the change under review can
-    already see, so reading it discloses nothing, and a shared file symlinked
-    into a monorepo's service directories is graded as Compose deploys it. A
-    target inside the link's own directory is followed too, so a run started
-    from a subdirectory keeps what it had. Anything else is refused. Symlinked
-    directories *above* the file resolve the same on both sides, so a checkout
-    under a linked home directory is unaffected.
+    while its target stays inside the repository that holds it (ADR-038): a
+    target there is content the change under review can already see, so
+    reading it discloses nothing, and a shared file symlinked into a monorepo's
+    service directories is graded as Compose deploys it. Anything else is
+    refused. Symlinked directories *above* the file resolve the same on both
+    sides, so a checkout under a linked home directory is unaffected.
 
     The same rule holds for every other file a run opens
     (:func:`~compose_lint._safe_read.out_of_reach`); here the site's own root
-    is the link's directory.
+    is the link's directory, widened to its repository there.
     """
     if not path.is_file():
         return False
@@ -403,9 +397,9 @@ def _compose_file_entries(
         if candidate is None:
             message = (
                 f"COMPOSE_FILE names {entry.strip()!r}, which leaves the project "
-                "directory, links outside both it and the directory "
-                "compose-lint was run from, or is missing, so the whole list "
-                "was ignored and file selection fell back to the default."
+                "directory, links outside the repository, or is missing, so the "
+                "whole list was ignored and file selection fell back to the "
+                "default."
             )
             return None, [], [(str(directory / ENV_FILENAME), message)]
         resolved.append(candidate)
@@ -457,7 +451,7 @@ def _resolve_entry(directory: Path, entry: str) -> str | None:
     # passes every test above while pointing anywhere on the runner. Selecting
     # one would let the artifact choose a file outside itself, which is the
     # traversal ADR-026 §4 requires this function to refuse. A link into the
-    # run directory stays inside the checkout and is followed (`out_of_reach`).
+    # repository stays inside the checkout and is followed (`out_of_reach`).
     if out_of_reach(candidate, directory):
         return None
     return str(candidate)

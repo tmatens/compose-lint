@@ -69,7 +69,7 @@ _GAP_PHRASE = {
 
 
 def test_a_gap_names_the_reference_and_the_residual(tmp_path: Path) -> None:
-    """ "the file was not found" and "it resolves outside the project directory"
+    """ "the file was not found" and "it resolves outside the repository"
     call for different edits from the reader, so the message says which."""
     target = _write(
         tmp_path / "compose.yml",

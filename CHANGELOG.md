@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **An `include:`, `extends:` or `env_file:` reference may reach anywhere
+  inside the repository.** A path written with `..` was contained to the
+  Compose project directory while a symlink could reach the directory the run
+  started in, so `include: ../shared/compose.yml` was a coverage gap (exit 2)
+  and a committed link to the same file was followed. Both are now contained
+  to the repository holding the Compose file — the nearest directory above it
+  with a `.git` entry, found without running git; without one, the directory
+  compose-lint was run from when it contains the project, else the project
+  directory. The `.git` directory itself is never read, by path or by link.
+  Over a sample of 1,821 Compose projects from public multi-file repositories,
+  235 of the 1,324 Compose accepts moved from exit 2 to a verdict, and 7
+  already-graded projects gained CL-0020 findings from an `env_file:` above
+  the project that is now read; nothing else changed. A reference leaving the
+  repository, an absolute path, and `COMPOSE_FILE` written with `..` stay as
+  they were. Retiring a coverage gap is a MINOR
+  ([ADR-038](docs/adr/038-contain-references-to-the-repository.md)).
+
 ## [0.33.0] - 2026-10-05
 
 ### Changed

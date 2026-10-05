@@ -287,9 +287,9 @@ def test_an_override_beside_an_included_file_is_not_merged(tmp_path: Path) -> No
 @pytest.mark.parametrize(
     ("reference", "reason"),
     [
-        ("../outside/base.yml", "outside the project directory"),
-        ("/etc/compose/base.yml", "outside the project directory"),
-        ("~/base.yml", "outside the project directory"),
+        ("../outside/base.yml", "outside the repository"),
+        ("/etc/compose/base.yml", "outside the repository"),
+        ("~/base.yml", "outside the repository"),
         ("${BASE}/base.yml", "interpolated"),
         ("nope.yml", "was not found"),
     ],
@@ -320,7 +320,10 @@ def test_a_symlink_out_of_the_project_is_refused(tmp_path: Path) -> None:
     (tmp_path / "linked.yml").symlink_to(outside)
 
     loaded = load_compose_full(target)
-    assert any("outside both the project directory" in gap for gap in loaded.gaps)
+    assert any(
+        "through a symlink to a target outside the repository" in gap
+        for gap in loaded.gaps
+    )
     assert "api" not in loaded.data["services"]
 
 
@@ -880,7 +883,7 @@ def test_a_project_directory_linked_out_of_the_project_is_refused(
     assert "sidecar" not in loaded.data["services"]
     (gap,) = loaded.gaps
     assert "'include: sub/compose.yml'" in gap
-    assert "project_directory: resolves outside both" in gap
+    assert "project_directory: resolves through a symlink" in gap
 
 
 # --- A project_directory: that cannot be placed is a gap, never a fallback ---
@@ -889,8 +892,8 @@ def test_a_project_directory_linked_out_of_the_project_is_refused(
 @pytest.mark.parametrize(
     ("written", "reason"),
     [
-        ("../shared", "project_directory: leaves the project directory"),
-        ("/", "project_directory: leaves the project directory"),
+        ("../shared", "project_directory: leaves the repository"),
+        ("/", "project_directory: leaves the repository"),
         ("${WHERE}", "project_directory: is interpolated"),
     ],
 )
