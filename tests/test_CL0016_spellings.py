@@ -144,7 +144,7 @@ DEVICES: tuple[Device, ...] = (
         "/dev/mapper/vg-root",
         "link",
         dynamic_because="a symlink; its numbers are the target's",
-        flagged_by=r"^/dev/mapper/",
+        flagged_by=r"^/dev/mapper/(?!control$)",
     ),
     Device(
         "/dev/md/data",
@@ -208,9 +208,8 @@ DEVICES: tuple[Device, ...] = (
         "/dev/mapper/control",
         "c",
         (10, 236),
-        unclaimed_because="its ioctls need CAP_SYS_ADMIN (CL-0024)",
-        rule_disagrees="named directly, ^/dev/mapper/ claims it, while the page "
-        "leaves the same node unclaimed when the /dev/mapper walk maps it",
+        unclaimed_because="every ioctl needs CAP_SYS_ADMIN (CL-0024), "
+        "AppArmor or not: _cl0016_mapper_control_needs_sys_admin",
     ),
 )
 

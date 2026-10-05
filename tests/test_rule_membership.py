@@ -380,7 +380,7 @@ class TestDeviceMembership:
             # Symlinks and control nodes that reach the same devices.
             r"^/dev/disk/",
             r"^/dev/block/",
-            r"^/dev/mapper/",
+            r"^/dev/mapper/(?!control$)",
             r"^/dev/zvol/",
             r"^/dev/zfs$",
             r"^/dev/loop",

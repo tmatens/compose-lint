@@ -26,6 +26,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   they were. Retiring a coverage gap is a MINOR
   ([ADR-038](docs/adr/038-contain-references-to-the-repository.md)).
 
+### Fixed
+
+- **CL-0016 no longer flags `/dev/mapper/control`.** It is the
+  device-mapper control node, not a volume, and device-mapper refuses every
+  ioctl from a caller without `CAP_SYS_ADMIN`, which CL-0024 already flags
+  at CRITICAL. CL-0016 left the same node unclaimed when it was reached
+  through the `/dev/mapper` directory, `/dev/char/10:236` or a `c 10:236`
+  cgroup rule, and flagged it only when named directly. A premise check now
+  proves the refusal at default capabilities and with AppArmor unconfined.
+  Volume links under `/dev/mapper/` (`/dev/mapper/vg-root`) stay flagged.
+
 ## [0.33.0] - 2026-10-05
 
 ### Changed

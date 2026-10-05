@@ -1366,6 +1366,59 @@ def _cl0016_symlink_dirs_grant_no_disk() -> tuple[bool | None, str]:
     )
 
 
+# DM_VERSION and DM_LIST_DEVICES on a mapped /dev/mapper/control: read-only
+# queries (the interface version, the active targets' names), so nothing is
+# created or changed. Prints the outcome of each, OK or the errno name.
+_DM_CONTROL_PROBE = (
+    "import errno,fcntl,os,struct\n"
+    "fd=os.open('/dev/dmctl',os.O_RDWR)\n"
+    "for nr in (0,2):\n"
+    "    buf=bytearray(312)\n"
+    "    struct.pack_into('<IIII',buf,0,4,0,0,312)\n"
+    "    try:\n"
+    "        fcntl.ioctl(fd,(3<<30)|(312<<16)|(0xFD<<8)|nr,buf)\n"
+    "        print('OK')\n"
+    "    except OSError as e:\n"
+    "        print(errno.errorcode[e.errno])\n"
+)
+
+
+def _cl0016_mapper_control_needs_sys_admin() -> tuple[bool | None, str]:
+    """A mapped ``/dev/mapper/control`` is usable only with ``CAP_SYS_ADMIN``.
+
+    Why CL-0016 does not claim the node, by any spelling. The device cgroup lets
+    the container open it, but device-mapper refuses every ioctl from a caller
+    without ``CAP_SYS_ADMIN``, which CL-0024 flags at CRITICAL. The refusal is
+    the kernel's, so it holds with AppArmor unconfined too; that leg is measured
+    here so the drop does not rest on a posture (ADR-020). SKIP where the host
+    has no ``/dev/mapper/control``.
+    """
+    _, present = _run(
+        ["-v", "/dev:/hostdev:ro"],
+        ["sh", "-c", "test -c /hostdev/mapper/control && echo yes"],
+    )
+    if present != "yes":
+        return None, "the daemon host has no /dev/mapper/control"
+    device = ["--device", "/dev/mapper/control:/dev/dmctl"]
+    cmd = ["python", "-c", _DM_CONTROL_PROBE]
+    legs = {
+        "default": [],
+        "apparmor=unconfined": ["--security-opt", "apparmor=unconfined"],
+        "SYS_ADMIN": ["--cap-add", "SYS_ADMIN"],
+    }
+    seen = {
+        name: _run([*device, *args], cmd, PY_IMAGE)[1].split()
+        for name, args in legs.items()
+    }
+    ok = (
+        seen["default"] == ["EACCES", "EACCES"]
+        and seen["apparmor=unconfined"] == ["EACCES", "EACCES"]
+        and seen["SYS_ADMIN"] == ["OK", "OK"]
+    )
+    detail = "; ".join(f"{name}: {out!r}" for name, out in seen.items())
+    return ok, f"DM_VERSION, DM_LIST_DEVICES — {detail}"
+
+
 def _cl0013_dev_bind_is_gated() -> tuple[bool, str]:
     """A ``/dev`` bind conveys the nodes but not device-cgroup permission.
 
@@ -1710,6 +1763,11 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool | None, str]]]] = [
         "CL-0016",
         "premise: /dev/disk and /dev/mapper directories grant no disk",
         _cl0016_symlink_dirs_grant_no_disk,
+    ),
+    (
+        "CL-0016",
+        "premise: /dev/mapper/control is inert without CAP_SYS_ADMIN",
+        _cl0016_mapper_control_needs_sys_admin,
     ),
     ("CL-0017", "shared propagation is observable", _cl0017),
     ("CL-0018", "explicit user maps to that uid", _cl0018),

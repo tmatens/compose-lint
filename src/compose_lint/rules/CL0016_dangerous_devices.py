@@ -38,6 +38,12 @@ CIS_REF = (
 #                          evidence from the AppArmor host, not a fact that
 #                          holds everywhere (ADR-020) — the drop rests on the
 #                          SYS_ADMIN gate, which does
+#   /dev/mapper/control  — device-mapper refuses every ioctl without
+#                          CAP_SYS_ADMIN (CL-0024), AppArmor or not: measured,
+#                          premise check `_cl0016_mapper_control_needs_sys_admin`.
+#                          The /dev/mapper/ row below excludes it, so naming it
+#                          directly agrees with the directory walk, /dev/char
+#                          and the c cgroup table, none of which claim it
 #
 # Removed as unreachable: /dev/kmem and /dev/raw, for which Docker refuses to
 # create the container at all (and CONFIG_DEVKMEM is off on modern kernels).
@@ -86,7 +92,10 @@ _DANGEROUS_DEVICE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         "/dev/loop* — loop device (mount arbitrary disk images)",
     ),
     (re.compile(r"^/dev/dm-"), "/dev/dm-* — device mapper block device"),
-    (re.compile(r"^/dev/mapper/"), "/dev/mapper/* — device mapper symlink"),
+    (
+        re.compile(r"^/dev/mapper/(?!control$)"),
+        "/dev/mapper/* — device mapper symlink",
+    ),
     (re.compile(r"^/dev/zfs$"), "/dev/zfs — ZFS pool control device"),
     (re.compile(r"^/dev/rbd"), "/dev/rbd* — Ceph RBD block device"),
     (re.compile(r"^/dev/zd\d"), "/dev/zd* — ZFS zvol block device"),
