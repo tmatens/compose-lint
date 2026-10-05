@@ -72,6 +72,12 @@ deploy host. Concretely:
    is followed out, no `~` is expanded, no host environment is read — so the
    claim remains a fact about the document set, not about the machine.
 
+   *Amended ([ADR-038](038-contain-references-to-the-repository.md)):* "inside
+   the project directory" is now "inside the repository that holds the
+   project", found by walking parents for a `.git` entry rather than by
+   running `git`. The prohibition still stands as written: the repository is
+   the checkout, which is the document set.
+
 **Consequences:** Windows lint hosts regain the climb-to-root claims and
 produce the same `/`-rooted notation as every other platform (a visible
 output change for relative sources on Windows, shipped pre-1.0 while the
