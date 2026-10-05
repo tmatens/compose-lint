@@ -73,13 +73,42 @@ snippet.
 |---|-----------------------------------------------------------------|-----------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
 | 1 | Execute attacker code in the linter process                     | YAML deserialization gadget; embedded Python tag                | All YAML is parsed via `yaml.SafeLoader` (compose) or `yaml.safe_load` (config). No `yaml.load`, no `eval`/`exec` on parsed values. Custom `LineLoader` is asserted to subclass `SafeLoader` at import time. |
 | 2 | Crash the linter or hang it indefinitely                        | Pathological YAML structures (deep nesting, billion-laughs)     | Parser traversals are iterative, not recursive (fix for #61). Continuous fuzzing on parser + engine via ClusterFuzzLite (`cflite-pr.yml` per-PR, `cflite-batch.yml` daily).                |
-| 3 | Cause a false negative — slip a real misconfig past the linter  | Hardened-but-unusual syntax, alternate-form constructs          | Every rule ships positive *and* negative tests; `tests/compose_files/safe_*.yml` enforces hardened-but-unusual fixtures (CONTRIBUTING.md §"Adding a new rule"). Corpus snapshot (`tests/corpus_snapshot.json.gz`) locks output across 1,500+ real-world Compose files; PRs that change findings show the diff. Rule-loader test catches mutation-untested code paths via `mutmut`. |
+| 3 | Cause a false negative — slip a real misconfig past the linter  | Hardened-but-unusual syntax, alternate-form constructs          | Every rule ships positive *and* negative tests; `tests/compose_files/safe_*.yml` enforces hardened-but-unusual fixtures (CONTRIBUTING.md §"Adding a new rule"). Corpus snapshot (`tests/corpus_snapshot.json.gz`) locks output across 1,500+ real-world Compose files; PRs that change findings show the diff. Rule-loader test catches mutation-untested code paths via `mutmut`. Where a rule has a spelling table, every equivalent spelling of a flagged primitive is generated from one table and asserted (`tests/test_CL0016_spellings.py`); see *Triage for a newly found gap* below. |
 | 4 | Cause a false positive — make the linter fail benign files      | Adjacent-but-clean configs (named volumes, sub-form syntax)     | Same negative-test discipline as #3, plus the corpus snapshot regression gate.                                    |
 | 5 | Exfiltrate data from the linter or its host                     | Make the linter open a network connection                       | Product code performs no network I/O. Documented hardened `docker run` recipe pins `--network none` and is exercised in CI (`docker-smoke` matrix).                                            |
 | 6 | Compromise the linter via a poisoned dependency                 | Tampered package on PyPI                                         | All deps and dev-tools are hash-pinned in `requirements*.lock`; CI installs with `pip install --require-hashes`. Renovate updates lockfiles weekly; `pip-audit`, `dependency-review`, and OpenSSF Scorecard run continuously.   |
 | 7 | Substitute a malicious build of compose-lint downstream         | Tampered wheel or container image post-publish                  | PyPI dists are Sigstore-signed (PEP 740 attestations + GitHub Release `.sigstore.json` bundles, post-release verified by `verify-release-signatures`). Container manifests are cosign-signed; SLSA build provenance attached to every artifact; SBOM (SPDX) and OpenVEX attested to images. |
 | 8 | Compromise the runtime image                                    | Vulnerable shell / package manager / interpreter                 | Runtime image is `gcr.io/distroless/python3-debian13:nonroot` (no shell, no apt, UID 65532). Two-stage Dockerfile strips pip binaries from the runtime venv; only `.dist-info` is retained for SCA visibility. Documented hardened-run flags pin `--read-only --cap-drop ALL --security-opt no-new-privileges:true --user 65532:65532 --pids-limit 256`, all exercised in CI. See ADR-009. |
 | 9 | Tamper with a release tag in transit                            | Push a malicious tag that triggers `publish.yml`                | `publish.yml` `verify-tag` requires the tag to be annotated (`git tag -s` produces this), reachable from `origin/main`, and (gated by `.github/allowed_signers`) cryptographically verified via `git verify-tag`. |
+
+### Triage for a newly found gap
+
+Row #3 puts every alternate spelling of a flagged primitive in scope, and rule
+reviews keep finding them. Most have zero prevalence: spellings an adversary
+writes, not ones an author writes by accident. They are worth closing, but one
+issue, measurement and PR per spelling is the expensive way, so a reviewer
+classifies a newly found gap by this table rather than by instinct:
+
+| Gap | Action |
+|---|---|
+| Any false positive | Fix now |
+| False negative in a form real files use (corpus count > 0) | Fix now |
+| False negative in a zero-prevalence spelling | Add a generator or a table row to the rule's spelling table; no standalone PR |
+| Grounding or severity refinement that changes no finding | Record it on the rule's page or in an issue; don't chase it |
+
+Prevalence schedules the effort and nothing else: it never enters a severity or
+a decision to retire a rule (ADR-028). A zero count also needs a raw-text check
+that the matcher is not simply broken before it is believed.
+
+A spelling table is one entry per flagged primitive, with generators that
+derive each equivalent input from it, so a new row is covered by every
+generator and a new generator covers every row. CL-0016 has one
+(`tests/test_CL0016_spellings.py`). A generator is added only once a premise
+check or a recorded measurement shows the spelling reaches the same object;
+the table checks that the linter treats equivalent inputs alike, not that they
+are equivalent. Until a rule has its own table, a zero-prevalence spelling gap
+in it is recorded on the rule's page or in an issue, and fixed when the table
+lands.
 
 ## Secure-design principles applied
 
