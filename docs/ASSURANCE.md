@@ -92,15 +92,20 @@ before any work is spent on it.
 
 **Demand** is the number of corpus services that contain the exact form the
 change would grade, or stop grading, measured over the current corpus.
-A service is **overshadowed** when it already carries a finding more severe
-than the one the change would add or remove: that finding is what its author
-sees, and fixes, first.
+A service is **overshadowed** when a finding it already carries calls for the
+same fix, or for a fix that would also remove the new finding: a more severe
+finding, another spelling of the same primitive (the rule's spelling table says
+which spellings are one primitive), or a dominating finding such as
+`privileged: true` over any device, capability or cgroup finding. A finding for
+a different object at the same severity does not overshadow: a second exposed
+port is a second exposure. The test is what the author is already being told
+to fix, not the severity label alone.
 
 | Demand | Overshadowed | Action |
 |---|---|---|
 | 0 | — | Record it, and do not build it. A spelling gets a row in the rule's spelling table (an expected failure, if the rule disagrees); anything else gets a recorded not-graded entry on the rule's page or in an issue |
 | > 0 | Some services are not | Build it. A change to what a rule fires on still needs the maintainer's approval |
-| > 0 | Every service is | Queue it: record it as above, and revisit when the corpus is refreshed |
+| > 0 | Every service is | Queue it: record it as above, close the issue with the `demand-gated` label, and recount when the corpus is refreshed |
 
 Demand decides whether effort is spent now, and nothing else: it never enters a
 severity, and never retires a rule (ADR-028). A zero count also needs a
