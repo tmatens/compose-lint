@@ -90,6 +90,38 @@ install -m 0755 "$asset" ~/.docker/cli-plugins/docker-compose
 docker compose version
 ```
 
+## Multi-file corpus (`multi/`)
+
+The main corpus stores files one at a time, so it measures the *shape* of a reference path and not whether a multi-file layout works: an `include:`, a cross-file `extends:`, an `env_file:`, a `COMPOSE_FILE` list or an override only resolve with their siblings present. `multi/` keeps whole repositories for that question. It found the 235-project refusal behind ADR-038, and the four loader bugs fixed on the way to it.
+
+Data lives at `~/.cache/compose-lint-corpus-multi/` (shallow clones under `repos/`, `candidates.json`, `selection.json`, `results.jsonl`, per-project stderr under `logs/`). Nothing from a clone is executed, and nothing from one is committed; the posture is `LICENSE-corpus.md`'s.
+
+```bash
+python scripts/corpus/multi/collect.py   # gh code search → candidates.json (10 req/min, ~8 min)
+python scripts/corpus/multi/fetch.py     # balanced sample: ≤50 repos per query label, no forks,
+                                         # not archived, ≤30 MB; shallow clones (seeded, reproducible)
+python scripts/corpus/multi/run.py       # Compose verdict + .venv/bin/compose-lint per project
+python scripts/corpus/multi/analyze.py   # agreement with Compose, exit-2 reasons
+```
+
+The October 2026 sample is 388 repositories, 1,821 Compose projects (a directory holding a primary file), of which Compose 5.5.0 accepts 1,324.
+
+**Before/after a loader change.** `run.py` takes any number of builds and can reuse Compose's verdicts from an earlier results file, so a comparison is one run:
+
+```bash
+# A wrapper per build, because the child environment is scrubbed and the main
+# checkout's .venv/bin/compose-lint resolves to whatever branch it is on:
+#   #!/bin/sh
+#   PYTHONPATH=/path/to/checkout/src exec /path/to/.venv/bin/python -m compose_lint "$@"
+python scripts/corpus/multi/run.py --bin base=/tmp/base-cl --bin head=/tmp/head-cl \
+    --reuse-compose ~/.cache/compose-lint-corpus-multi/results.jsonl \
+    --out ~/.cache/compose-lint-corpus-multi/results-compare.jsonl
+python scripts/corpus/multi/analyze.py ~/.cache/compose-lint-corpus-multi/results-compare.jsonl \
+    --base base --head head
+```
+
+The diff section reports every project whose exit class moved, the regressions (Compose accepts, base graded, head exits 2 — this should be an empty list), the newly graded projects, and every project graded by both whose rule set changed. Compose's verdict is `docker compose config -q` with no `-f`, in a clean environment, so overrides and `COMPOSE_FILE` apply exactly as compose-lint honours them; a project Compose refuses is still graded on purpose (ADR-036), so only the Compose-accepted population is compared.
+
 ## Longtail sampling methodology
 
 `fetch.py` is **not random sampling** — GitHub's code-search API has no random-document primitive. It is a **stratified sweep** designed to broaden coverage past the search engine's per-query result cap:

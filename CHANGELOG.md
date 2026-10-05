@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A multi-file corpus for the loader** (`scripts/corpus/multi/`, development
+  tooling). The main corpus stores files singly, so an `include:`, a cross-file
+  `extends:`, an `env_file:` or a `COMPOSE_FILE` list never resolves there.
+  These scripts keep whole repositories (388 in the October 2026 sample, 1,821
+  Compose projects), record Compose's own verdict beside compose-lint's, and
+  diff two builds project by project: exit class moved, regressions, newly
+  graded, rule sets changed. It is the evidence behind ADR-038 and the four
+  loader fixes that preceded it. Data stays out of tree under
+  `~/.cache/compose-lint-corpus-multi/`, as `LICENSE-corpus.md` requires.
+
 ### Changed
 
 - **An `include:`, `extends:` or `env_file:` reference may reach anywhere
