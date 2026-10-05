@@ -70,7 +70,7 @@ class TestWhatIsNoted:
         self, tmp_path: Path
     ) -> None:
         (note,) = notes_for(tmp_path, f"{_SAFE}    env_file: ../outside.env\n")
-        assert "outside the project directory" in note
+        assert "outside the repository" in note
         assert "CL-0020" in note
 
     def test_an_unresolved_path_says_it_names_no_file(self, tmp_path: Path) -> None:

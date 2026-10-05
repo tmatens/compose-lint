@@ -90,7 +90,7 @@ class TestDiscoveredConfig:
         assert code == 2
         assert MARKER not in out
         assert MARKER not in err
-        assert "resolves outside both the project directory" in err
+        assert "resolves through a symlink to a target outside the repository" in err
 
     def test_the_second_spelling_is_contained_too(
         self,
@@ -320,7 +320,7 @@ class TestComposeDocuments:
         code, out, err = _run([command, "compose.yml"], project, monkeypatch, capsys)
         assert code == 2
         assert MARKER not in out + err
-        assert "links to a file outside both its own directory" in err
+        assert "links to a file outside the repository" in err
         assert not (project / ".compose-lint.yml").exists()
 
 
@@ -365,7 +365,7 @@ class TestLinkRoot:
         (repo / "app" / "compose.yml").symlink_to(Path("..", "shared", "x.yml"))
         code, _, err = _run([], repo / "app", monkeypatch, capsys)
         assert code == 2
-        assert "Run compose-lint from a directory that contains the target" in err
+        assert "links to a file outside the repository" in err
 
     def test_a_chain_that_leaves_the_run_directory_is_refused(
         self,

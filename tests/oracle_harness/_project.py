@@ -197,16 +197,12 @@ class GeneratedProject:
     # compose-lint must report a coverage gap rather than grading a partial
     # stack (A10).
     expects_gap: bool = False
-    # Compose resolves it, and compose-lint reports a coverage gap by policy:
-    # a reference written with `..` that climbs out of the Compose project
-    # directory (ADR-036), here an `include:` entry's `project_directory:`.
-    # Asserted in both directions, so neither side can drift silently.
-    policy_gap: bool = False
     notes: tuple[str, ...] = field(default=())
     # Symbolic links, relative path -> target spelled relative to the link's
     # own directory, the way `ln -s` would be given it. Every target stays
-    # inside the generated tree: one leaving it is a fact about the machine
-    # the run happens on, which is registered policy rather than a case.
+    # inside the generated tree, which the harness writes as a repository: one
+    # leaving it is a fact about the machine the run happens on, which is
+    # registered policy rather than a case (ADR-038).
     links: dict[str, str] = field(default_factory=dict)
 
     def write(self, root: Path) -> Path:
@@ -670,7 +666,8 @@ class _LayoutBuilder(_Builder):
         else:
             if chosen.startswith(".."):
                 # Above the project directory, still inside the tree: the
-                # layout a checkout with one shared config directory has.
+                # layout a checkout with one shared config directory has. Once
+                # a registered policy gap, followed since ADR-038.
                 self.notes.append("include-project-dir-leaves-project")
             self.files[self._at(f"{chosen}/.env")] = _dotenv(values)
         if chosen != "parts" and self.rng.random() < 0.5:
@@ -834,7 +831,6 @@ class _LayoutBuilder(_Builder):
             seed=self.seed,
             files=self.files,
             primary=self._at("compose.yaml"),
-            policy_gap="include-project-dir-leaves-project" in self.notes,
             notes=tuple(self.notes),
             links=self.links,
         )

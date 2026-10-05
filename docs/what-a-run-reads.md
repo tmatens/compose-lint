@@ -27,13 +27,22 @@ coverage gap for a Compose document. The policy file is contained to the
 working directory, and one that leaves it is a configuration error. A plain
 path you type is read as given, and so is `--config`.
 
-The same link rule holds for every file a document routes the run to: the
-`.env`, a `COMPOSE_FILE` entry, an `include:` or `extends:` target, an
-`env_file:`, and an `include:` entry's `project_directory:`. A monorepo that
-links `svc/.env` to a shared `.env` at the repository root is graded as
-Compose deploys it when you run from the root. What a path *says* is a
-separate test: a reference written with `..` that climbs out of the project,
-or an absolute one, is refused whether or not a link is involved.
+The same rule holds for every file a document routes the run to: the `.env`,
+a `COMPOSE_FILE` entry, an `include:` or `extends:` target, an `env_file:`,
+and an `include:` entry's `project_directory:`. Each may reach anywhere inside
+the **repository** that holds the Compose file — the nearest directory above
+it with a `.git` entry — whether written with `..` or reached through a link,
+so a monorepo whose `svc/compose.yml` includes `../shared/compose.yml` or
+links `svc/.env` to the `.env` at the repository root is graded as Compose
+deploys it, from whichever directory you run. Without a repository, the
+boundary is the directory compose-lint was run from when that contains the
+project, and otherwise the project directory. What a path *says* is still a
+separate test: a reference written out of the repository, or an absolute one,
+is refused whether or not a link is involved, and the `.git` directory itself
+is never read ([ADR-038](adr/038-contain-references-to-the-repository.md)).
+`COMPOSE_FILE` is the one list that is still read relative to the project
+directory alone: an entry written with `..` is refused, though a linked entry
+follows the repository rule.
 
 | Source | Read because | Switch it off |
 |---|---|---|
@@ -89,12 +98,12 @@ notification with `executionSuccessful: false`. `--allow-partial-coverage`
 accepts it and grades the rest. The same holds for an included file's own
 `.env`, which Compose reads for that file.
 
-A `.env` that resolves outside both the project and the directory the run
-started in — a committed symlink to a file elsewhere on the machine — is not
-read at all, the same containment every other file a run opens gets, and is
-the same coverage gap. So is an `include:` entry whose `project_directory:`
-cannot be placed — written with `..` out of the project, absolute,
-interpolated, or a directory symlink out of reach: Compose reads that
+A `.env` that resolves outside the repository — a committed symlink to a
+file elsewhere on the machine — is not read at all, the same containment
+every other file a run opens gets, and is the same coverage gap. So is an
+`include:` entry whose `project_directory:` cannot be placed — written with
+`..` out of the repository, absolute, interpolated, or a directory symlink
+out of reach: Compose reads that
 directory's `.env` and resolves the entry's paths from it, so every file in
 the entry is reported rather than graded against a directory Compose does not
 use.
@@ -107,7 +116,7 @@ credential written there reaches every surface CL-0020 describes — moving a
 line out of `environment:` no longer silences CL-0020/CL-0021 without
 changing what deploys. Only those two rules read env files; a finding names
 the key and the file, **never the value**, and a path resolving outside the
-project directory is refused rather than read. A refusal, and a target that
+repository is refused rather than read. A refusal, and a target that
 exists but could not be read (not UTF-8, over the size cap, not a regular
 file), is reported as an `unread_input` warning, so a JSON or SARIF consumer
 sees it as well as a reader of stderr. A missing target is a note only,

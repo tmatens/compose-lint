@@ -303,8 +303,7 @@ class TestReadEnvContainment:
         project = self._outside(tmp_path)
         (project / ".env").symlink_to(tmp_path / "outside.env")
         assert env_read_failure(project) == (
-            "it resolves outside both the project directory and the directory "
-            "compose-lint was run from"
+            "it resolves through a symlink to a target outside the repository"
         )
 
     def test_a_symlink_inside_the_project_is_read(self, tmp_path: Path) -> None:
@@ -340,8 +339,7 @@ class TestReadEnvContainment:
         if read_env(tmp_path) is not None:
             pytest.fail("the process environment was read as a .env", pytrace=False)
         assert env_read_failure(tmp_path) == (
-            "it resolves outside both the project directory and the directory "
-            "compose-lint was run from"
+            "it resolves through a symlink to a target outside the repository"
         )
 
 

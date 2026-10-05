@@ -46,7 +46,9 @@ from compose_lint._env_file import (
     read_env,
 )
 from compose_lint._safe_read import (
+    GIT_MARKER,
     UnsafeFileError,
+    containment_root,
     out_of_reach,
     read_text_bounded,
 )
@@ -74,7 +76,7 @@ class Unread(Enum):
 
     #: The path still carries a ``${VAR}`` nothing supplied, so it names no file.
     UNRESOLVED_PATH = "unresolved-path"
-    #: The path resolves outside the project directory (ADR-027 §7).
+    #: The path resolves outside the repository (ADR-027 §7, ADR-038).
     OUTSIDE_PROJECT = "outside-project"
     #: Named, inside the project, and not there. Compose aborts when required.
     ABSENT = "absent"
@@ -212,7 +214,10 @@ def project_relative(path: str, prefix: tuple[str, ...] = ()) -> list[str] | Non
     Segment math, never the lint host's path semantics: whether a document
     reaches outside its own project is a fact about the document, and ADR-023
     requires it to read the same on every platform. A leading ``/``, a drive
-    letter, a ``~``, or any ``..`` that climbs past the start all leave.
+    letter, a ``~``, or any ``..`` that climbs past the start all leave. So
+    does a path naming a ``.git`` directory: the root is a repository, and its
+    ``.git`` is the one thing inside a checkout that is not the change under
+    review (ADR-038).
 
     Cleaning is lexical and happens before anything touches the filesystem,
     because Compose's is too: ``conf/../app.env`` reads ``app.env`` even when
@@ -231,30 +236,43 @@ def project_relative(path: str, prefix: tuple[str, ...] = ()) -> list[str] | Non
                 return None
             segments.pop()
             continue
+        if segment == GIT_MARKER:
+            return None
         segments.append(segment)
     return segments or None
 
 
-def _classify(ref: EnvFileRef, base_dir: Path) -> tuple[Path | None, Unread | None]:
-    """The lint-host path to open, or why there is not one."""
+def _classify(
+    ref: EnvFileRef, root: Path, prefix: tuple[str, ...] = ()
+) -> tuple[Path | None, Unread | None]:
+    """The lint-host path to open, or why there is not one.
+
+    The path is written relative to the project directory — the parser
+    re-expresses every merged document's ``env_file:`` paths in that frame
+    (``_rebase_env_files``) — and containment is measured against ``root``,
+    the repository holding the project (ADR-038). ``prefix`` is the project
+    directory under that root, so ``../shared/app.env`` written in
+    ``svc/compose.yml`` cleans to ``shared/app.env`` and resolves, while one
+    that pops past the root is refused.
+    """
     if "$" in ref.path:
         # Anything the document or its `.env` could supply is already
         # substituted by the time this runs, so a surviving `$` means the name
         # is unknowable from the files (ADR-026 divergence 1).
         return None, Unread.UNRESOLVED_PATH
-    segments = project_relative(ref.path)
+    segments = project_relative(ref.path, prefix)
     if segments is None:
         return None, Unread.OUTSIDE_PROJECT
-    candidate = base_dir.joinpath(*segments)
+    candidate = root.joinpath(*segments)
     # Second gate, and a different question. The segment math above rules on
     # what the *document* says, identically on every platform (ADR-023 §1); a
     # symlink says nothing. `probe.env` is spelled like a project-relative
     # file and passes every lexical test while the committed link beside it
     # points at `/home/runner/.aws/credentials` — the scenario ADR-027 §7
     # names and promises to refuse. Asked here, at the moment of resolution,
-    # about this filesystem. A link into the run directory is followed, as
-    # every other read site follows it (`out_of_reach`).
-    if out_of_reach(candidate, base_dir):
+    # about this filesystem, under the same link rule as every other read
+    # site (`out_of_reach`).
+    if out_of_reach(candidate, root):
         return None, Unread.OUTSIDE_PROJECT
     return candidate, None
 
@@ -284,6 +302,15 @@ def resolve_env_files(
     if not isinstance(services, dict):
         return {}
 
+    # Paths are written relative to `base_dir`, the project directory, and
+    # contained to the repository that holds it; the `.env` that supplies their
+    # `${VAR}` references is the project's own, beside `base_dir`
+    # (`_dotenv_scope`).
+    root = containment_root(base_dir)
+    try:
+        prefix = tuple(base_dir.absolute().relative_to(root.absolute()).parts)
+    except ValueError:  # pragma: no cover - the root is an ancestor by construction
+        prefix = ()
     plans: dict[str, list[tuple[EnvFileRef, Path | None, Unread | None]]] = {}
     texts: dict[Path, str | None] = {}
     for name, config in services.items():
@@ -294,7 +321,7 @@ def resolve_env_files(
             continue
         plan = []
         for ref in refs:
-            path, refusal = _classify(ref, base_dir)
+            path, refusal = _classify(ref, root, prefix)
             if path is not None and path not in texts:
                 texts[path] = _read_text(path)
             plan.append((ref, path, refusal))
@@ -497,7 +524,7 @@ def describe_unread(
             elif entry.reason is Unread.OUTSIDE_PROJECT:
                 notes.append(
                     f"service '{service}' reads {path}, which resolves outside "
-                    f"the project directory and is not opened, {unevaluated}"
+                    f"the repository and is not opened, {unevaluated}"
                 )
             else:
                 notes.append(

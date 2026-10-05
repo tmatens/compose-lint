@@ -205,13 +205,14 @@ actually run, not just the file you named:
   `environment:` values), `env_file:` targets, and `include:` / cross-file
   `extends:` are all resolved, so a socket mount hidden behind a variable or
   an override is graded as the mount it deploys.
-- **It never reads outside the project.** A path a document writes has to stay
-  inside the project directory, and a symlink has to land inside it or inside
-  the directory compose-lint was run from. The ambient shell environment is not read,
-  and no registry, daemon, or image is consulted, so the same checkout lints
-  the same on every machine.
+- **It never reads outside the repository.** A path a document writes, and a
+  symlink's target, have to stay inside the repository that holds the Compose
+  file (the nearest `.git` above it; without one, the directory compose-lint
+  was run from). `.git` itself is never read. The ambient shell environment is
+  not read, and no registry, daemon, or image is consulted, so the same
+  checkout lints the same on every machine.
 - **A part of the stack it cannot see is exit 2, not a silent pass.** A
-  reference that is missing, interpolated, or leaves the project is reported
+  reference that is missing, interpolated, or leaves the repository is reported
   as a coverage gap, and so is a `.env` it cannot read; the full list is in
   [coverage gaps are not findings](https://github.com/tmatens/compose-lint/blob/main/docs/compatibility.md#coverage-gaps-are-not-findings). Lint the `docker compose config`
   output to cover it, or pass `--allow-partial-coverage` to grade what is

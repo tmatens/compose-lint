@@ -341,7 +341,7 @@ def test_a_chain_cannot_walk_out_of_the_project_one_hop_at_a_time(
     )
     loaded = load_compose_full(project / "compose.yml")
 
-    assert any("outside the project directory" in gap for gap in loaded.gaps)
+    assert any("outside the repository" in gap for gap in loaded.gaps)
     assert "privileged" not in loaded.data["services"]["web"]
 
 
@@ -351,9 +351,9 @@ def test_a_chain_cannot_walk_out_of_the_project_one_hop_at_a_time(
 @pytest.mark.parametrize(
     ("reference", "reason"),
     [
-        ("../outside/base.yml", "outside the project directory"),
-        ("/etc/compose/base.yml", "outside the project directory"),
-        ("~/base.yml", "outside the project directory"),
+        ("../outside/base.yml", "outside the repository"),
+        ("/etc/compose/base.yml", "outside the repository"),
+        ("~/base.yml", "outside the repository"),
         ("${BASE}/base.yml", "interpolated"),
         ("nope.yml", "was not found"),
     ],
@@ -361,7 +361,7 @@ def test_a_chain_cannot_walk_out_of_the_project_one_hop_at_a_time(
 def test_a_reference_that_cannot_be_followed_stays_a_gap(
     tmp_path: Path, reference: str, reason: str
 ) -> None:
-    """Each residual names itself. "outside the project directory" and "was not
+    """Each residual names itself. "outside the repository" and "was not
     found" call for different edits from the reader, and the single "is not
     resolved" sentence they shared before told them neither."""
     target = _project(tmp_path, reference, base="")
@@ -398,7 +398,7 @@ def test_one_message_per_reference_and_reason_not_per_service(
     missing = next(g for g in gaps if "was not found" in g)
     assert "'a', 'b'" in missing
     assert "were graded" in missing
-    outside = next(g for g in gaps if "outside the project directory" in g)
+    outside = next(g for g in gaps if "outside the repository" in g)
     assert "'c' was graded" in outside
 
 
@@ -414,7 +414,7 @@ def test_a_symlink_out_of_the_project_is_refused(tmp_path: Path) -> None:
 
     loaded = load_compose_full(target)
     assert len(loaded.gaps) == 1
-    assert "outside both the project directory" in loaded.gaps[0]
+    assert "through a symlink to a target outside the repository" in loaded.gaps[0]
     assert "privileged" not in loaded.data["services"]["web"]
 
 

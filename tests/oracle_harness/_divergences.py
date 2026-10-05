@@ -20,11 +20,10 @@ the generated tree, and never declares a profile. ``test_the_generator_avoids
 _every_registered_divergence`` pins that, so the agreeing seeds mean the loader
 agrees rather than that the generator steered around the places it does not.
 
-One containment case is generated on purpose: a layout seed may write an
-``include:`` entry's ``project_directory:`` with ``..`` above the Compose
-project directory, still inside the tree. Such a seed carries
-``GeneratedProject.policy_gap``, and the suite asserts both halves on it
-directly: Compose resolves the project, compose-lint reports the gap.
+The generated tree is written as a repository, so a layout seed may point a
+reference above the Compose project directory and still inside the tree — the
+checkout-with-one-shared-directory layout — and that is a case, not a
+divergence, since ADR-038. Only a target outside the repository stays one.
 """
 
 from __future__ import annotations
@@ -94,15 +93,19 @@ DIVERGENCES: tuple[Divergence, ...] = (
     ),
     Divergence(
         name="include-outside-the-project",
-        reference="ADR-036 §7",
+        reference="ADR-036 §7, ADR-038",
         compose_does="reads the file and merges the services it declares",
         we_do=(
             "refuses to read it and reports a coverage gap, so the run says "
             "part of the stack was not linted instead of grading it against a "
             "file whose contents are a fact about the lint host's filesystem"
         ),
+        # `project/` is its own repository, so `../outer` leaves it. Without
+        # the marker the run directory would be the root, and a run started
+        # above both directories would follow the reference (ADR-038).
         files={
             "outer/common.yaml": "services:\n  shared:\n    image: nginx:1.27\n",
+            "project/.git/HEAD": "ref: refs/heads/main\n",
             "project/compose.yaml": ("include:\n  - ../outer/common.yaml\n" + _BASE),
         },
         compose_shows=("shared:",),

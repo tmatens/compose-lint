@@ -93,18 +93,21 @@ When compose-lint cannot see part of a stack, it does not guess. It reports a
 `coverage_gap`, a SARIF `toolExecutionNotifications` record with
 `executionSuccessful: false`, and **exit 2**. That is deliberate: reporting 0
 findings on a file whose real configuration was never read would be a false
-pass. A reference that *does* resolve inside the project is followed and
+pass. A reference that *does* resolve inside the repository is followed and
 merged, so it is not a gap
-([ADR-036](adr/036-resolve-references-that-stay-inside-the-project.md)).
+([ADR-036](adr/036-resolve-references-that-stay-inside-the-project.md),
+[ADR-038](adr/038-contain-references-to-the-repository.md)).
 
 This is the complete list of what raises one. Other pages link here rather
-than keep a list of their own. "Out of reach" means a symlink whose target is
-outside both the project directory and the directory compose-lint was run
-from.
+than keep a list of their own. "The repository" is the nearest directory above
+the Compose file that holds a `.git` entry; without one it is the directory
+compose-lint was run from when that contains the project, and otherwise the
+project directory. "Out of reach" means a symlink whose target resolves outside
+the repository, or into its `.git` directory, which is never read.
 
 - **An `include:` or cross-file `extends: {file: ...}` target that cannot be
   followed**, because its path:
-  - is written out of the project directory, with `..` or as an absolute path;
+  - is written out of the repository, with `..` or as an absolute path;
   - is a symlink out of reach;
   - is interpolated (`${...}`) and has no shipped value;
   - names a file that is missing, is not valid UTF-8, or fails the bounded
@@ -117,8 +120,8 @@ from.
   fragment declaring only `volumes:`, `networks:`, `configs:`, `secrets:` or
   `x-*` keys is merged, not a gap.
 - **An `include:` entry whose `project_directory:` cannot be placed**:
-  written with `..` out of the project, absolute, interpolated, or a directory
-  symlink out of reach. Every file in the entry is reported.
+  written with `..` out of the repository, absolute, interpolated, or a
+  directory symlink out of reach. Every file in the entry is reported.
 - **An `extends:` whose base cannot be found**: a cross-file one with no
   `service:`, or whose file declares no such service; an in-file one naming a
   service the file does not declare, or forming a cycle. Compose refuses all
@@ -177,7 +180,9 @@ Neither is a change to the exit-code contract: `0` / `1` / `2` keep their
 meanings and no code is added. The reasoning is recorded in
 [ADR-036](adr/036-resolve-references-that-stay-inside-the-project.md), which
 also decided that a reference resolving inside the project directory should be
-read rather than refused.
+read rather than refused, and
+[ADR-038](adr/038-contain-references-to-the-repository.md), which widened
+that to the repository holding the project.
 
 ### YAML Compose accepts that compose-lint refuses
 

@@ -8,7 +8,7 @@ not, the run fails. A pass always means everything was graded.
 
 ```mermaid
 flowchart TB
-  subgraph project["Inside the project directory or checkout"]
+  subgraph project["Inside the repository (the checkout)"]
     direction LR
     compose["compose.yml"]
     overlay["compose.override.yml<br/>or COMPOSE_FILE"]
@@ -22,7 +22,7 @@ flowchart TB
   policy["<b>Policy</b><br/>disabled rules reported as suppressed<br/>severity overrides, excluded services"]
   report["<b>Report</b><br/>text, JSON or SARIF on stdout"]
   code{"exit code"}
-  gap(["exit 2: coverage gap<br/>a referenced file is outside<br/>the project or unreadable"])
+  gap(["exit 2: coverage gap<br/>a referenced file is outside<br/>the repository or unreadable"])
   usage(["exit 2: usage error<br/>invalid Compose"])
   compose & overlay & env & refs & envfile -->|read| parse
   project -.-> gap

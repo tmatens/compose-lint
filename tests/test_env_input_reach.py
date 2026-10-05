@@ -330,8 +330,11 @@ class TestSymlinkedEnvLeavingTheProject:
         assert "CL-0002" not in _rules(doc)
         (gap,) = _gaps(doc["errors"])
         assert gap["file"].endswith(".env")
-        assert "resolves outside both the project directory" in gap["message"]
-        assert "resolves outside both the project directory" in err
+        assert (
+            "resolves through a symlink to a target outside the repository"
+            in gap["message"]
+        )
+        assert "resolves through a symlink to a target outside the repository" in err
         assert code == 2
 
     @pytest.mark.parametrize("fmt", ["text", "json"])
@@ -370,6 +373,10 @@ class TestSymlinkedEnvLeavingTheProject:
         _write(tmp_path / "compose.yml", IMAGE_BY_ENV)
         (tmp_path / ".env").symlink_to("/proc/self/environ")
         env = {"IMG": MARKER, "PATH": os.defpath, "NO_COLOR": "1"}
+        # A worktree run points PYTHONPATH at its own `src/`; the child must
+        # grade the same source the parent does (AGENTS.md, "Quality checks").
+        if "PYTHONPATH" in os.environ:
+            env["PYTHONPATH"] = os.environ["PYTHONPATH"]
 
         result = subprocess.run(  # noqa: S603 - fixed argv, synthetic env
             [sys.executable, "-m", "compose_lint", "compose.yml"],
@@ -381,7 +388,10 @@ class TestSymlinkedEnvLeavingTheProject:
         )
         assert MARKER not in result.stdout
         assert MARKER not in result.stderr
-        assert "resolves outside both the project directory" in result.stderr
+        assert (
+            "resolves through a symlink to a target outside the repository"
+            in result.stderr
+        )
 
     def test_a_link_inside_the_project_is_graded(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
@@ -402,6 +412,9 @@ class TestRefusedReferencesAreMachineReadable:
     def _project(self, tmp_path: Path, env_file: str) -> Path:
         _write(tmp_path / "outside" / "db.env", "DB_PASSWORD=placeholder\n")
         _write(tmp_path / "project" / "db.env", "DB_PASSWORD=placeholder\n")
+        # The project is its own repository, so `../outside` leaves it even
+        # though the run starts above both (ADR-038).
+        (tmp_path / "project" / ".git").mkdir()
         return _write(
             tmp_path / "project" / "compose.yml",
             f"services:\n  api:\n    image: nginx:1.27\n    env_file: {env_file}\n",
@@ -415,7 +428,7 @@ class TestRefusedReferencesAreMachineReadable:
             ["--format", "json", "project/compose.yml"], tmp_path, monkeypatch, capsys
         )
         (warning,) = _unread(doc)
-        assert "outside the project directory" in warning["message"]
+        assert "outside the repository" in warning["message"]
         assert warning["file"] == "project/compose.yml"
         assert code == 0
 

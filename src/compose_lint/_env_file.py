@@ -225,13 +225,13 @@ def read_env(
     report down with it.
 
     ``within`` is the project directory the file must resolve inside, defaulting
-    to ``directory`` itself; a link into the directory the run started in is
-    followed too (:func:`~compose_lint._safe_read.out_of_reach`). Every other
-    file a run reads passed this gate and the ``.env`` did not: a committed
-    ``.env`` symlinked to a file elsewhere on the runner was opened and its
-    values quoted into the report. Pointed at ``/proc/self/environ`` that was
-    the process environment. One that resolves outside both is treated as
-    absent, like any other unreadable ``.env``.
+    to ``directory`` itself and widened to the repository that holds it
+    (:func:`~compose_lint._safe_read.out_of_reach`). Every other file a run
+    reads passed this gate and the ``.env`` did not: a committed ``.env``
+    symlinked to a file elsewhere on the runner was opened and its values
+    quoted into the report. Pointed at ``/proc/self/environ`` that was the
+    process environment. One that resolves outside is treated as absent, like
+    any other unreadable ``.env``.
     """
     path = directory / ENV_FILENAME
     try:
