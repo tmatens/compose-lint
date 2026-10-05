@@ -199,6 +199,13 @@ says which file it read.
    (verified that Compose accepts both an absolute path and a `../` climb). 20
    corpus files name one.
 
+   *Amended ([ADR-038](038-contain-references-to-the-repository.md)):* the
+   boundary is the repository that holds the project, not the project
+   directory. `../shared/app.env` inside the same checkout is read; the
+   runner's credential file is outside it and stays refused. The leak this
+   decision names is unchanged, because it was always about files outside the
+   checkout.
+
 8. **`--no-env` covers it, and widens.** ADR-026 §6 stopped the flag count at
    two and this does not move it. The flag's help text is currently specific —
    *"ignore a `.env` sitting beside the Compose file"* — and becomes "do not read

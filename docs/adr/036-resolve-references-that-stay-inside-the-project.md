@@ -248,3 +248,14 @@ unchanged: a reference written with `..` that climbs out of the project, or an
 absolute one, is still refused by the lexical half of the gate, link or not.
 A target outside both roots is refused as before, which is the case the
 filesystem gate exists for.
+
+*Amendment ([ADR-038](038-contain-references-to-the-repository.md)): the root
+is the repository.* The two amendments above gave links a wider root than
+paths, so the same `shared/part.yml` was followed through a committed symlink
+and refused when written `../shared/part.yml`, and that refusal hit 236 of
+1,324 Compose-accepted projects in a multi-file sample. Both gates now measure
+against one root: the repository that holds the project (nearest `.git`
+entry), the run directory when there is none and it contains the project, and
+the project directory otherwise. Decision 7's "outside the project directory"
+residual reads "outside the repository"; a `.git` directory is never read.
+Everything else in this ADR stands.
