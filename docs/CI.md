@@ -15,9 +15,8 @@ per-channel publish contract see [`DISTRIBUTION.md`](DISTRIBUTION.md).
 | `scorecard.yml`           | Branch-protection change + weekly          | OpenSSF Scorecard, results in Code Scanning            |
 | `scout-scan.yml`          | Daily (06:00 UTC) + manual                 | Docker Scout CVE scan against the published image      |
 | `vuln-report.yml`         | Daily (06:30 UTC) + manual                 | Rolling issue listing every vulnerability with a fix   |
-| `publish.yml`             | `v*` tag push                              | Release pipeline — see `RELEASING.md`                  |
+| `publish.yml`             | `v*` tag push + manual (Docker republish on a tag) | Release pipeline — see `RELEASING.md`          |
 | `release-prep.yml`        | Manual (`workflow_dispatch`, maintainer)   | Opens the "Prepare X.Y.Z release" PR                   |
-| `publish-channel.yml`     | Manual (`workflow_dispatch`, maintainer)   | Emergency single-channel publish                       |
 | `marketplace-smoke.yml`   | Push to `main` touching the file + manual + weekly cron | Verifies the published action, pre-commit hook, and the `uvx`/`pipx run` one-shot forms end-to-end |
 | `forgejo-smoke.yml`       | PRs + pushes to `main` touching the harness + manual + weekly cron | Runs the Forgejo guide's snippet on a live containerized Forgejo |
 | `forgejo-smoke-bump.yml`  | Daily (05:17 UTC) + manual                 | Opens the PR that moves the harness to the newest Forgejo + runner, docs claim included |
@@ -284,8 +283,9 @@ clean is worse than no reporting job at all.
 
 ## Release pipeline — `publish.yml`
 
-Tag-triggered. Full detail in [`RELEASING.md`](RELEASING.md) and the
-per-channel contract in [`DISTRIBUTION.md`](DISTRIBUTION.md). Summary:
+Tag-triggered, plus a manual Docker-only republish (below). Full detail in
+[`RELEASING.md`](RELEASING.md) and the per-channel contract in
+[`DISTRIBUTION.md`](DISTRIBUTION.md). Summary:
 
 `verify-tag` → `build` → `testpypi` → `testpypi-smoke` + `docker-smoke`
 + `docker-scout` → **`release-gate` (manual approval)** → `publish` +
@@ -296,15 +296,14 @@ per-channel contract in [`DISTRIBUTION.md`](DISTRIBUTION.md). Summary:
 the shared pre-publish battery — build the image, then assert the version
 matches the tag, the clean fixture exits 0, the insecure fixture exits 1,
 and SARIF output parses, each under the fully-hardened flag set README
-documents. `publish-channel.yml` calls the same workflow, so the
-emergency path's smoke is exercised by every normal release rather than
-only when someone reaches for the escape hatch (#633).
+documents. It was extracted when a second, manual publish workflow kept
+its own copy and that copy drifted (#633); the republish path is now
+`publish.yml`'s own `workflow_dispatch`, so it runs the same job.
 
 `docker-scout` is separate from the smoke because it needs
-`security-events: write` to upload its SARIF, and the emergency path does
-not CVE-scan; keeping it here means that path is not made to grant a
-permission it never uses. It gates `release-gate` alongside the smoke, so
-a critical CVE still blocks the release.
+`security-events: write` to upload its SARIF, which the shared smoke
+workflow should not have to grant. It gates `release-gate` alongside the
+smoke, so a critical CVE still blocks the release.
 
 `verify-tag` is the first gate: it asserts the tag is annotated (not
 lightweight), that the tag commit is reachable from `origin/main`, and
@@ -414,29 +413,32 @@ manual because (a) `GITHUB_TOKEN`-created tags don't trigger downstream
 workflows and (b) the SSH-signed tag is the root of the Sigstore
 provenance chain. See `RELEASING.md`.
 
-### `publish-channel.yml`
+### `publish.yml` — Docker republish (`workflow_dispatch`)
 
-Emergency escape hatch when one channel's smoke is broken and another
-must ship. Dispatch it **from the tag** (the environments admit `v*` tags
-only), then enter the tag and the channel (`pypi` or `docker`). Bypasses
-the shared `release-gate`. There is no approval click on this path: what
-remains is `verify-tag` — the tag must be signed by a key in
-`.github/allowed_signers` — and the environments' tags-only policy. The
-signature, not a click, is the control.
+Republishes the Docker image of an existing release, and nothing else.
+Dispatch it **on the release tag** (`gh workflow run publish.yml --ref
+vX.Y.Z`, or **Use workflow from** → the tag). `verify-tag` refuses a run
+on any other ref, including a branch that happens to share the tag's name.
 
-Both paths re-apply the `verify-tag` check (annotated + reachable from
-`origin/main`) inline — the emergency route doesn't skip supply-chain
-gates. The pypi path also generates an SBOM and attaches it to the
-existing GitHub Release with `gh release upload --clobber`, matching
-what `publish.yml`'s normal path produces.
+It runs `verify-tag`, both `docker-smoke` legs, `docker-scout`, the
+`release-gate` approval, `docker-build` and `docker-publish`. The PyPI
+jobs, `dockerhub-description`, `create-release` and the post-release
+follow-ups are push-only. Image aliases (`X.Y`, `X`, `latest`) move only
+when the tag is the highest release they cover, so republishing an older
+version never drags them backwards (`scripts/release_image_tags.py`).
 
-The docker path's pre-publish smoke is the shared
-[`release-docker-smoke.yml`](../.github/workflows/release-docker-smoke.yml),
-not a copy of it. This workflow is `workflow_dispatch`-only, so nothing
-routinely runs it and an edit to a private copy would first execute
-mid-emergency — which is how its copy came to omit the SARIF check the
-normal path ran. Calling the shared definition means every normal release
-exercises the steps this path will take under pressure.
+It exists inside `publish.yml` rather than as a separate workflow because
+the workflow file is part of the image's signing identity: a republish
+signs as `publish.yml@refs/tags/vX.Y.Z`, the identity every release is
+verified against. 0.3.4 was republished by the separate workflow this
+replaced and carries that workflow's identity instead. Unlike that
+workflow, this path goes through the `release-gate` approval.
+
+A dispatch runs the workflow file as it was at the tag, so it works only
+for tags cut after the trigger was added (every release after 0.34.0), and it cannot fix a
+defect in that tag's own workflow: that takes a patch release.
+`tests/test_publish_dispatch.py` evaluates every job condition for push and
+dispatch runs, since this path otherwise runs only when it is needed.
 
 Document why you used it in the GitHub Release notes — every invocation
 should leave a paper trail.

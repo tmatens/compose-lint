@@ -1,25 +1,20 @@
 name: Release Docker smoke
 
-# The functional smoke every publish path runs against the image before it
-# ships, called by publish.yml and publish-channel.yml.
+# The functional smoke publish.yml runs against the image before it ships.
 #
-# It used to be inlined in both, which made the emergency path the weaker
-# copy: publish.yml asserted the container emits valid SARIF and
-# publish-channel.yml did not, so the escape hatch shipped an image against
-# a smaller definition of "works" than the normal path — the same shape of
-# drift verify-tag.yml was extracted to stop, and the same one #624 found in
-# the fixtures.
-#
-# Sharing the definition also makes it *exercised*. publish-channel.yml is
-# dispatch-only and last ran in April; any edit to its copy was checked by
-# reading and by actionlint, never by running (#633). One definition means
-# every normal release runs the same steps the break-glass path will run.
+# It was extracted when a second, manual publish workflow carried its own
+# copy, and that copy had become the weaker one: publish.yml asserted the
+# container emits valid SARIF and the manual path did not, so the escape hatch
+# shipped an image against a smaller definition of "works" than the normal
+# path — the same shape of drift verify-tag.yml was extracted to stop, and the
+# same one #624 found in the fixtures. That workflow is gone (the republish
+# path is now publish.yml's own workflow_dispatch), but the battery stays in
+# one file, pinned by tests/test_release_layer.py.
 #
 # Vulnerability scanning is deliberately not here. Scout answers a different
-# question (does the image carry a critical CVE), needs `security-events:
-# write` to upload its SARIF, and is not part of the emergency path — so it
-# stays a publish.yml job rather than forcing every caller to grant a
-# permission its own path never uses.
+# question (does the image carry a critical CVE) and needs `security-events:
+# write` to upload its SARIF, so it stays a publish.yml job rather than
+# forcing this workflow to grant that permission.
 
 on:
   workflow_call:
@@ -32,9 +27,7 @@ on:
         description: >-
           JSON strategy matrix, e.g.
           {"include":[{"platform":"linux/amd64","runner":"ubuntu-24.04"}]}.
-          The normal path smokes both shipped arches; the emergency path
-          smokes amd64 only, because its multi-arch coverage comes from the
-          build matrix that follows it.
+          publish.yml smokes both shipped arches.
         required: true
         type: string
 
@@ -53,9 +46,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The tag, not the dispatched branch: workflow_dispatch sets
-          # GITHUB_REF to the branch the run was started from, so the
-          # emergency path would otherwise smoke main while publishing a tag.
+          # The tag under release. verify-tag already requires the run to be
+          # on that tag, so this matches the default; naming it keeps the
+          # smoke tied to the input rather than to whatever ref started it.
           ref: ${{ inputs.tag }}
           persist-credentials: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
