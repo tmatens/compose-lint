@@ -36,7 +36,7 @@ Output formats: human `text` (default), `json`, and `sarif` — SARIF uploads re
 ## This image
 
 - [Distroless Python](https://github.com/GoogleContainerTools/distroless) on Debian, multi-arch (`linux/amd64` + `linux/arm64`), nonroot UID 65532, no shell or package manager at runtime.
-- Every release ships SLSA build provenance, Sigstore attestations, and an [OpenVEX](https://openvex.dev/) document; Docker Scout scans the published image daily.
+- Every release ships SLSA build provenance, Sigstore attestations, and an [OpenVEX](https://openvex.dev/) document; Docker Scout scans the published image daily. To verify an image's signature, see [Verifying a release](https://tmatens.github.io/compose-lint/verifying/).
 - Tracked on [OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/tmatens/compose-lint) and [OpenSSF Best Practices](https://www.bestpractices.dev/projects/12472).
 - To run the container itself fully hardened, see [docs/hardening.md](https://github.com/tmatens/compose-lint/blob/main/docs/hardening.md).
 

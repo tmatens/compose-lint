@@ -124,6 +124,8 @@ Trusted Publishers (OIDC) only — no manual `twine upload`. Sigstore attestatio
 
 `docs/dockerhub-overview.md` is the Docker Hub description — hard 25000-byte cap (CI-enforced by the `readme-size` job; Docker Hub 400s over it) and deliberately free of version pins so it never needs a per-release bump. `README.md` is GitHub/PyPI-facing, not synced anywhere, and has no byte cap — but its integration snippets carry version pins that the RELEASING.md checklist bumps each release (as does `docs/hardening.md`).
 
+`README.md` links to topics; it does not hold them. New reference material (a procedure, a command set, a table that will grow) gets a page under `docs/` and a nav entry in `mkdocs.yml`, and the README gains at most a sentence linking to it. The verification commands live on `docs/verifying.md` for this reason.
+
 Prose that states how many rules there are is a different kind of pin: it goes stale when a rule lands, not when a version ships, so no release checklist catches it. Four surfaces make that claim and `tests/test_rule_surfaces.py` holds all four to the registry count.
 
 ## Things to avoid

@@ -56,6 +56,8 @@ reading here) in the terminal.
   why the `permissions:` block is part of the recipe.
 - **[Hardening walkthrough](hardening.md)** — taking a real Compose file from
   default to hardened, finding by finding.
+- **[Verifying a release](verifying.md)** — checking an image's or a
+  package's signature before you pin it.
 - **[CL-0006's capability guide](rules/CL-0006.md#determining-required-capabilities)**
   — how to determine the capabilities an image actually needs, with a verbatim
   error-message → capability table proven in CI.

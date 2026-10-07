@@ -143,7 +143,7 @@ TMPDIR=$HOME/.pytest-tmp pytest --basetemp=$HOME/.pytest-tmp/bt
 
 ## Conventions the diff won't show you
 
-Five rules that reviews here have asked for and no file stated. Each names
+Six rules that reviews here have asked for and no file stated. Each names
 the test that enforces it, or says that a reviewer does.
 
 - **Every list in the docs is exhaustive, and tested.** The Validation bullets
@@ -173,6 +173,10 @@ the test that enforces it, or says that a reviewer does.
   change the PR body names has an assertion — SARIF as well as JSON (#670),
   the cases the issue did not list but the change covers (#675). The PR
   template's Evidence section asks for exactly this.
+- **The README links to topics; it does not hold them.** A new procedure,
+  command set or growing table gets its own page under `docs/` with a nav
+  entry in `mkdocs.yml`, and the README gains at most a sentence linking to
+  it. Reviewed by hand.
 
 ## Adding a new rule
 

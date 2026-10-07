@@ -466,24 +466,10 @@ run, there are no inline suppressions, and `--explain` works offline.
 compose-lint is built to be safe to depend on:
 
 - **Runtime image**: [distroless Python](https://github.com/GoogleContainerTools/distroless) on Debian, multi-arch (`linux/amd64` + `linux/arm64`), nonroot UID 65532, no shell or package manager at runtime. See [ADR-009](https://github.com/tmatens/compose-lint/blob/main/docs/adr/009-runtime-base-image.md).
-- **Supply chain**: every release ships SLSA build provenance and Sigstore attestations. Published to PyPI via Trusted Publishers (OIDC) — no manual `twine upload`, no long-lived API tokens.
+- **Supply chain**: every release ships SLSA build provenance and Sigstore attestations. Published to PyPI via Trusted Publishers (OIDC) — no manual `twine upload`, no long-lived API tokens. To check a release yourself, see [Verifying a release](https://tmatens.github.io/compose-lint/verifying/).
 - **Vulnerability transparency**: each release ships an [OpenVEX](https://openvex.dev/) document declaring known pip CVEs `not_affected`: pip code is stripped from the runtime image.
 - **External audit**: tracked on [OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/tmatens/compose-lint) and [OpenSSF Best Practices Baseline 2](https://www.bestpractices.dev/projects/12472); CodeQL runs on every PR, ClusterFuzzLite fuzzes code-touching PRs, and Docker Scout scans the published image daily.
 - **Reporting vulnerabilities**: see [SECURITY.md](https://github.com/tmatens/compose-lint/blob/main/.github/SECURITY.md).
-
-### Verifying the Docker image
-
-Images are signed keyless with [cosign](https://github.com/sigstore/cosign): there is no signing key. The release workflow's GitHub OIDC token gets a short-lived certificate naming the workflow and the tag it ran for, so pin both when you verify:
-
-```bash
-VERSION=0.34.0
-cosign verify \
-  --certificate-identity "https://github.com/tmatens/compose-lint/.github/workflows/publish.yml@refs/tags/v${VERSION}" \
-  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-  "composelint/compose-lint:${VERSION}"
-```
-
-Pinning the exact tag, rather than a pattern, also rejects a version tag moved onto an older signed image. The SBOM and OpenVEX documents are attested with the same identity; `cosign verify-attestation` needs `--type spdxjson` or `--type openvex` to find them. One release, 0.3.4, was republished by `publish-channel.yml` and is signed with that workflow's identity instead.
 
 ## Contributing
 
