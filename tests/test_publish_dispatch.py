@@ -19,6 +19,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -331,7 +332,10 @@ def _guard_script() -> str:
     return str(guard["run"])
 
 
-@pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
+@pytest.mark.skipif(
+    sys.platform == "win32" or shutil.which("bash") is None,
+    reason="the guard is bash on a Linux runner; Windows' bash is the WSL stub",
+)
 @pytest.mark.parametrize(
     ("tag", "ref", "passes"),
     [
