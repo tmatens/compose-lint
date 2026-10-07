@@ -1,6 +1,6 @@
 # ClusterFuzzLite build image. Renovate manages the digest pin; the tag
 # comment tracks which OSS-Fuzz base-builder-python release it maps to.
-FROM gcr.io/oss-fuzz-base/base-builder-python@sha256:79cc75a68ab65120da54f35d53f10c7536554ffe684eea5bae078a9a5ff82923
+FROM gcr.io/oss-fuzz-base/base-builder-python@sha256:f606cee856c34585c314af4fbc41940bce398f5244fbfc757116188828f473c6
 
 COPY . $SRC/compose-lint
 WORKDIR $SRC/compose-lint
