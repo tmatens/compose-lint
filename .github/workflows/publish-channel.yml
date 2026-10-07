@@ -250,14 +250,43 @@ jobs:
             digest_refs+=("composelint/compose-lint@sha256:${f}")
           done
           docker buildx imagetools create "${tag_flags[@]}" "${digest_refs[@]}"
-      - name: Inspect manifest digest
+      - name: Resolve and check the pushed manifest digest
         id: inspect
+        working-directory: /tmp/digests
         env:
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
+          # The tag is read back once; everything after this step works on
+          # the digest, never the tag. Before that digest is signed, prove it
+          # is the index this job assembled: its children must be exactly the
+          # manifests inside the per-platform indexes docker-build pushed by
+          # digest. Otherwise anyone able to move the tag between the push
+          # above and the signing step below would get their index signed by
+          # this workflow.
           digest="$(docker buildx imagetools inspect \
             "composelint/compose-lint:${VERSION}" \
             --format '{{json .Manifest}}' | jq -r '.digest')"
+          if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Could not resolve a digest for tag ${VERSION}"
+            exit 1
+          fi
+          expected=""
+          for f in *; do
+            raw="$(docker buildx imagetools inspect --raw "composelint/compose-lint@sha256:${f}")"
+            if jq -e '.manifests' <<< "${raw}" >/dev/null; then
+              expected+="$(jq -r '.manifests[].digest' <<< "${raw}")"$'\n'
+            else
+              expected+="sha256:${f}"$'\n'
+            fi
+          done
+          expected="$(sed '/^$/d' <<< "${expected}" | sort)"
+          actual="$(docker buildx imagetools inspect --raw \
+            "composelint/compose-lint@${digest}" | jq -r '.manifests[].digest' | sort)"
+          if [ -z "${expected}" ] || [ "${actual}" != "${expected}" ]; then
+            echo "::error::Tag ${VERSION} resolves to ${digest}, which is not the index this job pushed"
+            printf 'expected children:\n%s\nactual children:\n%s\n' "${expected}" "${actual}"
+            exit 1
+          fi
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
       - name: Sign manifest with cosign
         env:
@@ -269,7 +298,7 @@ jobs:
         run: |
           for attempt in 1 2 3; do
             if cosign verify \
-              --certificate-identity-regexp="github\.com/tmatens/compose-lint" \
+              --certificate-identity="https://github.com/${GITHUB_WORKFLOW_REF}" \
               --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
               "composelint/compose-lint@${DIGEST}"; then
               exit 0

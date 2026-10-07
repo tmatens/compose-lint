@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **README: how to verify the Docker image.** A `cosign verify` command that
+  pins both the release workflow's certificate identity for the exact tag and
+  GitHub's OIDC issuer, plus the `--type` needed to find the SBOM and OpenVEX
+  attestations.
+
+### Changed
+
+- **Hardened Docker image signing to the exact index the release pushed.**
+  The publish job resolved the version tag on Docker Hub after pushing and
+  signed the digest it pointed to. Reaching that path requires write access to
+  the Docker Hub repository and moving the tag within the seconds between the
+  push and the signing step; in that unlikely case the release would sign an
+  index it did not build. The job now checks that the index's manifests are
+  exactly the ones the per-platform build jobs pushed by digest, and fails the
+  release otherwise, so signatures vouch only for what the release workflow
+  built. The post-sign check also verifies against this workflow's exact
+  identity (`publish.yml` or `publish-channel.yml` at the ref it ran on)
+  instead of any workflow in the repository.
+
 ## [0.34.0] - 2026-10-05
 
 ### Added
