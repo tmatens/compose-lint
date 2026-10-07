@@ -103,6 +103,7 @@ nav:
       - "Forgejo Actions": forgejo.md
       - Severity levels: severity.md
       - Hardening walkthrough: hardening.md
+      - Verifying releases: verifying.md
       - Compatibility: compatibility.md
   - Project:
       - Roadmap: ROADMAP.md

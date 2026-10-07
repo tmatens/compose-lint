@@ -9,10 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **README: how to verify the Docker image.** A `cosign verify` command that
-  pins both the release workflow's certificate identity for the exact tag and
-  GitHub's OIDC issuer, plus the `--type` needed to find the SBOM and OpenVEX
-  attestations.
+- **A "Verifying a release" docs page.** `cosign verify` for the image,
+  pinning the release workflow's certificate identity for the exact tag and
+  GitHub's OIDC issuer; the `--type` needed to find the SBOM and OpenVEX
+  attestations; sigstore-python and `gh attestation verify` for the wheel and
+  sdist; and which identity each release's image carries. The README and
+  the Docker Hub overview link to it.
 
 ### Changed
 
