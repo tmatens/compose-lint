@@ -92,9 +92,9 @@ this checklist as completed.
 
 - [ ] GitHub repo: Admin role on `tmatens/compose-lint`.
 - [ ] GitHub Environment `release`: added as a required reviewer.
-- [ ] GitHub Environment `pypi`: no per-user grant (OIDC), but confirm
-      the new maintainer can dispatch the manual `Publish channel`
-      escape hatch.
+- [ ] GitHub Environment `pypi`: no per-user grant (OIDC). Confirm the
+      new maintainer can dispatch `Publish` on a release tag (the Docker
+      republish path).
 - [ ] PyPI project `compose-lint`: added as a Maintainer.
 - [ ] Docker Hub `composelint` org: added as an org Owner.
 - [ ] `.github/allowed_signers`: PR adds their SSH signing key,

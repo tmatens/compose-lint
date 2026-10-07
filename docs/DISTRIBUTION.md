@@ -26,9 +26,12 @@ channels; production publish jobs for every channel run in parallel
 after the gate clears. New channels add a smoke job and a publish job —
 the gate itself does not change.
 
-If a channel's smoke is broken and another must ship independently, use
-`.github/workflows/publish-channel.yml` (manual `workflow_dispatch`).
-That workflow requires the same per-channel environment approval.
+There is no single-channel publish for a new release: every channel ships
+from the same gated run. A failed job is re-run; a Docker image that needs
+publishing again outside that run is republished through `publish.yml`'s
+`workflow_dispatch` on the release tag, which goes through the same
+`release-gate` approval. See [RELEASING.md](RELEASING.md) "If something
+goes wrong".
 
 ### 3. Version source of truth
 

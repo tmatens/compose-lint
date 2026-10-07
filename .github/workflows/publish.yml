@@ -8,6 +8,16 @@ on:
       # after a release must NOT re-trigger this pipeline — it is a
       # lightweight convenience pointer, not a release.
       - "v[0-9]+.[0-9]+.[0-9]+"
+  # Republish the Docker image of an existing release — and only that. Run it
+  # on the release tag (`gh workflow run publish.yml --ref vX.Y.Z`); verify-tag
+  # refuses any other ref. Dispatching here rather than from a separate
+  # workflow keeps the image's signing identity
+  # publish.yml@refs/tags/vX.Y.Z, the same one every release is verified
+  # against. The dispatch path runs verify-tag, both Docker smokes, Scout,
+  # the release-gate approval, docker-build and docker-publish; the PyPI jobs,
+  # the GitHub Release and the post-release follow-ups are push-only. See
+  # docs/RELEASING.md "If something goes wrong" for when to use it.
+  workflow_dispatch:
 
 # Deny-all at the workflow level; every job declares the scopes it needs.
 permissions: {}
@@ -39,9 +49,10 @@ jobs:
   #      from a commit they control. Adding/rotating signing keys is a
   #      maintainer action documented in GOVERNANCE.md.
   verify-tag:
-    # Extracted to a reusable workflow so publish-channel.yml calls the *same*
-    # gate rather than keeping a copy that drifted (it omitted the signature
-    # check entirely). See .github/workflows/verify-tag.yml for what it asserts.
+    # Extracted to a reusable workflow when a second publish workflow existed
+    # and its copy of the gate drifted (it omitted the signature check
+    # entirely). See .github/workflows/verify-tag.yml for what it asserts,
+    # including that the run is on the tag it verifies.
     #
     # The grant has to be made here, not just in the called workflow. A called
     # workflow's jobs cannot hold more than the calling job was given, and this
@@ -57,6 +68,8 @@ jobs:
 
   build:
     needs: verify-tag
+    # PyPI side only; a workflow_dispatch republish ships the image alone.
+    if: github.event_name == 'push'
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
@@ -402,11 +415,21 @@ jobs:
   # can't catch per-arch digest pins or native-wheel mismatches before the
   # release-gate — so both legs are exercised, on their own runners, no QEMU.
   #
-  # The battery itself lives in release-docker-smoke.yml because
-  # publish-channel.yml runs the same one. See that file for why it is shared
-  # rather than copied (#633).
+  # The battery itself lives in release-docker-smoke.yml, kept as one
+  # definition after a second copy of it drifted (#633).
+  #
+  # On a push this waits for `build`, as it always has. On a workflow_dispatch
+  # `build` is skipped by design, so the condition accepts that skip only for
+  # a dispatch and still requires verify-tag to have passed — `build` would
+  # also read as skipped if verify-tag had failed. The explicit `!cancelled()`
+  # is what lets the job run at all when a need was skipped.
   docker-smoke:
-    needs: build
+    needs: [verify-tag, build]
+    if: >-
+      !cancelled()
+      && needs.verify-tag.result == 'success'
+      && (needs.build.result == 'success'
+          || (github.event_name == 'workflow_dispatch' && needs.build.result == 'skipped'))
     permissions:
       contents: read
     uses: $/.github/workflows/release-docker-smoke.yml
@@ -418,16 +441,20 @@ jobs:
         {"platform":"linux/arm64","runner":"ubuntu-24.04-arm"}]}
 
   # Scout is a separate job from the smoke above because it answers a
-  # different question and needs a stronger token. Keeping it here rather
-  # than in the shared workflow means publish-channel.yml — which does not
-  # CVE-scan — is not made to grant `security-events: write` to a job whose
-  # steps it never runs. It costs one extra amd64 build on the release path.
+  # different question and needs a stronger token, which the shared smoke
+  # workflow should not have to grant. It costs one extra amd64 build on the
+  # release path. Same condition as docker-smoke, for the same reason.
   #
   # Single-arch (amd64) is deliberate: CVE findings come from base-image
   # layers that are identical across arch in practice, and scanning twice
   # would double-upload SARIF under the same category.
   docker-scout:
-    needs: build
+    needs: [verify-tag, build]
+    if: >-
+      !cancelled()
+      && needs.verify-tag.result == 'success'
+      && (needs.build.result == 'success'
+          || (github.event_name == 'workflow_dispatch' && needs.build.result == 'skipped'))
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
@@ -540,8 +567,18 @@ jobs:
 
   # Single approval gate — all smoke tests (PyPI + Docker) must pass first.
   # Configure the 'release' GitHub Environment with required reviewers.
+  #
+  # A workflow_dispatch republish goes through the same approval. Its PyPI
+  # smoke is skipped by design, and that skip is accepted only on a dispatch;
+  # on a push every smoke must have succeeded.
   release-gate:
     needs: [testpypi-smoke, docker-smoke, docker-scout]
+    if: >-
+      !cancelled()
+      && needs.docker-smoke.result == 'success'
+      && needs.docker-scout.result == 'success'
+      && (needs.testpypi-smoke.result == 'success'
+          || (github.event_name == 'workflow_dispatch' && needs.testpypi-smoke.result == 'skipped'))
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     environment:
@@ -551,6 +588,7 @@ jobs:
 
   publish:
     needs: release-gate
+    if: github.event_name == 'push'
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment:
@@ -573,8 +611,13 @@ jobs:
   # Debian apt-get (exit 255 from the QEMU emulator itself), so each arch
   # builds on its own native runner. A subsequent job stitches the
   # per-arch digests into a multi-arch manifest list.
+  #
+  # The explicit condition here and on docker-publish keeps both running on a
+  # workflow_dispatch, where jobs further up the graph were skipped by design.
+  # Each still requires its direct predecessor to have succeeded.
   docker-build:
     needs: release-gate
+    if: ${{ !cancelled() && needs.release-gate.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -630,6 +673,7 @@ jobs:
 
   docker-publish:
     needs: docker-build
+    if: ${{ !cancelled() && needs.docker-build.result == 'success' }}
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
@@ -641,11 +685,13 @@ jobs:
       url: https://hub.docker.com/r/composelint/compose-lint
     steps:
       # Checkout provides .vex/compose-lint.openvex.json for the
-      # OpenVEX attestation step further down. The digests land in
-      # /tmp/digests (outside $GITHUB_WORKSPACE) so checkout and
-      # download-artifact do not collide.
+      # OpenVEX attestation step further down, and the full tag list the
+      # image-tag step compares against. The digests land in /tmp/digests
+      # (outside $GITHUB_WORKSPACE) so checkout and download-artifact do not
+      # collide.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -658,22 +704,31 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PUSH_TOKEN }}
-      - name: Extract metadata (tags, labels)
+      # The exact version always; `X.Y`, `X` (1.0.0 on) and `latest` only
+      # when this is the highest release they cover, so a backport or a
+      # dispatch republish of an older version never moves them backwards.
+      # See scripts/release_image_tags.py.
+      - name: Compute image tags
         id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        with:
-          images: composelint/compose-lint
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -o pipefail
+          git tag --list 'v*' | python3 scripts/release_image_tags.py "${TAG}" >> "$GITHUB_OUTPUT"
       - name: Create manifest list and push
         working-directory: /tmp/digests
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
+          IFS=',' read -ra tag_list <<< "${TAGS}"
+          if [ "${#tag_list[@]}" -eq 0 ]; then
+            echo "::error::No image tags computed"
+            exit 1
+          fi
           tag_flags=()
-          while IFS= read -r t; do
+          for t in "${tag_list[@]}"; do
             tag_flags+=(-t "$t")
-          done < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          done
           digest_refs=()
           for f in *; do
             digest_refs+=("composelint/compose-lint@sha256:${f}")
@@ -785,8 +840,11 @@ jobs:
   # ever holds the delete-capable Docker Hub PAT. Implementation lives in
   # `scripts/update-dockerhub-description.sh`; the action.yml just forwards
   # inputs.
+  # Push-only: a dispatch republish of an older tag would otherwise roll the
+  # overview back to that tag's copy.
   dockerhub-description:
     needs: docker-publish
+    if: github.event_name == 'push'
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     # Its own environment, not `dockerhub`: the description PATCH needs a
@@ -812,8 +870,12 @@ jobs:
   # advertise a half-published version. Release notes come from the
   # matching `## [X.Y.Z]` section in CHANGELOG.md. Creating the
   # Release also updates the Marketplace listing for the action.
+  #
+  # Push-only, and with it every job downstream: a dispatch republishes the
+  # image of a release that already exists.
   create-release:
     needs: [publish, docker-publish]
+    if: github.event_name == 'push'
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:

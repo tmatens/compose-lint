@@ -22,6 +22,10 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 
+# Every workflow that publishes. A republish is publish.yml's own
+# workflow_dispatch, so a second entry here means a second signing identity.
+PUBLISH_WORKFLOWS = ["publish.yml"]
+
 # Anything that reaches a publishing credential, a signing key, or the registry.
 _CREDENTIAL_MARKERS = (
     "DOCKERHUB_PUSH_TOKEN",
@@ -96,7 +100,7 @@ def test_the_gate_performs_all_three_checks() -> None:
     assert "allowedSignersFile" in raw
 
 
-@pytest.mark.parametrize("workflow", ["publish.yml", "publish-channel.yml"])
+@pytest.mark.parametrize("workflow", PUBLISH_WORKFLOWS)
 def test_publish_paths_call_the_shared_gate(workflow: str) -> None:
     jobs = _load(workflow)["jobs"]
     assert "verify-tag" in jobs, f"{workflow} has no verify-tag job"
@@ -105,7 +109,7 @@ def test_publish_paths_call_the_shared_gate(workflow: str) -> None:
     )
 
 
-@pytest.mark.parametrize("workflow", ["publish.yml", "publish-channel.yml"])
+@pytest.mark.parametrize("workflow", PUBLISH_WORKFLOWS)
 def test_no_workflow_reimplements_the_signature_check(workflow: str) -> None:
     """One definition cannot drift; two copies drift toward the weaker one."""
     raw = (WORKFLOWS / workflow).read_text(encoding="utf-8")
@@ -117,7 +121,7 @@ def test_no_workflow_reimplements_the_signature_check(workflow: str) -> None:
 # --- Every credential-bearing job is behind it ---------------------------
 
 
-@pytest.mark.parametrize("workflow", ["publish.yml", "publish-channel.yml"])
+@pytest.mark.parametrize("workflow", PUBLISH_WORKFLOWS)
 def test_credential_jobs_depend_on_the_tag_gate(workflow: str) -> None:
     jobs = _load(workflow)["jobs"]
     offenders = [
@@ -134,6 +138,21 @@ def test_credential_jobs_depend_on_the_tag_gate(workflow: str) -> None:
 def test_the_credential_marker_scan_finds_something() -> None:
     """Guard the guard: an empty scan would make the test above vacuous."""
     assert _credential_jobs("publish.yml"), "no credential-bearing jobs detected"
+
+
+def test_images_are_signed_by_one_workflow() -> None:
+    """The workflow file is part of the signing identity users verify.
+
+    0.3.4 was republished by a second workflow and carries that workflow's
+    identity, an exception every verify instruction has to mention. A republish
+    is publish.yml's own workflow_dispatch so that it signs as publish.yml.
+    """
+    signers = sorted(
+        path.name
+        for path in WORKFLOWS.glob("*.yml")
+        if re.search(r"\bcosign (sign|attest)\b", path.read_text(encoding="utf-8"))
+    )
+    assert signers == PUBLISH_WORKFLOWS, signers
 
 
 # --- No unpinned resolution from an index we do not control --------------
@@ -343,7 +362,7 @@ def test_the_shared_fixtures_are_actually_consumed() -> None:
 _SHARED_DOCKER_SMOKE = "release-docker-smoke.yml"
 
 
-@pytest.mark.parametrize("workflow", ["publish.yml", "publish-channel.yml"])
+@pytest.mark.parametrize("workflow", PUBLISH_WORKFLOWS)
 def test_publish_paths_call_the_shared_docker_smoke(workflow: str) -> None:
     """Both publish paths smoke the image with the same steps, or one drifts.
 

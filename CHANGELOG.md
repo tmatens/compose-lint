@@ -28,6 +28,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   identity (`publish.yml` or `publish-channel.yml` at the ref it ran on)
   instead of any workflow in the repository.
 
+- **A Docker image republish now signs with the same identity as a
+  release.** The separate manual publish workflow is gone; republishing an
+  existing release's image is `publish.yml`'s own `workflow_dispatch`, run on
+  the release tag, so the image is signed as
+  `publish.yml@refs/tags/vX.Y.Z` like every release instead of under a second
+  workflow's identity (as 0.3.4 was). The republish path goes through the
+  same `release-gate` approval, Docker smokes and Scout scan as a release,
+  touches neither PyPI nor the GitHub Release, and `verify-tag` now refuses
+  any run that is not on the tag it verifies. A failed PyPI publish is
+  recovered by re-running the job or with a patch release; there is no
+  longer a single-channel PyPI publish.
+- **Image aliases never move backwards.** `X.Y`, `X` and `latest` are pushed
+  only when the release is the highest one they cover, so a backport or a
+  republish of an older version leaves them on the newest release. Every
+  release so far, being the newest, is tagged exactly as before.
+
 ## [0.34.0] - 2026-10-05
 
 ### Added

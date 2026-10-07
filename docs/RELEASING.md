@@ -553,17 +553,30 @@ entry. The steps for one that does:
 
 ## If something goes wrong
 
-- **One channel's smoke is broken but the other must ship**: use the
-  manual escape hatch at **Actions → Publish channel (manual) → Run
-  workflow**. Under **Use workflow from**, pick the **tag**, not `main`:
-  the publish environments admit `v*` tags only, so a run dispatched from
-  `main` fails at the publish job with zero steps executed (the 2026-04-15
-  run history shows exactly that). Then enter the tag and select the
-  channel. That workflow bypasses the shared gate; what remains is
-  `verify-tag` (the tag must be signed by a key in
-  `.github/allowed_signers`) and the environments' tags-only policy. There
-  is no approval click on this path — the signed tag is the control.
+- **A publish job failed after the gate**: re-run **the failed job**
+  (**Actions → the run → Re-run failed jobs**). A re-run keeps the signing
+  identity `publish.yml@refs/tags/vX.Y.Z`. Two limits: GitHub allows
+  re-runs for 30 days, and the per-arch image digests `docker-publish`
+  consumes are kept for **1 day**, so re-running `docker-publish` alone
+  fails at its artifact download once that day has passed. Past either
+  limit, republish the image as below.
+- **The Docker image needs publishing again** (a re-run is past its
+  limits, or the image itself has to be pushed again): dispatch `publish.yml`
+  **on the release tag**, `gh workflow run publish.yml --ref vX.Y.Z`, or
+  **Actions → Publish → Run workflow** with **Use workflow from** set to
+  the tag. A run on `main` or any branch fails at `verify-tag`. The run
+  re-smokes, re-scans and waits at `release-gate` for approval like a
+  release, then builds, pushes and signs the image under the same identity.
+  It does not touch PyPI, the GitHub Release or the Docker Hub overview,
+  and it moves `X.Y`, `X` and `latest` only when the tag is the highest
+  release they cover. It works only for tags cut after the dispatch trigger
+  existed (every release after 0.34.0), because a dispatch runs the workflow as it was at
+  the tag; for the same reason it cannot fix a defect in that workflow.
   Document why you used it in the GitHub Release notes.
+- **The PyPI side cannot ship from the original run**: there is no
+  dispatch path for PyPI. A version PyPI has never accepted ships from a
+  re-run within the 30 days; otherwise, and whenever the defect is in the
+  release itself, cut a patch release.
 - **TestPyPI publish fails**: fix forward. Delete the tag locally and on
   origin (`git tag -d vX.Y.Z && git push origin :refs/tags/vX.Y.Z`),
   land the fix via PR, re-tag with the **same** version number, and push
