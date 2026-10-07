@@ -208,7 +208,7 @@ jobs:
       - name: Install the pinned Docker Compose plugin
         env:
           # renovate: datasource=github-releases depName=docker/compose
-          COMPOSE_VERSION: v5.5.1
+          COMPOSE_VERSION: v5.6.0
         run: .github/scripts/install-compose-plugin.sh
       - run: pytest
 
@@ -275,7 +275,7 @@ jobs:
       - name: Install the pinned Docker Compose plugin
         env:
           # renovate: datasource=github-releases depName=docker/compose
-          COMPOSE_VERSION: v5.5.1
+          COMPOSE_VERSION: v5.6.0
         run: .github/scripts/install-compose-plugin.sh
       - name: Run tests with coverage
         env:
