@@ -471,6 +471,20 @@ compose-lint is built to be safe to depend on:
 - **External audit**: tracked on [OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/tmatens/compose-lint) and [OpenSSF Best Practices Baseline 2](https://www.bestpractices.dev/projects/12472); CodeQL runs on every PR, ClusterFuzzLite fuzzes code-touching PRs, and Docker Scout scans the published image daily.
 - **Reporting vulnerabilities**: see [SECURITY.md](https://github.com/tmatens/compose-lint/blob/main/.github/SECURITY.md).
 
+### Verifying the Docker image
+
+Images are signed keyless with [cosign](https://github.com/sigstore/cosign): there is no signing key. The release workflow's GitHub OIDC token gets a short-lived certificate naming the workflow and the tag it ran for, so pin both when you verify:
+
+```bash
+VERSION=0.34.0
+cosign verify \
+  --certificate-identity "https://github.com/tmatens/compose-lint/.github/workflows/publish.yml@refs/tags/v${VERSION}" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  "composelint/compose-lint:${VERSION}"
+```
+
+Pinning the exact tag, rather than a pattern, also rejects a version tag moved onto an older signed image. The SBOM and OpenVEX documents are attested with the same identity; `cosign verify-attestation` needs `--type spdxjson` or `--type openvex` to find them. One release, 0.3.4, was republished by `publish-channel.yml` and is signed with that workflow's identity instead.
+
 ## Contributing
 
 See [CONTRIBUTING.md](https://github.com/tmatens/compose-lint/blob/main/CONTRIBUTING.md) for development setup and how to add rules.
