@@ -107,4 +107,4 @@ nav:
       - Compatibility: compatibility.md
   - Project:
       - Roadmap: ROADMAP.md
-      - State of Compose: state-of-compose.md
+      - State of Docker Compose Security: state-of-compose.md

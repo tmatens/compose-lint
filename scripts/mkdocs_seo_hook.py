@@ -11,6 +11,10 @@ What it fixes:
   Read-only file system errors"), which is what mkdocs-material puts first in
   <title>. Nobody searches "CL-0007"; they search the symptom. The code moves to
   the end so the searchable half leads, while the sidebar label stays short.
+- **Homepage title.** mkdocs-material titles the homepage with the bare
+  `site_name` ("compose-lint"), which matches no search anyone types. It gets
+  the lead clause of `site_description` instead, so the page reads as what it
+  is: "Security linter for Docker Compose files - compose-lint".
 - **Descriptions.** Without this, all ~45 pages inherit the single
   `site_description` from mkdocs.yml, so every search snippet describes the tool
   rather than the page.
@@ -152,11 +156,22 @@ def _title(page_title: str | None) -> str | None:
     return f"{remainder} ({code})"
 
 
+def _home_title(site_description: str | None) -> str | None:
+    """The homepage's searchable title: the lead clause of site_description."""
+    if not site_description:
+        return None
+    lead = site_description.split("—", 1)[0].strip(" .")
+    return lead or None
+
+
 def on_page_markdown(markdown, page, config, files):  # noqa: ARG001 - mkdocs signature
     meta = page.meta if page.meta is not None else {}
 
     if "title" not in meta:
-        retitled = _title(page.title)
+        if page.is_homepage:
+            retitled = _home_title(config.get("site_description"))
+        else:
+            retitled = _title(page.title)
         if retitled:
             meta["title"] = retitled
 
