@@ -51,6 +51,13 @@ class _Config(dict):
         super().__init__(items)
         self.config_file_path = config_file_path
 
+    def __eq__(self, other: object) -> bool:
+        return (
+            isinstance(other, _Config)
+            and super().__eq__(other)
+            and self.config_file_path == other.config_file_path
+        )
+
 
 def _config(config_file_path: str | None = None) -> _Config:
     return _Config(
