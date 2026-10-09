@@ -34,15 +34,15 @@ in [Reproduce it](#reproduce-it).
 
 | Misconfiguration | compose-lint | KICS | DockSec | DCLint | Semgrep | Checkov · Trivy · Hadolint |
 |---|---|---|---|---|---|---|
-| Docker socket mounted | ✅ | ✅ | ✅ | — | ✗ | ✗ |
-| `privileged: true` | ✅ | ✅ | ✅ | — | ✗ | ✗ |
-| `no-new-privileges` missing | ✅ | ✅ | ✅ | — | ✗ | ✗ |
+| Docker socket mounted | ✅ | ✅ | ✅ | — | ✗ † | ✗ |
+| `privileged: true` | ✅ | ✅ | ✅ | — | ✗ † | ✗ |
+| `no-new-privileges` missing | ✅ | ✅ | ✅ | — | ✗ † | ✗ |
 | Unpinned `:latest` tag | ✅ | — | ✅ | ✅ | — | ✗ |
 | Port published on `0.0.0.0` | ✅ | ✅ | — | ✅ | — | ✗ |
 | No `cap_drop: [ALL]` | ✅ | ✅ | — | — | — | ✗ |
-| Writable root filesystem | ✅ | — | ✅ | — | ✗ | ✗ |
+| Writable root filesystem | ✅ | — | ✅ | — | ✗ † | ✗ |
 | `network_mode: host` | ✅ | ✅ | ✅ | — | — | ✗ |
-| `seccomp:unconfined` | ✅ | ✅ | ✅ | — | ✗ | ✗ |
+| `seccomp:unconfined` | ✅ | ✅ | ✅ | — | ✗ † | ✗ |
 | `pid: host` / `ipc: host` | ✅ | ✅ | ✅ | — | — | ✗ |
 | Sensitive host path mounted | ✅ | ✅ | ✅ | — | — | ✗ |
 | `logging: driver: none` | ✅ | — | — | — | — | ✗ |
@@ -50,18 +50,22 @@ in [Reproduce it](#reproduce-it).
 | Tag without digest | ✅ | — | — | — | — | ✗ |
 | Credential in `environment:` | ✅ | ✅ | ✅ | — | — | ✗ |
 | No memory/CPU limits | ✅ | ✗ \* | ✅ | — | — | ✗ |
-| **Caught, of 16** | **16** | **10** | **11** | **2** | **0** | **0** |
+| **Caught, of 16** | **16** | **10** | **11** | **2** | **0** † | **0** |
 
 ✅ flagged · ✗ not flagged · — no rule for it. \* KICS's memory and CPU
 queries fire only when the file carries a `version:` key; with `version: "3.9"`
-added it catches 11.
+added it catches 11. † Semgrep's rules all require that key; with it added the
+same six rules produced 31 findings and caught these 5.
 
 Three things the run showed that the documentation did not:
 
 - **Semgrep's six Compose rules all require a top-level `version:` key** — each
   is written as `pattern-inside: version: … services: …` — so on a
   Compose-Specification file they report nothing at all (Semgrep's own
-  summary: six rules run, one file, zero findings). Their own test fixtures carry `version: "3.9"`.
+  summary: six rules run, one file, zero findings). Re-run with
+  `version: "3.9"` added and nothing else changed, the same rules reported 31
+  findings and caught 5 of the 16. Their own test fixtures carry
+  `version: "3.9"`.
 - **KICS's limit queries have the same dependency**, and `No New Privileges Not
   Set` only fires on a service that already has a `security_opt:` list; the
   others get the broader `Security Opt Not Set`. `Pids Limit Not Set` did not
@@ -159,8 +163,10 @@ filesystem. All six are `WARNING` severity; one (`privileged-service`) carries
 an autofix. All six are also written as `pattern-inside: version: … services:
 …`, so they match only a file that still carries the obsolete top-level
 `version:` key: in the run above they reported nothing on a
-Compose-Specification file that trips five of them. If Semgrep already runs in
-your CI and your files keep `version:`, enabling the ruleset is one line.
+Compose-Specification file that trips five of them, and 31 findings on the
+same file once `version: "3.9"` was added. If Semgrep already runs in your CI
+and your files keep `version:`, enabling the ruleset is one line; if you have
+removed `version:` as Compose now recommends, it is silently inert.
 
 compose-lint covers those six and the rest of its 27 rules — capability tiers,
 resource limits, credentials in environment variables and connection strings,
