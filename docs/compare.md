@@ -10,19 +10,21 @@ is a capability snapshot checked against each tool's own documentation on
 Compose file on 2026-10-09 — the run is below, and it corrected the
 documentation in three places. Sources are linked under each heading.
 
-| Tool | Reads Compose files | Compose security rules | Auto-fix for Compose | SARIF | Scope |
+| Tool | Reads Compose files | Compose security rules it has | Auto-fix for Compose | SARIF | Scope |
 |---|---|---|---|---|---|
 | **compose-lint** | Yes | 27, each citing OWASP, CIS or Docker docs | Six rules, dry-run diff first | Yes | Docker Compose only |
 | **DCLint** | Yes | 2 of 15 (unbound port interfaces, explicit image tag) | Formatting and ordering rules | — | Docker Compose style, structure and schema |
-| **KICS** | Yes | 21 queries (the limit queries need a `version:` key) | `remediate` command; Compose support not documented | Yes | Terraform, Kubernetes, CloudFormation, Compose and more |
-| **Semgrep `p/docker-compose`** | Yes | 6, all requiring a `version:` key | 1 of the 6 carries a fix | Yes | General-purpose code scanner |
-| **OWASP DockSec** | Yes (`--compose --scan-only`) | 14 static rules seen in the run | No — `--fix` edits Dockerfiles only | Yes | Dockerfiles, images, Compose |
+| **KICS** | Yes | 21 queries | `remediate` command; Compose support not documented | Yes | Terraform, Kubernetes, CloudFormation, Compose and more |
+| **Semgrep `p/docker-compose`** | Yes | 6 | 1 of the 6 carries a fix | Yes | General-purpose code scanner |
+| **OWASP DockSec** | Yes (`--compose --scan-only`) | 14 observed (its docs do not list them) | No — `--fix` edits Dockerfiles only | Yes | Dockerfiles, images, Compose |
 | **Checkov** | No | 0 — 28 Dockerfile policies, no Compose framework | — | Yes | Terraform, Kubernetes, CloudFormation, Dockerfile and more |
 | **Trivy** | No | 0 — misconfiguration scanning covers Dockerfile, Kubernetes, Terraform, CloudFormation, Helm and ARM | — | Yes | Images, filesystems, IaC |
 | **Hadolint** | No | 0 | — | Yes | Dockerfile only |
 
-compose-lint's own limits are listed at the end of this page; it is not a
-replacement for the image scanner or the Dockerfile linter you already run.
+Having a rule and firing it are different things — the two runs below show
+which rules fired on which file. compose-lint's own limits are listed at the
+end of this page; it is not a replacement for the image scanner or the
+Dockerfile linter you already run.
 
 ## Run on the same file
 
@@ -92,6 +94,61 @@ Versions: compose-lint 0.34.0 · DCLint 3.1.0 · KICS 2.1.20 · DockSec 2026.8.1
 (image tag 2026.9.21) · Semgrep 1.179.0 · Checkov 3.3.26 · Trivy 0.75.0 ·
 Hadolint 2.15.1.
 
+## Against the OWASP cheat-sheet rules
+
+The fixture above was built from compose-lint's own rules, so a perfect score
+on it says the rules fire — it says nothing about coverage. This second
+fixture is built from the [OWASP Docker Security Cheat
+Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html)
+instead: one service per violation of a rule that can be expressed in a
+Compose file (Rules 1–8, 12 and 13; Rules 0, 9, 10 and 11 concern the host,
+the CI pipeline and the daemon). Twenty services, same tools, same day, same
+`version`-less file. This one shows where compose-lint has no rule.
+
+✅ flagged · ✗ has a rule for it, did not flag it · — no rule for it
+
+| OWASP rule — violation | compose-lint | KICS | DockSec | Semgrep | DCLint |
+|---|---|---|---|---|---|
+| 1 — Docker socket mounted | ✅ | ✅ | ✅ | ✅ † | — |
+| 2 — `user: root` set explicitly | ✅ | — | ✗ | — | — |
+| 2 — no `user:`, image default | — | — | ✅ | — | — |
+| 3 — `privileged: true` | ✅ | ✅ | ✅ | ✅ † | — |
+| 3 — default capability set, nothing dropped | ✅ | ✅ | — | — | — |
+| 3 — `cap_drop: [ALL]` then `cap_add: [SYS_ADMIN]` | ✅ | ✅ | ✅ | — | — |
+| 4 — `no-new-privileges` not set | ✅ | ✅ | ✅ | ✅ † | — |
+| 5 — `network_mode: host` | ✅ | ✅ | ✅ | — | — |
+| 5 — no `networks:`, joins the shared default network | — | — | ✅ | — | — |
+| 5a — port published on `0.0.0.0` | ✅ | ✅ | — | — | ✅ |
+| 6 — `seccomp:unconfined` | ✅ | ✅ | ✅ | ✅ † | — |
+| 6 — `apparmor:unconfined` | ✅ | — | ✅ | — | — |
+| 7 — no memory or CPU limits | ✅ | ✗ \* | ✅ | — | — |
+| 7 — no `pids_limit` | — | ✗ | — | — | — |
+| 7 — `restart: always`, unbounded | — | ✗ | — | — | — |
+| 8 — root filesystem writable | ✅ | — | ✅ | ✅ † | — |
+| 8 — host directory mounted read-write | — | — | — | — | — |
+| 12 — credential as a literal `environment:` value | ✅ | ✅ | ✅ | — | — |
+| 13 — mutable `:latest` tag | ✅ | — | ✅ | — | ✅ |
+| 13 — version tag without a digest | ✅ | — | — | — | — |
+| **Flagged, of 20** | **15** | **9** | **13** | **0** † | **2** |
+| **No rule for it** | 5 | 9 | 6 | 15 | 18 |
+| **Has a rule, missed it** | 0 | 2 | 1 | 0 | 0 |
+
+\* fires with `version: "3.9"` present (10 of 20). † Semgrep's rules all
+require that key; with it added they catch these 5. Checkov, Trivy and
+Hadolint are 0 of 20 on both variants and are left off the table.
+
+What this frame adds to the first one: compose-lint has no rule for five of
+the twenty — they are listed under [What compose-lint does not
+do](#what-compose-lint-does-not-do) — and missed none of the rules it has.
+DockSec is the closest second and the only tool that models the shared
+default network; its one miss is real, since an explicit `user: root` is not
+flagged (it flags the *absence* of `user:`). KICS has queries for all three
+Rule 7 items and fired none of them on a `version`-less file; with
+`version: "3.9"` it recovers memory and CPU but `Pids Limit Not Set` and the
+restart-policy query never fire. No tool flags a read-write bind mount that
+could be `:ro`, or `restart: always`; only compose-lint flags a missing
+digest.
+
 ## Does Checkov scan docker-compose.yml?
 
 No. Checkov's Docker coverage is its [Dockerfile policy
@@ -133,8 +190,9 @@ validates a Compose file against the schema and applies fifteen
 best-practice rules: ordering and formatting (alphabetical services, key
 order, quoted ports), structure (no `version:` field, no duplicate container
 names or exported ports, a project name) and two that overlap security —
-`no-unbound-port-interfaces` and `service-image-require-explicit-tag`. Its
-`--fix` applies the formatting rules.
+`no-unbound-port-interfaces` and `service-image-require-explicit-tag` — in
+both runs it caught exactly those two. Its `--fix` applies the formatting
+rules.
 
 compose-lint does not validate the schema at all; an invalid file is a usage
 error, not a finding. Its 27 rules are security-only — capabilities,
@@ -255,6 +313,23 @@ the two tools do not overlap.
 - **Watch running containers.** It is a static analyzer; see
   [Security expectations](SECURITY-EXPECTATIONS.md) for the full list.
 
+And five things the OWASP cheat sheet asks for that it has no rule for, as the
+second run shows:
+
+- **A service with no `user:` at all** (Rule 2). The image's `USER` is not in
+  the Compose file, so compose-lint cannot tell a root default from a non-root
+  one and does not guess; it flags `user: root` when written. DockSec takes the
+  other side and flags the absence.
+- **Services on the shared default network** (Rule 5). Network segmentation
+  is a property of the whole file, not a service; no rule models it today.
+- **No `pids_limit`** (Rule 7). CL-0012 flagged this and was retired: on a
+  systemd host the limit is bounded by `DefaultTasksMax` whether or not the
+  file sets it.
+- **`restart: always`** (Rule 7). No rule.
+- **A host directory mounted read-write that could be `:ro`** (Rule 8). CL-0013
+  and CL-0025 flag *sensitive* and *root-equivalent* host paths; an ordinary
+  read-write bind mount is not a finding.
+
 ## Reproduce it
 
 The fixture — never run it — is sixteen services with one deliberate
@@ -338,10 +413,26 @@ root-equivalent host mount) rather than CL-0013; the table counts that as
 caught. Its 85 findings are the 16 intended ones plus the baseline hardening
 misses on every service that lacks them, which is what the tool is for.
 
+The OWASP-framed fixture has the same shape — one service per row of its
+table, named `rule<N>-<violation>`, same images — and was run with the same
+commands, once as written and once with `version: "3.9"` prepended.
+
 ## Keeping this page honest
 
 The counts in the summary table come from the linked documentation as read
-on 2026-10-08; the run is from 2026-10-09 with the versions listed above.
+on 2026-10-08; the runs are from 2026-10-09 with the versions listed above.
 Tools change; if a row is out of date, [open an
 issue](https://github.com/tmatens/compose-lint/issues) with the link or the
 output that shows it and the row will be corrected.
+
+Known changes that would move these results when they land:
+
+- Semgrep's column goes from 0 to 5 of 20 the day
+  [semgrep-rules#4037](https://github.com/semgrep/semgrep-rules/pull/4037)
+  merges, and gains `user: root` with
+  [#4048](https://github.com/semgrep/semgrep-rules/pull/4048).
+- KICS stops reporting the `no-new-privileges=true` spelling as missing when
+  [#7077](https://github.com/Checkmarx/kics/issues/7077) is fixed.
+- Trivy gets a column if
+  [trivy#8729](https://github.com/aquasecurity/trivy/issues/8729) is taken up.
+- DockSec's two misses are not yet on its tracker; a fix would move it to 15.
