@@ -1,8 +1,11 @@
 # CLI reference
 
-Three subcommands. `check` is the default — a bare `compose-lint` works, and
-auto-detects the Compose file. The authoritative help is `compose-lint --help`
-(and `fix --help` / `init --help`); this page is its web copy.
+The compose-lint command line lints Docker Compose files for security
+misconfigurations: `check` reports findings, `fix` previews and applies the
+auto-remediations, and `init` writes a starter `.compose-lint.yml`. `check` is
+the default — a bare `compose-lint` works, and auto-detects the Compose file.
+The authoritative help is `compose-lint --help` (and `fix --help` /
+`init --help`); this page is its web copy.
 
 ```
 compose-lint [check] [OPTIONS] [FILE ...]   Lint files (default; bare invocation works)
