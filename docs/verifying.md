@@ -68,7 +68,7 @@ Every release on PyPI, including the earliest, also has PyPI's own [PEP 740](htt
 
 ## What each release carries
 
-Older releases predate some of these. Run against a release that lacks the artifact, a command fails without implying tampering: `cosign verify-attestation` reports "none of the attestations matched the predicate type", `gh attestation verify` returns HTTP 404, and `gh release download` finds no bundle.
+Every image listed here is signed, and every release on PyPI carries PyPI's attestations; a "no" means an additional artifact did not exist yet, not that the release is unsigned. Run against a release that lacks the artifact, a command fails without implying tampering: `cosign verify-attestation` reports "none of the attestations matched the predicate type", `gh attestation verify` returns HTTP 404, and `gh release download` finds no bundle.
 
 | Releases | Image signing identity | Image SBOM | Image VEX | Wheel Sigstore bundle | SLSA provenance |
 | --- | --- | --- | --- | --- | --- |
