@@ -26,8 +26,18 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
 
+# Not built at all: the Docker Hub overview (a third copy of the README intro
+# that exists only to be synced to Hub) and the dev.to/Hashnode cross-post
+# drafts, which would otherwise publish self-canonical duplicates of
+# state-of-compose.md under their own URLs.
+exclude_docs: |
+  dockerhub-overview.md
+  publishing/
+
 # Per-page <title> and meta description, derived from existing content
-# (front matter is unavailable: --explain prints these files raw).
+# (front matter is unavailable: --explain prints these files raw). The same
+# hook marks every page outside the nav below `noindex` and drops it from the
+# sitemap, so the curated nav is also the indexing surface.
 hooks:
   - scripts/mkdocs_seo_hook.py
   # Sitemap <lastmod> per page, from git rather than the build date.
@@ -51,9 +61,11 @@ markdown_extensions:
           format: !!python/name:pymdownx.superfences.fence_code_format
 
 # Curated nav: user-facing pages only. Everything else in docs/ (ADRs,
-# ROADMAP, CI/RELEASING internals) still builds and stays linkable, just
-# unlisted. Maintainer docs that link outside docs/ (CI.md, MAINTAINING.md,
-# SECURITY-EXPECTATIONS.md) are deliberately not in the nav.
+# CI/RELEASING internals) still builds and stays linkable, just unlisted —
+# and, via the SEO hook, noindexed and absent from the sitemap. Maintainer
+# docs that link outside docs/ (CI.md, MAINTAINING.md, SECURITY-EXPECTATIONS.md)
+# are deliberately not in the nav. Adding a page here is what makes it
+# indexable.
 nav:
   - Home: index.md
   - Rules:
