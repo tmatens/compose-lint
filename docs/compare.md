@@ -103,7 +103,9 @@ that show `checkov --framework docker_compose` are describing a flag that
 does not exist.
 
 If you run Checkov for Terraform or Kubernetes, keep running it; add
-compose-lint for the Compose files it skips.
+compose-lint for the Compose files it skips. As of 2026-10-09 there is no
+open request for Compose support on Checkov's tracker — the gap is not on
+its roadmap because nobody has asked.
 
 ## Does Trivy lint Docker Compose files?
 
@@ -115,6 +117,13 @@ other half of the problem: the images a Compose file references. compose-lint
 never pulls an image or reports a CVE, so the two are complementary —
 `trivy image` for what is inside the image, compose-lint for how the Compose
 file runs it.
+
+Compose support has been requested
+([aquasecurity/trivy#8729](https://github.com/aquasecurity/trivy/issues/8729),
+April 2025); a maintainer replied that it could be added but "there are no
+checks for it" to reuse, and the thread's most recent comment (July 2026) is a
+user surprised that `trivy config` did not catch a port bound to all
+interfaces — the Rule 5a case in the run above.
 
 ## compose-lint vs DCLint
 
@@ -149,6 +158,19 @@ added — the memory and CPU queries key off the version number and skip a
 Compose-Specification file. It is a broad IaC scanner — Compose is one of
 many platforms — and its query pages describe the pattern and show a
 compliant and non-compliant sample.
+
+Three things from KICS's tracker are worth knowing before relying on it for
+Compose. The `version:` dependency was reported in 2023
+([#6509](https://github.com/Checkmarx/kics/issues/6509)); the maintainers
+answered that the key is needed to avoid false positives and asked for it to
+be refiled as a feature request, which is why a `version`-less file still
+loses the limit queries. `No New Privileges Not Set` reports a service that
+uses the newer `no-new-privileges=true` spelling as missing it
+([#7077](https://github.com/Checkmarx/kics/issues/7077), open since 2024;
+compose-lint normalises both spellings). And an anonymous volume is reported
+as a shared-volume finding
+([#8047](https://github.com/Checkmarx/kics/issues/8047), open since April
+2026).
 
 compose-lint is Compose-only and spends its depth on the fix: each rule page
 explains what the setting does at runtime, which error messages the hardened
@@ -207,12 +229,17 @@ compose-lint is deterministic — the same file produces the same findings, the
 same severities and the same diff on every run, with no model and no network
 access — and its auto-fix works on the Compose file. Which trade-off you want
 depends on whether the linter is a CI gate (determinism matters) or an
-advisor (explanation matters).
+advisor (explanation matters). The two misses the run found — an explicit
+`user: root` and a port published on `0.0.0.0` — were not on DockSec's tracker
+as of 2026-10-09.
 
 ## Hadolint
 
 [Hadolint](https://github.com/hadolint/hadolint) lints Dockerfiles and does
-not read Compose files. Nothing on this page replaces it. A hardened Compose
+not read Compose files — by choice: when Compose support was requested
+([hadolint#1091](https://github.com/hadolint/hadolint/issues/1091), 2025) the
+answer was that Compose is plain YAML and belongs to other tools. Nothing on
+this page replaces it. A hardened Compose
 file running an image built from an unhardened Dockerfile is half a job, and
 the two tools do not overlap.
 
