@@ -72,29 +72,29 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Rules:
-      - "CL-0001 Host control socket exposed": rules/CL-0001.md
+      - "CL-0001 docker.sock mounted — host control socket exposed": rules/CL-0001.md
       - "CL-0002 privileged: true — grants and replacement": rules/CL-0002.md
-      - "CL-0003 no-new-privileges — privilege escalation": rules/CL-0003.md
+      - "CL-0003 no-new-privileges — sudo “no new privileges flag is set”": rules/CL-0003.md
       - "CL-0004 Unpinned image tags (:latest)": rules/CL-0004.md
       - "CL-0005 Ports published on 0.0.0.0": rules/CL-0005.md
       - "CL-0006 cap_drop — Operation not permitted to capabilities": rules/CL-0006.md
       - "CL-0007 read_only — Read-only file system errors": rules/CL-0007.md
       - "CL-0008 network_mode: host": rules/CL-0008.md
-      - "CL-0009 Disabled seccomp / AppArmor profiles": rules/CL-0009.md
-      - "CL-0010 Host PID and IPC namespaces": rules/CL-0010.md
+      - "CL-0009 seccomp:unconfined / apparmor:unconfined — disabled profiles": rules/CL-0009.md
+      - "CL-0010 pid: host / ipc: host — host namespaces": rules/CL-0010.md
       - "CL-0011 Strong host-adjacent capabilities": rules/CL-0011.md
       - "CL-0013 Sensitive host path exposed": rules/CL-0013.md
       - "CL-0014 Logging driver none": rules/CL-0014.md
       - "CL-0016 Dangerous host devices": rules/CL-0016.md
       - "CL-0017 Shared mount propagation": rules/CL-0017.md
-      - "CL-0018 user: root and non-root permission fixes": rules/CL-0018.md
+      - "CL-0018 user: root — non-root “Permission denied” fixes": rules/CL-0018.md
       - "CL-0019 Digest pinning (@sha256)": rules/CL-0019.md
       - "CL-0020 Credential-shaped env keys": rules/CL-0020.md
       - "CL-0021 Credentials in connection strings": rules/CL-0021.md
       - "CL-0022 tmpfs exec — running from tmpfs": rules/CL-0022.md
       - "CL-0024 Host-code-execution capabilities": rules/CL-0024.md
       - "CL-0025 Writable root-equivalent host mounts": rules/CL-0025.md
-      - "CL-0026 Resource limits (memory/CPU)": rules/CL-0026.md
+      - "CL-0026 Resource limits — exit code 137 / OOMKilled": rules/CL-0026.md
       - "CL-0027 Bounded-grant capabilities": rules/CL-0027.md
       - "CL-0028 Host-reaching capabilities": rules/CL-0028.md
       - "CL-0029 Host-availability capabilities": rules/CL-0029.md

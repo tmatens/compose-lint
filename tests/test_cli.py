@@ -486,8 +486,8 @@ class TestCLI:
         result = run_cli("--explain", "CL-0003")
         assert result.returncode == 0
         assert (
-            "CL-0003: no-new-privileges — blocking setuid/sudo privilege escalation"
-            in result.stdout
+            "CL-0003: no-new-privileges — sudo “no new privileges flag is set” "
+            "and setuid helpers" in result.stdout
         )
         assert "no-new-privileges:true" in result.stdout
 
