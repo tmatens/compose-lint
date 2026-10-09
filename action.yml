@@ -1,5 +1,5 @@
 name: "compose-lint"
-description: "Security-focused linter for Docker Compose files"
+description: "Docker Compose security linter — OWASP/CIS-grounded rules, SARIF to GitHub Code Scanning, dry-run auto-fix"
 branding:
   icon: "shield"
   color: "blue"
