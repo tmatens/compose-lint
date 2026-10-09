@@ -1,0 +1,21 @@
+{#
+  Replaces mkdocs-material's 404.html, which renders the heading alone. GitHub
+  Pages serves this for every miss under the site, so a mistyped rule id or a
+  link to a renamed page should land somewhere useful rather than dead-end.
+  Paths are root-relative to the site: this page has no location of its own
+  for `base_url` to resolve against.
+#}
+{% extends "main.html" %}
+{% block content %}
+  <h1>404 - Not found</h1>
+  <p>There is no page at this address. The rule pages live under
+    <code>{{ config.site_url }}rules/CL-XXXX/</code>; everything else is in the
+    navigation.</p>
+  <ul>
+    <li><a href="{{ config.site_url }}">Home and the rules table</a></li>
+    <li><a href="{{ config.site_url }}examples/">Real-world examples</a></li>
+    <li><a href="{{ config.site_url }}cli/">CLI reference</a></li>
+    <li><a href="{{ config.site_url }}state-of-compose/">State of Docker Compose Security</a></li>
+    <li><a href="{{ config.repo_url }}/issues">Report a broken link</a></li>
+  </ul>
+{% endblock %}

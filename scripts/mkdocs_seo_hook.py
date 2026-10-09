@@ -29,17 +29,33 @@ What it fixes:
   The pages still build and stay linkable; `follow` keeps their outbound links
   counting.
 
-mkdocs-material reads `page.meta.title` and `page.meta.description` ahead of its
-own defaults, so setting them here is enough; no template override is needed.
-The robots tag has no such hook in the theme, so it is spliced into the rendered
-HTML in `on_post_page`, and the sitemap is rewritten after the build because
-mkdocs renders it from every documentation page with no exclusion option.
+- **Share cards and structured data.** The theme emits no Open Graph or Twitter
+  tags, so a docs link pasted into Slack, Reddit or a newsletter rendered bare.
+  Every indexable page now gets them, built from the title and description
+  above and the repository's social preview image, plus JSON-LD: a
+  `SoftwareApplication` on the homepage, `TechArticle` + `BreadcrumbList` on
+  rule pages and `Article` on the study, with `dateModified` from git. mkdocs
+  itself emits none of this, and the search-engine guidance for it is explicit
+  about wanting it.
+- **Last updated.** The sitemap already carries a real per-page git date (see
+  `mkdocs_git_dates_hook.py`); mirroring it into `page.meta.revision_date`
+  makes the theme print it under the content as well.
+
+mkdocs-material reads `page.meta.title`, `page.meta.description` and
+`page.meta.revision_date` ahead of its own defaults, so setting them here is
+enough. The robots, Open Graph and JSON-LD tags have no such hook in the theme,
+so they are spliced into the rendered HTML in `on_post_page`, and the sitemap
+is rewritten after the build because mkdocs renders it from every documentation
+page with no exclusion option.
 """
 
 from __future__ import annotations
 
 import gzip
+import html
+import json
 import re
+import tomllib
 from pathlib import Path
 
 # "CL-0007 read_only — Read-only file system errors" -> code, remainder.
@@ -227,11 +243,159 @@ def on_page_markdown(markdown, page, config, files):  # noqa: ARG001 - mkdocs si
     return markdown
 
 
-def on_post_page(output, page, config):  # noqa: ARG001 - mkdocs signature
-    robots = (page.meta or {}).get("robots")
-    if not robots or _HEAD_END not in output:
+def on_page_context(context, page, config, nav):  # noqa: ARG001 - mkdocs signature
+    # mkdocs_git_dates_hook sets `update_date` in on_env, which runs after every
+    # page's markdown pass and before any template renders — so this is the
+    # first event that sees the git date. mkdocs' own value is the build date,
+    # which is still a date, so the field is never left empty.
+    meta = page.meta if page.meta is not None else {}
+    if "revision_date" not in meta and getattr(page, "update_date", None):
+        meta["revision_date"] = page.update_date
+    page.meta = meta
+    return context
+
+
+_SOCIAL_IMAGE = "assets/social-preview.png"
+_PYPI_URL = "https://pypi.org/project/compose-lint/"
+_MIT_URL = "https://opensource.org/license/mit"
+_RULE_PAGE = re.compile(r"^rules/CL-\d{4}\.md$")
+_STUDY_PAGE = "state-of-compose.md"
+
+
+def _project(config) -> tuple[str | None, str | None]:
+    """(version, author) from pyproject.toml beside mkdocs.yml, or Nones."""
+    config_path = getattr(config, "config_file_path", None)
+    if not config_path:
+        return None, None
+    pyproject = Path(config_path).resolve().parent / "pyproject.toml"
+    try:
+        project = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]
+    except (OSError, KeyError, tomllib.TOMLDecodeError):
+        return None, None
+    authors = project.get("authors") or [{}]
+    return project.get("version"), authors[0].get("name")
+
+
+def _page_title(page, meta: dict) -> str:
+    return meta.get("title") or page.title or ""
+
+
+def _social_tags(page, config, meta: dict) -> list[str]:
+    site_url = config.get("site_url") or ""
+    site_name = config.get("site_name") or ""
+    title = _page_title(page, meta)
+    full_title = f"{title} - {site_name}" if title and site_name else title or site_name
+    description = meta.get("description") or config.get("site_description") or ""
+    image = site_url + _SOCIAL_IMAGE
+    fields = [
+        ("property", "og:type", "website" if page.is_homepage else "article"),
+        ("property", "og:site_name", site_name),
+        ("property", "og:title", full_title),
+        ("property", "og:description", description),
+        ("property", "og:url", page.canonical_url or ""),
+        ("property", "og:image", image),
+        ("name", "twitter:card", "summary_large_image"),
+        ("name", "twitter:title", full_title),
+        ("name", "twitter:description", description),
+        ("name", "twitter:image", image),
+    ]
+    return [
+        f'<meta {attr}="{key}" content="{html.escape(value, quote=True)}">'
+        for attr, key, value in fields
+        if value
+    ]
+
+
+def _jsonld(page, config, meta: dict) -> dict | None:
+    site_url = config.get("site_url") or ""
+    site_name = config.get("site_name") or ""
+    title = _page_title(page, meta)
+    description = meta.get("description") or config.get("site_description") or ""
+    url = page.canonical_url or ""
+    version, author_name = _project(config)
+    author = {"@type": "Person", "name": author_name} if author_name else None
+    src_uri = page.file.src_uri
+
+    if page.is_homepage:
+        app: dict = {
+            "@context": "https://schema.org",
+            "@type": "SoftwareApplication",
+            "name": site_name,
+            "applicationCategory": "DeveloperApplication",
+            "operatingSystem": "Linux, macOS, Windows",
+            "description": description,
+            "url": site_url,
+            "downloadUrl": _PYPI_URL,
+            "license": _MIT_URL,
+            "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+        }
+        if config.get("repo_url"):
+            app["codeRepository"] = config["repo_url"]
+        if version:
+            app["softwareVersion"] = version
+        if author:
+            app["author"] = author
+        return app
+
+    article_type = None
+    if _RULE_PAGE.match(src_uri):
+        article_type = "TechArticle"
+    elif src_uri == _STUDY_PAGE:
+        article_type = "Article"
+    if article_type is None:
+        return None
+
+    article: dict = {
+        "@context": "https://schema.org",
+        "@type": article_type,
+        "headline": title,
+        "description": description,
+        "url": url,
+        "isPartOf": {"@type": "WebSite", "name": site_name, "url": site_url},
+    }
+    if meta.get("revision_date"):
+        article["dateModified"] = meta["revision_date"]
+    if author:
+        article["author"] = author
+    if article_type == "TechArticle":
+        trail = (("Home", site_url), ("Rules", site_url + "#rules"), (title, url))
+        article["breadcrumb"] = {
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+                {"@type": "ListItem", "position": n, "name": name, "item": item}
+                for n, (name, item) in enumerate(trail, start=1)
+            ],
+        }
+    return article
+
+
+def _jsonld_script(data: dict) -> str:
+    # "</" cannot appear inside a script element without ending it; JSON allows
+    # the escaped form, so a title containing "</script>" stays inert.
+    text = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+    return f'<script type="application/ld+json">{text}</script>'
+
+
+def _head_extras(page, config, meta: dict) -> list[str]:
+    extras: list[str] = []
+    robots = meta.get("robots")
+    if robots:
+        extras.append(_ROBOTS_TAG.format(robots))
+        return extras  # nothing below is worth emitting on a page nobody indexes
+    extras.extend(_social_tags(page, config, meta))
+    data = _jsonld(page, config, meta)
+    if data:
+        extras.append(_jsonld_script(data))
+    return extras
+
+
+def on_post_page(output, page, config):
+    if _HEAD_END not in output:
         return output
-    return output.replace(_HEAD_END, _ROBOTS_TAG.format(robots) + _HEAD_END, 1)
+    extras = _head_extras(page, config, page.meta or {})
+    if not extras:
+        return output
+    return output.replace(_HEAD_END, "".join(extras) + _HEAD_END, 1)
 
 
 def _filter_sitemap(xml: str, drop: set[str]) -> tuple[str, int]:
@@ -269,7 +433,8 @@ def on_post_build(config):
     # and keep its header timestamp, which mkdocs derives from the pages.
     twin = sitemap.with_suffix(".xml.gz")
     mtime = _gzip_mtime(twin) if twin.is_file() else 0
-    with twin.open("wb") as fh, gzip.GzipFile(
-        fileobj=fh, filename=twin.name, mode="wb", mtime=mtime
-    ) as gz:
+    with (
+        twin.open("wb") as fh,
+        gzip.GzipFile(fileobj=fh, filename=twin.name, mode="wb", mtime=mtime) as gz,
+    ):
         gz.write(xml.encode("utf-8"))

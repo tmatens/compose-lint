@@ -14,6 +14,8 @@ edit_uri: edit/main/docs/
 
 theme:
   name: material
+  # Only 404.html: the theme's default is a four-word dead end with no links.
+  custom_dir: overrides
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -35,9 +37,10 @@ exclude_docs: |
   publishing/
 
 # Per-page <title> and meta description, derived from existing content
-# (front matter is unavailable: --explain prints these files raw). The same
-# hook marks every page outside the nav below `noindex` and drops it from the
-# sitemap, so the curated nav is also the indexing surface.
+# (front matter is unavailable: --explain prints these files raw), plus the
+# Open Graph/Twitter tags, JSON-LD and "last updated" date built from them.
+# The same hook marks every page outside the nav below `noindex` and drops it
+# from the sitemap, so the curated nav is also the indexing surface.
 hooks:
   - scripts/mkdocs_seo_hook.py
   # Sitemap <lastmod> per page, from git rather than the build date.
