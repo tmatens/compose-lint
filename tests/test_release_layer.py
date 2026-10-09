@@ -404,6 +404,22 @@ def test_the_shared_docker_smoke_keeps_its_whole_battery() -> None:
         )
 
 
+def test_the_shared_docker_smoke_checks_out_the_run_ref() -> None:
+    """The smoke builds the commit the run is on, never an input-supplied ref.
+
+    verify-tag pins the run to refs/tags/<tag>, so the default checkout is
+    already the release tag. An explicit ``ref: ${{ inputs.tag }}`` adds
+    nothing and is what CodeQL's untrusted-checkout rule flags.
+    """
+    steps = _load(_SHARED_DOCKER_SMOKE)["jobs"]["docker-smoke"]["steps"]
+    checkouts = [
+        s for s in steps if str(s.get("uses", "")).startswith("actions/checkout")
+    ]
+    assert checkouts, "the shared smoke no longer checks out the repository"
+    for step in checkouts:
+        assert "ref" not in (step.get("with") or {}), step
+
+
 def test_the_shared_docker_smoke_runs_the_documented_hardened_flags() -> None:
     """The smoke runs README.md's copy-paste recipe, so a broken one fails CI.
 
