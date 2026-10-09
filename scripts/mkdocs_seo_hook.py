@@ -19,13 +19,28 @@ What it fixes:
   `site_description` from mkdocs.yml, so every search snippet describes the tool
   rather than the page.
 
+- **Indexing surface.** mkdocs builds every file under docs/, so the 38 ADRs,
+  the release/CI/maintainer pages and the Docker Hub overview all shipped as
+  self-canonical, indexable URLs — 101 in the sitemap against ~45 in the nav —
+  on a site where crawl demand, not content, was the measured bottleneck. Every
+  page outside the nav now carries `<meta name="robots" content="noindex,
+  follow">` and is dropped from `sitemap.xml` (and its `.gz` twin), so the
+  curated nav in mkdocs.yml is also the list of what search engines index.
+  The pages still build and stay linkable; `follow` keeps their outbound links
+  counting.
+
 mkdocs-material reads `page.meta.title` and `page.meta.description` ahead of its
 own defaults, so setting them here is enough; no template override is needed.
+The robots tag has no such hook in the theme, so it is spliced into the rendered
+HTML in `on_post_page`, and the sitemap is rewritten after the build because
+mkdocs renders it from every documentation page with no exclusion option.
 """
 
 from __future__ import annotations
 
+import gzip
 import re
+from pathlib import Path
 
 # "CL-0007 read_only — Read-only file system errors" -> code, remainder.
 _RULE_TITLE = re.compile(r"^(CL-\d{4})\s+(.*)$")
@@ -164,6 +179,28 @@ def _home_title(site_description: str | None) -> str | None:
     return lead or None
 
 
+_ROBOTS_UNLISTED = "noindex, follow"
+_ROBOTS_TAG = '<meta name="robots" content="{}">'
+_HEAD_END = "</head>"
+_SITEMAP_ENTRY = re.compile(r"\s*<url>\s*<loc>([^<]*)</loc>.*?</url>", re.DOTALL)
+
+# Rebuilt by on_nav on every build (`mkdocs serve` keeps this module loaded
+# across rebuilds, so neither may accumulate).
+_nav_src_uris: set[str] = set()
+_noindexed_locs: set[str] = set()
+
+
+def on_nav(nav, config, files):  # noqa: ARG001 - mkdocs signature
+    _nav_src_uris.clear()
+    _nav_src_uris.update(page.file.src_uri for page in nav.pages)
+    _noindexed_locs.clear()
+    return nav
+
+
+def _unlisted(page) -> bool:
+    return page.file.src_uri not in _nav_src_uris
+
+
 def on_page_markdown(markdown, page, config, files):  # noqa: ARG001 - mkdocs signature
     meta = page.meta if page.meta is not None else {}
 
@@ -180,5 +217,59 @@ def on_page_markdown(markdown, page, config, files):  # noqa: ARG001 - mkdocs si
         if description:
             meta["description"] = description
 
+    if "robots" not in meta and _unlisted(page):
+        meta["robots"] = _ROBOTS_UNLISTED
+        loc = page.canonical_url or page.abs_url
+        if loc:
+            _noindexed_locs.add(loc)
+
     page.meta = meta
     return markdown
+
+
+def on_post_page(output, page, config):  # noqa: ARG001 - mkdocs signature
+    robots = (page.meta or {}).get("robots")
+    if not robots or _HEAD_END not in output:
+        return output
+    return output.replace(_HEAD_END, _ROBOTS_TAG.format(robots) + _HEAD_END, 1)
+
+
+def _filter_sitemap(xml: str, drop: set[str]) -> tuple[str, int]:
+    """Remove the <url> entries whose <loc> is in `drop`; return (xml, removed)."""
+    removed = 0
+
+    def keep(match: re.Match[str]) -> str:
+        nonlocal removed
+        if match.group(1) in drop:
+            removed += 1
+            return ""
+        return match.group(0)
+
+    return _SITEMAP_ENTRY.sub(keep, xml), removed
+
+
+def _gzip_mtime(path: Path) -> int:
+    """The mtime recorded in a gzip header (bytes 4-8, little-endian)."""
+    with path.open("rb") as fh:
+        header = fh.read(8)
+    return int.from_bytes(header[4:8], "little") if len(header) == 8 else 0
+
+
+def on_post_build(config):
+    if not _noindexed_locs:
+        return
+    sitemap = Path(config["site_dir"]) / "sitemap.xml"
+    if not sitemap.is_file():
+        return
+    xml, removed = _filter_sitemap(sitemap.read_text(encoding="utf-8"), _noindexed_locs)
+    if not removed:
+        return
+    sitemap.write_text(xml, encoding="utf-8")
+    # mkdocs gzips the sitemap right after rendering it; keep the twin in step
+    # and keep its header timestamp, which mkdocs derives from the pages.
+    twin = sitemap.with_suffix(".xml.gz")
+    mtime = _gzip_mtime(twin) if twin.is_file() else 0
+    with twin.open("wb") as fh, gzip.GzipFile(
+        fileobj=fh, filename=twin.name, mode="wb", mtime=mtime
+    ) as gz:
+        gz.write(xml.encode("utf-8"))
