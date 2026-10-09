@@ -1,8 +1,9 @@
 # GitHub Action
 
-`tmatens/compose-lint` runs the linter in a job and, by default, uploads its
-SARIF to GitHub Code Scanning so findings appear as PR annotations and
-Security-tab alerts. The copy-paste workflow lives in the
+The compose-lint GitHub Action lints Docker Compose files in CI and, by
+default, uploads its SARIF to GitHub Code Scanning so findings appear as PR
+annotations and Security-tab alerts. `tmatens/compose-lint` runs the linter in
+a job; the copy-paste workflow lives in the
 [README](https://github.com/tmatens/compose-lint#github-actions), where release
 automation keeps the `uses:` line pinned to the current release; this page is
 the reference behind it.
