@@ -43,7 +43,7 @@ Use `--type openvex` for the VEX document.
 
 ## Python package
 
-The wheel and sdist on PyPI are the files attached to the [GitHub Release](https://github.com/tmatens/compose-lint/releases), each with a Sigstore bundle beside it. With [sigstore-python](https://github.com/sigstore/sigstore-python):
+From 0.3.7 on, the wheel and sdist on PyPI are also attached to the [GitHub Release](https://github.com/tmatens/compose-lint/releases), each with a Sigstore bundle beside it. With [sigstore-python](https://github.com/sigstore/sigstore-python):
 
 ```bash
 VERSION=0.34.0
@@ -56,7 +56,7 @@ python -m sigstore verify identity \
   "compose_lint-${VERSION}-py3-none-any.whl"
 ```
 
-The same files carry SLSA build provenance, which the GitHub CLI verifies:
+From 0.4.1 on, the same files also carry SLSA build provenance, which the GitHub CLI verifies:
 
 ```bash
 gh attestation verify "compose_lint-${VERSION}-py3-none-any.whl" \
@@ -64,14 +64,21 @@ gh attestation verify "compose_lint-${VERSION}-py3-none-any.whl" \
   --signer-workflow tmatens/compose-lint/.github/workflows/publish.yml
 ```
 
-PyPI shows its own [PEP 740](https://peps.python.org/pep-0740/) attestations for each file under "Provenance" on the [project page](https://pypi.org/project/compose-lint/).
+Every release on PyPI, including the earliest, also has PyPI's own [PEP 740](https://peps.python.org/pep-0740/) attestations, shown under "Provenance" on the [project page](https://pypi.org/project/compose-lint/).
 
-## Signing identity by release
+## What each release carries
 
-| Releases | Image signing identity |
-| --- | --- |
-| 0.3.6 onward | `publish.yml@refs/tags/vX.Y.Z` |
-| 0.3.4 | `publish-channel.yml@refs/tags/v0.3.4` |
-| 0.3.3 | `docker-publish.yml@refs/tags/v0.3.3` |
+Older releases predate some of these. Run against a release that lacks the artifact, a command fails without implying tampering: `cosign verify-attestation` reports "none of the attestations matched the predicate type", `gh attestation verify` returns HTTP 404, and `gh release download` finds no bundle.
 
-The two oldest images were signed by workflows that have since been removed: 0.3.3 by the first Docker workflow, which `publish.yml` replaced, and 0.3.4 by a republish workflow. Verify them with the identity in the table; the any-release pattern above does not match them. 0.3.5 and releases before 0.3.3 have no Docker image. A republish now runs inside `publish.yml` on the release tag, so it signs with the same identity as the release itself.
+| Releases | Image signing identity | Image SBOM | Image VEX | Wheel Sigstore bundle | SLSA provenance |
+| --- | --- | --- | --- | --- | --- |
+| 0.5.1 on | `publish.yml@refs/tags/vX.Y.Z` | yes | yes | yes | yes |
+| 0.4.1 – 0.5.0 | `publish.yml@refs/tags/vX.Y.Z` | yes | no | yes | yes |
+| 0.3.7 – 0.4.0 | `publish.yml@refs/tags/vX.Y.Z` | yes | no | yes | no |
+| 0.3.6 | `publish.yml@refs/tags/v0.3.6` | yes | no | no | no |
+| 0.3.4 | `publish-channel.yml@refs/tags/v0.3.4` | no | no | no | no |
+| 0.3.3 | `docker-publish.yml@refs/tags/v0.3.3` | no | no | no | no |
+
+0.3.3 and 0.3.4 were signed by workflows that have since been removed: 0.3.3 by the first Docker workflow, which `publish.yml` replaced, and 0.3.4 by a republish workflow. Verify them with the identity in the table; the any-release pattern above does not match them. A republish now runs inside `publish.yml` on the release tag, so it signs with the same identity as the release itself.
+
+The 0.3.2 image was published and signed by the first Docker workflow, then removed from Docker Hub. 0.3.0, 0.3.1 and 0.3.5 never had an image: the Docker workflow did not yet exist for 0.3.0, and the other two publishes failed before pushing.
