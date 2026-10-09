@@ -65,7 +65,13 @@ Three things the run showed that the documentation did not:
   summary: six rules run, one file, zero findings). Re-run with
   `version: "3.9"` added and nothing else changed, the same rules reported 31
   findings and caught 5 of the 16. Their own test fixtures carry
-  `version: "3.9"`.
+  `version: "3.9"`. This is known upstream: reported as
+  [semgrep-rules#4035](https://github.com/semgrep/semgrep-rules/issues/4035)
+  (July 2026), with a fix in
+  [PR #4037](https://github.com/semgrep/semgrep-rules/pull/4037) awaiting
+  review since August. The requirement was added deliberately in 2021 to keep
+  the rules from matching the `services:` block of a GitHub Actions workflow,
+  which is what the fix has to preserve. When it merges, this column changes.
 - **KICS's limit queries have the same dependency**, and `No New Privileges Not
   Set` only fires on a service that already has a `security_opt:` list; the
   others get the broader `Security Opt Not Set`. `Pids Limit Not Set` did not
@@ -164,9 +170,16 @@ an autofix. All six are also written as `pattern-inside: version: … services:
 …`, so they match only a file that still carries the obsolete top-level
 `version:` key: in the run above they reported nothing on a
 Compose-Specification file that trips five of them, and 31 findings on the
-same file once `version: "3.9"` was added. If Semgrep already runs in your CI
-and your files keep `version:`, enabling the ruleset is one line; if you have
-removed `version:` as Compose now recommends, it is silently inert.
+same file once `version: "3.9"` was added. Semgrep has this on file —
+[semgrep-rules#4035](https://github.com/semgrep/semgrep-rules/issues/4035),
+fix [PR #4037](https://github.com/semgrep/semgrep-rules/pull/4037) open since
+August 2026 — along with a second gap the same reporter filed, that an
+explicit `user: root` is not detected
+([#4036](https://github.com/semgrep/semgrep-rules/issues/4036), fix
+[PR #4048](https://github.com/semgrep/semgrep-rules/pull/4048)). Until those
+merge: if Semgrep already runs in your CI and your files keep `version:`,
+enabling the ruleset is one line; if you have removed `version:` as Compose
+now recommends, it is silently inert.
 
 compose-lint covers those six and the rest of its 27 rules — capability tiers,
 resource limits, credentials in environment variables and connection strings,
