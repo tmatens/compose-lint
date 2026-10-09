@@ -2,7 +2,8 @@
 
 Which tools actually read a Docker Compose file and check it for security
 misconfigurations, and what each one does with it. Of the eight tools people
-reach for, five read Compose files — compose-lint, DCLint, KICS, Semgrep's
+reach for — plus the ninth option search results keep suggesting, a script of
+your own — five read Compose files — compose-lint, DCLint, KICS, Semgrep's
 `p/docker-compose` ruleset and OWASP DockSec — and three do not: Checkov, Trivy
 and Hadolint lint Dockerfiles or images, which is a different file. The table
 is a capability snapshot checked against each tool's own documentation on
@@ -20,6 +21,7 @@ documentation in three places. Sources are linked under each heading.
 | **Checkov** | No | 0 — 28 Dockerfile policies, no Compose framework | — | Yes | Terraform, Kubernetes, CloudFormation, Dockerfile and more |
 | **Trivy** | No | 0 — misconfiguration scanning covers Dockerfile, Kubernetes, Terraform, CloudFormation, Helm and ARM | — | Yes | Images, filesystems, IaC |
 | **Hadolint** | No | 0 | — | Yes | Dockerfile only |
+| **A script of your own** (`yq`/`jq`, Conftest/OPA, a custom Semgrep or KICS rule) | Whatever it parses | Whatever you write | Whatever you write | — | See [below](#when-a-script-of-your-own-is-enough) |
 
 Having a rule and firing it are different things — the two runs below show
 which rules fired on which file. compose-lint's own limits are listed at the
@@ -290,6 +292,36 @@ depends on whether the linter is a CI gate (determinism matters) or an
 advisor (explanation matters). The two misses the run found — an explicit
 `user: root` and a port published on `0.0.0.0` — were not on DockSec's tracker
 as of 2026-10-09.
+
+## When a script of your own is enough
+
+Search results and AI answers for these questions often suggest skipping the
+tools: `yq '.services[] | select(.privileged == true)'`, a Conftest policy, a
+custom Semgrep or KICS rule. For one check in a pre-commit hook — "nothing in
+this repository may say `privileged: true`" — that is the right answer, and
+no tool on this page will do it better.
+
+What the afternoon does not buy is the semantics, and the runs above show
+what semantics cost even for funded tools: Semgrep's rules silent on every
+modern file because they anchor on a `version:` key, KICS gating its limit
+queries the same way, KICS reporting `no-new-privileges=true` as missing
+over a `:`/`=` difference. A script that grades what Compose actually
+deploys has to resolve `${VAR:-default}` to the value Compose ships with no
+`.env` present, follow `extends:` and `include:` across files and apply their
+merge order, expand YAML anchors and `<<:` merge keys, read both the short and
+the long `ports:` syntax, treat `security_opt` as a list where the last entry
+naming a key wins (which is what `extends:` produces when a child un-hardens
+its base), and notice that `secrets:` with `file:` is a bind mount of that
+host file under another key — so a socket can arrive that way too. Each of
+those is a check compose-lint runs ([how it works](how-it-works.md),
+[what a run reads](what-a-run-reads.md)), and most were added because a
+real file slipped past the simpler version. Then Compose changes, and the
+script has to change with it.
+
+Custom rules for the tools above inherit the tool's parser, so they are a
+middle path — but only where the tool reads the file. A custom KICS query
+(Rego) or Semgrep rule can check anything in a Compose file the tool parses;
+a custom Checkov policy cannot help, because Checkov never loads the file.
 
 ## Hadolint
 
