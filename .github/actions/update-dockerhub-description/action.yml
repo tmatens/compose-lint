@@ -29,7 +29,7 @@ inputs:
   short-description:
     description: One-line short description shown under the repo title.
     required: false
-    default: 'Security-focused linter for Docker Compose files'
+    default: 'Docker Compose security linter — OWASP/CIS-grounded rules, SARIF, dry-run auto-fix'
 
 runs:
   using: 'composite'

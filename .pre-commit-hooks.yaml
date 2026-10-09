@@ -1,6 +1,6 @@
 - id: compose-lint
   name: compose-lint
-  description: Security-focused linter for Docker Compose files
+  description: Docker Compose security linter (OWASP/CIS-grounded rules)
   entry: compose-lint
   # pre-commit runs `entry + args + filenames`, so a trailing `--` here is
   # what separates options from the paths it appends. Without it a

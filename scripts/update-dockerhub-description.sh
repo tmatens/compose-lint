@@ -12,7 +12,7 @@
 #     scripts/update-dockerhub-description.sh [repo] [readme-path]
 #
 # Defaults: repo=composelint/compose-lint, readme-path=./docs/dockerhub-overview.md,
-# short-description="Security-focused linter for Docker Compose files".
+# short-description="Docker Compose security linter — OWASP/CIS-grounded rules, SARIF, dry-run auto-fix".
 #
 # Requires: curl, jq
 # Requires DOCKERHUB_TOKEN to be a Docker Hub PAT with "Read, Write, Delete"
@@ -22,7 +22,7 @@ set -euo pipefail
 
 repo="${1:-composelint/compose-lint}"
 readme="${2:-./docs/dockerhub-overview.md}"
-short_description="${SHORT_DESCRIPTION:-Security-focused linter for Docker Compose files}"
+short_description="${SHORT_DESCRIPTION:-Docker Compose security linter — OWASP/CIS-grounded rules, SARIF, dry-run auto-fix}"
 
 : "${DOCKERHUB_USERNAME:?DOCKERHUB_USERNAME must be set}"
 : "${DOCKERHUB_TOKEN:?DOCKERHUB_TOKEN must be set}"

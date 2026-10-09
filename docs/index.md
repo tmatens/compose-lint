@@ -1,9 +1,9 @@
-# compose-lint
+# compose-lint — Docker Compose security linter
 
-A security-focused linter for Docker Compose files. It tells you exactly what's
-wrong with a Compose file and exactly how to fix it — every rule cites OWASP,
-CIS, or Docker documentation, and runtime claims are re-proven against live
-containers in CI.
+compose-lint is a Docker Compose linter focused on security. It tells you
+exactly what's wrong with a Compose file and exactly how to fix it — every rule
+cites OWASP, CIS, or Docker documentation, and runtime claims are re-proven
+against live containers in CI.
 
 ```sh
 pip install compose-lint
