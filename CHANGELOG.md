@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **OpenVEX document covers CVE-2026-8643 and CVE-2026-13346.** Both are pip
+  advisories published after the document was last updated. The pip code they
+  live in is stripped from the runtime image, so images whose retained pip
+  metadata predates the fixes (0.4.1 to 0.13.0) are marked `not_affected` with
+  `vulnerable_code_not_present`, the same as the four existing statements.
+  Document version 5.
+
 - **Hardened Docker image signing to the exact index the release pushed.**
   The publish job resolved the version tag on Docker Hub after pushing and
   signed the digest it pointed to. Reaching that path requires write access to
