@@ -42,25 +42,25 @@ obsolete `version:` key. Each tool was run from its published image on
 2026-10-09.
 The fixture and the exact commands are in [Reproduce it](#reproduce-it).
 
-| Misconfiguration | compose-lint | KICS | DockSec | DCLint | Semgrep | Checkov · Trivy · Hadolint |
-|---|---|---|---|---|---|---|
-| Docker socket mounted | ✅ | ✅ | ✅ | — | ✗ † | ✗ |
-| `privileged: true` | ✅ | ✅ | ✅ | — | ✗ † | ✗ |
-| `no-new-privileges` missing | ✅ | ✅ | ✅ | — | ✗ † | ✗ |
-| Unpinned `:latest` tag | ✅ | — | ✅ | ✅ | — | ✗ |
-| Port published on `0.0.0.0` | ✅ | ✅ | — | ✅ | — | ✗ |
-| No `cap_drop: [ALL]` | ✅ | ✅ | — | — | — | ✗ |
-| Writable root filesystem | ✅ | — | ✅ | — | ✗ † | ✗ |
-| `network_mode: host` | ✅ | ✅ | ✅ | — | — | ✗ |
-| `seccomp:unconfined` | ✅ | ✅ | ✅ | — | ✗ † | ✗ |
-| `pid: host` / `ipc: host` | ✅ | ✅ | ✅ | — | — | ✗ |
-| Sensitive host path mounted | ✅ | ✅ | ✅ | — | — | ✗ |
-| `logging: driver: none` | ✅ | — | — | — | — | ✗ |
-| `user: root` | ✅ | — | ✗ | — | — | ✗ |
-| Tag without digest | ✅ | — | — | — | — | ✗ |
-| Credential in `environment:` | ✅ | ✅ | ✅ | — | — | ✗ |
-| No memory/CPU limits | ✅ | ✗ \* | ✅ | — | — | ✗ |
-| **Caught, of 16** | **16** | **10** | **11** | **2** | **0** † | **0** |
+| Misconfiguration | compose-lint | KICS | DockSec | DCLint | Semgrep |
+|---|---|---|---|---|---|
+| Docker socket mounted | ✅ | ✅ | ✅ | — | ✗ † |
+| `privileged: true` | ✅ | ✅ | ✅ | — | ✗ † |
+| `no-new-privileges` missing | ✅ | ✅ | ✅ | — | ✗ † |
+| Unpinned `:latest` tag | ✅ | — | ✅ | ✅ | — |
+| Port published on `0.0.0.0` | ✅ | ✅ | — | ✅ | — |
+| No `cap_drop: [ALL]` | ✅ | ✅ | — | — | — |
+| Writable root filesystem | ✅ | — | ✅ | — | ✗ † |
+| `network_mode: host` | ✅ | ✅ | ✅ | — | — |
+| `seccomp:unconfined` | ✅ | ✅ | ✅ | — | ✗ † |
+| `pid: host` / `ipc: host` | ✅ | ✅ | ✅ | — | — |
+| Sensitive host path mounted | ✅ | ✅ | ✅ | — | — |
+| `logging: driver: none` | ✅ | — | — | — | — |
+| `user: root` | ✅ | — | ✗ | — | — |
+| Tag without digest | ✅ | — | — | — | — |
+| Credential in `environment:` | ✅ | ✅ | ✅ | — | — |
+| No memory/CPU limits | ✅ | ✗ \* | ✅ | — | — |
+| **Caught, of 16** | **16** | **10** | **11** | **2** | **0** † |
 
 ✅ flagged · ✗ not flagged · — no rule for it. \* KICS's memory and CPU
 queries fire only when the file carries the obsolete `version:` key; with
@@ -95,10 +95,14 @@ The run contradicted the documentation in three places:
   `0.0.0.0` binds or a missing `cap_drop`, and it does not flag an explicit
   `user: root`. It flags the absence of `user:` instead.
 
-Checkov reported `resource_count: 0` and rejects `--framework docker_compose`
-as "Invalid frameworks specified". Trivy's config scan downloaded its checks
-bundle and returned a report with no results section. Hadolint parsed the
-file as a Dockerfile and stopped at line 3 with `DL1000`.
+Checkov, Trivy and Hadolint were run on the same file to confirm the
+documentation, and none of them read it. Checkov reported `resource_count: 0`
+and rejects `--framework docker_compose` as "Invalid frameworks specified".
+Trivy's config scan downloaded its checks bundle and returned a report with
+no results section. Hadolint parsed the file as a Dockerfile and stopped at
+line 3 with `DL1000`. That is the expected result, not a miss. They are on
+this page because people search for them with Compose questions, and the
+sections below say what each one does instead.
 
 Versions: compose-lint 0.34.0, DCLint 3.1.0, KICS 2.1.20, DockSec 2026.8.19
 (image tag 2026.9.21), Semgrep 1.179.0, Checkov 3.3.26, Trivy 0.75.0,
