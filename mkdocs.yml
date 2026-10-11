@@ -120,6 +120,7 @@ nav:
       - Hardening walkthrough: hardening.md
       - Verifying releases: verifying.md
       - Compatibility: compatibility.md
+      - "Compared with DCLint, KICS, Checkov, Trivy": compare.md
   - Project:
       - Roadmap: ROADMAP.md
       - State of Docker Compose Security: state-of-compose.md

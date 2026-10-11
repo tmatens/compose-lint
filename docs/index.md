@@ -58,6 +58,9 @@ reading here) in the terminal.
   default to hardened, finding by finding.
 - **[Verifying a release](verifying.md)** — checking an image's or a
   package's signature before you pin it.
+- **[Compared with other tools](compare.md)** — which of DCLint, KICS,
+  Checkov, Trivy, Semgrep, DockSec and Hadolint actually read a Compose file,
+  and what each one checks.
 - **[CL-0006's capability guide](rules/CL-0006.md#determining-required-capabilities)**
   — how to determine the capabilities an image actually needs, with a verbatim
   error-message → capability table proven in CI.
