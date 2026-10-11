@@ -3,9 +3,10 @@
 Which of these tools read a Docker Compose file and check it for security
 misconfigurations? Five do: compose-lint, DCLint, KICS, Semgrep's
 `p/docker-compose` ruleset and OWASP DockSec. Three do not: Checkov, Trivy
-and Hadolint lint Dockerfiles or images, which is a different file. Two of
-the five, Semgrep and KICS, only work fully on files that still carry the
-top-level `version:` key from the old Compose file format. The Compose
+and Hadolint lint Dockerfiles or images, which is a different file.
+
+Two of the five, Semgrep and KICS, only work fully on files that still carry
+the top-level `version:` key from the old Compose file format. The Compose
 Specification that `docker compose` has used since 2020 makes that key
 obsolete, and `docker compose` warns when it sees one. The ninth option that
 search results keep suggesting, a script of your own, has its own section
@@ -22,15 +23,15 @@ run is described further down. Sources are linked under each heading.
 | **DCLint** | Yes | 2 of 15 (unbound port interfaces, explicit image tag) | Formatting and ordering rules | — | Docker Compose style, structure and schema |
 | **KICS** | Yes | 21 queries | `remediate` command; Compose support not documented | Yes | Terraform, Kubernetes, CloudFormation, Compose and more |
 | **Semgrep `p/docker-compose`** | Yes | 6 | 1 of the 6 carries a fix | Yes | General-purpose code scanner |
-| **OWASP DockSec** | Yes (`--compose --scan-only`) | 14 observed (its docs do not list them) | No — `--fix` edits Dockerfiles only | Yes | Dockerfiles, images, Compose |
-| **Checkov** | No | 0 — 28 Dockerfile policies, no Compose framework | — | Yes | Terraform, Kubernetes, CloudFormation, Dockerfile and more |
-| **Trivy** | No | 0 — misconfiguration scanning covers Dockerfile, Kubernetes, Terraform, CloudFormation, Helm and ARM | — | Yes | Images, filesystems, IaC |
+| **OWASP DockSec** | Yes (`--compose --scan-only`) | 14 observed (its docs do not list them) | No (`--fix` edits Dockerfiles only) | Yes | Dockerfiles, images, Compose |
+| **Checkov** | No | 0 | — | Yes | Terraform, Kubernetes, CloudFormation, Dockerfile and more |
+| **Trivy** | No | 0 | — | Yes | Images, filesystems, IaC |
 | **Hadolint** | No | 0 | — | Yes | Dockerfile only |
 | **A script of your own** (`yq`/`jq`, Conftest/OPA, a custom Semgrep or KICS rule) | Whatever it parses | Whatever you write | Whatever you write | — | See [below](#when-a-script-of-your-own-is-enough) |
 
-A tool can have a rule and still not fire it. The two runs below show which
-rules fired on which file. compose-lint's own gaps are listed at the end of
-the page. It does not replace the image scanner or the Dockerfile linter you
+The table says which rules each tool documents. The two runs below show
+which of them fired on which file. compose-lint's own gaps are listed at the
+end of the page. It does not replace the image scanner or the Dockerfile linter you
 already run.
 
 ## Run on the same file
@@ -39,8 +40,8 @@ Documentation describes what a tool is meant to check. A run shows what it
 checked. The fixture has sixteen services, each with one deliberate
 misconfiguration, written to the Compose Specification, so without the
 obsolete `version:` key. Each tool was run from its published image on
-2026-10-09.
-The fixture and the exact commands are in [Reproduce it](#reproduce-it).
+2026-10-09. The fixture and the exact commands are in
+[Reproduce it](#reproduce-it).
 
 | Misconfiguration | compose-lint | KICS | DockSec | DCLint | Semgrep |
 |---|---|---|---|---|---|
@@ -119,8 +120,6 @@ file. That covers Rules 1 to 8, 12 and 13. Rules 0, 9, 10 and 11 concern the
 host, the CI pipeline and the daemon. Twenty services, same tools, same day,
 no `version:` key. This fixture shows where compose-lint has no rule.
 
-✅ flagged · ✗ has a rule for it, did not flag it · — no rule for it
-
 | OWASP rule — violation | compose-lint | KICS | DockSec | Semgrep | DCLint |
 |---|---|---|---|---|---|
 | 1 — Docker socket mounted | ✅ | ✅ | ✅ | ✅ † | — |
@@ -147,6 +146,7 @@ no `version:` key. This fixture shows where compose-lint has no rule.
 | **No rule for it** | 5 | 9 | 6 | 15 | 18 |
 | **Has a rule, missed it** | 0 | 2 | 1 | 0 | 0 |
 
+✅ flagged · ✗ has a rule for it, did not flag it · — no rule for it.
 \* fires with the obsolete `version: "3.9"` key present (10 of 20). † Semgrep's
 rules all require that key; with it added they catch these 5. Checkov, Trivy and
 Hadolint are 0 of 20 on both variants and are left off the table.
@@ -257,16 +257,10 @@ Semgrep's registry has six Compose security rules under
 the Docker socket as a volume, `no-new-privileges`, privileged services,
 seccomp confinement disabled, SELinux separation disabled, and a writable
 root filesystem. All six are `WARNING` severity and one
-(`privileged-service`) has an autofix. All six are written as
-`pattern-inside: version: … services: …`, so they only match a file that
-still has the old top-level `version:` key. In the run above they reported
-nothing on a Compose Specification file that violates five of them, and 31
-findings on the same file once `version: "3.9"` was added. Semgrep has this
-on file as
-[semgrep-rules#4035](https://github.com/semgrep/semgrep-rules/issues/4035),
-with fix [PR #4037](https://github.com/semgrep/semgrep-rules/pull/4037) open
-since August 2026. The same reporter filed a second gap, that an explicit
-`user: root` is not detected
+(`privileged-service`) has an autofix. All six match only a file that still
+has the obsolete `version:` key; the [run above](#run-on-the-same-file) has
+the numbers and the upstream fix. The same reporter filed a second gap, that
+an explicit `user: root` is not detected
 ([#4036](https://github.com/semgrep/semgrep-rules/issues/4036), fix
 [PR #4048](https://github.com/semgrep/semgrep-rules/pull/4048)). Until those
 merge, the ruleset is one line to enable if Semgrep already runs in your CI
@@ -317,14 +311,19 @@ above show what those cost even for funded tools: Semgrep's rules are silent
 on every modern file because they anchor on `version:`, KICS gates its limit
 queries the same way, and KICS reports `no-new-privileges=true` as missing
 over a `:` versus `=` difference. A script that grades what Compose actually
-deploys has to resolve `${VAR:-default}` to the value Compose ships when no
-`.env` is present, follow `extends:` and `include:` across files and apply
-their merge order, expand YAML anchors and `<<:` merge keys, read both the
-short and the long `ports:` syntax, treat `security_opt` as a list where the
-last entry naming a key wins (which is what `extends:` produces when a child
-un-hardens its base), and notice that `secrets:` with `file:` is a bind
-mount of that host file under another key, so a socket can arrive that way
-too. compose-lint runs each of those checks ([how it works](how-it-works.md),
+deploys has to:
+
+- resolve `${VAR:-default}` to the value Compose ships when no `.env` is
+  present;
+- follow `extends:` and `include:` across files and apply their merge order;
+- expand YAML anchors and `<<:` merge keys;
+- read both the short and the long `ports:` syntax;
+- treat `security_opt` as a list where the last entry naming a key wins,
+  which is what `extends:` produces when a child un-hardens its base;
+- notice that `secrets:` with `file:` is a bind mount of that host file under
+  another key, so a socket can arrive that way too.
+
+compose-lint runs each of those checks ([how it works](how-it-works.md),
 [what a run reads](what-a-run-reads.md)), and most of them were added
 because a real file slipped past a simpler version. Compose changes over
 time, and a script has to change with it.
@@ -334,10 +333,10 @@ a middle path, but only where the tool reads the file. A custom KICS query
 (Rego) or Semgrep rule can check anything in a Compose file the tool parses.
 A custom Checkov policy cannot help, because Checkov never loads the file.
 
-## Hadolint
+## Does Hadolint lint Docker Compose files?
 
-[Hadolint](https://github.com/hadolint/hadolint) lints Dockerfiles and does
-not read Compose files. When Compose support was requested in 2025
+No. [Hadolint](https://github.com/hadolint/hadolint) lints Dockerfiles and
+does not read Compose files. When Compose support was requested in 2025
 ([hadolint#1091](https://github.com/hadolint/hadolint/issues/1091)), the
 answer was that Compose is plain YAML and belongs to other tools. Nothing on
 this page replaces it. A hardened Compose file that runs an image built from
