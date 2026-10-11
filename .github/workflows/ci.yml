@@ -1054,6 +1054,17 @@ jobs:
             composelint/compose-lint:pr-smoke --format sarif --fail-on critical \
             | python3 -c "import sys, json; json.load(sys.stdin); print('Valid SARIF JSON')"
 
+      # The release smoke makes the same assertion; it is here too so a
+      # Dockerfile change that leaves pip's code behind, or drops its
+      # .dist-info, fails on its own PR instead of at tag time. Rationale in
+      # release-docker-smoke.yml and tests/smoke/assert_pip_stripped.py.
+      - name: pip code is stripped and its metadata kept
+        run: |
+          docker run --rm \
+            --entrypoint /venv/bin/python3 \
+            -v "${PWD}/tests/smoke/assert_pip_stripped.py:/src/check.py:ro" \
+            composelint/compose-lint:pr-smoke /src/check.py
+
   action-smoke:
     name: Smoke test action.yml
     needs: changes

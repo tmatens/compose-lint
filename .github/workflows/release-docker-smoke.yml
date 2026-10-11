@@ -122,3 +122,23 @@ jobs:
             -v "${PWD}/tests/smoke/sarif-shape.yml:/src/docker-compose.yml:ro" \
             composelint/compose-lint:release-smoke --format sarif --fail-on critical \
             | python3 -c "import sys, json; json.load(sys.stdin); print('Valid SARIF JSON')"
+      # The OpenVEX document declares every pip CVE not_affected because the
+      # Dockerfile strips pip's code and keeps only its .dist-info. Nothing
+      # else checked that this stayed true: a Dockerfile change that left
+      # pip's code in place would turn those statements false while every
+      # scanner kept honouring them. Both halves are asserted, code absent
+      # and metadata present, because deleting the metadata would hide pip
+      # from scanners instead of fixing anything. The image has no shell, so
+      # the check runs under the venv's interpreter.
+      - name: Test — pip code is stripped and its metadata kept (hardened)
+        run: |
+          docker run --rm \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --network none \
+            --user 65532:65532 \
+            --pids-limit 256 \
+            --entrypoint /venv/bin/python3 \
+            -v "${PWD}/tests/smoke/assert_pip_stripped.py:/src/check.py:ro" \
+            composelint/compose-lint:release-smoke /src/check.py

@@ -157,7 +157,7 @@ Common Python-level weakness classes and their mitigations:
 | Resource exhaustion (CWE-400)                        | Iterative parser traversals; byte, scan-length, merge-pair and service-count caps (`_limits.py`); ClusterFuzzLite runs as a continuous gate. |
 | Type confusion in rule predicates                    | `mypy --strict` on every commit; rules receive plain types only (AGENTS.md). |
 | Logic bug in a rule (false negative or positive)     | Per-rule positive + negative + hardened-but-unusual fixtures; corpus snapshot regression gate; mutation testing on rule predicates via `mutmut`. |
-| Outdated dependency with known CVE                   | `pip-audit` (informational on PRs, blocking at release in `publish.yml`); `dependency-review`; Renovate weekly + same-day OSV security alerts; OpenVEX document for stripped-component CVEs (ADR-012). |
+| Outdated dependency with known CVE                   | `pip-audit` (informational on PRs, blocking at release in `publish.yml`); `dependency-review`; Renovate weekly + same-day OSV security alerts; OpenVEX document for stripped-component CVEs (ADR-012), whose `vulnerable_code_not_present` justification the PR and release Docker smokes assert against the built image. |
 | Tampered release artifact                            | Sigstore + cosign + SLSA provenance + SBOM + post-release `verify-release-signatures` job. |
 
 ## Continuous-assurance tooling
@@ -169,7 +169,8 @@ prompting:
   `mypy src/ tests/`, `pytest` matrix on Python 3.11–3.14, `bandit`,
   `actionlint`, `dependency-review`, `dockerfile-digests`
   manifest-list check, `docker-smoke` (clean fixture exits 0, insecure
-  fixture exits 1, SARIF is valid JSON), `action-smoke`, DCO trailer
+  fixture exits 1, SARIF is valid JSON, pip code stripped with its
+  metadata kept), `action-smoke`, DCO trailer
   check, no-AI-attribution check, version-string consistency,
   CHANGELOG-bump gate. (`pip-audit` also runs here but is informational
   — the blocking dependency-CVE gate is at release time; see below.)
@@ -185,7 +186,8 @@ prompting:
 - **Release-time gates** (`publish.yml`): annotated-tag check, tag-
   reachable-from-main check, SSH tag-signature verification (via
   `.github/allowed_signers`), TestPyPI smoke, multi-arch Docker smoke
-  under hardened flags, manual `release-gate` approval, post-release
+  under hardened flags (including the pip-stripped check behind the
+  OpenVEX statements), manual `release-gate` approval, post-release
   Sigstore identity verification, cosign signature verification on the
   pushed manifest, version-matches-tag verification on the published
   image.

@@ -397,7 +397,13 @@ def test_the_shared_docker_smoke_keeps_its_whole_battery() -> None:
     doc = _load(_SHARED_DOCKER_SMOKE)
     steps = doc["jobs"]["docker-smoke"]["steps"]
     names = [str(step.get("name", "")) for step in steps]
-    for expected in ("version output", "clean fixture", "insecure fixture", "SARIF"):
+    for expected in (
+        "version output",
+        "clean fixture",
+        "insecure fixture",
+        "SARIF",
+        "pip code is stripped",
+    ):
         assert any(expected in name for name in names), (
             f"{_SHARED_DOCKER_SMOKE} no longer asserts '{expected}'; every "
             f"publish path lost that check at once. Steps: {names}"
