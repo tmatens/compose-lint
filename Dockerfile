@@ -62,7 +62,9 @@ RUN python3 -m venv /build-venv \
 # evasion. The OpenVEX document still backstops any residual or
 # not-yet-fixed pip CVE (e.g. CVE-2026-3219). Python 3.13 venvs do not
 # ship setuptools or wheel by default, so pip is the only ambient
-# package to remove.
+# package to remove. tests/smoke/assert_pip_stripped.py asserts both
+# halves (code gone, .dist-info kept) in the PR and release Docker
+# smokes, so the VEX justification cannot go stale without a red run.
 
 # --- runtime stage: distroless Python, nonroot by default ---
 FROM gcr.io/distroless/python3-debian13:nonroot@sha256:774595d652a294b54c9bd575b2d9fdd1a4b47547dc17b8bfa4c0e953c64855b3

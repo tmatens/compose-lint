@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The Docker smokes prove the OpenVEX justification.** Every pip CVE in
+  `.vex/compose-lint.openvex.json` is `not_affected` because the image
+  strips pip's code and keeps only its metadata, and nothing verified that
+  the build still did so. A step in the PR and release Docker smokes now
+  fails if pip is importable, its package directory or console scripts
+  exist, or its `.dist-info` is missing, so a Dockerfile change cannot turn
+  the statements false without a red run.
+
 - **A "Verifying a release" docs page.** `cosign verify` for the image,
   pinning the release workflow's certificate identity for the exact tag and
   GitHub's OIDC issuer; the `--type` needed to find the SBOM and OpenVEX
