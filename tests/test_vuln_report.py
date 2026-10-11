@@ -426,3 +426,63 @@ def test_the_real_vex_document_parses(tmp_path: Path) -> None:
     proc, out = run(tmp_path, CLEAN, vex=real, osv=osv, extra=FLOOR)
     assert proc.returncode == 0, proc.stderr
     assert "Complete. ✅" in out.read_text("utf-8")
+
+
+def test_a_git_range_commit_hash_is_not_a_fix_version(tmp_path: Path) -> None:
+    """CVE-2019-20916 as OSV publishes it: fixed in 19.2 by version, and by a
+    commit hash in a GIT range. The hash must not keep an advisory every
+    published tag is past; the first live run listed it as a gap."""
+    adv = _advisory(
+        "PYSEC-2020-0001",
+        "CVE-2019-20916",
+        fixed=["19.2"],
+        published="2020-09-04T00:00:00Z",
+    )
+    adv["affected"] = [
+        *adv["affected"],  # type: ignore[misc]
+        {
+            "package": {"name": "pip", "ecosystem": "PyPI"},
+            "ranges": [
+                {
+                    "type": "GIT",
+                    "repo": "https://github.com/pypa/pip",
+                    "events": [
+                        {"introduced": "0"},
+                        {"fixed": "a4c735b14a62f9cb864533808ac63936704f2ace"},
+                    ],
+                }
+            ],
+        },
+    ]
+    proc, out = run(tmp_path, CLEAN, vex=VEX_ONE, osv=_osv(adv), extra=FLOOR)
+    assert proc.returncode == 0, proc.stderr
+    assert "CVE-2019-20916" not in out.read_text("utf-8")
+
+
+def test_an_advisory_with_only_a_git_range_stays_in_scope(tmp_path: Path) -> None:
+    adv = _advisory("PYSEC-2026-0004", "CVE-2026-44444")
+    adv["affected"] = [
+        {
+            "package": {"name": "pip", "ecosystem": "PyPI"},
+            "ranges": [
+                {"type": "GIT", "events": [{"introduced": "0"}, {"fixed": "deadbeef"}]}
+            ],
+        }
+    ]
+    proc, out = run(tmp_path, CLEAN, vex=VEX_ONE, osv=_osv(adv), extra=FLOOR)
+    assert proc.returncode == 0, proc.stderr
+    assert "CVE-2026-44444" in out.read_text("utf-8")
+
+
+def test_details_stand_in_for_a_missing_summary(tmp_path: Path) -> None:
+    adv = _advisory("PYSEC-2026-0005", "CVE-2026-66666", fixed=["26.9"])
+    del adv["summary"]
+    adv["details"] = (
+        "pip resolved the wrong index URL when a mirror was set.\n\n"
+        "Longer text follows."
+    )
+    proc, out = run(tmp_path, CLEAN, vex=VEX_ONE, osv=_osv(adv), extra=FLOOR)
+    assert proc.returncode == 0, proc.stderr
+    body = out.read_text("utf-8")
+    assert "pip resolved the wrong index URL" in body
+    assert "Longer text follows" not in body
