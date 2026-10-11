@@ -3,9 +3,13 @@
 Which of these tools read a Docker Compose file and check it for security
 misconfigurations? Five do: compose-lint, DCLint, KICS, Semgrep's
 `p/docker-compose` ruleset and OWASP DockSec. Three do not: Checkov, Trivy
-and Hadolint lint Dockerfiles or images, which is a different file. The
-ninth option that search results keep suggesting, a script of your own, has
-its own section below.
+and Hadolint lint Dockerfiles or images, which is a different file. Two of
+the five, Semgrep and KICS, only work fully on files that still carry the
+top-level `version:` key from the old Compose file format. The Compose
+Specification that `docker compose` has used since 2020 makes that key
+obsolete, and `docker compose` warns when it sees one. The ninth option that
+search results keep suggesting, a script of your own, has its own section
+below.
 
 The table was checked against each tool's documentation on 2026-10-08. The
 next day all eight tools were run against the same deliberately broken
@@ -33,8 +37,9 @@ already run.
 
 Documentation describes what a tool is meant to check. A run shows what it
 checked. The fixture has sixteen services, each with one deliberate
-misconfiguration, and no `version:` key, which has been the default form
-since Compose v2. Each tool was run from its published image on 2026-10-09.
+misconfiguration, written to the Compose Specification, so without the
+obsolete `version:` key. Each tool was run from its published image on
+2026-10-09.
 The fixture and the exact commands are in [Reproduce it](#reproduce-it).
 
 | Misconfiguration | compose-lint | KICS | DockSec | DCLint | Semgrep | Checkov · Trivy · Hadolint |
@@ -58,9 +63,9 @@ The fixture and the exact commands are in [Reproduce it](#reproduce-it).
 | **Caught, of 16** | **16** | **10** | **11** | **2** | **0** † | **0** |
 
 ✅ flagged · ✗ not flagged · — no rule for it. \* KICS's memory and CPU
-queries fire only when the file carries a `version:` key; with `version: "3.9"`
-added it catches 11. † Semgrep's rules all require that key; with it added the
-same six rules produced 31 findings and caught these 5.
+queries fire only when the file carries the obsolete `version:` key; with
+`version: "3.9"` added it catches 11. † Semgrep's rules all require that key;
+with it added the same six rules produced 31 findings and caught these 5.
 
 The run contradicted the documentation in three places:
 
@@ -138,8 +143,8 @@ no `version:` key. This fixture shows where compose-lint has no rule.
 | **No rule for it** | 5 | 9 | 6 | 15 | 18 |
 | **Has a rule, missed it** | 0 | 2 | 1 | 0 | 0 |
 
-\* fires with `version: "3.9"` present (10 of 20). † Semgrep's rules all
-require that key; with it added they catch these 5. Checkov, Trivy and
+\* fires with the obsolete `version: "3.9"` key present (10 of 20). † Semgrep's
+rules all require that key; with it added they catch these 5. Checkov, Trivy and
 Hadolint are 0 of 20 on both variants and are left off the table.
 
 compose-lint has no rule for five of the twenty. They are listed under
