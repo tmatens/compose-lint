@@ -157,7 +157,7 @@ Common Python-level weakness classes and their mitigations:
 | Resource exhaustion (CWE-400)                        | Iterative parser traversals; byte, scan-length, merge-pair and service-count caps (`_limits.py`); ClusterFuzzLite runs as a continuous gate. |
 | Type confusion in rule predicates                    | `mypy --strict` on every commit; rules receive plain types only (AGENTS.md). |
 | Logic bug in a rule (false negative or positive)     | Per-rule positive + negative + hardened-but-unusual fixtures; corpus snapshot regression gate; mutation testing on rule predicates via `mutmut`. |
-| Outdated dependency with known CVE                   | `pip-audit` (informational on PRs, blocking at release in `publish.yml`); `dependency-review`; Renovate weekly + same-day OSV security alerts; OpenVEX document for stripped-component CVEs (ADR-012), whose `vulnerable_code_not_present` justification the PR and release Docker smokes assert against the built image. |
+| Outdated dependency with known CVE                   | `pip-audit` (informational on PRs, blocking at release in `publish.yml`); `dependency-review`; Renovate weekly + same-day OSV security alerts; OpenVEX document for stripped-component CVEs (ADR-012), whose `vulnerable_code_not_present` justification the PR and release Docker smokes assert against the built image, and whose completeness the daily `vuln-report` checks by diffing pip's OSV advisory list against the statement names. |
 | Tampered release artifact                            | Sigstore + cosign + SLSA provenance + SBOM + post-release `verify-release-signatures` job. |
 
 ## Continuous-assurance tooling

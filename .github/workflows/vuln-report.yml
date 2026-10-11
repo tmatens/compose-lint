@@ -16,6 +16,15 @@ name: Fixable vulnerability report
 # here. That is the anti-rot property: a suppression whose justification
 # has gone stale is otherwise invisible to pip-audit (filtered by ID) and
 # to Renovate (the existing pin is still satisfiable) simultaneously.
+#
+# It also checks the OpenVEX document is complete. Scanners match pip CVEs
+# against the pip .dist-info the image keeps, so an advisory covering a pip
+# version that any published tag retains is reported against that tag until
+# a not_affected statement names it. Only `latest` is scanned, and it
+# upgrades pip before stripping it, so an advisory published and fixed
+# between two releases never reaches a scanner here (#1040). pip's advisory
+# list from OSV is diffed against the statement names instead; a missing ID
+# is a line in the rolling issue. No image is pulled for this.
 
 on:
   workflow_dispatch:
@@ -100,6 +109,26 @@ jobs:
           vex-location: .vex/compose-lint.openvex.json
           vex-author: .*
 
+      # One page holds every pip advisory with room to spare (the API pages
+      # at 1000); the report script refuses a response that carries a
+      # next_page_token rather than compare against a partial list, and
+      # refuses an empty list, since a query returning nothing for pip is a
+      # broken query, not a clean one.
+      - name: Fetch pip's advisory list from OSV
+        run: |
+          curl --silent --show-error --fail \
+            --retry 5 --retry-all-errors --retry-delay 5 --max-time 60 \
+            --header 'Content-Type: application/json' \
+            --data '{"package": {"name": "pip", "ecosystem": "PyPI"}}' \
+            --output osv-pip.json \
+            https://api.osv.dev/v1/query
+
+      # --pip-floor: advisories whose every fix is at or below this pip are
+      # out of scope, because no published image retains a pip that old.
+      # Tags before the always-latest pip upgrade kept the Debian 13
+      # python3-pip the venv was seeded from (25.1.x), so 25.1 is just under
+      # the oldest pip any tag can report. Lowering it only adds historical
+      # advisories that would each need a true-but-pointless statement.
       - name: Build report body
         id: build
         env:
@@ -109,17 +138,23 @@ jobs:
             --pip-audit pip-audit.json \
             --scout-sarif scout-fixable.sarif \
             --image composelint/compose-lint:latest \
+            --vex .vex/compose-lint.openvex.json \
+            --osv osv-pip.json \
+            --osv-package pip \
+            --pip-floor 25.1 \
             --run-url "${RUN_URL}" \
             --out body.md
 
       # Rolling issue: one issue, rewritten in place, closed when clean.
-      # An OPEN issue with this label means "there is something fixable
-      # right now" — there is no triage backlog to maintain.
+      # An OPEN issue with this label means "there is something fixable, or
+      # an OpenVEX statement to write, right now" — there is no triage
+      # backlog to maintain.
       - name: Reconcile rolling issue
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           COUNT: ${{ steps.build.outputs.count }}
+          TITLE: ${{ steps.build.outputs.title }}
           HAS_FINDINGS: ${{ steps.build.outputs.has_findings }}
           LABEL: fixable-vulns
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -134,19 +169,18 @@ jobs:
             --json number --jq '.[0].number // empty')
 
           if [ "${HAS_FINDINGS}" = "true" ]; then
-            title="Fixable vulnerabilities (${COUNT})"
             if [ -n "${existing}" ]; then
-              echo "Updating issue #${existing} (${COUNT} fixable)"
-              gh issue edit "${existing}" --title "${title}" --body-file body.md
+              echo "Updating issue #${existing}: ${TITLE}"
+              gh issue edit "${existing}" --title "${TITLE}" --body-file body.md
             else
-              echo "Opening new issue (${COUNT} fixable)"
-              gh issue create --title "${title}" --body-file body.md \
+              echo "Opening new issue: ${TITLE}"
+              gh issue create --title "${TITLE}" --body-file body.md \
                 --label "${LABEL}"
             fi
           elif [ -n "${existing}" ]; then
-            echo "No fixable vulnerabilities left; closing #${existing}"
+            echo "No fixable vulnerabilities or OpenVEX gaps left; closing #${existing}"
             gh issue close "${existing}" --reason completed --comment \
-              "All previously reported vulnerabilities now have no available fix or are resolved. Verified by ${RUN_URL}."
+              "All previously reported vulnerabilities now have no available fix or are resolved, and the OpenVEX document names every in-scope pip advisory. Verified by ${RUN_URL}."
           else
             echo "No fixable vulnerabilities and no open issue. Nothing to do."
           fi

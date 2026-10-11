@@ -18,6 +18,15 @@ Design notes
 * **Missing or unparseable input is a hard error**, never an implicit
   "all clear". A reporting job that silently reports clean is worse
   than no reporting job.
+* **The OpenVEX document is checked for completeness, not the image.**
+  Scanners match pip CVEs against the pip ``.dist-info`` the image keeps,
+  so a pip advisory whose range covers a pip version that any published
+  tag retains produces a finding on that tag until a ``not_affected``
+  statement covers it. Only ``latest`` is ever scanned, and it upgrades
+  pip before stripping it, so an advisory published and fixed between two
+  releases never reaches a scanner here (#1040). The report therefore
+  diffs pip's advisory list from OSV against the statement names in the
+  VEX file; a missing ID is a gap to document, not a vulnerability to fix.
 """
 
 from __future__ import annotations
@@ -28,6 +37,8 @@ import os
 import sys
 from pathlib import Path
 from typing import Any
+
+from packaging.version import InvalidVersion, Version
 
 MARKER = "<!-- vuln-report:managed -->"
 
@@ -127,6 +138,121 @@ def parse_scout_sarif(path: Path) -> list[dict[str, str]]:
     return rows
 
 
+def parse_vex_ids(path: Path) -> set[str]:
+    """Return every vulnerability identifier the OpenVEX document names.
+
+    A statement's ``vulnerability.name`` plus any ``aliases`` it lists, so
+    an advisory is covered whichever identifier the document chose.
+    """
+    data = _load_json(path, "OpenVEX document")
+    statements = data.get("statements") if isinstance(data, dict) else None
+    if not isinstance(statements, list):
+        raise ReportError("OpenVEX document has no 'statements' list; shape changed?")
+    ids: set[str] = set()
+    for statement in statements:
+        vuln = statement.get("vulnerability") if isinstance(statement, dict) else None
+        if not isinstance(vuln, dict) or not vuln.get("name"):
+            raise ReportError("OpenVEX statement without a vulnerability.name")
+        ids.add(str(vuln["name"]))
+        ids.update(str(alias) for alias in (vuln.get("aliases") or []))
+    return ids
+
+
+def _fixed_versions(vuln: dict[str, Any], package: str) -> list[str]:
+    fixed: list[str] = []
+    for affected in vuln.get("affected") or []:
+        pkg = affected.get("package") or {}
+        if str(pkg.get("name", "")).lower() != package.lower():
+            continue
+        for rng in affected.get("ranges") or []:
+            for event in rng.get("events") or []:
+                if "fixed" in event:
+                    fixed.append(str(event["fixed"]))
+    return fixed
+
+
+def _above_floor(fixed: list[str], floor: Version) -> bool:
+    """True when some fix lands above the floor, so a retained pip could match."""
+    for version in fixed:
+        try:
+            if Version(version) > floor:
+                return True
+        except InvalidVersion:
+            # An unparseable fix version cannot be ruled out; keep the advisory.
+            return True
+    return False
+
+
+def parse_osv_gaps(
+    path: Path, vex_ids: set[str], package: str, floor: str
+) -> tuple[list[dict[str, str]], int]:
+    """Return (gaps, considered) from an OSV ``/v1/query`` response.
+
+    ``gaps`` are advisories for ``package`` that no VEX statement names, by
+    any of their identifiers. Advisories whose every fix is at or below
+    ``floor`` are out of scope: no published image retains a pip that old,
+    so no scanner can match them. An advisory with no fix at all is kept.
+    ``considered`` counts the in-scope advisories, so a clean report can
+    say what it compared.
+    """
+    data = _load_json(path, "OSV advisory list")
+    if not isinstance(data, dict) or not isinstance(data.get("vulns"), list):
+        raise ReportError(
+            "OSV response has no 'vulns' list; query failed or shape changed?"
+        )
+    if data.get("next_page_token"):
+        raise ReportError(
+            "OSV response is paginated (next_page_token present); the fetch step "
+            "reads one page, so the comparison would be against a partial list"
+        )
+    vulns = data["vulns"]
+    if not vulns:
+        raise ReportError(
+            f"OSV lists no advisories at all for {package}; a query that returns "
+            "nothing for a package with known CVEs is broken, not clean"
+        )
+    try:
+        floor_version = Version(floor)
+    except InvalidVersion as exc:
+        raise ReportError(f"--pip-floor {floor!r} is not a version") from exc
+
+    gaps: list[dict[str, str]] = []
+    considered = 0
+    for vuln in vulns:
+        if not isinstance(vuln, dict) or vuln.get("withdrawn"):
+            continue
+        ids = {str(vuln.get("id", ""))} | {str(a) for a in (vuln.get("aliases") or [])}
+        ids.discard("")
+        if not ids:
+            raise ReportError("OSV advisory without an id")
+        fixed = _fixed_versions(vuln, package)
+        if fixed and not _above_floor(fixed, floor_version):
+            continue
+        considered += 1
+        if ids & vex_ids:
+            continue
+        cve = sorted(i for i in ids if i.startswith("CVE-"))
+        gaps.append(
+            {
+                "id": cve[0] if cve else sorted(ids)[0],
+                "published": str(vuln.get("published", ""))[:10] or "—",
+                "fixed_in": ", ".join(sorted(fixed, key=_sort_version))
+                if fixed
+                else "—",
+                "summary": " ".join(str(vuln.get("summary", "")).split())[:120] or "—",
+            }
+        )
+    gaps.sort(key=lambda r: (r["published"], r["id"]))
+    return gaps, considered
+
+
+def _sort_version(version: str) -> tuple[int, Any]:
+    try:
+        return (0, Version(version))
+    except InvalidVersion:
+        return (1, version)
+
+
 def _table(headers: list[str], rows: list[list[str]]) -> str:
     out = ["| " + " | ".join(headers) + " |"]
     out.append("|" + "|".join(["---"] * len(headers)) + "|")
@@ -140,23 +266,37 @@ def build_body(
     img_fixable: list[dict[str, str]],
     image: str,
     run_url: str,
+    vex: tuple[Path, str, list[dict[str, str]], int, str] | None = None,
 ) -> str:
+    """Render the issue body.
+
+    ``vex`` is ``(vex_path, package, gaps, considered, floor)`` when the
+    OpenVEX completeness check ran, else ``None`` and the section is omitted.
+    """
     total = len(py_fixable) + len(img_fixable)
+    gaps = vex[2] if vex else []
     noun = "vulnerability" if total == 1 else "vulnerabilities"
     tail = (
         " — every advisory below has a fix available, at any severity."
         if total
         else " — nothing to fix right now."
     )
+    headline = f"**{total} fixable {noun}**{tail}"
+    if gaps:
+        gap_noun = "gap" if len(gaps) == 1 else "gaps"
+        headline += (
+            f" **{len(gaps)} OpenVEX {gap_noun}** — pip advisories no statement "
+            "covers yet."
+        )
     parts = [
         MARKER,
-        f"**{total} fixable {noun}**{tail}",
+        headline,
         "",
         (
             "This issue is maintained automatically: the body is rewritten on "
-            "each run and the issue **closes itself** when the fixable list is "
-            "empty. An open issue therefore means there is something to fix "
-            "right now."
+            "each run and the issue **closes itself** when the fixable list and "
+            "the OpenVEX gap list are both empty. An open issue therefore means "
+            "there is something to do right now."
         ),
         "",
     ]
@@ -201,6 +341,38 @@ def build_body(
         parts.append("None. ✅")
     parts.append("")
 
+    if vex is not None:
+        vex_path, package, gaps, considered, floor = vex
+        parts.append(f"## OpenVEX document (`{vex_path}`)")
+        parts.append("")
+        if gaps:
+            parts.append(
+                _table(
+                    ["Advisory", "Published", "Fixed in", "Summary"],
+                    [
+                        [f"`{r['id']}`", r["published"], r["fixed_in"], r["summary"]]
+                        for r in gaps
+                    ],
+                )
+            )
+            parts.append("")
+            parts.append(
+                f"These {package} advisories affect a {package} version some "
+                "published tag still carries in its metadata, and no statement "
+                "names them. Scanners will report them against that tag until one "
+                "does. Add a `not_affected` / `vulnerable_code_not_present` "
+                "statement once you have confirmed the vulnerable code lives in "
+                f"the stripped {package} package (docs/RELEASING.md, OpenVEX item); "
+                "if it is reachable, fix it instead. Bump `version` and "
+                "`timestamp` in the document."
+            )
+        else:
+            parts.append(
+                f"Complete. ✅ Every {package} advisory in OSV with a fix above "
+                f"{package} {floor} ({considered}) is named by a statement."
+            )
+        parts.append("")
+
     if py_unfixable:
         parts.append(
             f"<details><summary>Known, no fix available "
@@ -241,28 +413,61 @@ def main() -> int:
     ap.add_argument("--image", default="composelint/compose-lint:latest")
     ap.add_argument("--run-url", default="")
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument(
+        "--vex",
+        type=Path,
+        help="OpenVEX document whose statements must cover every in-scope advisory",
+    )
+    ap.add_argument(
+        "--osv",
+        type=Path,
+        help="OSV /v1/query response for --osv-package (one page, no token)",
+    )
+    ap.add_argument("--osv-package", default="pip")
+    ap.add_argument(
+        "--pip-floor",
+        default="0",
+        help="advisories whose every fix is at or below this version are out of scope",
+    )
     args = ap.parse_args()
+    if (args.vex is None) != (args.osv is None):
+        ap.error("--vex and --osv must be given together")
 
+    vex: tuple[Path, str, list[dict[str, str]], int, str] | None = None
     try:
         py_fixable, py_unfixable = parse_pip_audit(args.pip_audit)
         img_fixable = parse_scout_sarif(args.scout_sarif) if args.scout_sarif else []
+        if args.vex is not None:
+            gaps, considered = parse_osv_gaps(
+                args.osv, parse_vex_ids(args.vex), args.osv_package, args.pip_floor
+            )
+            vex = (args.vex, args.osv_package, gaps, considered, args.pip_floor)
     except ReportError as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1
 
-    body = build_body(py_fixable, py_unfixable, img_fixable, args.image, args.run_url)
+    body = build_body(
+        py_fixable, py_unfixable, img_fixable, args.image, args.run_url, vex
+    )
     args.out.write_text(body, encoding="utf-8")
 
     total = len(py_fixable) + len(img_fixable)
+    gap_count = len(vex[2]) if vex else 0
     print(
         f"fixable: python={len(py_fixable)} image={len(img_fixable)} "
-        f"total={total}; unfixable (informational): {len(py_unfixable)}"
+        f"total={total}; unfixable (informational): {len(py_unfixable)}; "
+        f"vex_gaps={gap_count}"
     )
 
+    title = f"Fixable vulnerabilities ({total})"
+    if gap_count:
+        title += f", OpenVEX gaps ({gap_count})"
     if step_output := os.environ.get("GITHUB_OUTPUT"):
         with open(step_output, "a", encoding="utf-8") as fh:
             fh.write(f"count={total}\n")
-            fh.write(f"has_findings={'true' if total else 'false'}\n")
+            fh.write(f"gaps={gap_count}\n")
+            fh.write(f"title={title}\n")
+            fh.write(f"has_findings={'true' if total or gap_count else 'false'}\n")
     return 0
 
 
