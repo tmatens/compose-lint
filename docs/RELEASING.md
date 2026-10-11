@@ -312,13 +312,21 @@ version number.
       Reaching for (3) because (1) and (2) are more work is how the registry
       becomes a suppression list and coverage silently shrinks. An entry with
       no decision behind it is a bug that has been written down.
-- [ ] `.vex/compose-lint.openvex.json` is current: any new pip (or other
-      stripped-component) CVE that a scanner now reports against the image
-      is either covered by an existing `not_affected` statement with
-      `vulnerable_code_not_present`, or added in a fresh statement after
-      you've manually verified the vulnerable code path is absent from
-      the runtime image. If the CVE **is** reachable, do not VEX it — fix
-      it. Bump `version` and `timestamp` in the VEX doc when statements
+- [ ] `.vex/compose-lint.openvex.json` is current. Check pip's advisory
+      list (its PyPI or OSV entries) for anything published since the last
+      release, not the Security tab: the image upgrades pip to the newest
+      release before stripping it, so `latest` is usually past a fix before
+      any scanner looks, while the document's product identifiers carry no
+      tag or digest and so cover every published tag, whose retained pip
+      metadata scanners still match. A statement is therefore added for
+      every concrete pip CVE, including ones the current build never had,
+      and an existing statement for a CVE the current image is past is
+      correct, not stale: removing it brings the false positive back on
+      older tags. Each new statement is `not_affected` with
+      `vulnerable_code_not_present`, written once you have confirmed the
+      vulnerable code path lives in the stripped pip package (the Docker
+      smokes assert the strip itself). If the CVE **is** reachable, do not
+      VEX it — fix it. Bump `version` and `timestamp` when statements
       change.
 - [ ] Product identifiers in the VEX doc keep using
       `repository_url=index.docker.io/composelint/compose-lint` (not
