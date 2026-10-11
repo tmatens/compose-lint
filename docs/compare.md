@@ -7,7 +7,7 @@ and Hadolint lint Dockerfiles or images, which is a different file.
 
 Two of the five, Semgrep and KICS, only work fully on files that still carry
 the top-level `version:` key from the old Compose file format. The Compose
-Specification that `docker compose` has used since 2020 makes that key
+Specification that Docker Compose has followed since 2020 makes that key
 obsolete, and `docker compose` warns when it sees one. The ninth option that
 search results keep suggesting, a script of your own, has its own section
 below.
@@ -23,7 +23,7 @@ run is described further down. Sources are linked under each heading.
 | **DCLint** | Yes | 2 of 15 (unbound port interfaces, explicit image tag) | Formatting and ordering rules | — | Docker Compose style, structure and schema |
 | **KICS** | Yes | 21 queries | `remediate` command; Compose support not documented | Yes | Terraform, Kubernetes, CloudFormation, Compose and more |
 | **Semgrep `p/docker-compose`** | Yes | 6 | 1 of the 6 carries a fix | Yes | General-purpose code scanner |
-| **OWASP DockSec** | Yes (`--compose --scan-only`) | 14 observed (its docs do not list them) | No (`--fix` edits Dockerfiles only) | Yes | Dockerfiles, images, Compose |
+| **OWASP DockSec** | Yes (`--compose`) | 17 | No (`--fix` edits Dockerfiles only) | Yes | Dockerfiles, images, Compose |
 | **Checkov** | No | 0 | — | Yes | Terraform, Kubernetes, CloudFormation, Dockerfile and more |
 | **Trivy** | No | 0 | — | Yes | Images, filesystems, IaC |
 | **Hadolint** | No | 0 | — | Yes | Dockerfile only |
@@ -49,7 +49,7 @@ obsolete `version:` key. Each tool was run from its published image on
 | `privileged: true` | ✅ | ✅ | ✅ | — | ✗ † |
 | `no-new-privileges` missing | ✅ | ✅ | ✅ | — | ✗ † |
 | Unpinned `:latest` tag | ✅ | — | ✅ | ✅ | — |
-| Port published on `0.0.0.0` | ✅ | ✅ | — | ✅ | — |
+| Port published on `0.0.0.0` | ✅ | ✅ | ✗ ‡ | ✅ | — |
 | No `cap_drop: [ALL]` | ✅ | ✅ | — | — | — |
 | Writable root filesystem | ✅ | — | ✅ | — | ✗ † |
 | `network_mode: host` | ✅ | ✅ | ✅ | — | — |
@@ -67,6 +67,8 @@ obsolete `version:` key. Each tool was run from its published image on
 queries fire only when the file carries the obsolete `version:` key; with
 `version: "3.9"` added it catches 11. † Semgrep's rules all require that key;
 with it added the same six rules produced 31 findings and caught these 5.
+‡ DockSec's all-interfaces rule only covers a fixed list of admin, database
+and broker ports, and the fixture publishes 8080.
 
 The run contradicted the documentation in three places:
 
@@ -84,17 +86,23 @@ The run contradicted the documentation in three places:
   rules would not match the `services:` block of a GitHub Actions workflow,
   and the fix has to keep that behaviour. When it merges, Semgrep's column
   changes.
-- **KICS's limit queries depend on the same key.** Its `No New Privileges
-  Not Set` query only fires on a service that already has a `security_opt:`
-  list; services without one get the broader `Security Opt Not Set` instead.
-  `Pids Limit Not Set` did not fire with or without `version:`.
-- **DockSec's default mode needs the Docker CLI and an OpenAI key**, and
-  exits 3 without them. Its static Compose rules run with `--scan-only`. In
-  that mode it caught 11 of 16 and also reported two cross-service "exploit
-  chains", for example an internet-facing service sharing the default
-  network with a service that holds a committed credential. It does not flag
-  `0.0.0.0` binds or a missing `cap_drop`, and it does not flag an explicit
-  `user: root`. It flags the absence of `user:` instead.
+- **KICS's limit queries depend on the same key.** The memory and CPU
+  queries only fire when `version` is 3 or later, and `Pids Limit Not Set`
+  only fires when it is below 3, which means the old version 2 format. On a
+  current file none of the three can fire. Its `No New Privileges Not Set`
+  query only fires on a service that already has a `security_opt:` list;
+  services without one get the broader `Security Opt Not Set` instead.
+- **DockSec's Compose rules need only Trivy installed.** Its default mode
+  also scans each service's image, which needs the Docker CLI, and runs an
+  AI explanation pass, which needs an AI provider key, OpenAI by default.
+  Without either, the Compose findings are still reported but the run exits
+  3. The run used `--scan-only`, which skips the AI pass. Its Compose rules
+  caught 11 of 16 and also reported two cross-service "exploit chains", for
+  example an internet-facing service sharing the default network with a
+  service that holds a committed credential. Its all-interfaces port rule
+  only covers a fixed list of sensitive ports. It does not flag a missing
+  `cap_drop` or an explicit `user: root`; it flags the absence of `user:`
+  instead.
 
 Checkov, Trivy and Hadolint were run on the same file to confirm the
 documentation, and none of them read it. Checkov reported `resource_count: 0`
@@ -105,8 +113,9 @@ line 3 with `DL1000`. That is the expected result, not a miss. They are on
 this page because people search for them with Compose questions, and the
 sections below say what each one does instead.
 
-Versions: compose-lint 0.34.0, DCLint 3.1.0, KICS 2.1.20, DockSec 2026.8.19
-(image tag 2026.9.21), Semgrep 1.179.0, Checkov 3.3.26, Trivy 0.75.0,
+Versions, as each tool reported them: compose-lint 0.34.0, DCLint 3.1.0,
+KICS 2.1.20, DockSec 2026.8.19 (image tag 2026.9.21; the release declares
+2026.9.21 but the tool still reports the older string), Semgrep 1.179.0, Checkov 3.3.26, Trivy 0.75.0,
 Hadolint 2.15.1.
 
 ## Against the OWASP cheat-sheet rules
@@ -122,44 +131,46 @@ no `version:` key. This fixture shows where compose-lint has no rule.
 
 | OWASP rule — violation | compose-lint | KICS | DockSec | Semgrep | DCLint |
 |---|---|---|---|---|---|
-| 1 — Docker socket mounted | ✅ | ✅ | ✅ | ✅ † | — |
+| 1 — Docker socket mounted | ✅ | ✅ | ✅ | ✗ † | — |
 | 2 — `user: root` set explicitly | ✅ | — | ✗ | — | — |
 | 2 — no `user:`, image default | — | — | ✅ | — | — |
-| 3 — `privileged: true` | ✅ | ✅ | ✅ | ✅ † | — |
+| 3 — `privileged: true` | ✅ | ✅ | ✅ | ✗ † | — |
 | 3 — default capability set, nothing dropped | ✅ | ✅ | — | — | — |
 | 3 — `cap_drop: [ALL]` then `cap_add: [SYS_ADMIN]` | ✅ | ✅ | ✅ | — | — |
-| 4 — `no-new-privileges` not set | ✅ | ✅ | ✅ | ✅ † | — |
+| 4 — `no-new-privileges` not set | ✅ | ✅ | ✅ | ✗ † | — |
 | 5 — `network_mode: host` | ✅ | ✅ | ✅ | — | — |
 | 5 — no `networks:`, joins the shared default network | — | — | ✅ | — | — |
-| 5a — port published on `0.0.0.0` | ✅ | ✅ | — | — | ✅ |
-| 6 — `seccomp:unconfined` | ✅ | ✅ | ✅ | ✅ † | — |
+| 5a — port published on `0.0.0.0` | ✅ | ✅ | ✗ ‡ | — | ✅ |
+| 6 — `seccomp:unconfined` | ✅ | ✅ | ✅ | ✗ † | — |
 | 6 — `apparmor:unconfined` | ✅ | — | ✅ | — | — |
 | 7 — no memory or CPU limits | ✅ | ✗ \* | ✅ | — | — |
 | 7 — no `pids_limit` | — | ✗ | — | — | — |
-| 7 — `restart: always`, unbounded | — | ✗ | — | — | — |
-| 8 — root filesystem writable | ✅ | — | ✅ | ✅ † | — |
+| 7 — `restart: always`, unbounded | — | — | — | — | — |
+| 8 — root filesystem writable | ✅ | — | ✅ | ✗ † | — |
 | 8 — host directory mounted read-write | — | — | — | — | — |
 | 12 — credential as a literal `environment:` value | ✅ | ✅ | ✅ | — | — |
 | 13 — mutable `:latest` tag | ✅ | — | ✅ | — | ✅ |
 | 13 — version tag without a digest | ✅ | — | — | — | — |
 | **Flagged, of 20** | **15** | **9** | **13** | **0** † | **2** |
-| **No rule for it** | 5 | 9 | 6 | 15 | 18 |
-| **Has a rule, missed it** | 0 | 2 | 1 | 0 | 0 |
+| **No rule for it** | 5 | 9 | 5 | 15 | 18 |
+| **Has a rule, missed it** | 0 | 2 | 2 | 5 † | 0 |
 
 ✅ flagged · ✗ has a rule for it, did not flag it · — no rule for it.
 \* fires with the obsolete `version: "3.9"` key present (10 of 20). † Semgrep's
-rules all require that key; with it added they catch these 5. Checkov, Trivy and
+rules all require that key; with it added they catch these 5. ‡ only for a
+fixed list of sensitive ports. Checkov, Trivy and
 Hadolint are 0 of 20 on both variants and are left off the table.
 
 compose-lint has no rule for five of the twenty. They are listed under
 [What compose-lint does not do](#what-compose-lint-does-not-do). It missed
 none of the rules it has. DockSec is the closest second and the only tool
-that models the shared default network. Its one miss is a real one: an
-explicit `user: root` is not flagged, because it checks for the absence of
-`user:`. KICS has queries for all three Rule 7 items and fired none of them
-on a file without `version:`. With `version: "3.9"` it recovers memory and
-CPU, but `Pids Limit Not Set` and the restart-policy query never fired. No
-tool flags a read-write bind mount that could be `:ro`, and none flags
+that models the shared default network. It misses an explicit `user: root`,
+because it checks for the absence of `user:`, and its port rule did not
+cover the port the fixture publishes. KICS has queries for two of the three
+Rule 7 items and fired neither on a file without `version:`. With
+`version: "3.9"` it recovers memory and CPU; its PID query only fires on the
+old version 2 format, and it has no query for `restart: always`. No tool
+flags a read-write bind mount that could be `:ro`, and none flags
 `restart: always`. Only compose-lint flags a missing digest.
 
 ## Does Checkov scan docker-compose.yml?
@@ -179,9 +190,9 @@ open request for Compose support on Checkov's tracker.
 ## Does Trivy lint Docker Compose files?
 
 Not the Compose file itself. Trivy's [misconfiguration
-scanner](https://trivy.dev/latest/docs/scanner/misconfiguration/) handles
-Dockerfile, Kubernetes, Terraform, CloudFormation, Helm and Azure ARM. Docker
-Compose is not one of its configuration types. What Trivy does cover is the
+scanner](https://trivy.dev/latest/guide/scanner/misconfiguration/) handles
+Dockerfile, Kubernetes, Terraform and Terraform plans, CloudFormation, Helm,
+Azure ARM and Ansible. Docker Compose is not one of its configuration types. What Trivy does cover is the
 images a Compose file references. compose-lint never pulls an image or
 reports a CVE, so the two fit together: `trivy image` for what is inside the
 image, compose-lint for how the Compose file runs it.
@@ -229,16 +240,16 @@ platforms it covers. Each query page describes the pattern and shows a
 compliant and a non-compliant sample.
 
 Three issues on KICS's tracker matter if you rely on it for Compose. The
-`version:` dependency was reported in 2023
-([#6509](https://github.com/Checkmarx/kics/issues/6509)). The maintainers
-answered that the key is needed to avoid false positives and asked for a
-feature request instead, which is why a file without `version:` still loses
-the limit queries. `No New Privileges Not Set` reports a service that uses
+maintainers' position, stated in 2023 on
+[#6509](https://github.com/Checkmarx/kics/issues/6509), is that the
+`version:` key is needed to avoid false positives, and the limit queries
+still test it: memory and CPU need version 3 or later, PID a version below 3.
+`No New Privileges Not Set` reports a service that uses
 the newer `no-new-privileges=true` spelling as missing it
 ([#7077](https://github.com/Checkmarx/kics/issues/7077), open since 2024;
-compose-lint accepts both spellings). An anonymous volume is reported as a
-shared-volume finding
-([#8047](https://github.com/Checkmarx/kics/issues/8047), open since April
+compose-lint accepts both spellings). An anonymous volume is reported as
+`Volume Has Sensitive Host Directory`
+([#8047](https://github.com/Checkmarx/kics/issues/8047), open since May
 2026).
 
 compose-lint is Compose-only and puts its effort into the fix. Each rule page
@@ -278,14 +289,15 @@ Semgrep message has no room for.
 
 DockSec ([OWASP/DockSec](https://github.com/OWASP/DockSec)) scans
 Dockerfiles, images and, with `--compose`, Compose files, and uses an LLM to
-explain and prioritise findings. In the run above its static Compose rules
-caught 11 of 16: the socket mount, `privileged`, host network and
-namespaces, the sensitive host path, seccomp unconfined, the plaintext
-secret, the `:latest` tag, missing `no-new-privileges`, writable root and
-missing limits. It ran with `--scan-only` because the default mode needs the
-Docker CLI for image scanning and an OpenAI key for the explanation pass. It
-also reports cross-service "exploit chains", which no other tool here
-attempts. It did not flag the `0.0.0.0` bind, the missing `cap_drop`,
+explain and prioritise findings. Its 17 Compose rules are documented and
+need only Trivy installed; the Docker CLI adds a scan of each service's
+image and an AI provider key adds the explanation pass. In the run above
+its Compose rules caught 11 of 16: the socket mount, `privileged`, host
+network and namespaces, the sensitive host path, seccomp unconfined, the
+plaintext secret, the `:latest` tag, missing `no-new-privileges`, writable
+root and missing limits. It also reports cross-service "exploit chains",
+which no other tool here attempts. It did not flag the `0.0.0.0` bind,
+because its port rule only covers sensitive ports, the missing `cap_drop`,
 `logging: none`, the missing digest, or an explicit `user: root`. Its
 `--fix` applies mechanical Dockerfile changes only. Compose findings are
 listed as "needs review".
@@ -293,9 +305,8 @@ listed as "needs review".
 compose-lint is deterministic. The same file produces the same findings,
 severities and diff on every run, with no model and no network access, and
 its auto-fix works on the Compose file. Which matters more depends on
-whether the linter is a CI gate or an advisor. The two misses the run found,
-an explicit `user: root` and a port published on `0.0.0.0`, were not on
-DockSec's tracker as of 2026-10-09.
+whether the linter is a CI gate or an advisor. The explicit `user: root` gap
+was not on DockSec's tracker as of 2026-10-09.
 
 ## When a script of your own is enough
 
@@ -336,9 +347,10 @@ A custom Checkov policy cannot help, because Checkov never loads the file.
 ## Does Hadolint lint Docker Compose files?
 
 No. [Hadolint](https://github.com/hadolint/hadolint) lints Dockerfiles and
-does not read Compose files. When Compose support was requested in 2025
-([hadolint#1091](https://github.com/hadolint/hadolint/issues/1091)), the
-answer was that Compose is plain YAML and belongs to other tools. Nothing on
+does not read Compose files. A request for Compose support from 2025
+([hadolint#1091](https://github.com/hadolint/hadolint/issues/1091)) is
+still open with no reply from the maintainers; the one answer, from another
+user, was to parse the YAML with a script or `yq`. Nothing on
 this page replaces it. A hardened Compose file that runs an image built from
 an unhardened Dockerfile is only half the work, and the two tools do not
 overlap.
@@ -478,4 +490,4 @@ Known changes that would move these results when they land:
   [#7077](https://github.com/Checkmarx/kics/issues/7077) is fixed.
 - Trivy gets a column if
   [trivy#8729](https://github.com/aquasecurity/trivy/issues/8729) is taken up.
-- DockSec's two misses are not yet on its tracker. A fix would move it to 15.
+- DockSec moves to 14 of 20 if it starts flagging an explicit `user: root`.
