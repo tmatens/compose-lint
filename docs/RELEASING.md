@@ -327,7 +327,9 @@ version number.
       vulnerable code path lives in the stripped pip package (the Docker
       smokes assert the strip itself). If the CVE **is** reachable, do not
       VEX it — fix it. Bump `version` and `timestamp` when statements
-      change.
+      change. The daily `vuln-report` makes this same comparison against
+      OSV and lists any gap in the rolling fixable-vulnerabilities issue,
+      so no open issue there is the quick form of this check.
 - [ ] Product identifiers in the VEX doc keep using
       `repository_url=index.docker.io/composelint/compose-lint` (not
       `docker.io/...`). The `docker.io` alias is silently ignored by

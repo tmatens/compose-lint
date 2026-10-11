@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The daily vulnerability report checks the OpenVEX document is complete.**
+  Scanners match pip CVEs against the pip metadata the image keeps, so an
+  advisory covering a pip version that any published tag retains is reported
+  against that tag until a statement names it. Only `latest` was ever
+  scanned, and it upgrades pip before stripping it, so an advisory published
+  and fixed between two releases never reached a scanner. The report now
+  diffs pip's advisory list from OSV against the statement names and lists
+  any missing identifier in the rolling issue, with the fixed version and a
+  summary; no image is pulled. Advisories whose every fix predates the
+  oldest pip a published tag carries are out of scope.
+
 - **The Docker smokes prove the OpenVEX justification.** Every pip CVE in
   `.vex/compose-lint.openvex.json` is `not_affected` because the image
   strips pip's code and keeps only its metadata, and nothing verified that
