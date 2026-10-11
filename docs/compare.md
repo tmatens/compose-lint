@@ -3,7 +3,7 @@
 Which of these tools read a Docker Compose file and check it for security
 misconfigurations? Five do: compose-lint, DCLint, KICS, Semgrep's
 `p/docker-compose` ruleset and OWASP DockSec. Three do not: Checkov, Trivy
-and Hadolint work on Dockerfiles or images, which is a different file. The
+and Hadolint lint Dockerfiles or images, which is a different file. The
 ninth option that search results keep suggesting, a script of your own, has
 its own section below.
 
