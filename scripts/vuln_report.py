@@ -159,12 +159,20 @@ def parse_vex_ids(path: Path) -> set[str]:
 
 
 def _fixed_versions(vuln: dict[str, Any], package: str) -> list[str]:
+    """Fix versions for ``package`` from its ECOSYSTEM (and SEMVER) ranges.
+
+    GIT ranges carry commit hashes as their ``fixed`` events, not versions.
+    The first live run listed CVE-2019-20916 as a gap because its GIT range's
+    hash could not be ruled out against the floor; only version ranges can.
+    """
     fixed: list[str] = []
     for affected in vuln.get("affected") or []:
         pkg = affected.get("package") or {}
         if str(pkg.get("name", "")).lower() != package.lower():
             continue
         for rng in affected.get("ranges") or []:
+            if str(rng.get("type", "")).upper() not in {"ECOSYSTEM", "SEMVER"}:
+                continue
             for event in rng.get("events") or []:
                 if "fixed" in event:
                     fixed.append(str(event["fixed"]))
@@ -239,11 +247,25 @@ def parse_osv_gaps(
                 "fixed_in": ", ".join(sorted(fixed, key=_sort_version))
                 if fixed
                 else "—",
-                "summary": " ".join(str(vuln.get("summary", "")).split())[:120] or "—",
+                "summary": _summary(vuln),
             }
         )
     gaps.sort(key=lambda r: (r["published"], r["id"]))
     return gaps, considered
+
+
+def _summary(vuln: dict[str, Any]) -> str:
+    """OSV's ``summary`` when present, else the first sentence of ``details``.
+
+    PyPI-sourced pip advisories often carry only ``details``; the first live
+    run rendered an em dash where a reader needed to know what the CVE was.
+    """
+    text = str(vuln.get("summary") or "").strip()
+    if not text:
+        details = str(vuln.get("details") or "").strip()
+        text = details.split("\n", 1)[0]
+    text = " ".join(text.split())
+    return (text[:117] + "...") if len(text) > 120 else (text or "—")
 
 
 def _sort_version(version: str) -> tuple[int, Any]:
