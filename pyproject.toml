@@ -57,7 +57,7 @@ dependencies = [
 # "Development dependencies" — and Dependabot's weekly pass bumps
 # them.
 lint = [
-    "ruff==0.16.9",
+    "ruff==0.16.10",
     # Workflow auditor beside actionlint in ci.yml's `actionlint` job:
     # template injection, cache poisoning, dangerous triggers, kept
     # credentials, unpinned uses. Config in .github/zizmor.yml.
@@ -105,7 +105,7 @@ dev = [
     # rationale live in ci.yml's `coverage` job.
     "diff-cover==10.6.0",
     "mutmut==3.8.0",
-    "mypy==2.3.1",
+    "mypy==2.4.0",
     # Drives the `precommit-smoke` job: `pre-commit try-repo` runs
     # .pre-commit-hooks.yaml from the working tree, so a broken `entry` or
     # `language` is caught here rather than by a user (issue #465).
