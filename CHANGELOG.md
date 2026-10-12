@@ -37,6 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The published image moves to a newer distroless base.**
+  `gcr.io/distroless/python3-debian13:nonroot` is repinned from
+  `sha256:774595d6…` to `sha256:83aa8d4f…`, picking up the base image's own
+  updates.
+
 - **OpenVEX document covers CVE-2026-8643 and CVE-2026-13346.** Both are pip
   advisories published after the document was last updated. The pip code they
   live in is stripped from the runtime image, so images whose retained pip
