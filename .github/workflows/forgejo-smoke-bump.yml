@@ -28,7 +28,11 @@ name: Forgejo smoke harness bump
 # secret the marketplace-pin and release-prep jobs already use, so no
 # new credential. forgejo-smoke.yml runs on the PR (pull_request trigger
 # on the harness paths) and is the review: a major that breaks the guide's
-# snippet shows up there, on the PR, not on main. Merging stays manual.
+# snippet shows up there, on the PR, not on main. When that smoke passes,
+# forgejo-smoke.yml arms auto-merge on this PR, so a green bump lands on its
+# own once ci-ok is green; a red run stays open for a human. The PR is opened
+# with the `manual-merge` label so it shows in the "what needs me" query until
+# it either auto-merges away or a human handles the red.
 
 on:
   workflow_dispatch:
@@ -107,7 +111,7 @@ jobs:
 
           **The review is the \`Forgejo smoke test\` check on this PR**: it boots this exact stack and runs the guide's snippet on it. Green means the guide holds on the new release; red means the snippet or the guide needs a human before this merges. Codeberg deletes a superseded Forgejo patch tag within days of the next one, so a red run here still needs attention soon — the old pin is on the clock.
 
-          Merging is manual on purpose (no automerge for the harness).
+          When the \`Forgejo smoke test\` check above passes it arms auto-merge, so a green run lands on its own once \`ci-ok\` is green -- no click needed. A red run stays open and still needs a human; it carries \`manual-merge\` so it shows in the "what needs me" query until then.
           EOF
           # Strip the 10-space indentation that the YAML block scalar requires.
           sed -i -E 's/^          //' /tmp/pr-body.md
@@ -116,6 +120,15 @@ jobs:
             --head "${BRANCH}" \
             --title "${TITLE}" \
             --body-file /tmp/pr-body.md
+          # Labelled `manual-merge`: until the smoke goes green and
+          # forgejo-smoke.yml arms auto-merge, this PR needs a human, so it
+          # belongs in the same `manual-merge` query the non-automerge
+          # Renovate PRs use. A green smoke auto-merges it away; a red one
+          # leaves it labelled for the human it needs. Applied best-effort
+          # AFTER creation: a renamed or deleted label must not take the bump
+          # PR itself down with it.
+          gh pr edit "${BRANCH}" --add-label manual-merge \
+            || echo "::warning::could not apply the manual-merge label -- the PR is open but will not show in the manual-merge query"
 
   # Scheduled runs have no PR to go red on. Without this the only signal
   # for a daily failure is an email to the workflow author, which is how a

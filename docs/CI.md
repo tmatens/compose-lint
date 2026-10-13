@@ -400,6 +400,22 @@ to revoke and audit.
 strings, renames the CHANGELOG `[Unreleased]` section, inserts a fresh
 empty one, and links to the manual tag-signing step in the PR body.
 
+The job then arms **auto-merge** on that PR, so it lands on its own once
+`ci-ok` is green — the same shape as the marketplace-pin job above. Every
+line of the diff is derived from the one dispatch input and re-derived by
+CI (`version-consistency`, `changelog-gate`, the doc-pin check and
+`lockfiles` all run on the PR), and the CHANGELOG prose was reviewed under
+`[Unreleased]` before the dispatch; release-prep only renames the heading.
+The merge gates nothing irreversible: the signed tag is still pushed by
+hand afterwards, and the `release` environment approval during `publish.yml`
+is the control. Auto-merge needs **Allow auto-merge** enabled on the
+repository; without it the step warns and the PR waits for a manual merge,
+which is deliberately not a job failure. The arm is PAT-only: on the
+`GITHUB_TOKEN` fallback it is skipped with a warning, because a merge armed
+by the default token lands on behalf of github-actions[bot] and the
+recursion guard then suppresses main's push workflows — no post-merge CI
+pass, no docs deploy — for a release commit.
+
 Like the marketplace-pin job, this PR is authored with the
 `MARKETPLACE_SMOKE_PAT` secret so its checks run automatically. Unlike
 that job it falls back to `GITHUB_TOKEN` when the secret is absent
@@ -522,8 +538,25 @@ either file, or a tag resolving to a per-architecture manifest instead of
 a manifest list — which fails the run and is reported as an issue. Policy:
 the newest stable `X.Y.Z` of each image, never a `-rootless` variant or a
 floating `16`/`16.0` tag. A major that breaks the guide's snippet surfaces
-as a red `Forgejo smoke test` check on the bump PR, which is the review;
-merging stays manual.
+as a red `Forgejo smoke test` check on the bump PR, which is the review.
+
+Because that check is the review, a human clicking merge after reading it
+green adds nothing, so `forgejo-smoke.yml` arms **auto-merge** on the PR
+when the smoke passes: a green bump lands on its own once `ci-ok` is green.
+It uses `--auto`, not a direct merge, so GitHub still waits for the required
+`ci-ok` check — the smoke itself is deliberately *not* required, to keep a
+job with external dependencies (codeberg.org, data.forgejo.org) off every
+PR's required path. When `ci-ok` finishes first, GitHub refuses to arm an
+already-mergeable PR ("clean status"); the job then merges directly, which
+is only permitted because the required checks have already passed. Arming
+runs in its own job (`arm-bump-automerge`) so the PAT never shares a runner
+with the PR head's code, and it is PAT-only: without `MARKETPLACE_SMOKE_PAT`
+it skips with a warning rather than falling back to `GITHUB_TOKEN`, whose
+merge would push `main` without triggering the post-merge smoke. A red run
+never arms auto-merge and stays open for a human. The PR carries the
+`manual-merge` label (applied best-effort after creation) so it shows in the
+same "what needs me" query as the non-automerge Renovate PRs until it either
+auto-merges away or a human handles the red.
 
 The PR is authored with `MARKETPLACE_SMOKE_PAT` (see below) so its checks
 run; without the secret it falls back to `GITHUB_TOKEN` and lands

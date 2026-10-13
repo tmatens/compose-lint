@@ -50,6 +50,76 @@ jobs:
       - name: Boot Forgejo, run the snippet, verify the guide's claim
         run: python3 scripts/forgejo_smoke.py
 
+  # When the smoke passes on a harness bump PR (forgejo-smoke-bump.yml), arm
+  # auto-merge on that PR. The smoke IS the review -- it boots the pinned
+  # stack and runs the guide's snippet on it -- so a human clicking merge
+  # after reading a green check adds nothing, and a harness PR that sits
+  # goes stale fast: Codeberg GCs a superseded Forgejo patch tag within days
+  # of the next one (#746). A red smoke fails the needed job, so this never
+  # runs and a broken bump stays open for a human.
+  #
+  # A separate job, not a step after the smoke: the smoke executes the PR
+  # head's code (scripts/forgejo_smoke.py), and a job boundary keeps the PAT
+  # off the runner that ran it -- this job checks out nothing and runs no
+  # repo code, so the secret never coexists with head code.
+  #
+  # `--auto`, not a direct merge: GitHub still waits for the required `ci-ok`
+  # check before landing it, so this does not route around the required path;
+  # it only drops the human click on the green path. (The smoke is
+  # deliberately NOT a required check -- that would put a job with external
+  # dependencies, codeberg.org and data.forgejo.org, on the required path for
+  # every PR.) One exception: when ci-ok finishes before the smoke, the PR is
+  # already in "clean" status and GitHub refuses to arm auto-merge on it; the
+  # step then merges directly, which GitHub permits only because the required
+  # checks have already passed -- so neither path lands ahead of ci-ok.
+  #
+  # Scoped tight: only a pull_request event, only the forgejo-smoke/* head
+  # branch that scripts/forgejo_smoke_bump.py opens (its branch_name()), and
+  # only a same-repo branch, never a fork. Any other PR touching the harness
+  # paths is left alone.
+  #
+  # PAT-only, no github.token fallback: a merge armed by the default Actions
+  # token produces a push to main that triggers no push workflows (GitHub's
+  # recursion guard), which would skip the post-merge Forgejo smoke on main
+  # -- and with this job's empty permissions the default token could not arm
+  # anyway. Without the secret this skips with a warning and the bump PR
+  # needs a hand-merge, the pre-automerge behavior.
+  arm-bump-automerge:
+    name: Arm auto-merge on a green harness bump PR
+    needs:
+      - forgejo-smoke
+    if: >-
+      success()
+      && github.event_name == 'pull_request'
+      && startsWith(github.event.pull_request.head.ref, 'forgejo-smoke/')
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-26.04
+    timeout-minutes: 3
+    permissions: {}
+    steps:
+      - name: Arm auto-merge (merge directly if ci-ok already finished)
+        env:
+          GH_TOKEN: ${{ secrets.MARKETPLACE_SMOKE_PAT }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::warning::MARKETPLACE_SMOKE_PAT is not configured -- not arming auto-merge (a GITHUB_TOKEN merge would not trigger the post-merge smoke on main). Merge the bump PR by hand."
+            exit 0
+          fi
+          if [ "$(gh pr view "${PR}" --json autoMergeRequest --jq '.autoMergeRequest != null')" = "true" ]; then
+            echo "Auto-merge is already armed on #${PR} (an earlier run of this smoke); nothing to do."
+          elif gh pr merge "${PR}" --auto --squash --delete-branch; then
+            echo "Auto-merge armed on #${PR}; GitHub squash-merges it once ci-ok is green."
+          elif gh pr merge "${PR}" --squash --delete-branch; then
+            # Arming is refused on a PR whose required checks have all
+            # finished ("clean" status), which happens when ci-ok beat the
+            # smoke; the direct merge succeeds only in that state.
+            echo "ci-ok finished before the smoke, so #${PR} was already mergeable; squash-merged it directly."
+          else
+            echo "::warning::Could not arm auto-merge on #${PR} -- merge it by hand. Check that 'Allow auto-merge' is enabled in Settings > General."
+          fi
+
   # Scheduled runs have no PR to go red on. Without this the only signal
   # for a weekly failure was an email to the workflow author, which is how
   # a broken schedule stays broken. Downstream of every job so one report

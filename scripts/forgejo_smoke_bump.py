@@ -28,7 +28,8 @@ Policy: the newest stable release of each image, not the pinned minor.
 The claim in the guide is "verified on Forgejo X", and a claim about a
 line Codeberg has stopped serving is not worth keeping; a major that
 breaks the snippet surfaces as a red smoke on the bump PR, which is the
-review. Merging stays manual (forgejo-smoke-bump.yml opens the PR).
+review. forgejo-smoke-bump.yml opens the PR; forgejo-smoke.yml arms
+auto-merge when the smoke is green, and a red run stays open for a human.
 
 Exit codes: 0 = nothing to do, both pins current. 1 = files rewritten
 (summary on stdout, ready for a commit). 2 = the script could not produce

@@ -235,6 +235,9 @@ jobs:
           # fall back to GITHUB_TOKEN when the secret is absent (the PR then
           # needs a manual close+reopen to start checks, the prior behavior).
           GH_TOKEN: ${{ secrets.MARKETPLACE_SMOKE_PAT || github.token }}
+          # Whether the PAT is present, for the auto-merge arm below -- the
+          # arm must not run on the GITHUB_TOKEN fallback (see comment there).
+          HAVE_PAT: ${{ secrets.MARKETPLACE_SMOKE_PAT != '' }}
         run: |
           branch="release/${VERSION}"
           git config user.name "github-actions[bot]"
@@ -249,7 +252,7 @@ jobs:
           git commit -m "Prepare ${VERSION} release"
           git push -u origin "${branch}"
           cat > /tmp/pr-body.md <<EOF
-          Automated release prep for \`${VERSION}\`. Review the CHANGELOG entry and version bumps, then squash-merge.
+          Automated release prep for \`${VERSION}\`. Auto-merge is armed, so this lands on its own once \`ci-ok\` is green -- the \`release\` environment approval during \`publish.yml\` is the gate, not this merge.
 
           **After this PR merges**, create and push a signed annotated tag from your workstation:
 
@@ -268,8 +271,45 @@ jobs:
             --title "Prepare ${VERSION} release" \
             --body-file /tmp/pr-body.md
 
+          # Arm auto-merge: GitHub squash-merges once `ci-ok` is green, which is
+          # exactly what a human was reviewing for. Every line of this diff is
+          # derived from the one dispatch input (the version strings, the
+          # self-referencing doc pins, the compare-link footer) and re-derived
+          # by CI -- `version-consistency`, `changelog-gate`, the doc-pin check
+          # and `lockfiles` all run on the PR. The CHANGELOG prose was written
+          # and reviewed under `[Unreleased]` before this dispatch; release-prep
+          # only renames the heading. Nothing irreversible follows the merge on
+          # its own: the signed tag is still pushed by hand afterwards, and the
+          # real gate is the `release` environment approval during `publish.yml`.
+          #
+          # Not failing the job when this does not take: a red X here would read
+          # as "release prep is broken" when the only thing wrong is that a PR
+          # needs a manual click. The warning and the step summary say which.
+          # Requires "Allow auto-merge" on the repository (Settings > General).
+          #
+          # PAT-only: on the GITHUB_TOKEN fallback the arm is skipped, not
+          # attempted. The default token COULD arm it (this job has
+          # contents: write), but the merge then lands on behalf of
+          # github-actions[bot] and GitHub's recursion guard suppresses main's
+          # push workflows -- no post-merge CI pass, no docs deploy -- for a
+          # release commit. Manual merge preserves those.
+          if [ "${HAVE_PAT}" != "true" ]; then
+            armed=0
+            echo "::warning::MARKETPLACE_SMOKE_PAT is absent -- auto-merge not armed (a GITHUB_TOKEN-armed merge would skip main's push workflows). Review and merge by hand, then sign-push."
+          elif gh pr merge "${branch}" --auto --squash --delete-branch; then
+            armed=1
+            echo "Auto-merge armed; GitHub will squash-merge once ci-ok is green."
+          else
+            armed=0
+            echo "::warning::Could not arm auto-merge on the release-prep PR -- merge it by hand once ci-ok is green, then sign-push. Check that 'Allow auto-merge' is enabled in Settings > General."
+          fi
+
           {
             echo "### Release prep PR opened"
             echo "Branch: \`${branch}\`"
-            echo "Next step: review and merge, then sign-push \`v${VERSION}\`."
+            if [ "${armed}" = "1" ]; then
+              echo "Next step: PR lands on its own once \`ci-ok\` is green; then sign-push \`v${VERSION}\`."
+            else
+              echo "Next step: auto-merge could not be armed -- review and merge by hand, then sign-push \`v${VERSION}\`."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
