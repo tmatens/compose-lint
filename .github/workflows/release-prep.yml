@@ -235,6 +235,9 @@ jobs:
           # fall back to GITHUB_TOKEN when the secret is absent (the PR then
           # needs a manual close+reopen to start checks, the prior behavior).
           GH_TOKEN: ${{ secrets.MARKETPLACE_SMOKE_PAT || github.token }}
+          # Whether the PAT is present, for the auto-merge arm below -- the
+          # arm must not run on the GITHUB_TOKEN fallback (see comment there).
+          HAVE_PAT: ${{ secrets.MARKETPLACE_SMOKE_PAT != '' }}
         run: |
           branch="release/${VERSION}"
           git config user.name "github-actions[bot]"
@@ -283,7 +286,17 @@ jobs:
           # as "release prep is broken" when the only thing wrong is that a PR
           # needs a manual click. The warning and the step summary say which.
           # Requires "Allow auto-merge" on the repository (Settings > General).
-          if gh pr merge "${branch}" --auto --squash --delete-branch; then
+          #
+          # PAT-only: on the GITHUB_TOKEN fallback the arm is skipped, not
+          # attempted. The default token COULD arm it (this job has
+          # contents: write), but the merge then lands on behalf of
+          # github-actions[bot] and GitHub's recursion guard suppresses main's
+          # push workflows -- no post-merge CI pass, no docs deploy -- for a
+          # release commit. Manual merge preserves those.
+          if [ "${HAVE_PAT}" != "true" ]; then
+            armed=0
+            echo "::warning::MARKETPLACE_SMOKE_PAT is absent -- auto-merge not armed (a GITHUB_TOKEN-armed merge would skip main's push workflows). Review and merge by hand, then sign-push."
+          elif gh pr merge "${branch}" --auto --squash --delete-branch; then
             armed=1
             echo "Auto-merge armed; GitHub will squash-merge once ci-ok is green."
           else

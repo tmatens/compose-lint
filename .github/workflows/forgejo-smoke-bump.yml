@@ -115,17 +115,20 @@ jobs:
           EOF
           # Strip the 10-space indentation that the YAML block scalar requires.
           sed -i -E 's/^          //' /tmp/pr-body.md
-          # Opened with `manual-merge`: until the smoke goes green and
-          # forgejo-smoke.yml arms auto-merge, this PR needs a human, so it
-          # belongs in the same `manual-merge` query the non-automerge Renovate
-          # PRs use. A green smoke auto-merges it away; a red one leaves it
-          # labelled for the human it needs.
           gh pr create \
             --base main \
             --head "${BRANCH}" \
             --title "${TITLE}" \
-            --label manual-merge \
             --body-file /tmp/pr-body.md
+          # Labelled `manual-merge`: until the smoke goes green and
+          # forgejo-smoke.yml arms auto-merge, this PR needs a human, so it
+          # belongs in the same `manual-merge` query the non-automerge
+          # Renovate PRs use. A green smoke auto-merges it away; a red one
+          # leaves it labelled for the human it needs. Applied best-effort
+          # AFTER creation: a renamed or deleted label must not take the bump
+          # PR itself down with it.
+          gh pr edit "${BRANCH}" --add-label manual-merge \
+            || echo "::warning::could not apply the manual-merge label -- the PR is open but will not show in the manual-merge query"
 
   # Scheduled runs have no PR to go red on. Without this the only signal
   # for a daily failure is an email to the workflow author, which is how a
