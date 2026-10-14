@@ -20,6 +20,7 @@ per-channel publish contract see [`DISTRIBUTION.md`](DISTRIBUTION.md).
 | `marketplace-smoke.yml`   | Push to `main` touching the file + manual + weekly cron | Verifies the published action, pre-commit hook, and the `uvx`/`pipx run` one-shot forms end-to-end |
 | `forgejo-smoke.yml`       | PRs + pushes to `main` touching the harness + manual + weekly cron | Runs the Forgejo guide's snippet on a live containerized Forgejo |
 | `forgejo-smoke-bump.yml`  | Daily (05:17 UTC) + manual                 | Opens the PR that moves the harness to the newest Forgejo + runner, docs claim included |
+| `digest-age-gate.yml`     | Daily (06:23 UTC) + manual (dry run by default) | Merges Renovate's gcr.io/ghcr.io digest PRs once unchanged for 72h, the age gate Renovate cannot apply to them |
 | `os-smoke.yml`            | Called by `ci.yml` on PRs touching code + push to `main` + manual + weekly cron | pytest (3.11 and 3.13) + pre-commit hook on macOS and Windows — **gates via `ci-ok`** |
 | `sarif-ingestion.yml`     | Push to `main` touching SARIF inputs + manual + weekly cron | Uploads a probe SARIF to Code Scanning and asserts GitHub ingested it — then deletes its own alerts |
 
@@ -578,6 +579,58 @@ check-less, like `release-prep.yml`.
 
 [#746]: https://github.com/tmatens/compose-lint/issues/746
 
+### `digest-age-gate.yml`
+
+Merges Renovate's digest refreshes from **gcr.io and ghcr.io** (distroless,
+the oss-fuzz builder, vhs) once they have aged the same three days the
+Docker Hub digests wait under Renovate's `minimumReleaseAge` ([#1059]).
+Those PRs open with `manual-merge` because Renovate cannot age them: its
+docker datasource takes a release timestamp from Docker Hub's
+`tag_last_pushed` and from nowhere else — the OCI distribution API exposes
+no publish time ([renovatebot/renovate#39064]), and distroless's
+reproducible builds zero the image timestamps anyway. The review on them
+was already mechanical (`dockerfile-digests` and both `docker-smoke` legs
+are required via `ci-ok`); the human click added only the age check, and
+this is the age check.
+
+The clock is the **head commit's timestamp**: "first time we saw this
+digest" is never earlier than its publish time, so 72h from first-seen is
+at least 72h from publish — conservative by construction. PR `created_at`
+would not do, because Renovate force-pushes the branch when the digest
+moves again; the head commit resets with every push, so a fresh digest
+waits its own 72h and a plain rebase waits again too (over-conservative,
+never leaky). The 72h constant is `MIN_AGE_HOURS` at the top of the
+workflow and must move with `renovate.json`'s `minimumReleaseAge`.
+
+Selection is conjunctive and the step summary shows every candidate with
+its decision: author `renovate[bot]`, head `renovate/*`, label
+`manual-merge`, title `Update <image> Docker digest to <sha>` (Docker Hub
+digests automerge via Renovate and carry no label, so this is exactly the
+gcr/ghcr set), no draft, no fork, every commit authored by Renovate (a
+hand-touched branch needs a human, Renovate's own automerge rule),
+`ci-ok` green on the head, merge state `CLEAN`, head commit ≥ 72h old. A
+red, conflicting or hand-touched PR is left alone and keeps `manual-merge`,
+so the "what needs me" query stays truthful.
+
+The merge is the shared `arm-auto-merge` action with `expected-head` set
+to the SHA the selection looked at (`gh pr merge --match-head-commit`), so
+a push that lands in between fails the merge rather than shipping content
+nobody aged. By the time the gate runs `ci-ok` finished long ago and the PR
+is "clean", so GitHub refuses to arm auto-merge and the action's
+**direct-merge** outcome is the expected path. It merges with
+`MARKETPLACE_SMOKE_PAT` so the push to `main` triggers main's push
+workflows as a human merge would; without the secret the merge job skips
+with a warning and the PRs wait. Each merge leaves a comment on the PR
+saying why it was eligible. A manual dispatch is a **dry run by default**
+(the summary table, no merge); untick the box to merge from a dispatch.
+
+Built to be deleted: if upstream Renovate gains a registry-agnostic
+release timestamp, scope these images back into the digest automerge rule
+in `renovate.json` and remove this workflow and this section.
+
+[#1059]: https://github.com/tmatens/compose-lint/issues/1059
+[renovatebot/renovate#39064]: https://github.com/renovatebot/renovate/issues/39064
+
 ### `os-smoke.yml`
 
 The developer-machine legs (issue #572): pytest and the pre-commit smoke
@@ -622,7 +675,7 @@ condition.
 | Vulnerability with an available fix | Rolling issue labelled `fixable-vulns`                 |
 | Scheduled workflow failure          | Issue `Scheduled run failed: <workflow>` — one per workflow, repeat failures comment on it (`.github/actions/report-scheduled-failure`); plus the author email and red X |
 | Post-release smoke failure          | Issue `Post-release run failed: Marketplace smoke test` — same action, separate thread from the weekly one so a break in a shipped release is not triaged as a flake |
-| Renovate PR                         | Opens a PR tagged accordingly; patch, pin, digest and lock-maintenance bumps automerge once green **and** the release is three days old (`renovate/stability-days` stays pending until then). Minors of Python dev tooling and of CI-path actions automerge on the same terms; Docker Hub digests too. Majors, release-path actions (`publish.yml` and the workflows it calls), `twine`/`sigstore`, and digests from gcr.io/ghcr.io (no release timestamp to age against) open with `manual-merge` |
+| Renovate PR                         | Opens a PR tagged accordingly; patch, pin, digest and lock-maintenance bumps automerge once green **and** the release is three days old (`renovate/stability-days` stays pending until then). Minors of Python dev tooling and of CI-path actions automerge on the same terms; Docker Hub digests too. Majors, release-path actions (`publish.yml` and the workflows it calls), `twine`/`sigstore`, and digests from gcr.io/ghcr.io (no release timestamp to age against) open with `manual-merge`; the gcr/ghcr digests then merge via `digest-age-gate.yml` once unchanged for 72h |
 
 The Security tab is the single pane of glass for everything except
 PR-gating failures (which stay on the PR) and Renovate bumps (which
