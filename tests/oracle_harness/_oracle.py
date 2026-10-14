@@ -78,6 +78,60 @@ def oracle_available() -> bool:
     return oracle_version() is not None
 
 
+@functools.lru_cache(maxsize=1)
+def compose_argv() -> tuple[str, ...]:
+    """The command that runs Compose: its plugin binary, found once.
+
+    ``docker compose …`` starts the ``docker`` CLI, which discovers and
+    execs the plugin; the plugin binary run on its own answers the same
+    question without that front-end. The harness calls Compose about four
+    times per seed, three thousand times a run, and the front-end was
+    roughly 45% of each call (76 ms against 42 ms on Compose 5.5.0, same
+    output), which made it the largest single cost in the test suite.
+
+    The path comes from the ``docker`` CLI itself (``docker info`` lists
+    the client plugins and their paths without contacting a daemon), so it
+    is the binary ``docker compose`` would have run, not one found by a
+    search order of our own. It is used only if it reports the same version
+    as ``docker compose``; anything else falls back to the front-end, which
+    is slower but cannot be the wrong binary.
+    """
+    fallback = ("docker", "compose")
+    if oracle_version() is None:
+        return fallback
+    try:
+        info = subprocess.run(
+            [
+                "docker",
+                "info",
+                "--format",
+                '{{range .ClientInfo.Plugins}}{{if eq .Name "compose"}}'
+                "{{.Path}}{{end}}{{end}}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=ORACLE_TIMEOUT_SECONDS,
+            check=False,
+            env=_scrubbed_env(),
+        )
+        path = info.stdout.strip()
+        if not path or not os.access(path, os.X_OK):
+            return fallback
+        direct = subprocess.run(
+            [path, "version", "--short"],
+            capture_output=True,
+            text=True,
+            timeout=ORACLE_TIMEOUT_SECONDS,
+            check=False,
+            env=_scrubbed_env(),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return fallback
+    if direct.returncode != 0 or direct.stdout.strip() != oracle_version():
+        return fallback
+    return (path,)
+
+
 def _scrubbed_env() -> dict[str, str]:
     return {"PATH": os.environ.get("PATH", "")}
 
@@ -114,7 +168,7 @@ def run_oracle(
     environment fallback, which cannot be demonstrated without one. Everything
     else runs scrubbed, and should.
     """
-    argv = ["docker", "compose", "--project-name", project_name]
+    argv = [*compose_argv(), "--project-name", project_name]
     if all_profiles:
         argv += ["--profile", "*"]
     for name in files:
