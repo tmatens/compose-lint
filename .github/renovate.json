@@ -70,7 +70,7 @@
       "groupName": "github-actions"
     },
     {
-      "description": "Workflows that run only after the tag is pushed (publish.yml and the reusable workflows it calls) get their own group. Minors split by whether the action also runs on the CI path: the eight that do are exercised on the PR itself and automerge under their own rule below, while a minor of the six that run only after the tag (actions/attest-build-provenance, actions/download-artifact, anchore/sbom-action, pypa/gh-action-pypi-publish, sigstore/cosign-installer, sigstore/gh-action-sigstore-python) is exercised for the first time at release, after the irreversible trigger, so it keeps manual-merge and holds the group for a human. Separate groups because Renovate automerges a group only when every update in it is eligible: one release-path minor would otherwise hold the whole weekly batch for a human.",
+      "description": "Workflows that run only after the tag is pushed (publish.yml and the reusable workflows it calls) get their own group. Minors split by whether the action also runs on the CI path: the nine that do are exercised on the PR itself and automerge under their own rule below, while a minor of the five that run only after the tag (actions/attest-build-provenance, anchore/sbom-action, pypa/gh-action-pypi-publish, sigstore/cosign-installer, sigstore/gh-action-sigstore-python) is exercised for the first time at release, after the irreversible trigger, so it keeps manual-merge and holds the group for a human. Separate groups because Renovate automerges a group only when every update in it is eligible: one release-path minor would otherwise hold the whole weekly batch for a human.",
       "matchManagers": ["github-actions"],
       "matchFileNames": [".github/workflows/publish.yml", ".github/workflows/verify-tag.yml", ".github/workflows/release-docker-smoke.yml"],
       "groupName": "github-actions-release"
@@ -139,10 +139,10 @@
       "labels": []
     },
     {
-      "description": "Minor bumps of release-path actions that ALSO run on the CI path automerge. These eight are SHA-pinned in ci.yml and the other PR and push workflows as well, so the same minor runs on the PR before it ever runs after a tag, and the github-actions-release group then holds only eligible updates and merges itself. The six actions that run only after the tag are deliberately not listed (see the group's description above): their minors keep manual-merge and hold the group for a human, because a first run after the irreversible trigger is not a review. depName is the owner/repo part of `uses:`, so github/codeql-action covers its upload-sarif sub-action (verified with `renovate --platform=local --dry-run=extract` on 44.157).",
+      "description": "Minor bumps of release-path actions that ALSO run on the CI path automerge. These nine are SHA-pinned in ci.yml and the other PR and push workflows as well, so the same minor runs on the PR before it ever runs after a tag, and the github-actions-release group then holds only eligible updates and merges itself. The five actions that run only after the tag are deliberately not listed (see the group's description above): their minors keep manual-merge and hold the group for a human, because a first run after the irreversible trigger is not a review. depName is the owner/repo part of `uses:`, so github/codeql-action covers its upload-sarif sub-action (verified with `renovate --platform=local --dry-run=extract` on 44.157).",
       "matchManagers": ["github-actions"],
       "matchFileNames": [".github/workflows/publish.yml", ".github/workflows/verify-tag.yml", ".github/workflows/release-docker-smoke.yml"],
-      "matchPackageNames": ["actions/checkout", "actions/setup-python", "actions/upload-artifact", "docker/login-action", "docker/build-push-action", "docker/setup-buildx-action", "docker/scout-action", "github/codeql-action"],
+      "matchPackageNames": ["actions/checkout", "actions/setup-python", "actions/upload-artifact", "actions/download-artifact", "docker/login-action", "docker/build-push-action", "docker/setup-buildx-action", "docker/scout-action", "github/codeql-action"],
       "matchUpdateTypes": ["minor"],
       "minimumReleaseAge": "3 days",
       "automerge": true,
