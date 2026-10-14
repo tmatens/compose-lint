@@ -146,6 +146,11 @@ order or shares state with another test, and that is the bug to fix.
   Never leak parser-specific types into rule code.
 - **Latest stable versions** for any new dependency unless there's a specific,
   documented reason otherwise.
+- **Every new dependency has an update path.** That covers packages, Actions,
+  container images, downloaded binaries and tool versions alike. Pin it, show
+  that Renovate extracts it, and place it in the update policy, all in the same
+  PR. AGENTS.md "Adding a dependency" has the steps, and docs/CI.md
+  "Dependency updates" has the policy.
 
 ## Conventions the diff won't show you
 
