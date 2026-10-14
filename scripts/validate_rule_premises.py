@@ -49,15 +49,23 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-# Pinned by manifest-list (OCI index) digest so CI uses no mutable ref.
+# Both images are pinned by manifest-list (OCI index) digest so CI uses no
+# mutable ref. The tag stays beside the digest because Renovate looks digest
+# updates up by tag: the `# renovate:` lines feed a custom manager in
+# .github/renovate.json, and the rule-premises job re-proves every premise on
+# the bumped image before the digest PR can merge. Keep each pin in this
+# exact shape (annotation, NAME = (, one-line "name:tag@sha256:…") or
+# Renovate stops seeing it.
+# renovate: datasource=docker depName=busybox
 IMAGE = (
-    "busybox@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d"
+    "busybox:1.38@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d"
 )
 # python:3.13-alpine — for checks busybox can't express: syscalls needing a
 # libc caller (mlockall, clock_settime) and the CL-0003 setuid-interpreter
 # staging (python keeps its effective uid; busybox re-drops it).
+# renovate: datasource=docker depName=python
 PY_IMAGE = (
-    "python@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0"
+    "python:3.13-alpine@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0"
 )
 # Rules with nothing to observe in a live container — grounded by source only.
 _NON_RUNTIME = ["CL-0004", "CL-0014", "CL-0019", "CL-0020", "CL-0021"]

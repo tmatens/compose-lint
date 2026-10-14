@@ -52,6 +52,14 @@
       ],
       "extractVersionTemplate": "^v(?<version>.+)$",
       "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "Container images the premise validator runs (busybox, and python:3.13-alpine for the checks busybox cannot express). They are string constants in a Python script, which no built-in manager reads, so until this manager existed both digests sat where they were pinned (busybox from May 2026, python from June) with nothing to say they were stale. Each pin is a `# renovate: datasource=docker depName=…` line, then `NAME = (`, then one string `\"name:tag@sha256:<index digest>\"`; the tag is what Renovate looks the digest up by. Digest refreshes automerge under the Docker Hub digest rule below, because the rule-premises job re-runs every premise against the new image on the PR; a tag change (busybox 1.39, python 3.14-alpine) is a minor and opens with manual-merge.",
+      "managerFilePatterns": ["/^scripts/validate_rule_premises\\.py$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)\\n[A-Z_]+ = \\(\\n\\s+\"[^\":]+:(?<currentValue>[^@\"]+)@(?<currentDigest>sha256:[0-9a-f]{64})\""
+      ]
     }
   ],
   "packageRules": [
@@ -166,9 +174,9 @@
       "labels": []
     },
     {
-      "description": "Docker digest refreshes automerge where the three-day gate can actually be enforced, which is Docker Hub only. Renovate's docker datasource takes releaseTimestamp from Docker Hub's tag_last_pushed and from nowhere else (gcr.io and ghcr.io yield none), and it attaches that timestamp to a digest update only when the tag parses as a version, which is why the build stage is pinned as debian:13-slim rather than trixie-slim (same manifest list). Under the default minimumReleaseAgeBehaviour=timestamp-required a digest with no timestamp is pending forever and never even opens a PR, so distroless (gcr.io, tag nonroot), the oss-fuzz builder (gcr.io) and vhs (ghcr.io) are deliberately NOT matched here; the rule after this one labels them `age-gated` and .github/workflows/digest-age-gate.yml merges each once its head commit has been unchanged for 72h (first-seen is never earlier than publish, so that is at least the same wait), and goes away if upstream ever ships a registry-agnostic release timestamp (renovatebot/renovate#39064). The review a human used to do on these PRs is now mechanical: dockerfile-digests fails a per-arch pin, docker-smoke builds and runs the image on amd64 and arm64, and both are required via ci-ok. Verified 2026-10-03 against Renovate 44.132 (lookup/digest.ts, datasource/docker releaseTimestampNote). The branch-stage half of the age check cannot see a digest's timestamp; the last rule in this list covers that.",
+      "description": "Docker digest refreshes automerge where the three-day gate can actually be enforced, which is Docker Hub only. The images: debian (build stage), postgres (demo compose file), docker/dockerfile (syntax frontend), and busybox and python (the premise validator, via the custom manager above; rule-premises proves every premise on the new digest). Renovate's docker datasource takes releaseTimestamp from Docker Hub's tag_last_pushed and from nowhere else (gcr.io and ghcr.io yield none), and it attaches that timestamp to a digest update only when the tag parses as a version, which is why the build stage is pinned as debian:13-slim rather than trixie-slim (same manifest list). Under the default minimumReleaseAgeBehaviour=timestamp-required a digest with no timestamp is pending forever and never even opens a PR, so distroless (gcr.io, tag nonroot), the oss-fuzz builder (gcr.io) and vhs (ghcr.io) are deliberately NOT matched here; the rule after this one labels them `age-gated` and .github/workflows/digest-age-gate.yml merges each once its head commit has been unchanged for 72h (first-seen is never earlier than publish, so that is at least the same wait), and goes away if upstream ever ships a registry-agnostic release timestamp (renovatebot/renovate#39064). The review a human used to do on these PRs is now mechanical: dockerfile-digests fails a per-arch pin, docker-smoke builds and runs the image on amd64 and arm64, and both are required via ci-ok. Verified 2026-10-03 against Renovate 44.132 (lookup/digest.ts, datasource/docker releaseTimestampNote). The branch-stage half of the age check cannot see a digest's timestamp; the last rule in this list covers that.",
       "matchDatasources": ["docker"],
-      "matchPackageNames": ["debian", "postgres", "docker/dockerfile"],
+      "matchPackageNames": ["debian", "postgres", "docker/dockerfile", "busybox", "python"],
       "matchUpdateTypes": ["digest"],
       "minimumReleaseAge": "3 days",
       "automerge": true,
