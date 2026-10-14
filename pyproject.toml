@@ -72,7 +72,7 @@ publish = [
     "twine==7.0.0",
     # Used by the post-release canary in publish.yml to verify the
     # Sigstore bundles attached to the GitHub Release. Matches the
-    # version bundled by sigstore/gh-action-sigstore-python v3.3.0 so
+    # version bundled by sigstore/gh-action-sigstore-python v3.5.0 so
     # the signer and verifier are in lockstep.
     "sigstore==4.5.0",
 ]

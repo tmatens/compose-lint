@@ -18,7 +18,7 @@
     }
   ],
   "vulnerabilityAlerts": {
-    "description": "Open a security PR the moment an advisory lands instead of waiting for the weekly schedule. osvVulnerabilityAlerts covers the uv/pip-compile *.lock files that GitHub's native Dependabot does not parse. Security PRs are NOT given a blanket automerge here: only patch-level fixes match the existing automerge packageRule, so minor/major security bumps open for manual review. `addLabels` (not `labels`) so `security` stacks on `manual-merge` instead of replacing it. This is the continuous-detection half of the pip-audit split (PR audit informational, publish audit blocking — see .github/workflows/ci.yml).",
+    "description": "Open a security PR the moment an advisory lands instead of waiting for the weekly schedule. osvVulnerabilityAlerts covers the uv/pip-compile *.lock files that GitHub's native Dependabot does not parse. Renovate applies this block as a `force` package rule appended AFTER the packageRules below (workers/repository/init/vulnerability.ts), carrying its own defaults for the alert: minimumReleaseAge null, schedule [], prCreation immediate, groupName null. So a security PR is ungrouped, opens at once and skips the three-day gate; whether it then merges itself is decided by the same packageRules as any other update. A security patch, or a security minor of dev tooling, of pyyaml, of a CI-path action or of a pinned release binary, automerges once ci-ok is green and carries no manual-merge label; a security major, or a security minor of sigstore or of a release-only action, opens for review. `addLabels` (not `labels`) so `security` stacks on whatever label the update rules left instead of replacing it. This is the continuous-detection half of the pip-audit split (PR audit informational, publish audit blocking — see .github/workflows/ci.yml). Verified against Renovate 44.157.",
     "addLabels": ["security"]
   },
   "lockFileMaintenance": {
@@ -36,7 +36,7 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "The Docker Compose plugin the differential suites are graded against. The runner image pins its own — images/ubuntu/toolsets/toolset-2404.json in actions/runner-images holds it at 2.38.2 while docker/compose is on 5.x — and that version is not a choice this project made: CI was grading ADR-036's include: orderings, every one measured on Compose 5.5.0, against a binary that refuses the documents describing them ('services.web conflicts with imported resource'). .github/scripts/install-compose-plugin.sh installs the pin ahead of the image's copy; this manager moves it. Deliberately outside the automerge packageRule below, which matches only pep621/pip_requirements/pip-compile/github-actions: a Compose bump is precisely the PR that has to be triaged into 'Compose changed', 'we were wrong', or 'a new deliberate divergence', so it opens for review rather than merging itself. ci.yml is in the `code` change filter so this PR actually runs the suites it exists to re-prove.",
+      "description": "The Docker Compose plugin the differential suites are graded against. The runner image pins its own — images/ubuntu/toolsets/toolset-2404.json in actions/runner-images holds it at 2.38.2 while docker/compose is on 5.x — and that version is not a choice this project made: CI was grading ADR-036's include: orderings, every one measured on Compose 5.5.0, against a binary that refuses the documents describing them ('services.web conflicts with imported resource'). .github/scripts/install-compose-plugin.sh installs the pin ahead of the image's copy; this manager moves it. Patch and minor bumps automerge under the custom.regex rule below: ci.yml is in the `code` change filter, so the bump PR runs the differential suites it exists to re-prove, and a green run means the new binary still agrees with every graded ordering. A red run is precisely the PR that has to be triaged into 'Compose changed', 'we were wrong', or 'a new deliberate divergence', and Renovate never merges a red PR, so that triage still reaches a human.",
       "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>[a-z-]+?) depName=(?<depName>.+?)\\s+COMPOSE_VERSION: (?<currentValue>v\\S+)"
@@ -45,7 +45,7 @@
     },
     {
       "customType": "regex",
-      "description": "Release binaries that ci.yml jobs download from a GitHub Release and verify against the release's checksums file (actionlint, hadolint). The version is a bare X.Y.Z literal beside a `# renovate:` annotation; the tag carries a v prefix, so extractVersion strips it. Not in the automerge rule (that matches managers, and this is neither pep621 nor github-actions), so a bump opens for review with the tool's release notes as the review.",
+      "description": "Release binaries that ci.yml jobs download from a GitHub Release and verify against the release's checksums file (actionlint, hadolint). The version is a bare X.Y.Z literal beside a `# renovate:` annotation; the tag carries a v prefix, so extractVersion strips it. Patch and minor bumps automerge under the custom.regex rule below: each bump runs the linter it bumps on the PR itself (ci.yml is in the `workflows` change filter for actionlint and in the `dockerfile` filter for hadolint), so a green run is the review and a red one waits for a human with the tool's release notes.",
       "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>[a-z-]+?) depName=(?<depName>.+?)\\s+[A-Z_]+_VERSION: \"(?<currentValue>[0-9][^\"]*)\""
@@ -62,7 +62,7 @@
       "groupName": "github-actions"
     },
     {
-      "description": "Workflows that run only after the tag is pushed (publish.yml and the reusable workflows it calls) get their own group. A minor bump of an action used only there is exercised for the first time at release, after the irreversible trigger, so it stays patch/pin/digest-only under the automerge rules below while the CI-path group may also take minors. Separate groups because Renovate automerges a group only when every update in it is eligible: one release-path minor would otherwise hold the whole weekly batch for a human.",
+      "description": "Workflows that run only after the tag is pushed (publish.yml and the reusable workflows it calls) get their own group. Minors split by whether the action also runs on the CI path: the eight that do are exercised on the PR itself and automerge under their own rule below, while a minor of the six that run only after the tag (actions/attest-build-provenance, actions/download-artifact, anchore/sbom-action, pypa/gh-action-pypi-publish, sigstore/cosign-installer, sigstore/gh-action-sigstore-python) is exercised for the first time at release, after the irreversible trigger, so it keeps manual-merge and holds the group for a human. Separate groups because Renovate automerges a group only when every update in it is eligible: one release-path minor would otherwise hold the whole weekly batch for a human.",
       "matchManagers": ["github-actions"],
       "matchFileNames": [".github/workflows/publish.yml", ".github/workflows/verify-tag.yml", ".github/workflows/release-docker-smoke.yml"],
       "groupName": "github-actions-release"
@@ -108,10 +108,10 @@
       "labels": []
     },
     {
-      "description": "Minor bumps of Python dev tooling automerge too. Every optional-dependency group (lint, security, docs, dev, corpus, container) is installed and exercised by a PR gate (ruff, mypy, pytest, bandit, pip-audit, mkdocs, the Docker build), so a green run is the review. The runtime dependency (project.dependencies: pyyaml) ships in the wheel and stays patch-only under the rule above. twine and sigstore are excluded: they run only in publish.yml, after the tag, so a minor there is the Python analogue of a release-path action bump and opens for review. pep621 and pip-compile tag deps with the same depType (verified with `renovate --platform=local --dry-run=extract` on 44.132), so the pyproject edit and the lock regeneration are both eligible and the grouped PR automerges as a whole.",
+      "description": "Minor bumps of Python dev tooling automerge too. Every optional-dependency group (lint, security, docs, dev, corpus, container) is installed and exercised by a PR gate (ruff, mypy, pytest, bandit, pip-audit, mkdocs, the Docker build), so a green run is the review. The runtime dependency (project.dependencies: pyyaml) has its own rule below: its minors move the locks only, never the wheel's range. sigstore is excluded: it must move in lockstep with the sigstore/gh-action-sigstore-python action that signs what it verifies (the pin's comment in pyproject.toml), and that action's minors are manual, so a sigstore minor opens for review alongside it. twine is not excluded: ci.yml's dist-check job builds the sdist and wheel and runs `twine check --strict` on every PR that touches code or the locks, so a twine minor is exercised before the tag like any other dev tool. pep621 and pip-compile tag deps with the same depType (verified with `renovate --platform=local --dry-run=extract` on 44.132), so the pyproject edit and the lock regeneration are both eligible and the grouped PR automerges as a whole.",
       "matchManagers": ["pep621", "pip-compile"],
       "matchDepTypes": ["project.optional-dependencies"],
-      "matchPackageNames": ["!twine", "!sigstore"],
+      "matchPackageNames": ["!sigstore"],
       "matchUpdateTypes": ["minor"],
       "minimumReleaseAge": "3 days",
       "automerge": true,
@@ -120,9 +120,44 @@
       "labels": []
     },
     {
-      "description": "Minor bumps of actions on the CI path automerge. Every action here is SHA-pinned and runs in the PR's own workflow, so the bump tests itself. The release-path workflows are carved into the github-actions-release group above and excluded here, so their minors keep the manual-merge label. Majors, including the ubuntu runner image (datasource github-runners), stay manual.",
+      "description": "Minor bumps of actions on the CI path automerge. Every action here is SHA-pinned and runs in the PR's own workflow, so the bump tests itself. The release-path workflows are carved into the github-actions-release group above and excluded here; the rule after this one takes their minors for the actions that also run on the CI path, and the release-only actions' minors keep the manual-merge label. Majors, including the ubuntu runner image (datasource github-runners), stay manual.",
       "matchManagers": ["github-actions"],
       "matchFileNames": ["!.github/workflows/publish.yml", "!.github/workflows/verify-tag.yml", "!.github/workflows/release-docker-smoke.yml"],
+      "matchUpdateTypes": ["minor"],
+      "minimumReleaseAge": "3 days",
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": false,
+      "labels": []
+    },
+    {
+      "description": "Minor bumps of release-path actions that ALSO run on the CI path automerge. These eight are SHA-pinned in ci.yml and the other PR and push workflows as well, so the same minor runs on the PR before it ever runs after a tag, and the github-actions-release group then holds only eligible updates and merges itself. The six actions that run only after the tag are deliberately not listed (see the group's description above): their minors keep manual-merge and hold the group for a human, because a first run after the irreversible trigger is not a review. depName is the owner/repo part of `uses:`, so github/codeql-action covers its upload-sarif sub-action (verified with `renovate --platform=local --dry-run=extract` on 44.157).",
+      "matchManagers": ["github-actions"],
+      "matchFileNames": [".github/workflows/publish.yml", ".github/workflows/verify-tag.yml", ".github/workflows/release-docker-smoke.yml"],
+      "matchPackageNames": ["actions/checkout", "actions/setup-python", "actions/upload-artifact", "docker/login-action", "docker/build-push-action", "docker/setup-buildx-action", "docker/scout-action", "github/codeql-action"],
+      "matchUpdateTypes": ["minor"],
+      "minimumReleaseAge": "3 days",
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": false,
+      "labels": []
+    },
+    {
+      "description": "Patch and minor bumps of the release binaries ci.yml downloads (the custom regex managers above: docker/compose, rhysd/actionlint, hadolint/hadolint) automerge. Each bump runs the tool it bumps on the PR, so a green run is the review. Compose: the plugin is what the differential suites grade against, and ci.yml is in the `code` change filter, so the bump re-runs every suite that could disagree with the new binary; green means no loader rule moved under us. actionlint: ci.yml is in the `workflows` filter, so the bumped linter runs over every workflow. hadolint: ci.yml is in the `dockerfile` filter for exactly this, so the bumped linter runs over the Dockerfile. Red stays manual on all three, because Renovate merges only a green PR, and a red Compose bump is the one that needs triage into 'Compose changed', 'we were wrong', or 'a new deliberate divergence'. Majors stay manual: a major of any of these is a changed rule set, not a refreshed one.",
+      "matchManagers": ["custom.regex"],
+      "matchPackageNames": ["docker/compose", "rhysd/actionlint", "hadolint/hadolint"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "minimumReleaseAge": "3 days",
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": false,
+      "labels": []
+    },
+    {
+      "description": "Minor bumps of the runtime dependency (project.dependencies: pyyaml) automerge. pyproject.toml declares the range `pyyaml>=6.0.2,<7`, so a minor moves only the hash-pinned locks, which is what CI and the container image install, and never what the wheel asks of its users; a major would cross the `<7` ceiling and stays manual. The new lock is exercised on the PR by everything that loads YAML: the test suite, docker-smoke on the built image, and the lockfiles job re-proving the locks reproduce from pyproject.toml. pep621 (the pyproject range) and pip-compile (the lock pin) both tag it project.dependencies, so the grouped python PR is eligible as a whole.",
+      "matchManagers": ["pep621", "pip-compile"],
+      "matchDepTypes": ["project.dependencies"],
+      "matchPackageNames": ["pyyaml"],
       "matchUpdateTypes": ["minor"],
       "minimumReleaseAge": "3 days",
       "automerge": true,

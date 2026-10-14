@@ -46,10 +46,10 @@ name: Age-gate gcr/ghcr digest PRs
 #
 # Red, conflicting or hand-touched PRs are left alone and keep
 # `manual-merge`, so the "what needs me" query stays truthful. Majors,
-# release-path actions, twine/sigstore and non-patch security bumps are
-# judgment calls, not tooling gaps, and are out of scope by selection: this
-# touches only PRs that are all of (author renovate[bot], head renovate/*,
-# label manual-merge, title "Update <image> Docker digest to <sha>").
+# release-only actions and sigstore are judgment calls, not tooling gaps,
+# and are out of scope by selection: this touches only PRs that are all
+# of (author renovate[bot], head renovate/*, label manual-merge, title
+# "Update <image> Docker digest to <sha>").
 
 on:
   workflow_dispatch:

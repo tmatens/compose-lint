@@ -106,7 +106,12 @@ jobs:
           if match '^\.github/(workflows/|actions/|zizmor\.yml$)'; then
             workflows=true
           fi
-          if match '^Dockerfile$'; then
+          # ci.yml is in the dockerfile group because the hadolint pin lives
+          # *in this file* -- a Renovate bump of HADOLINT_VERSION must run the
+          # linter it bumps, which is exactly the hadolint job. Without it the
+          # bump ran nothing and merged on the strength of unrelated jobs.
+          # dockerfile-digests rides along; it is a two-minute read-only check.
+          if match '^(Dockerfile$|\.github/workflows/ci\.yml$)'; then
             dockerfile=true
           fi
           # pyproject.toml is the compile source; the locks are its outputs.
@@ -413,6 +418,59 @@ jobs:
             exit 1
           fi
           echo "All four lockfiles reproduce byte-for-byte."
+
+  # Builds the sdist and wheel and runs `twine check --strict` on every PR
+  # that touches code or the locks. Before this job, `python -m build` and
+  # twine ran only in publish.yml, after the tag, so a packaging regression
+  # (the sdist allowlist letting something through, a twine release that
+  # rejects our metadata, a build backend reading pyproject differently)
+  # surfaced at release time, after the irreversible trigger. This is the
+  # PR-time half of publish.yml's "Verify dist contents" step: the wheel
+  # and sdist content checks are copied from it and must stay equivalent.
+  # `--strict` turns twine's warnings into failures here, where a red run
+  # costs a push, not a release. It is also what lets Renovate merge build
+  # and twine bumps on its own (renovate.json, the dev-tooling minor rule).
+  dist-check:
+    name: Build distributions and twine check
+    needs: changes
+    if: needs.changes.outputs.code == 'true' || needs.changes.outputs.locks == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install pinned build env
+        # requirements-dev.lock carries the publish extra (build, twine),
+        # hash-pinned: the same file and command publish.yml installs from.
+        run: pip install --require-hashes -r requirements-dev.lock
+      - run: python -m build
+      - name: Verify dist contents
+        run: |
+          twine check --strict dist/*
+          # Wheel must NOT contain agent config, .env, tests, or .git.
+          if unzip -l dist/*.whl | grep -E '(AGENTS\.md|CLAUDE\.md|\.env|/tests/|\.git/)'; then
+            echo "::error::Wheel contains forbidden files"
+            exit 1
+          fi
+          # The sdist needs its own check: `twine check` only validates
+          # metadata, and the wheel guard above cannot see the sdist. Same
+          # patterns as publish.yml; fail closed on symlinks and venv
+          # markers (a virtualenv swept in from a working tree is the
+          # motivating case, see the sdist allowlist in pyproject.toml).
+          if tar tzvf dist/*.tar.gz | grep -E ' -> '; then
+            echo "::error::sdist contains symlinks"
+            exit 1
+          fi
+          if tar tzf dist/*.tar.gz | grep -E '(pyvenv\.cfg|AGENTS\.md|CLAUDE\.md|/\.env$|/\.git/|/\.claude/|site-packages/)'; then
+            echo "::error::sdist contains forbidden files"
+            exit 1
+          fi
 
   # Fails the PR if `pyproject.toml` and `src/compose_lint/__init__.py`
   # disagree about the project version. The two strings drifted silently
@@ -1562,6 +1620,7 @@ jobs:
       - hadolint
       - dockerfile-digests
       - lockfiles
+      - dist-check
       - docker-smoke
       - action-smoke
       - precommit-smoke
