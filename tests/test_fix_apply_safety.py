@@ -29,6 +29,7 @@ from compose_lint import cli
 from compose_lint.engine import run_rules
 from compose_lint.fix import collect_edits
 from compose_lint.parser import loads
+from tests.oracle_harness import compose_argv
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -55,7 +56,7 @@ def _assert_compose_accepts(path: Path) -> None:
     if not _HAS_COMPOSE:
         return
     proc = subprocess.run(
-        ["docker", "compose", "-f", path.name, "config", "-q"],
+        [*compose_argv(), "-f", path.name, "config", "-q"],
         cwd=path.parent,
         capture_output=True,
         text=True,

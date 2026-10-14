@@ -25,6 +25,7 @@ import pytest
 import yaml
 
 from compose_lint._selection import plan_documents
+from tests.oracle_harness import compose_argv
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -99,7 +100,7 @@ def project(tmp_path: Path) -> Iterator[Path]:
 def _compose_merged(directory: Path) -> set[str]:
     """Which documents Compose actually loaded, named by their marker."""
     result = subprocess.run(
-        ["docker", "compose", "config"],
+        [*compose_argv(), "config"],
         cwd=directory,
         capture_output=True,
         text=True,
@@ -184,7 +185,7 @@ def test_the_default_separator_deliberately_differs_on_windows(project: Path) ->
     assert _planned(project) == {"compose.yml", "compose.prod.yml"}
 
     result = subprocess.run(
-        ["docker", "compose", "config"],
+        [*compose_argv(), "config"],
         cwd=project,
         capture_output=True,
         text=True,

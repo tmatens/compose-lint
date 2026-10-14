@@ -28,6 +28,7 @@ import pytest
 import yaml
 
 from compose_lint._env_file import parse_env_file
+from tests.oracle_harness import compose_argv
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -153,7 +154,7 @@ def _compose_environment(
     (directory / "compose.yml").write_text(document, encoding="utf-8", newline="")
     (directory / "app.env").write_text(env_text, encoding="utf-8", newline="")
     result = subprocess.run(
-        ["docker", "compose", "config"],
+        [*compose_argv(host_env), "config"],
         cwd=directory,
         capture_output=True,
         text=True,
@@ -252,7 +253,7 @@ def test_resolution_scope_spans_the_sibling_env_and_earlier_files(
     (tmp_path / "one.env").write_text("BASE=/opt\n", encoding="utf-8", newline="")
     (tmp_path / "two.env").write_text("P=${BASE}/p\n", encoding="utf-8", newline="")
     result = subprocess.run(
-        ["docker", "compose", "config"],
+        [*compose_argv(), "config"],
         cwd=tmp_path,
         capture_output=True,
         text=True,

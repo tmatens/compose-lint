@@ -29,6 +29,7 @@ import pytest
 import yaml
 
 from compose_lint._env_file import parse_env
+from tests.oracle_harness import compose_argv
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -138,7 +139,7 @@ def _compose_resolves(directory: Path, env_text: str) -> str | None:
     (directory / "compose.yml").write_text(_COMPOSE, encoding="utf-8", newline="")
     (directory / ".env").write_text(env_text, encoding="utf-8", newline="")
     result = subprocess.run(
-        ["docker", "compose", "config"],
+        [*compose_argv(), "config"],
         cwd=directory,
         capture_output=True,
         text=True,

@@ -26,6 +26,7 @@ from compose_lint._service_env import (
     env_file_refs,
     resolve_env_files,
 )
+from tests.oracle_harness import compose_argv
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -274,7 +275,7 @@ class TestAgreesWithCompose:
     def _theirs(directory: Path, document: str) -> dict[str, str] | None:
         (directory / "compose.yml").write_text(document, encoding="utf-8", newline="")
         result = subprocess.run(
-            ["docker", "compose", "config"],
+            [*compose_argv(), "config"],
             cwd=directory,
             capture_output=True,
             text=True,
