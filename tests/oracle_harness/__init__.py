@@ -23,6 +23,7 @@ from tests.oracle_harness._compare import (
 from tests.oracle_harness._divergences import DIVERGENCES, Divergence
 from tests.oracle_harness._oracle import (
     OracleResult,
+    compose_argv,
     oracle_available,
     oracle_version,
     run_oracle,
@@ -57,6 +58,7 @@ __all__ = [
     "dump_document",
     "findings_of",
     "fix_in_place",
+    "compose_argv",
     "generate",
     "lint_project",
     "oracle_available",

@@ -31,6 +31,7 @@ import yaml
 
 from compose_lint._env_file import parse_env
 from compose_lint.rules._interpolation import substitute_defaults
+from tests.oracle_harness import compose_argv
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -108,7 +109,7 @@ def _compose_resolves(directory: Path, expression: str, env_text: str) -> str | 
     )
     (directory / ".env").write_text(env_text, encoding="utf-8", newline="")
     result = subprocess.run(
-        ["docker", "compose", "config"],
+        [*compose_argv(), "config"],
         cwd=directory,
         capture_output=True,
         text=True,

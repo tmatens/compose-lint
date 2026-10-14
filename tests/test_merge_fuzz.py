@@ -29,6 +29,7 @@ import pytest
 
 from compose_lint.engine import run_rules
 from compose_lint.parser import load_compose, load_merged
+from tests.oracle_harness import compose_argv
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -162,7 +163,7 @@ def test_generated_pair_matches_docker_compose(seed: int, tmp_path: Path) -> Non
     (tmp_path / "compose.override.yml").write_text(over_text)
 
     result = subprocess.run(
-        ["docker", "compose", "config"],
+        [*compose_argv(), "config"],
         cwd=tmp_path,
         capture_output=True,
         text=True,

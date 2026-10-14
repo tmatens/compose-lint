@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from tests.oracle_harness import compose_argv
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -252,7 +254,7 @@ def test_fix_leaves_a_document_compose_still_accepts(tmp_path: Path) -> None:
     run_cli("fix", "--apply", cwd=tmp_path)
 
     check = subprocess.run(
-        ["docker", "compose", "config"],
+        [*compose_argv(), "config"],
         cwd=tmp_path,
         capture_output=True,
         text=True,
@@ -391,7 +393,7 @@ def test_fixed_merged_pair_is_still_a_valid_project(tmp_path: Path) -> None:
     run_cli("fix", "--apply", cwd=tmp_path)
 
     check = subprocess.run(
-        ["docker", "compose", "config"],
+        [*compose_argv(), "config"],
         cwd=tmp_path,
         capture_output=True,
         text=True,

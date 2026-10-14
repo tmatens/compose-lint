@@ -26,6 +26,7 @@ import pytest
 
 from compose_lint.engine import run_rules
 from compose_lint.parser import load_compose, load_merged
+from tests.oracle_harness import compose_argv
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -39,7 +40,7 @@ pytestmark = pytest.mark.skipif(
 def _compose_config(directory: Path) -> str:
     """Ground truth: the effective configuration Compose itself resolves."""
     result = subprocess.run(
-        ["docker", "compose", "config"],
+        [*compose_argv(), "config"],
         cwd=directory,
         capture_output=True,
         text=True,
@@ -593,7 +594,7 @@ def test_three_document_merge_matches_docker_compose(tmp_path: Path) -> None:
     (tmp_path / "c.yml").write_text("services:\n  web:\n    read_only: false\n")
 
     result = subprocess.run(
-        ["docker", "compose", "-f", "a.yml", "-f", "b.yml", "-f", "c.yml", "config"],
+        [*compose_argv(), "-f", "a.yml", "-f", "b.yml", "-f", "c.yml", "config"],
         cwd=tmp_path,
         capture_output=True,
         text=True,
