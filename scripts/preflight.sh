@@ -192,6 +192,18 @@ run_zizmor() {
 
 if command -v actionlint >/dev/null 2>&1; then
   gate "actionlint (workflows)" run_actionlint
+  # actionlint checks `run:` blocks by calling shellcheck, and only when
+  # that binary is on PATH; without it the run above passes having checked
+  # no shell at all. CI's actionlint job has shellcheck, so a finding there is
+  # one this run could not see (a `ls | grep` in a new step cost a CI round
+  # this way). Not a failure, because a contributor touching no workflow
+  # loses nothing, but it has to show in the summary.
+  if ! command -v shellcheck >/dev/null 2>&1; then
+    printf '  WARNING: shellcheck is not on PATH, so actionlint checked no run: block.\n'
+    printf '  The actionlint job in CI runs shellcheck and can still fail on them.\n'
+    printf '  install it: https://github.com/koalaman/shellcheck#installing\n'
+    results+=("WARN  actionlint ran without shellcheck: run: blocks were not checked")
+  fi
 else
   printf '\n== actionlint: skipped (not on PATH; CI still runs it)\n'
   printf '  install a release binary: https://github.com/rhysd/actionlint/releases\n'

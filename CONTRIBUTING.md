@@ -80,8 +80,12 @@ lock; `actionlint` is a [release binary](https://github.com/rhysd/actionlint/rel
 CI downloads per run. **If you install it, invoke it through
 `scripts/preflight.sh` rather than bare:** the pinned release predates
 GitHub's `$/` self-repository syntax and reports a failure for every workflow
-in this repo, on a clean tree. The script passes the two `-ignore` patterns CI
-uses, so you see real findings only.
+in this repo, on a clean tree. The script passes the `-ignore` patterns CI
+uses, so you see real findings only. Install
+[shellcheck](https://github.com/koalaman/shellcheck#installing) too if you
+edit a workflow: actionlint checks `run:` blocks only through it, and CI has
+it. Without it the preflight summary shows a `WARN` line, and shell findings
+surface only in CI.
 
 The four code gates, if you want them individually:
 
