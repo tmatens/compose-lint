@@ -33,10 +33,12 @@ name: Age-gate gcr/ghcr digest PRs
 #
 # The merge is the shared arm-auto-merge action, pinned to the head SHA the
 # selection looked at. By the time this runs, ci-ok finished long ago, so
-# the PR is in "clean" status and GitHub refuses to arm auto-merge on it;
-# the action's direct-merge outcome is the expected path, and the pin makes
-# a push that lands in between fail the merge rather than ship unreviewed
-# content. Merged with MARKETPLACE_SMOKE_PAT, not the default token, so the
+# the PR is in "clean" status and the merge is immediate (the action's
+# `merged-direct` outcome); the pin makes a push that lands in between fail
+# the merge rather than ship unreviewed content. If the PR has stopped being
+# clean in that window the action arms auto-merge instead, and the step
+# after it disarms: an armed PR would merge whatever Renovate pushes next,
+# unaged. Merged with MARKETPLACE_SMOKE_PAT, not the default token, so the
 # push to main triggers main's push workflows (CI, docs, scout) as a human
 # merge would -- a github-actions[bot] merge would not (recursion guard).
 # Without the secret the merge job skips with a warning and the PRs stay
@@ -178,8 +180,10 @@ jobs:
           token: ${{ secrets.MARKETPLACE_SMOKE_PAT }}
           expected-head: ${{ matrix.head }}
           note: It is eligible for the age gate; merge it by hand or wait for tomorrow's run.
-      - name: Record the outcome
+      - name: Record the outcome (and disarm if it only armed)
         env:
+          GH_TOKEN: ${{ secrets.MARKETPLACE_SMOKE_PAT }}
+          GH_REPO: ${{ github.repository }}
           RESULT: ${{ steps.arm.outputs.result }}
           PR: ${{ matrix.number }}
         run: |
@@ -187,11 +191,15 @@ jobs:
           case "${RESULT}" in
             merged-direct) ;;
             armed|already-armed)
-              # Not expected: a CLEAN PR cannot be armed. If it happens the
-              # PR was no longer clean when the action ran, and GitHub will
-              # merge it once it is -- the head pin holds, so the content is
-              # still what was aged.
-              echo "::notice::#${PR} was armed rather than merged directly; it was not in clean status any more." ;;
+              # The PR was CLEAN at selection and is not any more (a check
+              # re-run, say), so the action armed rather than merged. Arming
+              # is wrong for this gate: GitHub keeps auto-merge armed across
+              # pushes by a collaborator, so a newer digest Renovate pushes
+              # onto the branch would merge the moment it went green, with
+              # no 72h behind it. Disarm; tomorrow's run re-evaluates.
+              gh pr merge "${PR}" --disable-auto \
+                || echo "::error::could not disarm auto-merge on #${PR} -- disarm it by hand (Disable auto-merge on the PR) or its next push merges unaged"
+              echo "::warning::#${PR} was no longer clean when the merge ran; auto-merge was armed and has been disarmed again. It is re-evaluated tomorrow." ;;
             *)
               echo "::warning::#${PR} did not merge (${RESULT}); it stays open with manual-merge and is re-evaluated tomorrow." ;;
           esac

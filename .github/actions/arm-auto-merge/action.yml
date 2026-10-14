@@ -9,10 +9,13 @@ description: >
 
   Behaviour, in order: with no token the step is skipped with a warning;
   an already-armed PR is a no-op, so a re-run of the calling workflow is
-  harmless; otherwise `gh pr merge --auto`; and when GitHub refuses to arm
-  because every required check has already finished ("clean" status --
-  ci-ok beat the caller to it), the PR is merged directly, which GitHub
-  permits only in that state, so neither path lands ahead of ci-ok.
+  harmless; otherwise `gh pr merge --auto`. GitHub refuses to arm a PR
+  whose required checks have all finished ("clean" status -- ci-ok beat
+  the caller to it), and gh knows it: on such a PR `--auto` merges at once
+  instead of arming, which this reports as `merged-direct` (observed on
+  #1061); should gh ever hand the refusal through, the explicit direct
+  merge behind it does the same. GitHub permits that merge only in the
+  clean state, so neither path lands ahead of ci-ok.
   Never fails the calling job: a PR that needs a manual click is not a
   broken workflow, and on the release path a red X here would misreport a
   release that has already shipped. The caller reads `result` for its own
@@ -87,8 +90,15 @@ runs:
           result=already-armed
           echo "Auto-merge is already armed on ${PR} (an earlier run); nothing to do."
         elif gh pr merge "${PR}" --auto --squash --delete-branch "${pin[@]}"; then
-          result=armed
-          echo "Auto-merge armed on ${PR}; GitHub squash-merges it once ci-ok is green."
+          # gh arms only a PR that is not yet mergeable; one that already is
+          # gets squash-merged on the spot. Say which happened.
+          if [ "$(gh pr view "${PR}" --json state --jq '.state')" = "MERGED" ]; then
+            result=merged-direct
+            echo "${PR} was already mergeable (required checks finished), so it was squash-merged at once."
+          else
+            result=armed
+            echo "Auto-merge armed on ${PR}; GitHub squash-merges it once ci-ok is green."
+          fi
         elif gh pr merge "${PR}" --squash --delete-branch "${pin[@]}"; then
           # Arming is refused on a PR whose required checks have all finished
           # ("clean" status); the direct merge succeeds only in that state.
