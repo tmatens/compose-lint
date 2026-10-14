@@ -347,9 +347,11 @@ composite, one definition for every bot-authored PR this repository opens
 (this job, `release-prep.yml`, `forgejo-smoke.yml`; three hand-copies had
 drifted, [#1057]). Given a PR and a PAT it reports one `result`: `armed`;
 `already-armed` (a re-run); `merged-direct`, when every required check had
-already finished — GitHub refuses to arm a PR in that "clean" state, and
-the direct merge is permitted only in it, so neither path lands ahead of
-`ci-ok`; `skipped-no-token`; or `failed`. It never fails the calling job;
+already finished — GitHub refuses to arm a PR in that "clean" state, so
+`gh pr merge --auto` merges it on the spot instead (and the explicit direct
+merge behind it covers gh handing the refusal through); that merge is
+permitted only in the clean state, so neither path lands ahead of `ci-ok`;
+`skipped-no-token`; or `failed`. It never fails the calling job;
 each caller turns the result into its own step-summary wording. The merge
 here gates nothing irreversible: the PR opens only
 after `publish`, `docker-publish` and `create-release` have all succeeded,
@@ -616,8 +618,11 @@ The merge is the shared `arm-auto-merge` action with `expected-head` set
 to the SHA the selection looked at (`gh pr merge --match-head-commit`), so
 a push that lands in between fails the merge rather than shipping content
 nobody aged. By the time the gate runs `ci-ok` finished long ago and the PR
-is "clean", so GitHub refuses to arm auto-merge and the action's
-**direct-merge** outcome is the expected path. It merges with
+is "clean", so the merge is immediate and the action reports
+**`merged-direct`**. Should a PR have stopped being clean in between and the
+action arm instead, the gate disarms it again: GitHub keeps auto-merge
+armed across a collaborator's pushes, so an armed PR would merge whatever
+digest Renovate pushed next, unaged. It merges with
 `MARKETPLACE_SMOKE_PAT` so the push to `main` triggers main's push
 workflows as a human merge would; without the secret the merge job skips
 with a warning and the PRs wait. Each merge leaves a comment on the PR
