@@ -126,8 +126,10 @@ second fixture is built from the [OWASP Docker Security Cheat
 Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html)
 instead, with one service per violation that can be expressed in a Compose
 file. That covers Rules 1 to 8, 12 and 13. Rules 0, 9, 10 and 11 concern the
-host, the CI pipeline and the daemon. Twenty services, same tools, same day,
-no `version:` key. This fixture shows where compose-lint has no rule.
+host, the CI pipeline and the daemon. Twenty-one services, same tools, no
+`version:` key: twenty were run on 2026-10-09, and the SELinux row was added
+on 2026-10-14 against the same image digests. This fixture shows where
+compose-lint has no rule.
 
 | OWASP rule — violation | compose-lint | KICS | DockSec | Semgrep | DCLint |
 |---|---|---|---|---|---|
@@ -143,6 +145,7 @@ no `version:` key. This fixture shows where compose-lint has no rule.
 | 5a — port published on `0.0.0.0` | ✅ | ✅ | ✗ ‡ | — | ✅ |
 | 6 — `seccomp:unconfined` | ✅ | ✅ | ✅ | ✗ † | — |
 | 6 — `apparmor:unconfined` | ✅ | — | ✅ | — | — |
+| 6 — SELinux `label:disable` | ✅ | — | ✗ | ✗ † | — |
 | 7 — no memory or CPU limits | ✅ | ✗ \* | ✅ | — | — |
 | 7 — no `pids_limit` | — | ✗ | — | — | — |
 | 7 — `restart: always`, unbounded | — | — | — | — | — |
@@ -151,22 +154,24 @@ no `version:` key. This fixture shows where compose-lint has no rule.
 | 12 — credential as a literal `environment:` value | ✅ | ✅ | ✅ | — | — |
 | 13 — mutable `:latest` tag | ✅ | — | ✅ | — | ✅ |
 | 13 — version tag without a digest | ✅ | — | — | — | — |
-| **Flagged, of 20** | **15** | **9** | **13** | **0** † | **2** |
-| **No rule for it** | 5 | 9 | 5 | 15 | 18 |
-| **Has a rule, missed it** | 0 | 2 | 2 | 5 † | 0 |
+| **Flagged, of 21** | **16** | **9** | **13** | **0** † | **2** |
+| **No rule for it** | 5 | 10 | 5 | 15 | 19 |
+| **Has a rule, missed it** | 0 | 2 | 3 | 6 † | 0 |
 
 ✅ flagged · ✗ has a rule for it, did not flag it · — no rule for it.
-\* fires with the obsolete `version: "3.9"` key present (10 of 20). † Semgrep's
-rules all require that key; with it added they catch these 5. ‡ only for a
+\* fires with the obsolete `version: "3.9"` key present (10 of 21). † Semgrep's
+rules all require that key; with it added they catch these 6. ‡ only for a
 fixed list of sensitive ports. Checkov, Trivy and
-Hadolint are 0 of 20 on both variants and are left off the table.
+Hadolint are 0 of 21 on both variants and are left off the table.
 
-compose-lint has no rule for five of the twenty. They are listed under
+compose-lint has no rule for five of the twenty-one. They are listed under
 [What compose-lint does not do](#what-compose-lint-does-not-do). It missed
 none of the rules it has. DockSec is the closest second and the only tool
 that models the shared default network. It misses an explicit `user: root`,
-because it checks for the absence of `user:`, and its port rule did not
-cover the port the fixture publishes. KICS has queries for two of the three
+because it checks for the absence of `user:`, its port rule did not
+cover the port the fixture publishes, and its disabled-`security_opt` rule
+fired on `seccomp:unconfined` and `apparmor:unconfined` but not on
+`label:disable`. KICS has queries for two of the three
 Rule 7 items and fired neither on a file without `version:`. With
 `version: "3.9"` it recovers memory and CPU; its PID query only fires on the
 old version 2 format, and it has no query for `restart: always`. No tool
@@ -237,7 +242,13 @@ on a file without `version:` and 11 with `version: "3.9"` added, because the
 memory and CPU queries key off the version number and skip a Compose
 Specification file. KICS is a broad IaC scanner and Compose is one of many
 platforms it covers. Each query page describes the pattern and shows a
-compliant and a non-compliant sample.
+compliant and a non-compliant sample. The queries compose-lint lacks are
+ones it retired or declined with the reason on the rule page: the PID limit
+and the missing healthcheck
+([ADR-028](adr/028-pre-1.0-rule-id-sweep.md)), the host user namespace and
+`cgroup_parent` ([CL-0010](rules/CL-0010.md)), the restart cap
+([CL-0026](rules/CL-0026.md)) and privileged host ports
+([CL-0005](rules/CL-0005.md)).
 
 Three issues on KICS's tracker matter if you rely on it for Compose. The
 maintainers' position, stated in 2023 on
@@ -374,16 +385,24 @@ compose-lint has no rule for:
   the Compose file, so compose-lint cannot tell a root default from a
   non-root one and does not guess. It flags `user: root` when written.
   DockSec takes the other approach and flags the absence.
-- **Services on the shared default network** (Rule 5). Network segmentation
-  is a property of the whole file rather than one service, and no rule
-  models it today.
+- **Services on the shared default network** (Rule 5). Met by construction:
+  Compose attaches a project to its own `<project>_default` user-defined
+  bridge, so the `docker0` bridge that CIS 5.30 asks not to use is avoided
+  without a `networks:` key, and whether two services of one project should
+  reach each other is a design decision no rule grades
+  ([CL-0008](rules/CL-0008.md)).
 - **No `pids_limit`** (Rule 7). CL-0012 flagged this and was retired. On a
   systemd host the limit is bounded by `DefaultTasksMax` whether or not the
   file sets it.
-- **`restart: always`** (Rule 7). No rule.
+- **`restart: always`** (Rule 7). Docker already delays each restart by
+  double the previous delay, and a retry cap turns a restart loop into an
+  outage, so no rule asks for one ([CL-0026](rules/CL-0026.md)).
 - **A host directory mounted read-write that could be `:ro`** (Rule 8).
-  CL-0013 and CL-0025 flag sensitive and root-equivalent host paths. An
-  ordinary read-write bind mount is not a finding.
+  [CL-0013](rules/CL-0013.md) and [CL-0025](rules/CL-0025.md) flag sensitive
+  and root-equivalent host paths, where write access is what makes the path
+  dangerous. Whether an ordinary path needs writing is a fact about the
+  application that the Compose file does not carry, so an ordinary read-write
+  bind mount is not a finding.
 
 ## Reproduce it
 
@@ -471,6 +490,9 @@ misses on every service that lacks them, which is what the tool is for.
 The OWASP-framed fixture has the same shape, one service per row of its
 table, named `rule<N>-<violation>`, with the same images. It was run with
 the same commands, once as written and once with `version: "3.9"` prepended.
+The SELinux service (`security_opt: [label:disable]`) was run the same way
+on 2026-10-14, with each image pinned to the digest the 2026-10-09 run had
+recorded.
 
 ## Corrections
 
@@ -482,7 +504,7 @@ output that shows it and the row will be corrected.
 
 Known changes that would move these results when they land:
 
-- Semgrep's column goes from 0 to 5 of 20 when
+- Semgrep's column goes from 0 to 6 of 21 when
   [semgrep-rules#4037](https://github.com/semgrep/semgrep-rules/pull/4037)
   merges, and gains `user: root` with
   [#4048](https://github.com/semgrep/semgrep-rules/pull/4048).
@@ -490,4 +512,4 @@ Known changes that would move these results when they land:
   [#7077](https://github.com/Checkmarx/kics/issues/7077) is fixed.
 - Trivy gets a column if
   [trivy#8729](https://github.com/aquasecurity/trivy/issues/8729) is taken up.
-- DockSec moves to 14 of 20 if it starts flagging an explicit `user: root`.
+- DockSec moves to 14 of 21 if it starts flagging an explicit `user: root`.
