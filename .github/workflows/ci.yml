@@ -215,7 +215,10 @@ jobs:
           # renovate: datasource=github-releases depName=docker/compose
           COMPOSE_VERSION: v5.6.0
         run: .github/scripts/install-compose-plugin.sh
-      - run: pytest
+      # -n auto: one pytest-xdist worker per core. The suite is ~6,000 small
+      # tests with no single slow one, so it parallelises almost linearly
+      # (5m22s serial, 71s on 4 workers, same results).
+      - run: pytest -n auto
 
   # Two gates over one measurement run.
   #
@@ -286,7 +289,7 @@ jobs:
         env:
           COVERAGE_PROCESS_START: ${{ github.workspace }}/pyproject.toml
         run: |
-          pytest --cov=compose_lint --cov-report=term-missing \
+          pytest -n auto --cov=compose_lint --cov-report=term-missing \
             --cov-report=xml --cov-fail-under=80
       - name: Patch coverage (>= 90% of the lines this PR touches)
         # Skipped on push: a merge to main has no base to diff against, and

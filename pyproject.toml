@@ -114,6 +114,10 @@ dev = [
     # Statement coverage gate (>=80%) is enforced by the `coverage` CI job.
     # Threshold lives in [tool.coverage.report] below.
     "pytest-cov==7.1.0",
+    # Runs the suite across every core (`pytest -n auto` in CI, os-smoke and
+    # scripts/preflight.sh): about 5.5 min serial, about 1 min on a 4-core
+    # runner. pytest-cov combines the workers' coverage data itself.
+    "pytest-xdist==3.8.0",
     "types-pyyaml==6.0.12.20260906",
 ]
 

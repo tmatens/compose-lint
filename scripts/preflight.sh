@@ -100,7 +100,7 @@ coverage_run() {
   printf 'import coverage\ncoverage.process_startup()\n' > "${shim}/sitecustomize.py"
   PYTHONPATH="${shim}${PYTHONPATH:+:${PYTHONPATH}}" \
   COVERAGE_PROCESS_START="${PWD}/pyproject.toml" \
-    pytest --cov=compose_lint --cov-report=term --cov-report=xml --cov-fail-under=80
+    pytest -n auto --cov=compose_lint --cov-report=term --cov-report=xml --cov-fail-under=80
 }
 
 patch_coverage() {
