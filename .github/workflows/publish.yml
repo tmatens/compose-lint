@@ -1105,6 +1105,7 @@ jobs:
             git diff --name-only "${targets[@]}"
           fi
       - name: Commit, push, open PR
+        id: pr
         if: env.no_changes != '1'
         env:
           TAG: ${{ github.ref_name }}
@@ -1146,44 +1147,52 @@ jobs:
           EOF
           # Strip the 10-space indentation that the YAML block scalar requires.
           sed -i -E 's/^          //' /tmp/pr-body.md
-          gh pr create \
+          url=$(gh pr create \
             --base main \
             --head "${branch}" \
             --title "Bump marketplace-smoke pin to ${TAG}" \
-            --body-file /tmp/pr-body.md
+            --body-file /tmp/pr-body.md)
+          echo "number=${url##*/}" >> "$GITHUB_OUTPUT"
 
-          # Arm auto-merge: GitHub merges once `ci-ok` goes green, which is
-          # what a human was waiting for anyway. This PR opens strictly AFTER
-          # publish, docker-publish and create-release succeeded, so the
-          # merge gates nothing irreversible -- the release-gate environment
-          # approval upstream is the control, and it has already happened.
-          # The pinned SHA is `git rev-parse "${TAG}^{commit}"` from the step
-          # above, so "is this the right SHA" is true by construction rather
-          # than by inspection.
-          #
-          # Not failing the job when this does not take. The release has
-          # shipped by now; a red X here would say something is wrong with
-          # the release when the only thing wrong is that a follow-up PR
-          # needs a manual click. The warning and the step summary say which.
-          #
-          # Requires "Allow auto-merge" on the repository (Settings ->
-          # General). Without it `gh pr merge --auto` exits non-zero and this
-          # falls through to the warning.
-          if gh pr merge "${branch}" --auto --squash --delete-branch; then
-            echo "Auto-merge armed; GitHub will squash-merge once ci-ok is green."
-            {
-              echo ""
-              echo "Auto-merge is armed on the pin PR -- it lands on its own once \`ci-ok\` passes,"
-              echo "and that merge triggers the post-release marketplace smoke."
-            } >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "::warning::Could not arm auto-merge on the pin PR -- merge it by hand to trigger the post-release smoke. Check that 'Allow auto-merge' is enabled in Settings > General."
-            {
-              echo ""
-              echo "**Auto-merge could not be armed.** Merge the pin PR by hand; that merge is"
-              echo "what triggers the post-release marketplace smoke."
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
+      # Arm auto-merge: GitHub merges once `ci-ok` goes green, which is
+      # what a human was waiting for anyway. This PR opens strictly AFTER
+      # publish, docker-publish and create-release succeeded, so the
+      # merge gates nothing irreversible -- the release-gate environment
+      # approval upstream is the control, and it has already happened.
+      # The pinned SHA is `git rev-parse "${TAG}^{commit}"` from the step
+      # above, so "is this the right SHA" is true by construction rather
+      # than by inspection.
+      #
+      # The action never fails the job. The release has shipped by now; a
+      # red X here would say something is wrong with the release when the
+      # only thing wrong is that a follow-up PR needs a manual click. Its
+      # warning and the step summary below say which. The PAT is the one
+      # already required by this job, so the token input is never empty here.
+      - name: Arm auto-merge on the pin PR
+        id: arm
+        if: env.no_changes != '1'
+        uses: $/.github/actions/arm-auto-merge
+        with:
+          pull-request: ${{ steps.pr.outputs.number }}
+          token: ${{ secrets.MARKETPLACE_SMOKE_PAT }}
+          note: Merge the pin PR by hand to trigger the post-release smoke.
+
+      - name: Step summary
+        if: env.no_changes != '1'
+        env:
+          RESULT: ${{ steps.arm.outputs.result }}
+        run: |
+          {
+            echo ""
+            case "${RESULT}" in
+              armed|already-armed|merged-direct)
+                echo "Auto-merge is armed on the pin PR -- it lands on its own once \`ci-ok\` passes,"
+                echo "and that merge triggers the post-release marketplace smoke." ;;
+              *)
+                echo "**Auto-merge could not be armed** (\`${RESULT}\`). Merge the pin PR by hand; that merge is"
+                echo "what triggers the post-release marketplace smoke." ;;
+            esac
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # Move the floating Action major tag (uses: tmatens/compose-lint@v1) to
   # this release once everything above has published and verified. Only for
