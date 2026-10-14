@@ -44,6 +44,15 @@ inputs:
       post-release smoke." The warning already names the PR.
     required: false
     default: 'Merge it by hand.'
+  expected-head:
+    description: >
+      Head commit SHA the PR must still be at, passed to `gh pr merge
+      --match-head-commit`, so a push that lands between the caller's
+      decision and the merge fails the merge (`result: failed`) instead of
+      landing content the caller never looked at. Leave empty when the caller
+      opened the PR itself moments ago and nothing else can push to it.
+    required: false
+    default: ''
 
 outputs:
   result:
@@ -63,19 +72,24 @@ runs:
         GH_REPO: ${{ github.repository }}
         PR: ${{ inputs.pull-request }}
         NOTE: ${{ inputs.note }}
+        EXPECTED_HEAD: ${{ inputs.expected-head }}
       run: |
         set -euo pipefail
         result=failed
+        pin=()
+        if [ -n "${EXPECTED_HEAD}" ]; then
+          pin=(--match-head-commit "${EXPECTED_HEAD}")
+        fi
         if [ -z "${GH_TOKEN}" ]; then
           result=skipped-no-token
           echo "::warning::No PAT configured -- auto-merge not armed on ${PR} (a GITHUB_TOKEN-armed merge would skip main's push workflows). ${NOTE}"
         elif [ "$(gh pr view "${PR}" --json autoMergeRequest --jq '.autoMergeRequest != null')" = "true" ]; then
           result=already-armed
           echo "Auto-merge is already armed on ${PR} (an earlier run); nothing to do."
-        elif gh pr merge "${PR}" --auto --squash --delete-branch; then
+        elif gh pr merge "${PR}" --auto --squash --delete-branch "${pin[@]}"; then
           result=armed
           echo "Auto-merge armed on ${PR}; GitHub squash-merges it once ci-ok is green."
-        elif gh pr merge "${PR}" --squash --delete-branch; then
+        elif gh pr merge "${PR}" --squash --delete-branch "${pin[@]}"; then
           # Arming is refused on a PR whose required checks have all finished
           # ("clean" status); the direct merge succeeds only in that state.
           result=merged-direct

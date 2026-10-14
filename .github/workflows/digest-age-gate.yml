@@ -1,0 +1,216 @@
+name: Age-gate gcr/ghcr digest PRs
+
+# Merges Renovate's digest refreshes from gcr.io and ghcr.io (distroless,
+# the oss-fuzz builder, vhs) once they have been open and unchanged for the
+# same three days the Docker Hub digests wait under Renovate's own
+# minimumReleaseAge gate (#1059).
+#
+# Why this exists: Renovate's docker datasource takes releaseTimestamp from
+# Docker Hub's tag_last_pushed and from nowhere else -- the OCI distribution
+# API exposes no publish time (renovatebot/renovate#39064, #38656), and
+# distroless's reproducible builds zero the image timestamps anyway -- so
+# the three-day gate cannot be enforced on these images and
+# .github/renovate.json leaves them out of every automerge rule. They open
+# with `manual-merge`, and the review a human did on them is already
+# mechanical: `dockerfile-digests` and both `docker-smoke` legs are required
+# via `ci-ok`. The click added nothing but the age check. This is the age
+# check.
+#
+# The clock: the head commit's committer timestamp. "First time we saw this
+# digest" is never earlier than its publish time, so 72h from first-seen is
+# at least 72h from publish -- the gate's threat model (a compromised or
+# broken release is usually pulled within days) is served, conservatively.
+# PR created_at would NOT do: Renovate force-pushes the branch when the
+# digest moves again, so an old PR can carry a minutes-old digest. The head
+# commit resets with every push, so a fresh digest waits its own 72h and a
+# plain rebase waits again too (over-conservative, never leaky).
+#
+# Built to be deleted. If upstream Renovate gains a registry-agnostic
+# release timestamp (renovatebot/renovate#39064; the OCI `created` draft
+# #43566 cannot cover distroless, which publishes epoch-0 `created`), scope
+# these images back into the digest automerge rule in renovate.json and
+# remove this workflow and its docs/CI.md section.
+#
+# The merge is the shared arm-auto-merge action, pinned to the head SHA the
+# selection looked at. By the time this runs, ci-ok finished long ago, so
+# the PR is in "clean" status and GitHub refuses to arm auto-merge on it;
+# the action's direct-merge outcome is the expected path, and the pin makes
+# a push that lands in between fail the merge rather than ship unreviewed
+# content. Merged with MARKETPLACE_SMOKE_PAT, not the default token, so the
+# push to main triggers main's push workflows (CI, docs, scout) as a human
+# merge would -- a github-actions[bot] merge would not (recursion guard).
+# Without the secret the merge job skips with a warning and the PRs stay
+# where they were: open, labelled, waiting for a human.
+#
+# Red, conflicting or hand-touched PRs are left alone and keep
+# `manual-merge`, so the "what needs me" query stays truthful. Majors,
+# release-path actions, twine/sigstore and non-patch security bumps are
+# judgment calls, not tooling gaps, and are out of scope by selection: this
+# touches only PRs that are all of (author renovate[bot], head renovate/*,
+# label manual-merge, title "Update <image> Docker digest to <sha>").
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: >-
+          Report which PRs would merge and why the rest would not; merge
+          nothing. The default for a manual run, so a dispatch is always
+          safe to use as a probe.
+        type: boolean
+        default: true
+  schedule:
+    - cron: "23 6 * * *"
+
+permissions: {}
+
+env:
+  # Matches `minimumReleaseAge: "3 days"` on the Docker Hub digest rule in
+  # .github/renovate.json; change both or neither.
+  MIN_AGE_HOURS: "72"
+
+jobs:
+  select:
+    name: Select digest PRs that have aged 72h
+    runs-on: ubuntu-26.04
+    timeout-minutes: 3
+    permissions:
+      pull-requests: read
+    outputs:
+      eligible: ${{ steps.select.outputs.eligible }}
+    steps:
+      - name: Evaluate every candidate PR
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          set -euo pipefail
+          now=$(date -u +%s)
+          # Everything this gate could ever touch. The label is the selector
+          # for registry: Docker Hub digests automerge via Renovate and carry
+          # no label, so manual-merge + the digest title is exactly the
+          # gcr.io/ghcr.io set.
+          # Two calls, not one: asking `gh pr list` for commits and the check
+          # rollup of 50 PRs at once exceeds GitHub's GraphQL node limit.
+          gh pr list --state open --author 'app/renovate' --label manual-merge --limit 50 \
+            --json number --jq '.[].number' > numbers.txt
+          while read -r n; do
+            gh pr view "${n}" \
+              --json number,title,headRefName,headRefOid,isDraft,isCrossRepository,mergeStateStatus,commits,statusCheckRollup
+          done < numbers.txt | jq -s '.' > candidates.json
+          # One row per PR: eligible or the first reason it is not. All
+          # conditions are conjunctive; a PR has to be clean on every one.
+          jq -r --argjson now "${now}" --argjson min_hours "${MIN_AGE_HOURS}" '
+            def head_commit: . as $pr | ($pr.commits[] | select(.oid == $pr.headRefOid)) // $pr.commits[-1];
+            def age_hours: (($now - (head_commit.committedDate | fromdateiso8601)) / 3600 | floor);
+            def ci_ok: [.statusCheckRollup[]? | select(.name == "ci-ok" and .status == "COMPLETED" and .conclusion == "SUCCESS")] | length > 0;
+            def reason:
+              if (.headRefName | startswith("renovate/")) | not then "head branch is not renovate/*"
+              elif (.title | test("^Update .+ Docker digest to [0-9a-f]+$")) | not then "title is not a Docker digest update"
+              elif .isDraft then "draft"
+              elif .isCrossRepository then "head is in a fork"
+              elif ([.commits[].authors[].login] | all(. == "renovate[bot]")) | not then "a commit is not authored by renovate[bot]"
+              elif (ci_ok | not) then "ci-ok has not succeeded on the head commit"
+              elif .mergeStateStatus != "CLEAN" then "merge state is \(.mergeStateStatus), not CLEAN"
+              elif age_hours < $min_hours then "head commit is \(age_hours)h old, needs \($min_hours)h"
+              else "eligible" end;
+            .[] | [.number, .headRefOid, (age_hours|tostring), .mergeStateStatus, reason, .title] | @tsv
+          ' candidates.json > rows.tsv
+          eligible=$(awk -F'\t' '$5 == "eligible" {printf "%s{\"number\":%s,\"head\":\"%s\"}", (n++ ? "," : ""), $1, $2}' rows.tsv)
+          echo "eligible=[${eligible}]" >> "${GITHUB_OUTPUT}"
+          {
+            echo "### Age gate for gcr.io/ghcr.io digest PRs"
+            if [ "${DRY_RUN}" = "true" ]; then echo ""; echo "**Dry run** -- nothing is merged."; fi
+            echo ""
+            if [ ! -s rows.tsv ]; then
+              echo "No open manual-merge PR from Renovate."
+            else
+              echo "| PR | head age | state | decision |"
+              echo "|---|---|---|---|"
+              awk -F'\t' '{printf "| #%s %s | %sh | %s | %s |\n", $1, $6, $3, $4, $5}' rows.tsv
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+          echo "eligible: [${eligible}]"
+          cat rows.tsv
+
+  merge:
+    name: "Merge #${{ matrix.number }}"
+    needs: select
+    # `inputs.dry-run` is unset on a schedule, so `!= true` is live there and
+    # only an explicit dispatch with the box ticked (the default) is a probe.
+    if: needs.select.outputs.eligible != '[]' && inputs.dry-run != true
+    runs-on: ubuntu-26.04
+    timeout-minutes: 3
+    permissions:
+      # Only what fetching the `$/` self-repository action takes. No
+      # checkout: nothing from the PR head is ever on this runner.
+      contents: read
+    strategy:
+      # One at a time: the merges are squashes onto main, and a failure on
+      # one (GitHub rejecting the head pin, say) should be legible on its own.
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.select.outputs.eligible) }}
+    steps:
+      - name: Leave the audit trail on the PR
+        env:
+          GH_TOKEN: ${{ secrets.MARKETPLACE_SMOKE_PAT }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ matrix.number }}
+          HEAD: ${{ matrix.head }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::warning::MARKETPLACE_SMOKE_PAT is not configured -- #${PR} is eligible but is left for a human (a GITHUB_TOKEN merge would skip main's push workflows)."
+            exit 0
+          fi
+          gh pr comment "${PR}" --body "Age-gated merge: head commit \`${HEAD:0:7}\` has been unchanged for at least ${MIN_AGE_HOURS}h (first-seen is never earlier than publish, so this is the same wait Docker Hub digests get from Renovate's \`minimumReleaseAge\`), \`ci-ok\` is green and the PR is clean. Merging it pinned to that head; see \`digest-age-gate.yml\` ([run](${RUN_URL}))." \
+            || echo "::warning::could not comment on #${PR}; merging anyway"
+      - name: Merge, pinned to the head the selection saw
+        id: arm
+        uses: $/.github/actions/arm-auto-merge
+        with:
+          pull-request: ${{ matrix.number }}
+          token: ${{ secrets.MARKETPLACE_SMOKE_PAT }}
+          expected-head: ${{ matrix.head }}
+          note: It is eligible for the age gate; merge it by hand or wait for tomorrow's run.
+      - name: Record the outcome
+        env:
+          RESULT: ${{ steps.arm.outputs.result }}
+          PR: ${{ matrix.number }}
+        run: |
+          echo "- #${PR}: \`${RESULT}\`" >> "${GITHUB_STEP_SUMMARY}"
+          case "${RESULT}" in
+            merged-direct) ;;
+            armed|already-armed)
+              # Not expected: a CLEAN PR cannot be armed. If it happens the
+              # PR was no longer clean when the action ran, and GitHub will
+              # merge it once it is -- the head pin holds, so the content is
+              # still what was aged.
+              echo "::notice::#${PR} was armed rather than merged directly; it was not in clean status any more." ;;
+            *)
+              echo "::warning::#${PR} did not merge (${RESULT}); it stays open with manual-merge and is re-evaluated tomorrow." ;;
+          esac
+
+  # Scheduled runs have no PR to go red on. Without this the only signal
+  # for a broken gate is an email to the workflow author -- and a silently
+  # broken gate reads as "those PRs just have not aged yet".
+  report-failure:
+    name: Report scheduled failure
+    needs:
+      - select
+      - merge
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: $/.github/actions/report-scheduled-failure
+        with:
+          note: The gcr.io/ghcr.io digest PRs were not evaluated; they wait for a human until the next green run.
