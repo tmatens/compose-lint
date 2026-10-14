@@ -674,6 +674,56 @@ condition.
 
 ---
 
+## Dependency updates — Renovate
+
+Renovate opens every dependency bump as a PR (`.github/renovate.json`; the
+schedule is Monday before 04:00 UTC, base images and security fixes open at
+once). Whether a PR merges itself or waits for a person follows one rule:
+
+**A bump merges itself when the PR's own CI exercises the new version, so a
+green run is the review.** It waits for a person when the first real run
+would come after the tag, or when it changes a contract rather than
+refreshing one. It is disabled when the pin records a fact rather than a
+dependency choice, or when another workflow owns it.
+
+Automerge still has two gates on top of a green `ci-ok`: the release must
+be three days old (`minimumReleaseAge`; `renovate/stability-days` stays
+pending until then), and Renovate merges it itself rather than arming
+GitHub auto-merge, so the age check cannot be skipped. A red PR never
+merges. Security PRs open immediately, ungrouped and unaged, and then
+follow the same rules as any other update.
+
+| Update | Outcome | Why |
+| --- | --- | --- |
+| Patch, pin, digest, lock maintenance (Python, actions) | Automerge | Smallest change; the full suite runs on the PR |
+| Minors of Python dev tooling, including `build` and `twine` | Automerge | Every optional-dependency group is installed and run by a PR gate; `dist-check` builds and `twine check`s the dists |
+| `pyyaml` minors | Automerge | `pyproject.toml` allows `>=6.0.2,<7`, so only the locks move, never the wheel's range |
+| Minors of actions on the CI path | Automerge | The bumped action runs in the PR's own workflows |
+| Minors of release-path actions that also run on the CI path (`checkout`, `setup-python`, `upload-artifact`, `login-action`, `build-push-action`, `setup-buildx-action`, `scout-action`, `codeql-action`) | Automerge | Same as above: the PR runs them before any tag does |
+| Compose, actionlint, hadolint pins in `ci.yml` (patch and minor) | Automerge | Each bump runs the tool it bumps: the differential suites, actionlint over every workflow, hadolint over the Dockerfile. A red Compose bump is the one that needs triage |
+| Docker Hub base-image digests | Automerge | Docker Hub supplies the release timestamp the three-day gate needs; `dockerfile-digests` and `docker-smoke` run on the PR |
+| gcr.io / ghcr.io digests (distroless, oss-fuzz builder, vhs) | `age-gated`, merged by `digest-age-gate.yml` | Same review as Docker Hub, but those registries give Renovate no timestamp; the gate waits 72h from first sight instead (see [`digest-age-gate.yml`](#digest-age-gateyml)) |
+| Majors of anything | `manual-merge` | A changed contract: a green run only proves the old tests still pass |
+| Ubuntu runner image | `manual-merge` | Arrives as a major and moves every job at once |
+| Minors of the six release-only actions (`attest-build-provenance`, `download-artifact`, `sbom-action`, `gh-action-pypi-publish`, `cosign-installer`, `gh-action-sigstore-python`) | `manual-merge` | They run only after the tag, so their first real run is after the irreversible step. They also hold the `github-actions-release` group |
+| `sigstore` minors | `manual-merge` | The verifier must move in lockstep with `gh-action-sigstore-python`, which is manual |
+| The demo `compose-lint` pin (`scripts/demo/`) | Disabled | It records which release the committed GIF was rendered on; it moves only when the demo is regenerated ([`RELEASING.md`](RELEASING.md)) |
+| Forgejo smoke stack pins | Disabled | Owned by [`forgejo-smoke-bump.yml`](#forgejo-smoke-bumpyml), which also moves the docs claim Renovate cannot |
+
+**Labels.** `manual-merge` means a person has to act, in every case. A
+grouped PR carries it exactly when at least one update in it is not
+eligible, which is exactly when Renovate will not merge it. `age-gated`
+means waiting out 72h; the gate adds `manual-merge` to one only if it goes
+red, conflicts, or is hand-touched. An automerge-eligible PR whose CI is
+red carries no label, so it does not appear in a `manual-merge` query:
+look for open Renovate PRs with a failing check as well.
+
+Each rule's full reasoning, with the Renovate behaviour it depends on, is
+in its `description` in `.github/renovate.json`. Change the rule there and
+this table together.
+
+---
+
 ## Where findings land
 
 | Signal                              | Location                                               |
@@ -686,7 +736,7 @@ condition.
 | Vulnerability with an available fix | Rolling issue labelled `fixable-vulns`                 |
 | Scheduled workflow failure          | Issue `Scheduled run failed: <workflow>` — one per workflow, repeat failures comment on it (`.github/actions/report-scheduled-failure`); plus the author email and red X |
 | Post-release smoke failure          | Issue `Post-release run failed: Marketplace smoke test` — same action, separate thread from the weekly one so a break in a shipped release is not triaged as a flake |
-| Renovate PR                         | Opens a PR tagged accordingly; patch, pin, digest and lock-maintenance bumps automerge once green **and** the release is three days old (`renovate/stability-days` stays pending until then). Minors automerge on the same terms when the PR itself exercises them: Python dev tooling (including `build` and `twine`, which `dist-check` runs), the `pyyaml` runtime dep (its range in `pyproject.toml` is untouched; only the locks move), actions on the CI path, release-path actions that also run on the CI path, and the pinned Compose/actionlint/hadolint binaries (patch too); Docker Hub digests as well. Security PRs open at once, ungrouped and unaged, and follow the same rules. What still opens with `manual-merge`: majors, minors of the six release-only actions (`attest-build-provenance`, `download-artifact`, `sbom-action`, `gh-action-pypi-publish`, `cosign-installer`, `gh-action-sigstore-python`) and of `sigstore` (which moves with that action). Digests from gcr.io/ghcr.io (no release timestamp to age against) open with `age-gated` instead; `digest-age-gate.yml` merges them once unchanged for 72h and adds `manual-merge` only to one that is red, conflicting, draft or hand-touched |
+| Renovate PR                         | A PR per update. Automerges once green and three days old when the PR itself exercises the change; otherwise labelled `manual-merge` (a person has to act) or `age-gated` (gcr/ghcr digests, merged by `digest-age-gate.yml` after 72h). See [Dependency updates](#dependency-updates-renovate) |
 
 The Security tab is the single pane of glass for everything except
 PR-gating failures (which stay on the PR) and Renovate bumps (which
