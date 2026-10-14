@@ -661,6 +661,11 @@ matches `requirements*.lock`. That is intended — the locks are compiled
 `--universal`, so a dependency bump is exactly the change that can break
 on one OS alone — but it does mean Renovate PRs wait on macOS/Windows.
 
+Both jobs install the dev environment with `uv pip install --require-hashes`
+from the same lock, not pip: pip took about 80 seconds of the Windows leg to
+install the dev lock even with a warm cache. The uv version is pinned to the
+one ci.yml's `lockfiles` job uses.
+
 The `workflow_dispatch`, weekly `schedule` and `push: main` triggers all
 remain. The cron is not redundant with the gate: drift that arrives with
 no PR at all — a yanked dependency, a resolver change, a runner-image

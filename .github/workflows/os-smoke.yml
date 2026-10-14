@@ -79,17 +79,23 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: |
-            requirements.lock
-            requirements-dev.lock
-            requirements-build.lock
+      # uv, not pip, for the install: same hash-pinned lock, same
+      # --require-hashes, but pip spent ~80 s of the Windows leg installing
+      # ~120 packages with a warm cache. The version matches ci.yml's
+      # lockfiles job (Renovate moves both).
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.24"
+          enable-cache: true
+          cache-dependency-glob: requirements-dev.lock
       - name: Install pinned dev env
         # The lockfiles are compiled with `--universal`, so the hash set
-        # covers macOS/Windows wheels too.
+        # covers macOS/Windows wheels too. Into the interpreter setup-python
+        # put on PATH, named explicitly so uv cannot pick another one.
         run: |
-          pip install --require-hashes -r requirements-dev.lock
-          pip install --no-deps -e .
+          py="$(python -c 'import sys; print(sys.executable)')"
+          uv pip install --python "${py}" --require-hashes -r requirements-dev.lock
+          uv pip install --python "${py}" --no-deps -e .
       # -n auto as in ci.yml's test job: one pytest-xdist worker per core.
       - run: pytest -n auto
 
@@ -118,10 +124,19 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
-          cache: pip
-          cache-dependency-path: requirements-dev.lock
+      # uv, not pip, for the install: same hash-pinned lock, same
+      # --require-hashes, but pip spent ~80 s of the Windows leg installing
+      # ~120 packages with a warm cache. The version matches ci.yml's
+      # lockfiles job (Renovate moves both).
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.24"
+          enable-cache: true
+          cache-dependency-glob: requirements-dev.lock
       - name: Install pinned dev env
-        run: pip install --require-hashes -r requirements-dev.lock
+        run: |
+          py="$(python -c 'import sys; print(sys.executable)')"
+          uv pip install --python "${py}" --require-hashes -r requirements-dev.lock
 
       - name: Clean stack with a config present should pass
         run: |
