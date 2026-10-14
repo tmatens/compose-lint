@@ -11,10 +11,11 @@ name: Age-gate gcr/ghcr digest PRs
 # distroless's reproducible builds zero the image timestamps anyway -- so
 # the three-day gate cannot be enforced on these images and
 # .github/renovate.json leaves them out of every automerge rule. They open
-# with `manual-merge`, and the review a human did on them is already
-# mechanical: `dockerfile-digests` and both `docker-smoke` legs are required
-# via `ci-ok`. The click added nothing but the age check. This is the age
-# check.
+# with `age-gated` (renovate.json labels exactly this set, so `manual-merge`
+# keeps meaning "a human has to act"), and the review a human did on them
+# is already mechanical: `dockerfile-digests` and both `docker-smoke` legs
+# are required via `ci-ok`. The click added nothing but the age check.
+# This is the age check.
 #
 # The clock: the head commit's committer timestamp. "First time we saw this
 # digest" is never earlier than its publish time, so 72h from first-seen is
@@ -44,11 +45,13 @@ name: Age-gate gcr/ghcr digest PRs
 # Without the secret the merge job skips with a warning and the PRs stay
 # where they were: open, labelled, waiting for a human.
 #
-# Red, conflicting or hand-touched PRs are left alone and keep
-# `manual-merge`, so the "what needs me" query stays truthful. Majors,
+# Red, conflicting, draft or hand-touched PRs are left alone and get
+# `manual-merge` added (removed again once the PR is clean), so the "what
+# needs me" query stays truthful; a PR whose ci-ok is still running is
+# simply waited for. Converting a PR to a draft is the hold lever. Majors,
 # release-only actions and sigstore are judgment calls, not tooling gaps,
 # and are out of scope by selection: this touches only PRs that are all
-# of (author renovate[bot], head renovate/*, label manual-merge, title
+# of (author renovate[bot], head renovate/*, label age-gated, title
 # "Update <image> Docker digest to <sha>").
 
 on:
@@ -77,7 +80,9 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 3
     permissions:
-      pull-requests: read
+      # write: the step adds/removes `manual-merge` on candidates it refuses
+      # for a non-age reason. Labels only; it never merges or pushes.
+      pull-requests: write
     outputs:
       eligible: ${{ steps.select.outputs.eligible }}
     steps:
@@ -90,48 +95,70 @@ jobs:
         run: |
           set -euo pipefail
           now=$(date -u +%s)
-          # Everything this gate could ever touch. The label is the selector
-          # for registry: Docker Hub digests automerge via Renovate and carry
-          # no label, so manual-merge + the digest title is exactly the
-          # gcr.io/ghcr.io set.
+          # Everything this gate could ever touch. renovate.json puts
+          # `age-gated` on exactly the gcr.io/ghcr.io digest set (Docker Hub
+          # digests automerge via Renovate and carry no label); the title
+          # test below is the second guard.
           # Two calls, not one: asking `gh pr list` for commits and the check
           # rollup of 50 PRs at once exceeds GitHub's GraphQL node limit.
-          gh pr list --state open --author 'app/renovate' --label manual-merge --limit 50 \
+          gh pr list --state open --author 'app/renovate' --label age-gated --limit 50 \
             --json number --jq '.[].number' > numbers.txt
           while read -r n; do
             gh pr view "${n}" \
-              --json number,title,headRefName,headRefOid,isDraft,isCrossRepository,mergeStateStatus,commits,statusCheckRollup
+              --json number,title,headRefName,headRefOid,isDraft,isCrossRepository,mergeStateStatus,commits,statusCheckRollup,labels
           done < numbers.txt | jq -s '.' > candidates.json
           # One row per PR: eligible or the first reason it is not. All
           # conditions are conjunctive; a PR has to be clean on every one.
+          # Each refusal is also classed: `human` (red, conflict, draft, fork,
+          # hand-touched) gets the manual-merge label below; `wait` (checks
+          # still running, merge state not settled, not aged yet) does not.
           jq -r --argjson now "${now}" --argjson min_hours "${MIN_AGE_HOURS}" '
             def head_commit: . as $pr | ($pr.commits[] | select(.oid == $pr.headRefOid)) // $pr.commits[-1];
             def age_hours: (($now - (head_commit.committedDate | fromdateiso8601)) / 3600 | floor);
-            def ci_ok: [.statusCheckRollup[]? | select(.name == "ci-ok" and .status == "COMPLETED" and .conclusion == "SUCCESS")] | length > 0;
-            def reason:
-              if (.headRefName | startswith("renovate/")) | not then "head branch is not renovate/*"
-              elif (.title | test("^Update .+ Docker digest to [0-9a-f]+$")) | not then "title is not a Docker digest update"
-              elif .isDraft then "draft"
-              elif .isCrossRepository then "head is in a fork"
-              elif ([.commits[].authors[].login] | all(. == "renovate[bot]")) | not then "a commit is not authored by renovate[bot]"
-              elif (ci_ok | not) then "ci-ok has not succeeded on the head commit"
-              elif .mergeStateStatus != "CLEAN" then "merge state is \(.mergeStateStatus), not CLEAN"
-              elif age_hours < $min_hours then "head commit is \(age_hours)h old, needs \($min_hours)h"
-              else "eligible" end;
-            .[] | [.number, .headRefOid, (age_hours|tostring), .mergeStateStatus, reason, .title] | @tsv
+            def ci_runs: [.statusCheckRollup[]? | select(.name == "ci-ok")];
+            def ci_state:
+              if (ci_runs | any(.status == "COMPLETED" and .conclusion == "SUCCESS")) then "green"
+              elif (ci_runs | any(.status != "COMPLETED")) or (ci_runs | length) == 0 then "running"
+              else "red" end;
+            def has_manual: [.labels[]?.name] | index("manual-merge") != null;
+            def verdict:
+              if (.headRefName | startswith("renovate/")) | not then ["human", "head branch is not renovate/*"]
+              elif (.title | test("^Update .+ Docker digest to [0-9a-f]+$")) | not then ["human", "title is not a Docker digest update"]
+              elif .isDraft then ["human", "draft"]
+              elif .isCrossRepository then ["human", "head is in a fork"]
+              elif ([.commits[].authors[].login] | all(. == "renovate[bot]")) | not then ["human", "a commit is not authored by renovate[bot]"]
+              elif ci_state == "red" then ["human", "ci-ok failed on the head commit"]
+              elif ci_state == "running" then ["wait", "ci-ok has not completed on the head commit"]
+              elif .mergeStateStatus == "DIRTY" then ["human", "merge state is DIRTY (conflict)"]
+              elif .mergeStateStatus != "CLEAN" then ["wait", "merge state is \(.mergeStateStatus), not CLEAN"]
+              elif age_hours < $min_hours then ["wait", "head commit is \(age_hours)h old, needs \($min_hours)h"]
+              else ["eligible", "eligible"] end;
+            .[] | verdict as $v | [.number, .headRefOid, (age_hours|tostring), .mergeStateStatus, $v[1], (has_manual|tostring), $v[0], .title] | @tsv
           ' candidates.json > rows.tsv
-          eligible=$(awk -F'\t' '$5 == "eligible" {printf "%s{\"number\":%s,\"head\":\"%s\"}", (n++ ? "," : ""), $1, $2}' rows.tsv)
+          eligible=$(awk -F'\t' '$7 == "eligible" {printf "%s{\"number\":%s,\"head\":\"%s\"}", (n++ ? "," : ""), $1, $2}' rows.tsv)
           echo "eligible=[${eligible}]" >> "${GITHUB_OUTPUT}"
+          # Keep manual-merge truthful: on a PR a human has to act on, make
+          # sure it is there; on one that is merely waiting, make sure it is
+          # not. A dry run reports and touches nothing.
+          if [ "${DRY_RUN}" != "true" ]; then
+            while IFS=$'\t' read -r n _ _ _ _ has_manual verdict _; do
+              if [ "${verdict}" = "human" ] && [ "${has_manual}" = "false" ]; then
+                gh pr edit "${n}" --add-label manual-merge || echo "::warning::could not add manual-merge to #${n}"
+              elif [ "${verdict}" != "human" ] && [ "${has_manual}" = "true" ]; then
+                gh pr edit "${n}" --remove-label manual-merge || echo "::warning::could not remove manual-merge from #${n}"
+              fi
+            done < rows.tsv
+          fi
           {
             echo "### Age gate for gcr.io/ghcr.io digest PRs"
             if [ "${DRY_RUN}" = "true" ]; then echo ""; echo "**Dry run** -- nothing is merged."; fi
             echo ""
             if [ ! -s rows.tsv ]; then
-              echo "No open manual-merge PR from Renovate."
+              echo "No open age-gated PR from Renovate."
             else
-              echo "| PR | head age | state | decision |"
-              echo "|---|---|---|---|"
-              awk -F'\t' '{printf "| #%s %s | %sh | %s | %s |\n", $1, $6, $3, $4, $5}' rows.tsv
+              echo "| PR | head age | state | decision | class |"
+              echo "|---|---|---|---|---|"
+              awk -F'\t' '{printf "| #%s %s | %sh | %s | %s | %s |\n", $1, $8, $3, $4, $5, $7}' rows.tsv
             fi
           } >> "${GITHUB_STEP_SUMMARY}"
           echo "eligible: [${eligible}]"
@@ -201,7 +228,7 @@ jobs:
                 || echo "::error::could not disarm auto-merge on #${PR} -- disarm it by hand (Disable auto-merge on the PR) or its next push merges unaged"
               echo "::warning::#${PR} was no longer clean when the merge ran; auto-merge was armed and has been disarmed again. It is re-evaluated tomorrow." ;;
             *)
-              echo "::warning::#${PR} did not merge (${RESULT}); it stays open with manual-merge and is re-evaluated tomorrow." ;;
+              echo "::warning::#${PR} did not merge (${RESULT}); it stays open, age-gated, and is re-evaluated tomorrow." ;;
           esac
 
   # Scheduled runs have no PR to go red on. Without this the only signal
