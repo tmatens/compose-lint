@@ -699,6 +699,7 @@ follow the same rules as any other update.
 | Minors of Python dev tooling, including `build` and `twine` | Automerge | Every optional-dependency group is installed and run by a PR gate; `dist-check` builds and `twine check`s the dists |
 | `pyyaml` minors | Automerge | `pyproject.toml` allows `>=6.0.2,<7`, so only the locks move, never the wheel's range |
 | Minors of actions on the CI path | Automerge | The bumped action runs in the PR's own workflows |
+| Tool versions passed as action inputs on the CI path (`python-version:`, setup-uv's `version:`) | Automerge (minor and patch) | The jobs that use them run on the PR; the uv bump re-proves every lock in `lockfiles`. The same inputs in the release-path files follow the release-only rule below |
 | Minors of release-path actions that also run on the CI path (`checkout`, `setup-python`, `upload-artifact`, `login-action`, `build-push-action`, `setup-buildx-action`, `scout-action`, `codeql-action`) | Automerge | Same as above: the PR runs them before any tag does |
 | Compose, actionlint, hadolint pins in `ci.yml` (patch and minor) | Automerge | Each bump runs the tool it bumps: the differential suites, actionlint over every workflow, hadolint over the Dockerfile. A red Compose bump is the one that needs triage |
 | Docker Hub base-image digests | Automerge | Docker Hub supplies the release timestamp the three-day gate needs; `dockerfile-digests` and `docker-smoke` run on the PR |
@@ -721,6 +722,13 @@ look for open Renovate PRs with a failing check as well.
 Each rule's full reasoning, with the Renovate behaviour it depends on, is
 in its `description` in `.github/renovate.json`. Change the rule there and
 this table together.
+
+**Adding a dependency.** Every new dependency has to land in a row of this
+table, whatever its kind: a package, an Action, a container image, a
+downloaded binary or a tool version. AGENTS.md "Adding a dependency" has the
+steps. Pin it, prove Renovate extracts it, and either place it in an existing
+row or add a rule and a row in the same PR. A pin Renovate cannot see is never
+updated, and nothing reports that.
 
 ---
 

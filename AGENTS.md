@@ -78,12 +78,40 @@ CONTRIBUTING.md is the source of truth for commits, signing, and PRs. Key points
 
 ## Dependency pinning
 
-Pin everything to an immutable ref. Renovate bumps the pins.
+Pin everything to an immutable ref. Renovate bumps the pins. A dependency is
+anything this repo fetches by name and version: a Python package, a GitHub
+Action, a container image (in a Dockerfile, a compose file, a workflow, a
+script or a test helper), a release binary a workflow downloads, a tool
+version passed as an input (`python-version:`, setup-uv's `version:`).
 
 - **GitHub Actions**: SHA-pin every `uses:` (including first-party). Tag in trailing comment. Only exception: `uses: $/…` self-repository references, which GitHub treats as pinned (they resolve at the running commit); never `uses: ./`, which runs whatever is in the workspace and which zizmor's `self-repository` audit rejects. Enforced twice: the repository setting *Require actions to be pinned to a full-length commit SHA* refuses to start a run with an unpinned `uses:` on any branch, and zizmor's `unpinned-uses` audit fails the `actionlint` job on a PR.
 - **Runtime deps**: SemVer ranges (this is a library — exact pins break downstream resolvers). Lower bound = tested minimum. No upper bound unless we've observed a break.
 - **Dev deps + CI installs**: Hash-pinned lockfiles. Every `pip install` in CI uses `pip install --require-hashes -r requirements{,-dev}.lock`. No ad-hoc `pip install pkg==X.Y.Z` in workflows. One exception: `python -m pip install --upgrade pip` bootstrap in security-scan job.
-- **Docker base images**: Digest-pin if we ever add a Dockerfile.
+- **Container images**, wherever they are referenced: `name:tag@sha256:<index digest>`, the multi-arch index rather than one platform's manifest (`dockerfile-digests` enforces this for the Dockerfile). Keep the tag next to the digest: Renovate looks up digest updates by tag, so a bare `name@sha256:…` is never refreshed. An image string inside a Python or shell script is invisible to every built-in manager and needs the annotation in step 2 of "Adding a dependency" below.
+- **Release binaries a workflow downloads**: a version literal beside a `# renovate:` annotation, verified against the release's own checksums file (ci.yml's actionlint and hadolint steps).
+
+### Adding a dependency
+
+A pin Renovate cannot see is never updated, and nothing reports that. So a
+PR that adds a dependency of any kind does all four of these:
+
+1. **Pin it** the way its kind is pinned above, at the latest stable version.
+2. **Prove Renovate sees it.** Run
+   `LOG_LEVEL=debug RENOVATE_CONFIG_FILE=.github/renovate.json npx renovate@latest --platform=local --dry-run=extract`
+   (extraction makes no registry lookups, so it needs no token) and find the
+   new `depName` in the extracted deps with no `skipReason`. If no built-in manager extracts it,
+   add a `# renovate: datasource=… depName=…` annotation beside the pin and a
+   `customManagers` entry that matches it, as `COMPOSE_VERSION` and
+   `ACTIONLINT_VERSION` in ci.yml do.
+3. **Place it in the update policy.** Find its row in the "Dependency updates"
+   table in docs/CI.md: that row says whether it merges itself or waits for a
+   person, and why. If it fits no row, add a `packageRules` entry in
+   `.github/renovate.json` and a table row in the same PR. If it must not be
+   managed by Renovate, add a rule with `enabled: false` whose `description`
+   says what moves it instead (the demo `compose-lint` pin and the Forgejo
+   smoke pins are the models).
+4. **Make the PR exercise it**, if it is to merge itself: the policy is that a
+   green run is the review, so a dependency CI never runs cannot automerge.
 
 ### Regenerating lockfiles
 
