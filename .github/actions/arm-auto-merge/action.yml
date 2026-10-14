@@ -1,0 +1,86 @@
+name: 'Arm auto-merge'
+description: >
+  Arm GitHub auto-merge on a pull request this repository's automation
+  opened, so it squash-merges on its own once the required `ci-ok` check is
+  green. One definition for the three bot-authored PR types (the post-tag
+  marketplace-pin bump, the release-prep PR, the Forgejo harness bump);
+  the copies drifted, and a fix to the arming logic had to be made three
+  times (#1057).
+
+  Behaviour, in order: with no token the step is skipped with a warning;
+  an already-armed PR is a no-op, so a re-run of the calling workflow is
+  harmless; otherwise `gh pr merge --auto`; and when GitHub refuses to arm
+  because every required check has already finished ("clean" status --
+  ci-ok beat the caller to it), the PR is merged directly, which GitHub
+  permits only in that state, so neither path lands ahead of ci-ok.
+  Never fails the calling job: a PR that needs a manual click is not a
+  broken workflow, and on the release path a red X here would misreport a
+  release that has already shipped. The caller reads `result` for its own
+  step-summary wording.
+
+  PAT-only by design. The default Actions token could arm where the caller
+  holds `contents: write`, but the merge then lands on behalf of
+  github-actions[bot] and GitHub's recursion guard suppresses main's push
+  workflows -- no post-merge CI pass, no docs deploy, no post-merge smoke.
+  Each caller says why in its own comment; pass an empty `token` to skip.
+  Requires "Allow auto-merge" on the repository (Settings > General);
+  without it the arm fails and `result` is `failed`.
+
+inputs:
+  pull-request:
+    description: The pull request, as a number or its head branch name.
+    required: true
+  token:
+    description: >
+      A PAT with contents and pull-requests write on this repository. Empty
+      skips the arm with a warning (`result: skipped-no-token`); do not pass
+      `github.token` here, see above.
+    required: false
+    default: ''
+  note:
+    description: >
+      One sentence appended to the warnings when nothing was armed, saying
+      what the manual merge is for, e.g. "Merge it by hand to trigger the
+      post-release smoke." The warning already names the PR.
+    required: false
+    default: 'Merge it by hand.'
+
+outputs:
+  result:
+    description: >
+      One of `armed`, `merged-direct`, `already-armed`, `skipped-no-token`,
+      `failed`.
+    value: ${{ steps.arm.outputs.result }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Arm auto-merge (merge directly if the required checks already finished)
+      id: arm
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ github.repository }}
+        PR: ${{ inputs.pull-request }}
+        NOTE: ${{ inputs.note }}
+      run: |
+        set -euo pipefail
+        result=failed
+        if [ -z "${GH_TOKEN}" ]; then
+          result=skipped-no-token
+          echo "::warning::No PAT configured -- auto-merge not armed on ${PR} (a GITHUB_TOKEN-armed merge would skip main's push workflows). ${NOTE}"
+        elif [ "$(gh pr view "${PR}" --json autoMergeRequest --jq '.autoMergeRequest != null')" = "true" ]; then
+          result=already-armed
+          echo "Auto-merge is already armed on ${PR} (an earlier run); nothing to do."
+        elif gh pr merge "${PR}" --auto --squash --delete-branch; then
+          result=armed
+          echo "Auto-merge armed on ${PR}; GitHub squash-merges it once ci-ok is green."
+        elif gh pr merge "${PR}" --squash --delete-branch; then
+          # Arming is refused on a PR whose required checks have all finished
+          # ("clean" status); the direct merge succeeds only in that state.
+          result=merged-direct
+          echo "Required checks had already finished on ${PR}, so it could not be armed; squash-merged it directly."
+        else
+          echo "::warning::Could not arm auto-merge on ${PR}. ${NOTE} Check that 'Allow auto-merge' is enabled in Settings > General."
+        fi
+        echo "result=${result}" >> "${GITHUB_OUTPUT}"

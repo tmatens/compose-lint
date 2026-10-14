@@ -229,15 +229,13 @@ jobs:
           done
 
       - name: Commit, push, open PR
+        id: pr
         env:
           VERSION: ${{ inputs.version }}
           # Author the PR with the PAT so its checks run automatically (#342);
           # fall back to GITHUB_TOKEN when the secret is absent (the PR then
           # needs a manual close+reopen to start checks, the prior behavior).
           GH_TOKEN: ${{ secrets.MARKETPLACE_SMOKE_PAT || github.token }}
-          # Whether the PAT is present, for the auto-merge arm below -- the
-          # arm must not run on the GITHUB_TOKEN fallback (see comment there).
-          HAVE_PAT: ${{ secrets.MARKETPLACE_SMOKE_PAT != '' }}
         run: |
           branch="release/${VERSION}"
           git config user.name "github-actions[bot]"
@@ -265,51 +263,54 @@ jobs:
           The tag push triggers \`publish.yml\`, which runs TestPyPI/Docker smoke tests, waits for your approval on the \`release\` environment, then publishes PyPI + Docker Hub, creates the GitHub Release, and opens a follow-up PR to bump the \`marketplace-smoke\` pin.
           EOF
           sed -i -E 's/^          //' /tmp/pr-body.md
-          gh pr create \
+          url=$(gh pr create \
             --base main \
             --head "${branch}" \
             --title "Prepare ${VERSION} release" \
-            --body-file /tmp/pr-body.md
+            --body-file /tmp/pr-body.md)
+          echo "number=${url##*/}" >> "$GITHUB_OUTPUT"
 
-          # Arm auto-merge: GitHub squash-merges once `ci-ok` is green, which is
-          # exactly what a human was reviewing for. Every line of this diff is
-          # derived from the one dispatch input (the version strings, the
-          # self-referencing doc pins, the compare-link footer) and re-derived
-          # by CI -- `version-consistency`, `changelog-gate`, the doc-pin check
-          # and `lockfiles` all run on the PR. The CHANGELOG prose was written
-          # and reviewed under `[Unreleased]` before this dispatch; release-prep
-          # only renames the heading. Nothing irreversible follows the merge on
-          # its own: the signed tag is still pushed by hand afterwards, and the
-          # real gate is the `release` environment approval during `publish.yml`.
-          #
-          # Not failing the job when this does not take: a red X here would read
-          # as "release prep is broken" when the only thing wrong is that a PR
-          # needs a manual click. The warning and the step summary say which.
-          # Requires "Allow auto-merge" on the repository (Settings > General).
-          #
-          # PAT-only: on the GITHUB_TOKEN fallback the arm is skipped, not
-          # attempted. The default token COULD arm it (this job has
-          # contents: write), but the merge then lands on behalf of
-          # github-actions[bot] and GitHub's recursion guard suppresses main's
-          # push workflows -- no post-merge CI pass, no docs deploy -- for a
-          # release commit. Manual merge preserves those.
-          if [ "${HAVE_PAT}" != "true" ]; then
-            armed=0
-            echo "::warning::MARKETPLACE_SMOKE_PAT is absent -- auto-merge not armed (a GITHUB_TOKEN-armed merge would skip main's push workflows). Review and merge by hand, then sign-push."
-          elif gh pr merge "${branch}" --auto --squash --delete-branch; then
-            armed=1
-            echo "Auto-merge armed; GitHub will squash-merge once ci-ok is green."
-          else
-            armed=0
-            echo "::warning::Could not arm auto-merge on the release-prep PR -- merge it by hand once ci-ok is green, then sign-push. Check that 'Allow auto-merge' is enabled in Settings > General."
-          fi
+      # Arm auto-merge: GitHub squash-merges once `ci-ok` is green, which is
+      # exactly what a human was reviewing for. Every line of this diff is
+      # derived from the one dispatch input (the version strings, the
+      # self-referencing doc pins, the compare-link footer) and re-derived
+      # by CI -- `version-consistency`, `changelog-gate`, the doc-pin check
+      # and `lockfiles` all run on the PR. The CHANGELOG prose was written
+      # and reviewed under `[Unreleased]` before this dispatch; release-prep
+      # only renames the heading. Nothing irreversible follows the merge on
+      # its own: the signed tag is still pushed by hand afterwards, and the
+      # real gate is the `release` environment approval during `publish.yml`.
+      #
+      # The action never fails the job: a red X here would read as "release
+      # prep is broken" when the only thing wrong is that a PR needs a manual
+      # click. Its warning and the step summary below say which.
+      #
+      # PAT-only: on the GITHUB_TOKEN fallback the token input is empty and
+      # the arm is skipped, not attempted. The default token COULD arm it
+      # (this job has contents: write), but the merge then lands on behalf of
+      # github-actions[bot] and GitHub's recursion guard suppresses main's
+      # push workflows -- no post-merge CI pass, no docs deploy -- for a
+      # release commit. Manual merge preserves those.
+      - name: Arm auto-merge on the release-prep PR
+        id: arm
+        uses: $/.github/actions/arm-auto-merge
+        with:
+          pull-request: ${{ steps.pr.outputs.number }}
+          token: ${{ secrets.MARKETPLACE_SMOKE_PAT }}
+          note: Review and merge it by hand once ci-ok is green, then sign-push.
 
+      - name: Step summary
+        env:
+          VERSION: ${{ inputs.version }}
+          RESULT: ${{ steps.arm.outputs.result }}
+        run: |
           {
             echo "### Release prep PR opened"
-            echo "Branch: \`${branch}\`"
-            if [ "${armed}" = "1" ]; then
-              echo "Next step: PR lands on its own once \`ci-ok\` is green; then sign-push \`v${VERSION}\`."
-            else
-              echo "Next step: auto-merge could not be armed -- review and merge by hand, then sign-push \`v${VERSION}\`."
-            fi
+            echo "Branch: \`release/${VERSION}\`"
+            case "${RESULT}" in
+              armed|already-armed|merged-direct)
+                echo "Next step: PR lands on its own once \`ci-ok\` is green; then sign-push \`v${VERSION}\`." ;;
+              *)
+                echo "Next step: auto-merge could not be armed (\`${RESULT}\`) -- review and merge by hand, then sign-push \`v${VERSION}\`." ;;
+            esac
           } >> "$GITHUB_STEP_SUMMARY"

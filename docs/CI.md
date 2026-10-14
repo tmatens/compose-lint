@@ -341,7 +341,16 @@ until someone closed and reopened it. Authoring it as the PAT user makes
 the required checks run automatically.
 
 The job then arms **auto-merge** on that PR, so it lands on its own once
-`ci-ok` is green. The merge gates nothing irreversible: the PR opens only
+`ci-ok` is green. The arm is the shared `.github/actions/arm-auto-merge`
+composite, one definition for every bot-authored PR this repository opens
+(this job, `release-prep.yml`, `forgejo-smoke.yml`; three hand-copies had
+drifted, [#1057]). Given a PR and a PAT it reports one `result`: `armed`;
+`already-armed` (a re-run); `merged-direct`, when every required check had
+already finished — GitHub refuses to arm a PR in that "clean" state, and
+the direct merge is permitted only in it, so neither path lands ahead of
+`ci-ok`; `skipped-no-token`; or `failed`. It never fails the calling job;
+each caller turns the result into its own step-summary wording. The merge
+here gates nothing irreversible: the PR opens only
 after `publish`, `docker-publish` and `create-release` have all succeeded,
 so PyPI, Docker Hub and the GitHub Release are already permanent by the
 time it exists — the `release` environment approval upstream is the
@@ -372,6 +381,7 @@ red run, and if it does exhaust the retries the message says so instead
 of `Process completed with exit code 1`.
 
 [#612]: https://github.com/tmatens/compose-lint/issues/612
+[#1057]: https://github.com/tmatens/compose-lint/issues/1057
 
 ### Provisioning `MARKETPLACE_SMOKE_PAT`
 
@@ -401,7 +411,8 @@ strings, renames the CHANGELOG `[Unreleased]` section, inserts a fresh
 empty one, and links to the manual tag-signing step in the PR body.
 
 The job then arms **auto-merge** on that PR, so it lands on its own once
-`ci-ok` is green — the same shape as the marketplace-pin job above. Every
+`ci-ok` is green — the same shared `arm-auto-merge` action as the
+marketplace-pin job above. Every
 line of the diff is derived from the one dispatch input and re-derived by
 CI (`version-consistency`, `changelog-gate`, the doc-pin check and
 `lockfiles` all run on the PR), and the CHANGELOG prose was reviewed under
@@ -409,9 +420,10 @@ CI (`version-consistency`, `changelog-gate`, the doc-pin check and
 The merge gates nothing irreversible: the signed tag is still pushed by
 hand afterwards, and the `release` environment approval during `publish.yml`
 is the control. Auto-merge needs **Allow auto-merge** enabled on the
-repository; without it the step warns and the PR waits for a manual merge,
+repository; without it the action warns and the PR waits for a manual merge,
 which is deliberately not a job failure. The arm is PAT-only: on the
-`GITHUB_TOKEN` fallback it is skipped with a warning, because a merge armed
+`GITHUB_TOKEN` fallback the token input is empty and the arm is skipped with
+a warning, because a merge armed
 by the default token lands on behalf of github-actions[bot] and the
 recursion guard then suppresses main's push workflows — no post-merge CI
 pass, no docs deploy — for a release commit.
@@ -547,11 +559,13 @@ It uses `--auto`, not a direct merge, so GitHub still waits for the required
 `ci-ok` check — the smoke itself is deliberately *not* required, to keep a
 job with external dependencies (codeberg.org, data.forgejo.org) off every
 PR's required path. When `ci-ok` finishes first, GitHub refuses to arm an
-already-mergeable PR ("clean status"); the job then merges directly, which
-is only permitted because the required checks have already passed. Arming
-runs in its own job (`arm-bump-automerge`) so the PAT never shares a runner
-with the PR head's code, and it is PAT-only: without `MARKETPLACE_SMOKE_PAT`
-it skips with a warning rather than falling back to `GITHUB_TOKEN`, whose
+already-mergeable PR ("clean status"); the shared `arm-auto-merge` action
+then merges directly, which is only permitted because the required checks
+have already passed. Arming runs in its own job (`arm-bump-automerge`,
+holding only the `contents: read` that fetching a `$/` action takes, and no
+checkout) so the PAT never shares a runner with the PR head's code, and it
+is PAT-only: without `MARKETPLACE_SMOKE_PAT` the action skips with a warning
+rather than falling back to `GITHUB_TOKEN`, whose
 merge would push `main` without triggering the post-merge smoke. A red run
 never arms auto-merge and stays open for a human. The PR carries the
 `manual-merge` label (applied best-effort after creation) so it shows in the

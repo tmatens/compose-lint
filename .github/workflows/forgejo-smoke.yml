@@ -81,9 +81,13 @@ jobs:
   # PAT-only, no github.token fallback: a merge armed by the default Actions
   # token produces a push to main that triggers no push workflows (GitHub's
   # recursion guard), which would skip the post-merge Forgejo smoke on main
-  # -- and with this job's empty permissions the default token could not arm
-  # anyway. Without the secret this skips with a warning and the bump PR
-  # needs a hand-merge, the pre-automerge behavior.
+  # -- and with this job's read-only permissions the default token could not
+  # arm anyway. Without the secret the action skips with a warning and the
+  # bump PR needs a hand-merge, the pre-automerge behavior.
+  #
+  # The arm itself (already-armed no-op, --auto, clean-status direct merge)
+  # is the shared arm-auto-merge action, one definition for every
+  # bot-authored PR this repository opens (#1057).
   arm-bump-automerge:
     name: Arm auto-merge on a green harness bump PR
     needs:
@@ -95,30 +99,17 @@ jobs:
       && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-26.04
     timeout-minutes: 3
-    permissions: {}
+    permissions:
+      # Only what fetching the `$/` self-repository action takes, the same
+      # grant every other consumer of one holds. No checkout: the PAT never
+      # shares a runner with the PR head's code.
+      contents: read
     steps:
-      - name: Arm auto-merge (merge directly if ci-ok already finished)
-        env:
-          GH_TOKEN: ${{ secrets.MARKETPLACE_SMOKE_PAT }}
-          GH_REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
-        run: |
-          if [ -z "${GH_TOKEN}" ]; then
-            echo "::warning::MARKETPLACE_SMOKE_PAT is not configured -- not arming auto-merge (a GITHUB_TOKEN merge would not trigger the post-merge smoke on main). Merge the bump PR by hand."
-            exit 0
-          fi
-          if [ "$(gh pr view "${PR}" --json autoMergeRequest --jq '.autoMergeRequest != null')" = "true" ]; then
-            echo "Auto-merge is already armed on #${PR} (an earlier run of this smoke); nothing to do."
-          elif gh pr merge "${PR}" --auto --squash --delete-branch; then
-            echo "Auto-merge armed on #${PR}; GitHub squash-merges it once ci-ok is green."
-          elif gh pr merge "${PR}" --squash --delete-branch; then
-            # Arming is refused on a PR whose required checks have all
-            # finished ("clean" status), which happens when ci-ok beat the
-            # smoke; the direct merge succeeds only in that state.
-            echo "ci-ok finished before the smoke, so #${PR} was already mergeable; squash-merged it directly."
-          else
-            echo "::warning::Could not arm auto-merge on #${PR} -- merge it by hand. Check that 'Allow auto-merge' is enabled in Settings > General."
-          fi
+      - uses: $/.github/actions/arm-auto-merge
+        with:
+          pull-request: ${{ github.event.pull_request.number }}
+          token: ${{ secrets.MARKETPLACE_SMOKE_PAT }}
+          note: Merge the bump PR by hand once ci-ok is green.
 
   # Scheduled runs have no PR to go red on. Without this the only signal
   # for a weekly failure was an email to the workflow author, which is how
