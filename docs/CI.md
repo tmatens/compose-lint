@@ -587,7 +587,9 @@ check-less, like `release-prep.yml`.
 Merges Renovate's digest refreshes from **gcr.io and ghcr.io** (distroless,
 the oss-fuzz builder, vhs) once they have aged the same three days the
 Docker Hub digests wait under Renovate's `minimumReleaseAge` ([#1059]).
-Those PRs open with `manual-merge` because Renovate cannot age them: its
+Those PRs open with `age-gated` (their own label, set in `renovate.json`,
+so `manual-merge` keeps meaning "a human has to act") because Renovate
+cannot age them: its
 docker datasource takes a release timestamp from Docker Hub's
 `tag_last_pushed` and from nowhere else — the OCI distribution API exposes
 no publish time ([renovatebot/renovate#39064]), and distroless's
@@ -607,13 +609,16 @@ workflow and must move with `renovate.json`'s `minimumReleaseAge`.
 
 Selection is conjunctive and the step summary shows every candidate with
 its decision: author `renovate[bot]`, head `renovate/*`, label
-`manual-merge`, title `Update <image> Docker digest to <sha>` (Docker Hub
+`age-gated`, title `Update <image> Docker digest to <sha>` (Docker Hub
 digests automerge via Renovate and carry no label, so this is exactly the
 gcr/ghcr set), no draft, no fork, every commit authored by Renovate (a
 hand-touched branch needs a human, Renovate's own automerge rule),
 `ci-ok` green on the head, merge state `CLEAN`, head commit ≥ 72h old. A
-red, conflicting or hand-touched PR is left alone and keeps `manual-merge`,
-so the "what needs me" query stays truthful.
+red, conflicting, draft or hand-touched PR is left alone and gets
+`manual-merge` added (removed again once it is clean), so the "what needs
+me" query stays truthful; a PR whose `ci-ok` is still running is simply
+waited for. To hold one back deliberately, convert it to a draft. A dry
+run touches no labels.
 
 The merge is the shared `arm-auto-merge` action with `expected-head` set
 to the SHA the selection looked at (`gh pr merge --match-head-commit`), so
@@ -681,7 +686,7 @@ condition.
 | Vulnerability with an available fix | Rolling issue labelled `fixable-vulns`                 |
 | Scheduled workflow failure          | Issue `Scheduled run failed: <workflow>` — one per workflow, repeat failures comment on it (`.github/actions/report-scheduled-failure`); plus the author email and red X |
 | Post-release smoke failure          | Issue `Post-release run failed: Marketplace smoke test` — same action, separate thread from the weekly one so a break in a shipped release is not triaged as a flake |
-| Renovate PR                         | Opens a PR tagged accordingly; patch, pin, digest and lock-maintenance bumps automerge once green **and** the release is three days old (`renovate/stability-days` stays pending until then). Minors automerge on the same terms when the PR itself exercises them: Python dev tooling (including `build` and `twine`, which `dist-check` runs), the `pyyaml` runtime dep (its range in `pyproject.toml` is untouched; only the locks move), actions on the CI path, release-path actions that also run on the CI path, and the pinned Compose/actionlint/hadolint binaries (patch too); Docker Hub digests as well. Security PRs open at once, ungrouped and unaged, and follow the same rules. What still opens with `manual-merge`: majors, minors of the six release-only actions (`attest-build-provenance`, `download-artifact`, `sbom-action`, `gh-action-pypi-publish`, `cosign-installer`, `gh-action-sigstore-python`) and of `sigstore` (which moves with that action), and digests from gcr.io/ghcr.io (no release timestamp to age against), which `digest-age-gate.yml` then merges once unchanged for 72h |
+| Renovate PR                         | Opens a PR tagged accordingly; patch, pin, digest and lock-maintenance bumps automerge once green **and** the release is three days old (`renovate/stability-days` stays pending until then). Minors automerge on the same terms when the PR itself exercises them: Python dev tooling (including `build` and `twine`, which `dist-check` runs), the `pyyaml` runtime dep (its range in `pyproject.toml` is untouched; only the locks move), actions on the CI path, release-path actions that also run on the CI path, and the pinned Compose/actionlint/hadolint binaries (patch too); Docker Hub digests as well. Security PRs open at once, ungrouped and unaged, and follow the same rules. What still opens with `manual-merge`: majors, minors of the six release-only actions (`attest-build-provenance`, `download-artifact`, `sbom-action`, `gh-action-pypi-publish`, `cosign-installer`, `gh-action-sigstore-python`) and of `sigstore` (which moves with that action). Digests from gcr.io/ghcr.io (no release timestamp to age against) open with `age-gated` instead; `digest-age-gate.yml` merges them once unchanged for 72h and adds `manual-merge` only to one that is red, conflicting, draft or hand-touched |
 
 The Security tab is the single pane of glass for everything except
 PR-gating failures (which stay on the PR) and Renovate bumps (which
