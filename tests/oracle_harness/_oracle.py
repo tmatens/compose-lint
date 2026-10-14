@@ -92,6 +92,15 @@ _LOOKUP_VARS = (
 )
 
 
+# `docker info` template that prints the compose plugin's path. One string
+# literal, not two adjacent ones: implicit concatenation inside an argv list
+# is indistinguishable from a missing comma (CodeQL
+# py/implicit-string-concatenation-in-list).
+_PLUGIN_PATH_FORMAT = (
+    '{{range .ClientInfo.Plugins}}{{if eq .Name "compose"}}{{.Path}}{{end}}{{end}}'
+)
+
+
 def compose_argv(env: Mapping[str, str] | None = None) -> tuple[str, ...]:
     """The command that runs Compose for a call made with ``env``.
 
@@ -129,8 +138,7 @@ def _resolve_compose(lookup: tuple[tuple[str, str | None], ...]) -> tuple[str, .
                 "docker",
                 "info",
                 "--format",
-                '{{range .ClientInfo.Plugins}}{{if eq .Name "compose"}}'
-                "{{.Path}}{{end}}{{end}}",
+                _PLUGIN_PATH_FORMAT,
             ],
             capture_output=True,
             text=True,
