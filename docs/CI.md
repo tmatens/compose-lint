@@ -158,9 +158,12 @@ CI installs dev dependencies from hash-pinned lockfiles:
 - `requirements-dev.lock` — dev + lint + security + publish extras.
 - `requirements-build.lock` — container builds only.
 
-Any `pip install` in CI passes `--require-hashes`. The one exception is
-`python -m pip install --upgrade pip` in the `security` job, which bootstraps
-pip itself before the hash-pinned install runs. Regeneration instructions
+Every install in CI passes `--require-hashes`. Most jobs install with
+`uv pip install`, which is much faster than pip on the same lock. Two keep pip
+on purpose: `security`, whose `python -m pip install --upgrade pip` bootstraps
+pip itself before the hash-pinned install and the audit, and `dist-check`,
+which mirrors `publish.yml`'s install exactly. That pip upgrade is the one
+unhashed install. Regeneration instructions
 live in [`CLAUDE.md`](../CLAUDE.md) under "Regenerating lockfiles".
 
 ---
@@ -662,9 +665,8 @@ matches `requirements*.lock`. That is intended — the locks are compiled
 on one OS alone — but it does mean Renovate PRs wait on macOS/Windows.
 
 Both jobs install the dev environment with `uv pip install --require-hashes`
-from the same lock, not pip: pip took about 80 seconds of the Windows leg to
-install the dev lock even with a warm cache. The uv version is pinned to the
-one ci.yml's `lockfiles` job uses.
+from the same lock, as most of `ci.yml` does: pip took about 80 seconds of the
+Windows leg to install the dev lock even with a warm cache.
 
 The `workflow_dispatch`, weekly `schedule` and `push: main` triggers all
 remain. The cron is not redundant with the gate: drift that arrives with
