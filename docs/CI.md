@@ -60,8 +60,8 @@ before merging, so `main`'s own run is what proves the merged result.
 | ------------------------- | ----------------------------------------------------------------------------------------- |
 | `lint`                    | `ruff check` + `ruff format --check` on `src/` and `tests/`                               |
 | `type-check`              | `mypy src/ tests/`; strict on `src/`, relaxed on `tests/`                                  |
-| `test`                    | `pytest` across the Python matrix — 3.11, 3.12, 3.13, 3.14                          |
-| `coverage`                | `pytest --cov` with `--cov-fail-under=80` — fails below 80% statement coverage repo-wide; on a PR, `diff-cover` also fails below 90% coverage of the lines that PR adds or changes (see note) |
+| `test`                    | `pytest -n auto` (pytest-xdist, one worker per core) across the Python matrix — 3.11, 3.12, 3.13, 3.14 |
+| `coverage`                | `pytest -n auto --cov` with `--cov-fail-under=80` — fails below 80% statement coverage repo-wide; on a PR, `diff-cover` also fails below 90% coverage of the lines that PR adds or changes (see note) |
 | `security`                | `bandit -r src/ -ll` (blocking) + `pip-audit` for dep CVEs (informational on PRs — see note) |
 | `dependency-review`       | Blocks PRs adding deps with known high-severity CVEs or disallowed licenses               |
 | `actionlint`              | Lints every workflow under `.github/workflows/`: actionlint (embeds shellcheck for `run:` blocks) and zizmor (template injection, cache poisoning, kept tokens, unpinned uses; exceptions in `.github/zizmor.yml`) |

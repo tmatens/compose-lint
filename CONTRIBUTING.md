@@ -107,7 +107,7 @@ reports for the same tree. To reproduce CI's figure by hand:
 ```bash
 shim=$(mktemp -d) && printf 'import coverage\ncoverage.process_startup()\n' > "$shim/sitecustomize.py"
 PYTHONPATH="$shim" COVERAGE_PROCESS_START="$PWD/pyproject.toml" \
-  pytest --cov=compose_lint --cov-report=xml --cov-fail-under=80   # the repo-wide floor
+  pytest -n auto --cov=compose_lint --cov-report=xml --cov-fail-under=80   # the repo-wide floor
 python .github/scripts/patch-coverage.py \
   --base-sha "$(git merge-base HEAD upstream/main)" --fail-under 90   # the lines you changed
 ```
@@ -128,6 +128,12 @@ gitignored `.pytest-tmp/` in the checkout, so it runs them as CI does. Running
 ```bash
 TMPDIR=$HOME/.pytest-tmp pytest --basetemp=$HOME/.pytest-tmp/bt
 ```
+
+CI, os-smoke and the preflight script run the suite with `-n auto`
+(pytest-xdist, in the dev extra), one worker per core; a bare `pytest`
+runs it serially and takes several times as long. Both give the same
+result. If a test passes alone but fails under `-n auto`, it depends on
+order or shares state with another test, and that is the bug to fix.
 
 ## Code standards
 

@@ -90,7 +90,8 @@ jobs:
         run: |
           pip install --require-hashes -r requirements-dev.lock
           pip install --no-deps -e .
-      - run: pytest
+      # -n auto as in ci.yml's test job: one pytest-xdist worker per core.
+      - run: pytest -n auto
 
   # Stays on one Python: what this leg exercises is pre-commit's
   # hook-environment build and the OS's path/console handling, neither of
