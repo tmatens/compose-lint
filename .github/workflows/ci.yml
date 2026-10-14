@@ -364,7 +364,14 @@ jobs:
         # workspace path, so their recorded file paths agree with this one.
         run: |
           set -euo pipefail
-          ls -a | grep '^\.coverage\.shard-'
+          # Exactly one data file per shard, or the floor would be graded
+          # on part of the suite.
+          shards=(.coverage.shard-*)
+          printf '%s\n' "${shards[@]}"
+          if [ "${#shards[@]}" -ne 3 ] || [ ! -e "${shards[0]}" ]; then
+            echo "::error::expected 3 shard coverage files, found ${#shards[@]}"
+            exit 1
+          fi
           coverage combine
           coverage report --fail-under=80
           coverage xml
