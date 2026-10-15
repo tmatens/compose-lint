@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **CL-0020 reads `command:`, `entrypoint:` and `healthcheck.test`.** A
+  credential literal passed as an argument — `redis-server --requirepass
+  hunter2`, `--admin-password=admin`, `PGPASSWORD=hunter2 psql` inside a shell
+  line, mysql's `-phunter2` in a healthcheck — reaches `docker inspect`
+  (`Config.Cmd`, `Config.Entrypoint`, `Config.Healthcheck`) and the
+  world-readable `/proc/<pid>/cmdline` exactly as an `environment:` literal
+  reaches `Config.Env`, and no rule read it. The same key-shaped test now
+  applies to each token that names a value, with the existing exemptions and
+  two that only make sense in an argument list: `$$VAR` is what the shell
+  expands at runtime (a reference, not the literal it is under
+  `environment:`), and a path-shaped value is the fix pattern. Over the
+  11,111-file corpus this adds findings on 148 services in 188 files, 115 of
+  them services with no credential finding before; 64 further files that pass
+  `$$REDIS_PASSWORD` or a secrets path are correctly left alone. Labels are
+  not read (every candidate was a secret's name, not a secret). (#1077)
+
 ## [0.34.1] - 2026-10-12
 
 ### Added

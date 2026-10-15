@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 from typing import TYPE_CHECKING, Any
 
 from compose_lint._output import inline
@@ -135,6 +136,60 @@ _QUANTITY_KEY_SUFFIXES = ("_PORT", "_COST")
 # is not a quantity and the rule still fires.
 _QUANTITY_VALUE_RE = re.compile(r"^\d+(\.\d+)?(ms|s|m|h|d)?$", re.IGNORECASE)
 
+# ---- The argument-list surfaces (issue #1077) --------------------------------
+#
+# `command:`, `entrypoint:` and `healthcheck.test` reach the same metadata as
+# the environment does: `docker inspect` returns `Config.Cmd`,
+# `Config.Entrypoint` and `Config.Healthcheck` beside `Config.Env`, and
+# `/proc/<pid>/cmdline` is readable by every uid in the container where
+# `environ` is readable only by the process's own. The same key-shaped test is
+# applied to each token that names a value: `--password hunter2`,
+# `--admin-password=hunter2`, `PGPASSWORD=hunter2 psql`.
+
+# Flag names the key list above does not reach. `--requirepass` is the single
+# largest shape in the corpus (83 of 148 services) and has neither a PASSWORD
+# substring nor a `_PASS` suffix; `--masterauth` is its replica-side twin.
+_ARGV_FLAG_WORDS = ("REQUIREPASS", "MASTERAUTH")
+
+# mysql-family clients take the password glued to `-p` (`-phunter2`); the
+# port is `-P`. The shape is only read when one of these binaries is in the
+# token list, because a bare `-p` means something else to every other program.
+_MYSQL_BINARIES = frozenset(
+    {
+        "mysql",
+        "mysqladmin",
+        "mysqlcheck",
+        "mysqldump",
+        "mysqlsh",
+        "mysqlshow",
+        "mariadb",
+        "mariadb-admin",
+        "mariadb-check",
+        "mariadb-dump",
+    }
+)
+
+# Two value shapes that are literal under `environment:` but are not a shipped
+# credential in an argument list. `$$VAR` is a literal dollar in the
+# environment (`pa$$w0rd`, issue #502), but Compose hands `$$VAR` to the
+# container as `$VAR`, which the shell expands at runtime from the environment
+# -- a reference by another grammar. A value that is a path is the fix pattern
+# (`--password-file /run/secrets/pw`), the `_FILE` exemption spelled as an
+# argument. Measured over the corpus: 64 of 216 first-pass hits were one of
+# these two, every one of them a file that had done the right thing.
+_ARGV_PATH_PREFIXES = ("/", "./", "../", "~/")
+
+# A token that assigns a variable in a shell payload: `PGPASSWORD=x psql`.
+_ARGV_ASSIGNMENT_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.DOTALL)
+# A flag, with or without an inline `=value`. Single-dash long options
+# (`-rpcpassword=x`) are included; a lone `-` or `--` is not.
+_ARGV_FLAG_RE = re.compile(r"^-{1,2}([A-Za-z][A-Za-z0-9_.-]*)(?:=(.*))?$", re.DOTALL)
+# mysql's glued password: `-p` followed by anything but another dash.
+_ARGV_MYSQL_PASSWORD_RE = re.compile(r"^-p([^-\s].*)$", re.DOTALL)
+# Tokens whose *next* token is a shell string to be split again.
+_ARGV_SHELL_FLAGS = frozenset({"-c"})
+_HEALTHCHECK_SHELL = "CMD-SHELL"
+
 
 def _matches_credential_pattern(key_upper: str) -> bool:
     """Return True if the key name matches a credential-shaped pattern."""
@@ -206,6 +261,123 @@ def _is_literal_credential_value(raw: Any) -> bool:
     return not ships_no_literal(raw)
 
 
+def _is_shell_reference_or_path(value: str) -> bool:
+    """A value the shell will expand, or a path to where the secret lives."""
+    return "$$" in value or value.startswith(_ARGV_PATH_PREFIXES)
+
+
+def _is_credential_name(name_upper: str, value: str) -> bool:
+    """The key-shaped test, as `check` applies it to an env key."""
+    if name_upper in _ARGV_FLAG_WORDS:
+        return True
+    if not _matches_credential_pattern(name_upper):
+        return False
+    if _is_exempt_key(name_upper):
+        return False
+    return not _is_quantity_knob(name_upper, value)
+
+
+def _split_shell(text: str) -> list[str]:
+    """Split a shell string the way the shell would; fall back on bad quoting."""
+    try:
+        return shlex.split(text)
+    except ValueError:
+        return text.split()
+
+
+def _argv_tokens(raw: Any, *, healthcheck: bool = False) -> list[str]:
+    """Flatten a `command:`/`entrypoint:`/`healthcheck.test` value to tokens.
+
+    A string is a shell line and is split as one. A list is taken as written,
+    except that the payload after a `-c` (`sh -c "..."`) or after
+    `CMD-SHELL` is itself a shell line and is split again, so the credential
+    inside `sh -c "PGPASSWORD=x psql"` is reached either way.
+    """
+    items: list[str] = []
+    if isinstance(raw, str):
+        items = _split_shell(raw)
+    elif isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, bool):
+                continue
+            text = as_scalar_text(item) if isinstance(item, (int, float)) else item
+            if isinstance(text, str):
+                items.append(text)
+    else:
+        return []
+    tokens: list[str] = []
+    for i, token in enumerate(items):
+        previous = items[i - 1] if i else None
+        is_payload = previous in _ARGV_SHELL_FLAGS or (
+            healthcheck and i == 1 and previous == _HEALTHCHECK_SHELL
+        )
+        if is_payload:
+            tokens.extend(_split_shell(token))
+        else:
+            tokens.append(token)
+    return tokens
+
+
+def _scan_argv(tokens: list[str]) -> Iterator[str]:
+    """Yield the name, as written, of each credential-shaped literal argument.
+
+    Three shapes: a `KEY=value` assignment, a flag taking a value inline or as
+    the next token, and mysql's glued `-p<value>`. The value itself is never
+    yielded -- only the name the finding reports.
+    """
+    binaries = {token.rsplit("/", 1)[-1] for token in tokens}
+    mysql_present = bool(binaries & _MYSQL_BINARIES)
+    for i, token in enumerate(tokens):
+        assignment = _ARGV_ASSIGNMENT_RE.match(token)
+        if assignment:
+            key, assigned = assignment.groups()
+            if _is_credential_name(key.upper(), assigned) and _is_literal_argument(
+                assigned
+            ):
+                yield key
+            continue
+        glued = _ARGV_MYSQL_PASSWORD_RE.match(token)
+        if glued and mysql_present:
+            if _is_literal_argument(glued.group(1)):
+                yield "-p"
+            continue
+        flag = _ARGV_FLAG_RE.match(token)
+        if flag:
+            name, inline_value = flag.groups()
+            name_upper = name.upper().replace("-", "_").replace(".", "_")
+            value: str | None = inline_value
+            if value is None:
+                following = tokens[i + 1] if i + 1 < len(tokens) else None
+                if following and not following.startswith("-"):
+                    value = following
+            if value is None:
+                continue
+            if _is_credential_name(name_upper, value) and _is_literal_argument(value):
+                yield token.split("=", 1)[0]
+            continue
+
+
+def _is_literal_argument(value: str) -> bool:
+    """`_is_literal_credential_value`, minus what the shell or a path supplies."""
+    if _is_shell_reference_or_path(value):
+        return False
+    return _is_literal_credential_value(value)
+
+
+def _iter_argv(service_config: dict[str, Any]) -> Iterator[tuple[str, list[str]]]:
+    """Yield (location, tokens) for each argument-list surface a service sets."""
+    for key in ("command", "entrypoint"):
+        if key in service_config:
+            yield key, _argv_tokens(service_config[key])
+    healthcheck = service_config.get("healthcheck")
+    if (
+        isinstance(healthcheck, dict)
+        and healthcheck.get("disable") is not True
+        and "test" in healthcheck
+    ):
+        yield "healthcheck.test", _argv_tokens(healthcheck["test"], healthcheck=True)
+
+
 def _iter_env(env_block: Any) -> Iterator[tuple[str, Any, int | None]]:
     """Yield (key, raw_value, list_index_or_None) from a service's env block."""
     if isinstance(env_block, dict):
@@ -240,10 +412,14 @@ class CredentialEnvKeysRule(BaseRule):
                 "convention (PASSWORD, PASSPHRASE, TOKEN, SECRET, API_KEY, "
                 "ACCESS_KEY, PRIVATE_KEY, ENCRYPTION_KEY, CREDENTIAL, *_PASS, "
                 "*_PWD, PASSWD, *_SALT, *_DSN) and whose value is a non-empty "
-                "literal string. The "
+                "literal string, in `environment:`, an `env_file:`, or as a "
+                "flag or assignment in `command:`, `entrypoint:` or "
+                "`healthcheck.test` (`--requirepass hunter2`, "
+                "`PGPASSWORD=hunter2 psql`, mysql's `-phunter2`). The "
                 "credential is exposed via `docker inspect`, "
-                "`/proc/<pid>/environ`, `docker compose config`, process "
-                "listings, and CI logs. Compose's `secrets:` primitive "
+                "`/proc/<pid>/environ` or `/proc/<pid>/cmdline`, `docker "
+                "compose config`, process listings, and CI logs. Compose's "
+                "`secrets:` primitive "
                 "materializes credentials as files under /run/secrets/ and "
                 "does not appear in any of those surfaces. A key naming a "
                 "quantity about the credential (a lifetime, size, limit or "
@@ -264,6 +440,8 @@ class CredentialEnvKeysRule(BaseRule):
         global_config: dict[str, Any],
         lines: dict[str, int],
     ) -> Iterator[Finding]:
+        yield from self._check_argv(service_name, service_config, lines)
+
         env = service_config.get("environment")
         if env is None:
             return
@@ -305,6 +483,54 @@ class CredentialEnvKeysRule(BaseRule):
                 ),
                 references=[OWASP_REF, COMPOSE_SECRETS_REF],
             )
+
+    def _check_argv(
+        self,
+        service_name: str,
+        service_config: dict[str, Any],
+        lines: dict[str, int],
+    ) -> Iterator[Finding]:
+        """Grade `command:`, `entrypoint:` and `healthcheck.test` (issue #1077).
+
+        The same key-shaped test as `check`, applied to the tokens that name a
+        value in an argument list. One finding per name per location: a flag
+        repeated on one line is one thing to move, not two.
+        """
+        for location, tokens in _iter_argv(service_config):
+            seen: set[str] = set()
+            for name in _scan_argv(tokens):
+                if name in seen:
+                    continue
+                seen.add(name)
+                yield Finding(
+                    rule_id="CL-0020",
+                    severity=Severity.HIGH,
+                    service=service_name,
+                    evidence=f"{location}:{name}",
+                    message=(
+                        f"Service passes credential-shaped argument '{name}' "
+                        f"with a literal value in `{location}`. The argument "
+                        "list is exposed via `docker inspect`, "
+                        "`/proc/<pid>/cmdline` (readable by every user in the "
+                        "container), `docker compose config`, process "
+                        "listings, and CI logs — any process or operator with "
+                        "daemon access can read it."
+                    ),
+                    line=lines.get(f"services.{service_name}.{location}"),
+                    fix=(
+                        f"Declare the value behind '{inline(name)}' under "
+                        "Compose's `secrets:` primitive and read the file at "
+                        "runtime instead of writing the literal into "
+                        f"`{inline(location)}`: pass a path if the program takes one "
+                        "(`--password-file /run/secrets/<name>`), or read it in "
+                        "a shell line as `$$(cat /run/secrets/<name>)` — the "
+                        "doubled `$` keeps Compose from interpolating it, so the "
+                        "container's shell runs the substitution. Declare the "
+                        "secret under the top-level `secrets:` block sourced "
+                        "from a gitignored file or `external: true`."
+                    ),
+                    references=[OWASP_REF, COMPOSE_SECRETS_REF],
+                )
 
     def check_env_file_keys(
         self,
