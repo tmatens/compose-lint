@@ -351,27 +351,35 @@ jobs:
           PY
 
       - name: Install from TestPyPI and verify version
-        # The index now lists the version; a couple of retries still cover the
-        # short window where /simple/ is updated but a file is not yet served.
+        # The index now lists the version, but pip can still be served a stale
+        # copy of it: the probe above asks for the PEP 691 JSON view, pip asks
+        # with its own Accept header, and the CDN can hold the two as separate
+        # cache entries. A fixed 3 x 15s retry gave up inside that window on
+        # 0.34.0 and again on 0.36.0, and both times re-running the job alone
+        # passed. So back off instead (~3.75 min of waiting), and skip pip's own
+        # HTTP cache so each attempt asks the CDN afresh.
         #
         # `--no-deps` is what keeps TestPyPI scoped to the one artifact under
         # test: it is the only thing that legitimately lives there, and its
         # dependencies are already installed above.
         run: |
           version="${GITHUB_REF_NAME#v}"
-          for attempt in 1 2 3; do
+          delays=(15 30 60 120)
+          for attempt in 1 2 3 4 5; do
             if pip install \
                 --no-deps \
+                --no-cache-dir \
                 -i https://test.pypi.org/simple/ \
                 "compose-lint==${version}"; then
               break
             fi
-            if [ "${attempt}" = 3 ]; then
-              echo "::error::TestPyPI install failed after 3 attempts even though /simple/ lists ${version}"
+            if [ "${attempt}" = 5 ]; then
+              echo "::error::TestPyPI install failed after 5 attempts over ~3.75 min even though /simple/ lists ${version}. Re-run this job: a stale CDN copy of the index has cleared on re-run every time so far."
               exit 1
             fi
-            echo "Attempt ${attempt} failed; retrying in 15s..."
-            sleep 15
+            delay="${delays[attempt-1]}"
+            echo "Attempt ${attempt} failed; retrying in ${delay}s..."
+            sleep "${delay}"
           done
           expected="compose-lint ${version}"
           actual="$(compose-lint --version)"
@@ -757,18 +765,26 @@ jobs:
       - name: Verify — cosign signature
         env:
           DIGEST: ${{ steps.inspect.outputs.digest }}
+        # Backs off rather than retrying at a fixed 15s: a flake here lands
+        # after the image is pushed and signed, and blocks the GitHub Release,
+        # SBOM/VEX and pin PR until someone re-runs the job.
         run: |
-          for attempt in 1 2 3; do
+          delays=(10 20 40 80)
+          for attempt in 1 2 3 4 5; do
             if cosign verify \
               --certificate-identity="https://github.com/${GITHUB_WORKFLOW_REF}" \
               --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
               "composelint/compose-lint@${DIGEST}"; then
               exit 0
             fi
-            echo "Attempt ${attempt} failed, waiting 15s for signature propagation..."
-            sleep 15
+            if [ "${attempt}" = 5 ]; then
+              break
+            fi
+            delay="${delays[attempt-1]}"
+            echo "Attempt ${attempt} failed, waiting ${delay}s for signature propagation..."
+            sleep "${delay}"
           done
-          echo "::error::cosign verify failed after 3 attempts"
+          echo "::error::cosign verify failed after 5 attempts over ~2.5 min. The image is already pushed and signed; re-run the failed jobs before treating this as a signing fault."
           exit 1
       - name: Verify — published image version matches tag
         env:
