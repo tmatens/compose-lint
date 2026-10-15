@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-10-15
+
 ### Changed
 
 - **The config beside the Compose file is read.** With no `--config`,
@@ -4456,7 +4458,8 @@ First public release.
   inputs through `env:` rather than direct `${{ }}` interpolation to prevent
   shell injection.
 
-[Unreleased]: https://github.com/tmatens/compose-lint/compare/v0.35.0...HEAD
+[Unreleased]: https://github.com/tmatens/compose-lint/compare/v0.36.0...HEAD
+[0.36.0]: https://github.com/tmatens/compose-lint/compare/v0.35.0...v0.36.0
 [0.35.0]: https://github.com/tmatens/compose-lint/compare/v0.34.1...v0.35.0
 [0.34.1]: https://github.com/tmatens/compose-lint/compare/v0.34.0...v0.34.1
 [0.34.0]: https://github.com/tmatens/compose-lint/compare/v0.33.0...v0.34.0
