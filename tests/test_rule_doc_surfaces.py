@@ -47,6 +47,9 @@ DOC = DOCS_RULES / "CL-0020.md"
 _NAME = re.compile(r"`(_?[A-Z][A-Z0-9_]*)`")
 # The boolean-flag values are the one lower-case list.
 _VALUE = re.compile(r"`([a-z0-9]+)`")
+# Program names: lower-case, possibly hyphenated (`mariadb-admin`). Excludes
+# the `-p` / `-P` flags on the same line, which start with a dash.
+_BINARY = re.compile(r"`([a-z][a-z0-9-]*)`")
 
 
 def _line(anchor: str) -> str:
@@ -99,6 +102,18 @@ SURFACES: dict[str, tuple[str, re.Pattern[str], frozenset[str]]] = {
         _NAME,
         frozenset(cl0020._QUANTITY_KEY_FRAGMENTS)
         | frozenset(cl0020._QUANTITY_KEY_SUFFIXES),
+    ),
+    # The argument-list surfaces (#1077): the flag names outside the key list,
+    # and the binaries that make a glued `-p` a password.
+    "argv flag words": (
+        _line("- Flag names the key list does not reach"),
+        _NAME,
+        frozenset(cl0020._ARGV_FLAG_WORDS),
+    ),
+    "mysql binaries": (
+        _line("- The glued `-p` is read only beside"),
+        _BINARY,
+        frozenset(cl0020._MYSQL_BINARIES),
     ),
 }
 
