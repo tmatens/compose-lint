@@ -93,20 +93,15 @@ def main() -> int:
             kept.append(i)
             merged.append(durations[i])
 
-    # One global palette covering every color in the cast. Derive it from the
-    # most colorful frame (the findings screen, with its red/yellow severity
-    # colors) stacked with the final frame, so quantizing doesn't grey out the
-    # severity colors a plainer frame's palette would omit.
-    shown = [frames[i] for i in kept]
-    richest = max(shown, key=lambda f: len(f.getcolors(maxcolors=1 << 16) or [(0, 0)]))
-    sample = Image.new("RGB", (richest.width, richest.height * 2))
-    sample.paste(richest, (0, 0))
-    sample.paste(shown[-1], (0, richest.height))
-    palette = sample.quantize(colors=256, method=Image.MEDIANCUT)
-
+    # Each frame keeps its own palette. VHS already wrote every frame with one
+    # of at most 256 colors, so quantizing a frame by itself reproduces it
+    # exactly. One palette shared by the whole cast cannot: the casts together
+    # use more than 256 colors, and whichever screen the shared palette was
+    # sampled from decided which colors survived — once --explain rendered its
+    # markdown, the findings screen's red severities rounded to grey.
     pframes = []
-    for img in shown:
-        pf = img.quantize(palette=palette, dither=Image.NONE)
+    for i in kept:
+        pf = frames[i].quantize(colors=256, method=Image.MEDIANCUT, dither=Image.NONE)
         pf.info.pop("transparency", None)  # avoid a Pillow GIF-save crash
         pframes.append(pf)
 
