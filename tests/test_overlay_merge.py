@@ -240,7 +240,7 @@ def test_fix_edits_findings_written_in_the_file_it_is_fixing(tmp_path: Path) -> 
     assert "127.0.0.1:8080:80" in base_after
     # ...and the overlay is never a write target.
     assert (tmp_path / "compose.override.yml").read_text() == overlay_before
-    assert "need manual review" in result.stderr
+    assert "fix by hand" in result.stderr
 
 
 @requires_docker
@@ -383,7 +383,7 @@ def test_every_fixer_runs_on_a_merged_document(tmp_path: Path) -> None:
     assert "seccomp:unconfined" not in after
     assert 'driver: "none"' not in after
     # The overlay's socket mount is not fixable and must be reported, not edited.
-    assert "need manual review" in result.stderr
+    assert "fix by hand" in result.stderr
 
 
 @requires_docker
@@ -417,7 +417,7 @@ def test_overlay_provenance_findings_are_never_fixed(tmp_path: Path) -> None:
 
     assert (tmp_path / "compose.override.yml").read_text() == overlay_before
     assert "seccomp:unconfined" not in (tmp_path / "compose.yml").read_text()
-    assert "need manual review" in result.stderr
+    assert "fix by hand" in result.stderr
 
 
 def test_merged_fix_preserves_crlf_line_endings(tmp_path: Path) -> None:
@@ -485,7 +485,7 @@ def test_a_key_the_overlay_republishes_belongs_to_the_overlay(tmp_path: Path) ->
 
     assert '- "8080:80"' in (tmp_path / "compose.yml").read_text()
     assert "127.0.0.1" not in (tmp_path / "compose.yml").read_text()
-    assert "need manual review" in result.stderr
+    assert "fix by hand" in result.stderr
 
 
 BASE_PRIVILEGED = """\

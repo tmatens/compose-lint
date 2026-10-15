@@ -781,6 +781,46 @@ def test_render_file_diff_no_spurious_newline_marker() -> None:
     assert "No newline at end of file" not in out
 
 
+def test_render_file_diff_colors_lines_like_git_diff() -> None:
+    original = "services:\n  web:\n    ports:\n      - 8080:80\n"
+    patched = "services:\n  web:\n    ports:\n      - 127.0.0.1:8080:80\n"
+    out = render_file_diff(
+        "docker-compose.yml", original, patched, [("CL-0005", "rebinds")], color=True
+    )
+    lines = out.splitlines()
+    assert lines[0] == "\033[33m⚠ behavior-changing · CL-0005: rebinds\033[0m"
+    assert lines[1] == "\033[1m--- docker-compose.yml\033[0m"
+    assert lines[2] == "\033[1m+++ docker-compose.yml\033[0m"
+    assert lines[3].startswith("\033[36m@@ ")
+    assert "\033[31m-      - 8080:80\033[0m" in lines
+    assert "\033[32m+      - 127.0.0.1:8080:80\033[0m" in lines
+    # Context lines stay plain.
+    assert "     ports:" in lines
+
+
+def test_render_file_diff_is_plain_unless_asked() -> None:
+    original = "services:\n  web:\n    image: nginx:1.27\n"
+    patched = "services:\n  web:\n    read_only: true\n    image: nginx:1.27\n"
+    out = render_file_diff("docker-compose.yml", original, patched, [("CL-0007", "x")])
+    assert "\033" not in out
+
+
+def test_render_file_diff_colors_the_missing_newline_sentinel_apart() -> None:
+    original = "a: 1\nb: 2"
+    patched = "a: 1\nb: 3"
+    out = render_file_diff("f.yml", original, patched, [], color=True)
+    assert "\033[31m-b: 2\033[0m\n\033[2m\\ No newline at end of file\033[0m\n" in out
+
+
+def test_render_file_diff_color_never_unescapes_content() -> None:
+    """The only ESC bytes in a colored diff are the ones the renderer added."""
+    original = "a: 1\nb: bad\x1b[2Jvalue\n"
+    patched = "a: 1\n"
+    out = render_file_diff("compose.yml", original, patched, [], color=True)
+    assert "\x1b[2J" not in out
+    assert "\\u001b[2J" in out
+
+
 # --- reparse safety net ----------------------------------------------------
 
 

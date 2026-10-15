@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The config beside the Compose file is read.** With no `--config`,
+  `.compose-lint.yml` (or `.compose-lint.yaml`) is now looked for in the first
+  linted Compose file's directory — Compose's project directory — before the
+  working directory. `compose-lint app/docker-compose.yml` run from the
+  repository root reads `app/.compose-lint.yml`, which it used to ignore; a
+  single root config still covers projects with none of their own. Parent
+  directories are not searched. ([ADR-039](docs/adr/039-read-the-config-beside-the-compose-file.md))
+- **`fix` names what it leaves to fix by hand.** The summary used to say
+  `N finding(s) need manual review`, which read as if no fix were known. It
+  now lists each one under `N to fix by hand:` with its line, rule and the
+  opening instruction of the rule's fix guidance — `line 3  CL-0019  Add a
+  digest pin: image: …@sha256:<digest>`. Under `--apply` the line numbers are
+  the written file's, so they match the `check` that follows. Findings
+  deferred to an overlay or `extends:` base are listed the same way.
+- **`fix`'s dry-run diff is colored on a terminal**, as `git diff` colors one:
+  removals red, additions green, `@@` lines cyan, behavior-changing caveats
+  yellow. The same `NO_COLOR`/`FORCE_COLOR` rules as `check` apply, so a
+  redirected `fix > changes.diff` is still a plain patch. Its stderr status
+  lines are colored too, judged by whether stderr is a terminal: the
+  `--apply` caveats yellow as on the dry run, `applied N fix(es)` green,
+  `N to fix by hand:` bold, and each rule id dim as in `check`.
+
+- **`init` writes beside the Compose file.** With no `-o`, `init FILE` writes
+  `.compose-lint.yml` beside `FILE`, where `check` now looks first, rather
+  than in the working directory, where `check app/compose.yml` would not read
+  it once a config existed beside the file. It says so on stderr when the new
+  file takes over from the working directory's config, since the two do not
+  merge. `-o` is unchanged.
+- **`--explain` renders the rule doc on a terminal.** Headings and bold print
+  bold, inline code cyan, links keep their text (web links show the address,
+  dimmed), tables line up or become one record per row, and prose re-wraps to
+  the terminal. Piped output is still the raw markdown, byte for byte
+  (ADR-034 amendment).
+
+### Removed
+
+- **The "no config found" note.** A failing `check` or a `fix` with work to do
+  printed `Note: no .compose-lint.yml or .compose-lint.yaml found in …` on
+  stderr whenever no config was loaded — including every first run, where
+  there was nothing to act on. The banner's `config:` field already says
+  which file, if any, was read.
+
 ## [0.35.0] - 2026-10-15
 
 ### Changed

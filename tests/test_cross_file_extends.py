@@ -559,7 +559,7 @@ def test_fix_defers_a_finding_written_in_the_base_and_names_it(
 
     err = _slashed(capsys.readouterr().err)
     assert "come from" in err
-    assert "shared/base.yml and need manual review there" in err
+    assert "shared/base.yml; fix by hand there" in err
     # The base is another file's document. `fix` does not touch it.
     assert (tmp_path / "shared" / "base.yml").read_text(encoding="utf-8") == (
         base_before

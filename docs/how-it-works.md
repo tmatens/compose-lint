@@ -66,7 +66,7 @@ the [compatibility contract](compatibility.md).
 ```mermaid
 flowchart LR
   findings["Unsuppressed findings"] --> q{"One correct value, in one place,<br/>with no anchors or ${VAR} there?"}
-  q -->|no| manual["Reported for manual review"]
+  q -->|no| manual["Listed with the fix to make by hand"]
   q -->|yes| edit["Edit, then re-parse and<br/>re-lint the merged result"]
   edit -->|would not round-trip| refused["Refused, diff shown"]
   edit -->|clean| out["Dry run prints the diff<br/>apply mode writes it in place"]

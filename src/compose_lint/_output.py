@@ -188,6 +188,41 @@ def emit(message: str, *, stream: TextIO | None = None) -> None:
     _write_diagnostic("\n".join(lines) + "\n", stream)
 
 
+# Styles a status line may carry. The text report keeps its own palette in
+# formatters/text.py; these are the same SGR codes, named for what they mean
+# on a status line rather than for a severity.
+STYLE_BOLD = "\033[1m"
+STYLE_DIM = "\033[2m"
+STYLE_DONE = "\033[32m"  # green, as PASS and an added diff line
+STYLE_WARN = "\033[33m"  # yellow, as MEDIUM and the dry run's caveats
+_STYLE_RESET = "\033[0m"
+
+
+def emit_styled(
+    parts: list[tuple[str, str | None]],
+    *,
+    color: bool,
+    stream: TextIO | None = None,
+) -> None:
+    """Write a diagnostic built from styled parts, as :func:`emit` would.
+
+    Each part's text is sanitized on its own and only then wrapped in its
+    style, so the escape codes on the line are the ones added here: text from
+    a Compose file still cannot reach the terminal as a control sequence.
+    Without ``color`` the parts are joined plain and the result is exactly
+    what :func:`emit` writes for the same text.
+    """
+    body = "".join(
+        f"{style}{sanitize(text)}{_STYLE_RESET}"
+        if color and style and text
+        else sanitize(text)
+        for text, style in parts
+    )
+    first, *rest = body.split("\n")
+    lines = [first] + [_CONTINUATION_INDENT + line for line in rest]
+    _write_diagnostic("\n".join(lines) + "\n", stream)
+
+
 def emit_block(text: str) -> None:
     """Write pre-formatted multi-line text (a diff, a banner) to stderr.
 

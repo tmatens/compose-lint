@@ -270,7 +270,7 @@ real breakage from a false alarm. Its claims about runtime behaviour are
 re-tested against live containers in CI. KICS has a `remediate` command, but
 its documentation does not say whether Compose is one of the platforms it
 rewrites. compose-lint's `fix` edits the findings of six rules in place after
-a dry-run diff and reports the rest for manual review.
+a dry-run diff and lists the rest with the fix to make by hand.
 
 ## compose-lint vs Semgrep's `p/docker-compose` ruleset
 

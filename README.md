@@ -330,8 +330,8 @@ compose-lint fix --apply docker-compose.yml    # write the fixes in place
 compose-lint fix --only CL-0007 --apply docker-compose.yml  # one rule only
 ```
 
-Context-dependent findings (capability lists, socket mounts) are reported for
-manual review, and a region using YAML anchors, merge keys, or `${VAR}`
+Context-dependent findings (capability lists, socket mounts) are listed with
+the fix to make by hand, and a region using YAML anchors, merge keys, or `${VAR}`
 interpolation is refused rather than guessed. The full contract is in the
 [fix guide](https://tmatens.github.io/compose-lint/fix/).
 

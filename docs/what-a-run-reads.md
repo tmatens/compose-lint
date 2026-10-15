@@ -14,7 +14,7 @@ the document says, and no registry, daemon or image is consulted at all.
 
 That holds for the files a run *finds* as well as the ones a document names.
 A discovered `compose.yml`, its `compose.override.yml`, and the
-`.compose-lint.yml` in the working directory are part of the checkout, and so
+`.compose-lint.yml` beside it or in the working directory are part of the checkout, and so
 is a Compose file named on the command line, since CI hands the linter paths
 the checkout chose. One committed as a symlink is followed only while its
 target stays inside the directory the run started in (the checkout, in CI:
@@ -24,7 +24,8 @@ service directories is therefore graded when you run from the repository
 root, and its relative paths resolve beside the link, as Compose resolves
 them. A target outside both is refused rather than followed: exit 2, a
 coverage gap for a Compose document. The policy file is contained to the
-working directory, and one that leaves it is a configuration error. A plain
+working directory — or, when it was found beside a Compose file outside it, to
+that file's directory — and one that leaves it is a configuration error. A plain
 path you type is read as given, and so is `--config`.
 
 The same rule holds for every file a document routes the run to: the `.env`,

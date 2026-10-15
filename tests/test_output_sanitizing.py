@@ -413,3 +413,27 @@ def test_compose_text_issues_no_workflow_command_in_the_report(
     log = result.stdout + result.stderr
     assert FORGED in log  # the file's text is still reported, escaped
     assert forged(log, FORGED) == []
+
+
+def test_a_styled_diagnostic_escapes_its_text_before_styling_it(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Only the codes emit_styled adds reach the terminal."""
+    from compose_lint._output import STYLE_BOLD, emit_styled
+
+    emit_styled([("svc\x1b[2J", None), ("bold", STYLE_BOLD)], color=True)
+    err = capsys.readouterr().err
+    assert "\x1b[2J" not in err
+    assert "\\u001b[2J" in err
+    assert f"{STYLE_BOLD}bold\x1b[0m" in err
+
+
+def test_a_styled_diagnostic_without_color_matches_emit(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from compose_lint._output import STYLE_BOLD, emit, emit_styled
+
+    emit_styled([("a\nb ", None), ("c", STYLE_BOLD)], color=False)
+    styled = capsys.readouterr().err
+    emit("a\nb c")
+    assert styled == capsys.readouterr().err

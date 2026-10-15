@@ -42,7 +42,7 @@ HERO_EXPECTED = {
 # these two sets: four findings `fix` remediates automatically over three edits
 # (CL-0003 and CL-0009 share the `security_opt` rewrite), and one it refuses
 # because no safe automatic fix exists. The tape's on-screen summary line
-# ("3 fix(es) available; 1 finding(s) need manual review") quotes the *edit*
+# ("3 fix(es) available", then CL-0019 listed to fix by hand) quotes the *edit*
 # count, and its second screen depends on the leftover being below the default
 # HIGH threshold so the re-lint verdict flips FAIL -> PASS.
 #

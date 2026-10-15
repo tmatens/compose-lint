@@ -49,3 +49,16 @@ terminal reads the doc top-down. The change is presentation only and ships
 as MINOR. The paging applies to `--explain` alone — the findings report
 stays unpaged, because a lint run's verdict belongs in the scrollback of
 the command that produced it, not behind a `q`.
+
+**Amendment (rendered on a terminal):** a terminal now gets the rule doc
+rendered, not raw: `_terminal_markdown.py` strips the markdown markup, styles
+headings, bold, code and links, lines up tables, and re-wraps prose to the
+terminal (at most 100 columns). It applies whenever stdout is a terminal,
+including the cases above that print a plain dump instead of paging
+(`--no-pager`, `NO_PAGER`, `TERM=dumb`, a missing pager); color follows the
+`NO_COLOR`/`FORCE_COLOR` rules every other output uses. The guarantee this ADR
+made for everything that is not a terminal is unchanged: piped and redirected
+output is the doc's raw markdown, byte for byte. The renderer covers the
+markdown the rule docs use and no more, so it adds no runtime dependency;
+`tests/test_terminal_markdown.py` renders every shipped doc and fails on any
+marker left behind, including syntax the renderer does not handle.
