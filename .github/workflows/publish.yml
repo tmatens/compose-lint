@@ -478,30 +478,24 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_READ_TOKEN }}
-      # `docker/scout-action` downloads its ~180 MB CLI from the
-      # docker/scout-action release on first use in a job and reuses it
-      # for every later step, and the `@actions/tool-cache` download it
-      # uses does not retry 4xx. A transient 403 there failed this gate
-      # during the 0.30.0 release before any scanning happened — the same
-      # failure that killed scout-scan.yml run 142, which is why that
-      # workflow warms the CLI this way.
-      #
-      # Splitting the scan in two keeps the gate fail-closed while making
-      # the retry unambiguous. This step sets `exit-code: false`, so it
-      # can only fail on the download, never on a finding; the gate step
-      # below then runs against a warm CLI, so a failure there is a real
-      # critical CVE. Retrying the download is not the same as retrying
-      # the verdict, and only the first is done here.
-      - name: Warm the Scout CLI and write the SARIF
-        id: sweep
-        continue-on-error: true
+      # docker/scout-action downloads its CLI anonymously, and a spent
+      # anonymous rate limit on the runner's IP answers 403 before any
+      # scan runs; that failed this gate during the 0.30.0 release. Fetch
+      # it with the job token first; see the action.
+      - name: Pre-seed the Scout CLI
+        uses: $/.github/actions/preseed-scout-cli
+
+      # The scan is split in two so the SARIF and the verdict stay
+      # separate: this step writes the SARIF with `exit-code: false`,
+      # and the gate below decides the release.
+      - name: Write the Scout SARIF
         uses: docker/scout-action@221e7f4860634eeb1579e3bd7ca232e577bd1864 # v1.26.0
         with:
           command: cves
           image: local://composelint/compose-lint:scout
           # Keep `only-severities: critical` in step with the gate below,
           # so the SARIF this uploads stays exactly what it was before the
-          # split — this changes the retry behavior, not the Security tab.
+          # split.
           only-severities: critical
           exit-code: false
           sarif-file: scout-results.sarif
@@ -520,27 +514,10 @@ jobs:
           # image manifest. See ADR-012.
           vex-author: .*
 
-      # One retry, for the transient-download case described above.
-      # Deliberately no `continue-on-error`: if the download fails twice
-      # the release should fail loudly rather than gate on a scan that
-      # never ran.
-      - name: Retry after a failed Scout CLI download
-        if: steps.sweep.outcome == 'failure'
-        uses: docker/scout-action@221e7f4860634eeb1579e3bd7ca232e577bd1864 # v1.26.0
-        with:
-          command: cves
-          image: local://composelint/compose-lint:scout
-          only-severities: critical
-          exit-code: false
-          sarif-file: scout-results.sarif
-          vex-location: .vex/compose-lint.openvex.json
-          vex-author: .*
-
-      # The gate. The CLI is warm by this point, so this step cannot fail
-      # on the binary download; a non-zero exit is a real critical finding
-      # and must block the release. No `sarif-file` — the scan above
-      # already wrote it, and a gate that exits non-zero should not
-      # overwrite the artifact the upload below depends on.
+      # The gate. A non-zero exit is a real critical finding and must
+      # block the release. No `sarif-file` — the scan above already wrote
+      # it, and a gate that exits non-zero should not overwrite the
+      # artifact the upload below depends on.
       - name: Fail the release on a critical CVE
         uses: docker/scout-action@221e7f4860634eeb1579e3bd7ca232e577bd1864 # v1.26.0
         with:
@@ -552,9 +529,10 @@ jobs:
           vex-location: .vex/compose-lint.openvex.json
           vex-author: .*
 
-      # `always()` is gated on the SARIF existing so a Scout CLI download
-      # that fails twice surfaces as one error instead of cascading into a
-      # second ("Path does not exist") plus a CodeQL CONFIGURATION_ERROR.
+      # `always()` is gated on the SARIF existing so a Scout step that
+      # fails before writing it surfaces as one error instead of cascading
+      # into a second ("Path does not exist") plus a CodeQL
+      # CONFIGURATION_ERROR.
       # `hashFiles` still uploads when the gate step fails on a genuine
       # critical — the scan above wrote the file already — and skips only
       # when no scan produced one.

@@ -74,15 +74,13 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_READ_TOKEN }}
 
-      # `continue-on-error` + the retry below absorb a transient 403 on
-      # the Scout CLI download, which is not retried by the action (see
-      # scout-scan.yml for the full note). This scan is `exit-code:
-      # false`, so a failure here is always an infra error, never a
-      # finding — and `Build report body` hard-fails on a missing SARIF,
-      # so letting one through would surface as a confusing parse error.
+      # docker/scout-action downloads its CLI anonymously, and a spent
+      # anonymous rate limit on the runner's IP answers 403 before any
+      # scan runs. Fetch it with the job token first; see the action.
+      - name: Pre-seed the Scout CLI
+        uses: $/.github/actions/preseed-scout-cli
+
       - name: Scan published image for fixable CVEs (all severities)
-        id: scan
-        continue-on-error: true
         uses: docker/scout-action@221e7f4860634eeb1579e3bd7ca232e577bd1864 # v1.26.0
         with:
           command: cves
@@ -94,18 +92,6 @@ jobs:
           # Same OpenVEX document the image attestation carries, so CVEs
           # already marked not_affected don't page. See scout-scan.yml
           # for why vex-author must be `.*`.
-          vex-location: .vex/compose-lint.openvex.json
-          vex-author: .*
-
-      - name: Retry scan after a failed Scout CLI download
-        if: steps.scan.outcome == 'failure'
-        uses: docker/scout-action@221e7f4860634eeb1579e3bd7ca232e577bd1864 # v1.26.0
-        with:
-          command: cves
-          image: composelint/compose-lint:latest
-          only-fixed: true
-          exit-code: false
-          sarif-file: scout-fixable.sarif
           vex-location: .vex/compose-lint.openvex.json
           vex-author: .*
 

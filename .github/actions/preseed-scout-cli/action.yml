@@ -1,0 +1,86 @@
+name: 'Pre-seed the Docker Scout CLI'
+description: >
+  Download the binary that docker/scout-action runs, with the job's token,
+  into the action's own install directory, so the action finds it and skips
+  its own download. The action fetches that ~180 MB asset from the GitHub
+  API anonymously (docker/scout-action#116), which shares the 60-per-hour
+  unauthenticated budget of the runner's egress IP with every other tenant
+  on it; once that is spent the download answers 403 and the job fails
+  before anything is scanned. An authenticated fetch draws on this
+  repository's own budget instead.
+
+  Run it after the job's steps are prepared and before the first
+  docker/scout-action step. It fails rather than falling back: if the
+  action's layout changes, a silent fallback would quietly bring the
+  anonymous download back. Delete it once the action authenticates its
+  own download.
+
+inputs:
+  token:
+    description: A token that can read public releases; no scopes needed.
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Download and verify the Scout CLI binary
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+        fail() { echo "::error title=Scout CLI pre-seed::$*"; exit 1; }
+
+        # The asset names getBinaryName() picks in the action's source.
+        case "${RUNNER_OS}/${RUNNER_ARCH}" in
+          Linux/X64) asset=docker-scout-action_linux_amd64 ;;
+          Linux/ARM64) asset=docker-scout-action_linux_arm64 ;;
+          *) fail "no Scout asset mapped for ${RUNNER_OS}/${RUNNER_ARCH}" ;;
+        esac
+
+        # The runner unpacks every `uses:` action at job setup under
+        # <work>/_actions/<owner>/<repo>/<ref>, a sibling of the workspace.
+        shopt -s nullglob
+        dirs=("$(dirname "${RUNNER_WORKSPACE}")"/_actions/docker/scout-action/*/)
+        [ "${#dirs[@]}" -eq 1 ] \
+          || fail "expected one docker/scout-action checkout, found ${#dirs[@]}"
+        action_dir="${dirs[0]%/}"
+        index="${action_dir}/index.js"
+        [ -f "${index}" ] || fail "no index.js in ${action_dir}"
+
+        # The two facts this step relies on, read from the action's bundle
+        # rather than assumed. It skips its download when the binary is
+        # already in <action>/dist. The release it downloads is a version
+        # baked in at build time, which need not match the tag it is pinned
+        # by: the v1.26.0 commit fetches the v1.25.0 binary.
+        grep -qF 'path.join(__dirname, "dist")' "${index}" \
+          || fail "the action no longer looks for a bundled binary in dist/"
+        mapfile -t versions < <(grep -oE 'const version = "v[0-9]+\.[0-9]+\.[0-9]+"' "${index}" | sort -u)
+        [ "${#versions[@]}" -eq 1 ] \
+          || fail "expected one baked-in release version, found ${#versions[@]}"
+        version="${versions[0]#*\"}"
+        version="${version%\"}"
+
+        dist="${action_dir}/dist"
+        if [ -x "${dist}/${asset}" ]; then
+          echo "Already seeded: ${dist}/${asset}"
+          exit 0
+        fi
+
+        tmp="$(mktemp -d -p "${RUNNER_TEMP}")"
+        trap 'rm -rf "${tmp}"' EXIT
+        gh release download "${version}" --repo docker/scout-action \
+          --pattern "${asset}" --pattern '*_checksums.txt' --dir "${tmp}"
+
+        # Checksum lines name the asset as <asset>_<version>_<os>_<arch>.
+        sums=("${tmp}"/*_checksums.txt)
+        [ "${#sums[@]}" -eq 1 ] || fail "expected one checksums file in ${version}"
+        mapfile -t expected < <(awk -v p="${asset}_${version#v}_" 'index($2, p) == 1 { print $1 }' "${sums[0]}")
+        [ "${#expected[@]}" -eq 1 ] \
+          || fail "expected one checksum for ${asset} in ${version}, found ${#expected[@]}"
+        (cd "${tmp}" && echo "${expected[0]}  ${asset}" | sha256sum --check --strict)
+
+        mkdir -p "${dist}"
+        install -m 0755 "${tmp}/${asset}" "${dist}/${asset}"
+        echo "Seeded ${asset} from docker/scout-action ${version} into ${dist}"

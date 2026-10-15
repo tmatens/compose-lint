@@ -245,6 +245,21 @@ Scheduled CVE scans need no action unless a high-severity alert appears —
 at that point the fix is usually a Renovate PR bumping the base image
 digest, which ships in the next patch release.
 
+Every job that runs `docker/scout-action` (this one, `vuln-report.yml` and
+`publish.yml`'s `docker-scout`) first runs the local
+`.github/actions/preseed-scout-cli` action. The Scout action downloads its
+~180 MB CLI from its GitHub release anonymously
+([docker/scout-action#116](https://github.com/docker/scout-action/issues/116)),
+so it shares the 60-per-hour unauthenticated budget of the runner's IP with
+every other tenant, and a spent budget answers 403 before anything is
+scanned. The pre-seed fetches the same asset with the job token, checks it
+against the release's checksum file, and puts it where the action looks for
+a bundled binary, so the action never downloads. The release version is read
+from the action's bundle at run time, so a Renovate bump of the action needs
+no matching edit. If the action's layout changes the pre-seed fails rather
+than falling back to the anonymous download. Remove it once the action
+authenticates its own download.
+
 ---
 
 ## Fixable-vulnerability report — `vuln-report.yml`
