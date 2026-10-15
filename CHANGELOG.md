@@ -51,6 +51,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   there was nothing to act on. The banner's `config:` field already says
   which file, if any, was read.
 
+### Fixed
+
+- **Color on the classic Windows console.** cmd.exe and PowerShell windows on
+  Windows 10 and Server printed every colored line's escape sequences
+  literally (`←[31mCRITICAL←[0m`), because that console interprets them only
+  when a program enables it. compose-lint now enables it for a console it
+  colors, and prints plain text where the console cannot (Windows 8.1, early
+  Windows 10). Windows Terminal, VS Code and Git Bash are unchanged. (#1089)
+
 ## [0.35.0] - 2026-10-15
 
 ### Changed

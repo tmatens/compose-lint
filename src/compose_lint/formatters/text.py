@@ -13,6 +13,7 @@ from compose_lint._lines import BREAK_CHARS, split_lines
 from compose_lint._output import sanitize as _sanitize
 from compose_lint._output import sanitize_line as _sanitize_line
 from compose_lint._report_path import report_path
+from compose_lint._windows_console import interprets_ansi
 from compose_lint.models import Finding, Severity
 
 _COLORS = {
@@ -94,15 +95,25 @@ def color_enabled(stream: TextIO | None = None) -> bool:
     the chalk/supports-color convention. Otherwise color follows whether
     ``stream`` — stdout unless given — is a terminal, so stderr's status lines
     are judged by stderr and not by where the report went.
+
+    A terminal on Windows must also interpret the sequences: a classic console
+    is asked to, and one that cannot gets plain text rather than raw escape
+    codes (#1089). ``FORCE_COLOR`` still forces color — for a pipe into a
+    viewer that renders it — but a console it forces color onto is asked
+    first, so forcing it there renders too.
     """
     if os.environ.get("NO_COLOR"):
         return False
-    force = os.environ.get("FORCE_COLOR")
-    if force is not None:
-        return force.lower() not in ("0", "false")
     target = sys.stdout if stream is None else stream
     isatty = getattr(target, "isatty", None)
-    return bool(isatty and isatty())
+    tty = bool(isatty and isatty())
+    force = os.environ.get("FORCE_COLOR")
+    if force is not None:
+        forced = force.lower() not in ("0", "false")
+        if forced and tty:
+            interprets_ansi(target)
+        return forced
+    return tty and interprets_ansi(target)
 
 
 def _colorize(text: str, code: str) -> str:
