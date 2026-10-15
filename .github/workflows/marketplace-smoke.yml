@@ -70,7 +70,7 @@ jobs:
   pypi-propagated:
     name: Release is visible on PyPI's index
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions: {}
     steps:
       - name: Wait for the release to reach PyPI's /simple/ index
@@ -81,20 +81,26 @@ jobs:
           # so a hit here means pip can see the version — unlike the JSON API
           # (/pypi/<name>/json), which goes live seconds after publish and
           # would report ready while pip still 404s.
-          for attempt in 1 2 3 4 5 6; do
-            if curl -fsSL \
+          #
+          # Backs off over ~4.75 min, the same schedule as publish.yml's
+          # TestPyPI probe: /simple/ can lag the JSON API by minutes, and the
+          # old 6 x 20s (~100s) window was shorter than that.
+          delays=(10 20 30 45 60 60 60)
+          for attempt in 1 2 3 4 5 6 7 8; do
+            if curl -fsSL --max-time 30 \
                  -H 'Accept: application/vnd.pypi.simple.v1+json' \
                  https://pypi.org/simple/compose-lint/ \
                | jq -e --arg v "${version}" 'any(.versions[]; . == $v)' >/dev/null; then
               echo "compose-lint ${version} is visible on the /simple/ index."
               exit 0
             fi
-            if [ "${attempt}" = 6 ]; then
-              echo "::error::compose-lint ${version} is still absent from PyPI's /simple/ index after 6 attempts over ~100s. Either the release never published, or propagation is unusually slow — re-run this workflow before treating it as a regression."
+            if [ "${attempt}" = 8 ]; then
+              echo "::error::compose-lint ${version} is still absent from PyPI's /simple/ index after 8 attempts over ~4.75 min. Either the release never published, or propagation is unusually slow — re-run this workflow before treating it as a regression."
               exit 1
             fi
-            echo "Attempt ${attempt}: ${version} not on the /simple/ index yet; sleeping 20s..."
-            sleep 20
+            delay="${delays[attempt-1]}"
+            echo "Attempt ${attempt}: ${version} not on the /simple/ index yet; sleeping ${delay}s..."
+            sleep "${delay}"
           done
 
   marketplace-smoke:
