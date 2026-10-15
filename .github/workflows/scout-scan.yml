@@ -33,18 +33,15 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_READ_TOKEN }}
 
-      # Full-severity sweep, ordered first so it also warms the Scout
-      # CLI. `docker/scout-action` downloads its ~180 MB binary from the
-      # docker/scout-action release on first use in a job and reuses it
-      # for every later step (observed in runs 142/143), and the
-      # `@actions/tool-cache` download it uses does not retry 4xx. A
-      # transient 403 on that download killed run 142 before either scan
-      # ran. Putting the `exit-code: false` scan first means only this
-      # step can hit the download path, and it fails on infra errors
-      # only — never on findings — so the retry below is unambiguous.
+      # docker/scout-action downloads its CLI anonymously, and a spent
+      # anonymous rate limit on the runner's IP answers 403 before any
+      # scan runs. Fetch it with the job token first; see the action.
+      - name: Pre-seed the Scout CLI
+        uses: $/.github/actions/preseed-scout-cli
+
+      # Full-severity sweep for the Security tab. `exit-code: false`, so
+      # it never fails on findings; the gate below does that.
       - name: Scan all severities for SARIF upload
-        id: sweep
-        continue-on-error: true
         uses: docker/scout-action@221e7f4860634eeb1579e3bd7ca232e577bd1864 # v1.26.0
         with:
           command: cves
@@ -65,26 +62,10 @@ jobs:
           # also cosign-attested to the image manifest. See ADR-012.
           vex-author: .*
 
-      # One retry, for the transient-download case described above.
-      # Deliberately no `continue-on-error`: if the download fails twice
-      # the run should fail loudly rather than scan nothing quietly.
-      - name: Retry sweep after a failed Scout CLI download
-        if: steps.sweep.outcome == 'failure'
-        uses: docker/scout-action@221e7f4860634eeb1579e3bd7ca232e577bd1864 # v1.26.0
-        with:
-          command: cves
-          image: composelint/compose-lint:latest
-          exit-code: false
-          sarif-file: scout-results.sarif
-          vex-location: .vex/compose-lint.openvex.json
-          vex-author: .*
-
       # Gate the run on criticals so a fresh critical CVE fails the job
       # and the `Report scheduled failure as issue` step downstream fires
       # on schedule. High-severity stays warning-only — still uploaded to
-      # the Security tab by the sweep above, just doesn't page. The CLI
-      # is already warm by this point, so this step cannot fail on the
-      # binary download; a failure here means a real critical finding.
+      # the Security tab by the sweep above, just doesn't page.
       - name: Scan for critical CVEs (fails the run)
         uses: docker/scout-action@221e7f4860634eeb1579e3bd7ca232e577bd1864 # v1.26.0
         with:
