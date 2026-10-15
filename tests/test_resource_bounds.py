@@ -574,7 +574,11 @@ def test_a_merge_key_fanout_is_refused_before_it_is_built() -> None:
     start = time.perf_counter()
     with pytest.raises(ComposeError, match=f"more than {MAX_MERGED_PAIRS}"):
         loads(_merge_fanout(2000))
-    assert time.perf_counter() - start < 3
+    # The match above is what proves the cap; the clock only has to catch the
+    # document being built first, which costs about a gigabyte and runs far
+    # past this budget. 10s, like the other budgets here, leaves room for a
+    # loaded run (xdist plus subprocess coverage), where 3s was exceeded.
+    assert time.perf_counter() - start < 10
 
 
 def test_merge_keys_at_the_cap_still_load() -> None:
