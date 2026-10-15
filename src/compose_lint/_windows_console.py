@@ -74,9 +74,10 @@ def _enable_on_windows(fd: int) -> bool:  # pragma: no cover - Win32 calls only
     """
     if sys.platform != "win32":
         return True
-    import ctypes
+    import ctypes.wintypes
     import msvcrt
-    from ctypes import wintypes
+
+    wintypes = ctypes.wintypes
 
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.GetConsoleMode.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
