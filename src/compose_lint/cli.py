@@ -7,7 +7,9 @@ import contextlib
 import io
 import json
 import os
+import re
 import shlex
+import shutil
 import stat
 import subprocess
 import sys
@@ -19,13 +21,24 @@ from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 from compose_lint import __version__
 from compose_lint._env_file import ENV_FILENAME
-from compose_lint._output import defuse_json, emit, emit_block, sanitize
-from compose_lint._selection import Selection, plan_documents
+from compose_lint._output import (
+    STYLE_BOLD,
+    STYLE_DIM,
+    STYLE_DONE,
+    STYLE_WARN,
+    defuse_json,
+    emit,
+    emit_block,
+    emit_styled,
+    sanitize,
+)
+from compose_lint._selection import DocumentGroup, Selection, plan_documents
 from compose_lint._service_env import (
     MACHINE_READABLE,
     describe_unread,
     resolve_env_files,
 )
+from compose_lint._terminal_markdown import render as render_markdown
 from compose_lint.config import (
     CONFIG_FILENAMES,
     ConfigError,
@@ -39,8 +52,8 @@ from compose_lint.explain import UnknownRuleError, load_rule_doc, normalize_rule
 from compose_lint.fix import (
     LineOutOfRangeError,
     apply_edits,
+    caveat_lines,
     collect_edits,
-    render_caveat_banner,
     render_file_diff,
     reparse_or_error,
     verify_apply,
@@ -50,6 +63,7 @@ from compose_lint.formatters.json import format_findings as format_json
 from compose_lint.formatters.sarif import build_sarif_log, truncation_notice
 from compose_lint.formatters.sarif import format_findings as format_sarif
 from compose_lint.formatters.text import (
+    color_enabled,
     format_aggregate_summary,
     format_header,
     format_summary,
@@ -230,42 +244,32 @@ def _config_name(explicit: str | None, effective: Path | None) -> str | None:
 
     An explicit ``--config`` keeps the user's own spelling: rendering it
     through ``Path`` turns ``other/ci.yml`` into ``other\\ci.yml`` on
-    Windows. With no ``--config``, the discovered file's bare name.
+    Windows. With no ``--config``, the discovered file as found — its bare
+    name when it is the working directory's, ``app/.compose-lint.yml`` when
+    it sits beside the compose file instead (ADR-039).
     """
     if explicit:
         return explicit
-    return effective.name if effective is not None else None
+    return effective.as_posix() if effective is not None else None
 
 
-def _effective_config_path(explicit: str | None) -> Path | None:
+def _effective_config_path(
+    explicit: str | None, start: Path | None = None
+) -> Path | None:
     """Return the config file path that will be used, or None if no config."""
     if explicit:
         return Path(explicit)
-    return discover_config_path()
+    return discover_config_path(start)
 
 
-def _note_no_config_in_effect() -> None:
-    """Say that nothing was suppressed, naming the directory we looked in.
+def _config_start(selection: Selection) -> Path:
+    """The directory an implicit config is looked for in first (ADR-039).
 
-    A config that was never found is indistinguishable from one that was
-    never written, so this cannot be an error — most runs legitimately have
-    no config. What it can do is name the directory, which is the whole
-    diagnosis for the case it exists for: the image's working directory is
-    ``/src``, so a ``docker run -v "$(pwd)/docker-compose.yml:/src/docker-
-    compose.yml"`` mounts the file and not the config beside it, and every
-    suppression the user wrote is silently absent (#625). Seeing ``/src``
-    in the message is what makes that click.
-
-    Deliberately not printed on every run. It is emitted only where the
-    missing config would have changed the outcome — a failing ``check``, or
-    a ``fix`` that is about to touch a file — because a line on every green
-    run is noise, and noise on green runs is how a diagnostic stops being
-    read at all.
+    The first linted document's directory, as Compose takes the first ``-f``
+    file's directory for the project directory. Callers have already exited
+    when nothing was selected.
     """
-    emit(
-        f"Note: no {' or '.join(CONFIG_FILENAMES)} found in '{Path.cwd()}' — "
-        "all rules are enabled and no suppressions are in effect."
-    )
+    return Path(selection.groups[0].primary).parent
 
 
 # Flags handled by the top-level parser, not `check`. A flag-only invocation
@@ -449,8 +453,8 @@ def _add_fix_subparser(
         description=(
             "Auto-remediate auto-fixable findings. Dry-run by default: prints a "
             "unified diff and writes nothing. Pass --apply to write fixes in "
-            "place. Findings with no safe automatic fix are left for manual "
-            "review; suppressed findings are never touched."
+            "place. Findings with no safe automatic fix are listed with the "
+            "fix to make by hand; suppressed findings are never touched."
         ),
     )
     fix.add_argument(
@@ -522,8 +526,11 @@ def _add_init_subparser(
         "-o",
         "--output",
         metavar="PATH",
-        default=".compose-lint.yml",
-        help="where to write the config (default: .compose-lint.yml)",
+        default=None,
+        help=(
+            "where to write the config (default: .compose-lint.yml beside FILE, "
+            "where check looks for it first)"
+        ),
     )
     init.add_argument(
         "--force",
@@ -766,6 +773,23 @@ def _pager_argv(*, tty: bool, rule_id: str) -> list[str] | None:
     if pager is None:
         return [*_DEFAULT_PAGER, f"-Ps{rule_id} · {_PAGER_HINTS}"]
     return shlex.split(pager) or None
+
+
+# Prose wider than this is hard to read however wide the terminal is.
+_EXPLAIN_MAX_WIDTH = 100
+
+
+def _render_for_terminal(doc: str) -> str:
+    """Render a rule doc's markdown for the terminal it is about to be shown on.
+
+    Called only when stdout is a terminal: piped output stays the raw markdown
+    (ADR-034). Color follows the same rules as everywhere else, and without it
+    the markup is still stripped and the text re-wrapped.
+    """
+    columns = shutil.get_terminal_size(fallback=(80, 24)).columns
+    return render_markdown(
+        doc, width=min(columns, _EXPLAIN_MAX_WIDTH), color=color_enabled()
+    )
 
 
 def _page_rule_doc(text: str, rule_id: str) -> bool:
@@ -1019,22 +1043,26 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             else:
                 emit(f"Error: unknown rule id '{exc.rule_id}'")
             sys.exit(2)
+        if sys.stdout.isatty():
+            doc = _render_for_terminal(doc)
         if args.no_pager or not _page_rule_doc(doc, canonical):
             _stdout_print(doc)
         sys.exit(0)
 
-    config_path = _effective_config_path(args.config)
+    selection = _plan(args)
+    if not selection.groups:
+        _exit_2_with_envelope(args, _nothing_to_lint(selection), gaps=selection.gaps)
+
+    config_start = _config_start(selection)
+    config_path = _effective_config_path(args.config, config_start)
 
     try:
         disabled_rules, severity_overrides, excluded_services = load_config(
-            args.config, strict=args.strict_config
+            args.config, strict=args.strict_config, start=config_start
         )
     except ConfigError as e:
         _exit_2_with_envelope(args, str(e))
 
-    selection = _plan(args)
-    if not selection.groups:
-        _exit_2_with_envelope(args, _nothing_to_lint(selection), gaps=selection.gaps)
     args.files = [group.primary for group in selection.groups]
     overlay_of = {
         group.primary: list(group.overlays)
@@ -1054,7 +1082,10 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         _stdout_print(
             format_header(
                 args.files,
-                str(config_path) if config_path else None,
+                # As the suppression reasons name it: the user's own spelling
+                # for --config, `/` separators for a discovered file, so the
+                # banner reads the same on Windows as the `files:` beside it.
+                _config_name(args.config, config_path),
                 args.fail_on,
                 __version__,
                 merged=overlay_of,
@@ -1337,12 +1368,6 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
         )
         _stdout_print(defuse_json(json.dumps(sarif_log, indent=2, allow_nan=False)))
 
-    # A failing run with no config loaded is the shape of a config that was
-    # never found. This is the moment the user asks "why is this failing?",
-    # so it is the moment naming the working directory is worth a line.
-    if has_errors and config_path is None:
-        _note_no_config_in_effect()
-
     # Parse errors, coverage gaps, crashed rules, or a strict config error.
     if run_errors:
         sys.exit(2)
@@ -1495,6 +1520,99 @@ def _validated_only(raw: list[str] | None, *, strict: bool) -> set[str] | None:
     return resolved
 
 
+def _line_after_edits(line: int, edits: list[TextEdit]) -> int:
+    """Where ``line`` lands once ``edits`` are written.
+
+    An edit shifts a later line by the newlines it adds less the ones it
+    removes. Edits that end on ``line`` itself only move it when they end at
+    its first column — an insertion of whole lines above it.
+    """
+    shift = 0
+    for edit in edits:
+        if edit.end_line < line or (edit.end_line == line and edit.end_col == 1):
+            shift += edit.replacement.count("\n") - (edit.end_line - edit.start_line)
+    return line + shift
+
+
+def _by_hand_entries(
+    findings: list[Finding],
+    edits: list[TextEdit] | None = None,
+    *,
+    with_source: bool = False,
+) -> list[tuple[str, str | None]]:
+    """One line per finding ``fix`` left for the user: where, which rule, what to do.
+
+    The first line of the rule's own ``fix:`` guidance, the text ``check``
+    prints, so the user is told the fix and not just that one exists. Line
+    numbers are the written file's when ``edits`` were applied, so they match
+    the ``check`` that follows. ``with_source`` prefixes the document a
+    finding is written in, for findings from more than one other file.
+
+    Returned as styled parts for :func:`emit_styled`, each entry on its own
+    line: the rule id is dim, as in ``check``'s rule column.
+    """
+
+    def entry(f: Finding) -> tuple[int, str, str, str]:
+        line = f.line if isinstance(f.line, int) else None
+        if line is not None and edits:
+            line = _line_after_edits(line, edits)
+        where = f"line {line}" if line is not None else "line ?"
+        if with_source:
+            where = f"{getattr(f.line, 'source', '')} {where}"
+        return (line or 0, f.rule_id, where, _fix_summary(f))
+
+    parts: list[tuple[str, str | None]] = []
+    for _, rule_id, where, action in sorted(map(entry, findings)):
+        parts += [(f"\n{where}  ", None), (rule_id, STYLE_DIM), (f"  {action}", None)]
+    return parts
+
+
+def _first_sentence(text: str) -> str:
+    """The first line of ``text``, cut at the end of its first sentence."""
+    line = text.strip().split("\n", 1)[0].strip()
+    for match in re.finditer(r"(?<=[.!?])\s", line):
+        if not line[: match.start()].endswith(_ABBREVIATIONS):
+            return line[: match.start()]
+    return line
+
+
+# A full stop that ends one of these does not end the sentence.
+_ABBREVIATIONS = ("e.g.", "i.e.", "etc.", "vs.", "cf.")
+
+
+def _fix_summary(finding: Finding) -> str:
+    """One line saying what to do about ``finding``.
+
+    The opening sentence of the rule's ``fix:`` guidance — the text ``check``
+    prints in full. Guidance that opens with a lead-in to a YAML example
+    ("Drop all capabilities and add back only what is needed:") keeps the
+    lead-in as the instruction; the example itself is left to ``check``.
+    """
+    if not finding.fix:
+        return _first_sentence(finding.message).rstrip(".")
+    return _first_sentence(finding.fix).rstrip(":.")
+
+
+def _emit_by_hand(
+    filepath: str, manual: list[Finding], edits: list[TextEdit] | None = None
+) -> None:
+    """Name the findings left to fix by hand, if any, beneath a summary line."""
+    if manual:
+        emit_styled(
+            [
+                (f"{filepath}: ", None),
+                (f"{len(manual)} to fix by hand:", STYLE_BOLD),
+                *_by_hand_entries(manual, edits),
+            ],
+            color=_stderr_color(),
+        )
+
+
+def _stderr_color() -> bool:
+    """Whether a status line on stderr may be colored (see ``color_enabled``)."""
+    return color_enabled(sys.stderr)
+
+
 def _run_fix(args: argparse.Namespace) -> NoReturn:
     """Run the `fix` operation (ADR-014).
 
@@ -1504,16 +1622,18 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
     Exit 0 on success, 2 on usage/parse error — findings are the input, not the
     failure signal, so residual manual-only findings do not change the code.
     """
+    selection = _plan(args)
+    if not selection.groups:
+        _exit_2_with_envelope(args, _nothing_to_lint(selection), gaps=selection.gaps)
+
+    config_start = _config_start(selection)
     try:
         disabled_rules, severity_overrides, excluded_services = load_config(
-            args.config, strict=args.strict_config
+            args.config, strict=args.strict_config, start=config_start
         )
     except ConfigError as e:
         _exit_2_with_envelope(args, str(e))
 
-    selection = _plan(args)
-    if not selection.groups:
-        _exit_2_with_envelope(args, _nothing_to_lint(selection), gaps=selection.gaps)
     for env_path, message in selection.gaps:
         _report_coverage_gaps(env_path, (message,), fatal=False, remedy=_FIX_GAP_REMEDY)
     args.files = [group.primary for group in selection.groups]
@@ -1527,10 +1647,10 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
     # The suppression reason names the file actually read, which with no
     # --config may be a discovered .compose-lint.yaml rather than the .yml
     # the engine defaults to.
-    fix_config_name = _config_name(args.config, _effective_config_path(args.config))
+    fix_config_name = _config_name(
+        args.config, _effective_config_path(args.config, config_start)
+    )
     had_error = False
-    # Whether any file had a fix applied or offered — see the note below.
-    touched = False
 
     for filepath in args.files:
         overlays = fix_overlay_of.get(filepath)
@@ -1622,9 +1742,13 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             # list is empty in that case — which printed the sentence with a
             # blank where the file should be.
             origins = sorted({str(getattr(f.line, "source", "")) for f in deferred})
-            emit(
-                f"{filepath}: {len(deferred)} finding(s) come from "
-                f"{', '.join(origins)} and need manual review there"
+            emit_styled(
+                [
+                    (f"{filepath}: {len(deferred)} finding(s) come from ", None),
+                    (f"{', '.join(origins)}; fix by hand there:", STYLE_BOLD),
+                    *_by_hand_entries(deferred, with_source=len(origins) > 1),
+                ],
+                color=_stderr_color(),
             )
         result = collect_edits(
             fixable_findings, data, lines, text, only=only, resets=resets
@@ -1646,9 +1770,13 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
 
         if not result.edits:
             if result.manual:
-                emit(
-                    f"{filepath}: nothing to auto-fix; "
-                    f"{len(result.manual)} finding(s) need manual review"
+                emit_styled(
+                    [
+                        (f"{filepath}: nothing fix can apply automatically; ", None),
+                        (f"{len(result.manual)} to fix by hand:", STYLE_BOLD),
+                        *_by_hand_entries(result.manual),
+                    ],
+                    color=_stderr_color(),
                 )
             else:
                 emit(f"{filepath}: nothing to fix")
@@ -1739,30 +1867,26 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             # The behavior-changing caveats must surface here too, not only on
             # the dry run — nothing forces a dry run first, so a one-shot
             # `fix --apply` would otherwise mutate files silently (issue #428).
-            emit_block(render_caveat_banner(result.caveats))
-            emit(
-                f"{filepath}: applied {len(result.edits)} fix(es) across "
-                f"{len(result.fixed)} finding(s)"
+            for caveat in caveat_lines(result.caveats):
+                emit_styled([(caveat, STYLE_WARN)], color=_stderr_color())
+            emit_styled(
+                [
+                    (f"{filepath}: ", None),
+                    (f"applied {len(result.edits)} fix(es)", STYLE_DONE),
+                ],
+                color=_stderr_color(),
             )
-            touched = True
+            _emit_by_hand(filepath, result.manual, result.edits)
         else:
             _stdout_print(
-                render_file_diff(filepath, text, patched, result.caveats),
+                render_file_diff(
+                    filepath, text, patched, result.caveats, color=color_enabled()
+                ),
                 end="",
                 flush=True,
             )
-            emit(
-                f"{filepath}: {len(result.edits)} fix(es) available; "
-                f"{len(result.manual)} finding(s) need manual review"
-            )
-            touched = touched or bool(result.edits)
-
-    # `fix` honours suppressions — a suppressed finding is never touched — so a
-    # config that went missing here does not just change a report, it changes
-    # which of the user's files get written. Say so whenever there was
-    # something to fix, applied or merely offered.
-    if touched and _effective_config_path(args.config) is None:
-        _note_no_config_in_effect()
+            emit(f"{filepath}: {len(result.edits)} fix(es) available")
+            _emit_by_hand(filepath, result.manual)
 
     sys.exit(2 if had_error else 0)
 
@@ -1810,6 +1934,37 @@ def _is_an_input(
             if os.path.samefile(out_path, candidate):
                 return True
     return False
+
+
+def _init_default_output(group: DocumentGroup) -> Path:
+    """Where ``init`` writes when no ``-o`` is given: where ``check`` reads.
+
+    The config beside the Compose file is the one ``check`` looks for first
+    (ADR-039), so the baseline lands there. An existing config of either
+    spelling in that directory is the target, so the "already exists" guard
+    sees it instead of a second spelling being written beside it.
+    """
+    directory = Path(group.primary).parent
+    existing = [directory / name for name in CONFIG_FILENAMES]
+    return next((p for p in existing if p.exists()), existing[0])
+
+
+def _note_config_shadowed(out_path: Path, primary: str) -> None:
+    """Say so when a new config beside the file replaces the run directory's.
+
+    Configs do not merge: the nearer one is read in full and the other not at
+    all, so writing ``app/.compose-lint.yml`` stops every suppression in
+    ``./.compose-lint.yml`` applying to that project.
+    """
+    if out_path.parent == Path(".") or out_path.exists():
+        return
+    shadowed = discover_config_path()
+    if shadowed is not None:
+        emit(
+            f"note: {out_path.as_posix()} will be used for {primary} instead of "
+            f"{shadowed.as_posix()}; configs do not merge, so its suppressions "
+            "no longer apply there"
+        )
 
 
 def _run_init(args: argparse.Namespace) -> NoReturn:
@@ -1899,13 +2054,13 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
         # holds at exit 2 on the same crash, is where that surfaces.
         emit(f"Error: {group.primary}: a rule failed; no baseline written")
         sys.exit(2)
+    out_path = (
+        Path(args.output) if args.output is not None else _init_default_output(group)
+    )
     if not findings:
-        emit(
-            f"{args.file}: no findings; nothing to suppress, not writing {args.output}"
-        )
+        emit(f"{args.file}: no findings; nothing to suppress, not writing {out_path}")
         sys.exit(0)
 
-    out_path = Path(args.output)
     if _is_an_input(out_path, group.paths, lines):
         # Before the --force check, because --force means "replace my config",
         # not "replace my Compose file": `init compose.yml -o compose.yml
@@ -1931,6 +2086,9 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
             "make it writable to allow `init --force` to replace it"
         )
         sys.exit(2)
+
+    if args.output is None:
+        _note_config_shadowed(out_path, group.primary)
 
     existed = out_path.exists()
     try:

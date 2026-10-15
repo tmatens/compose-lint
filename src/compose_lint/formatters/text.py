@@ -7,6 +7,7 @@ import re
 import sys
 import unicodedata
 from pathlib import Path
+from typing import TextIO
 
 from compose_lint._lines import BREAK_CHARS, split_lines
 from compose_lint._output import sanitize as _sanitize
@@ -83,27 +84,30 @@ _PRESENCE_RULES = frozenset(
 _QUOTED = re.compile(r"'([^']+)'")
 
 
-def _color_enabled() -> bool:
+def color_enabled(stream: TextIO | None = None) -> bool:
     """Decide whether to emit ANSI color, honoring the de-facto env standards.
 
     ``NO_COLOR`` (set to any non-empty value) disables color even on a TTY and
     wins over everything, per https://no-color.org. ``FORCE_COLOR``, when set,
     overrides TTY detection: ``0`` or ``false`` (case-insensitive) disables
     color, any other value — including the empty string — enables it, matching
-    the chalk/supports-color convention. Otherwise color follows whether stdout
-    is a terminal.
+    the chalk/supports-color convention. Otherwise color follows whether
+    ``stream`` — stdout unless given — is a terminal, so stderr's status lines
+    are judged by stderr and not by where the report went.
     """
     if os.environ.get("NO_COLOR"):
         return False
     force = os.environ.get("FORCE_COLOR")
     if force is not None:
         return force.lower() not in ("0", "false")
-    return sys.stdout.isatty()
+    target = sys.stdout if stream is None else stream
+    isatty = getattr(target, "isatty", None)
+    return bool(isatty and isatty())
 
 
 def _colorize(text: str, code: str) -> str:
-    """Wrap text in ANSI color codes when color is enabled (see _color_enabled)."""
-    if not _color_enabled():
+    """Wrap text in ANSI color codes when color is enabled (see color_enabled)."""
+    if not color_enabled():
         return text
     return f"{code}{text}{_RESET}"
 

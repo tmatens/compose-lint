@@ -543,3 +543,21 @@ def test_the_aggregate_summary_names_crashes_and_config_errors() -> None:
     )
     assert "1 rule crash" in summary
     assert "config error" in summary
+
+
+def test_color_enabled_judges_the_stream_it_is_given(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import io
+
+    from compose_lint.formatters.text import color_enabled
+
+    class Terminal(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    assert color_enabled(Terminal()) is True
+    assert color_enabled(io.StringIO()) is False
+    assert color_enabled(None) is color_enabled()

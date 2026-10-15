@@ -1,6 +1,6 @@
 # Configuration
 
-compose-lint reads `.compose-lint.yml` from the current working directory by default, and `.compose-lint.yaml` when that name is absent. If both exist, `.compose-lint.yml` is used and a stderr warning says so (an error under `--strict-config`, see [Validation](#validation)) — two policy files side by side is almost always one being edited while the other is in force. Use `--config PATH` to point at a different file. `compose-lint init` writes `.compose-lint.yml`.
+compose-lint reads `.compose-lint.yml`, or `.compose-lint.yaml` when that name is absent, from the directory of the first Compose file it lints — the directory Compose itself treats as the project directory — and, when that directory has neither, from the current working directory. So `compose-lint app/docker-compose.yml` run from the repository root reads `app/.compose-lint.yml`, while a single config at the root still covers every project below it that has none of its own. Parent directories are not searched, and the banner names the file that was read (`config: app/.compose-lint.yml`, or `config: none`) ([ADR-039](adr/039-read-the-config-beside-the-compose-file.md)). If both exist in the same directory, `.compose-lint.yml` is used and a stderr warning says so (an error under `--strict-config`, see [Validation](#validation)) — two policy files side by side is almost always one being edited while the other is in force. Use `--config PATH` to point at a different file. `compose-lint init FILE` writes `.compose-lint.yml` beside `FILE` — the place `check` looks first — unless `-o` names another path; when that new file takes over from a config in the working directory, `init` says so on stderr, because the two do not merge.
 
 > **Running in Docker: mount the directory, not the file.** The image's working directory is `/src`, so the config has to be *inside* it:
 >
@@ -10,7 +10,7 @@ compose-lint reads `.compose-lint.yml` from the current working directory by def
 >   composelint/compose-lint                                            # config NOT found
 > ```
 >
-> The second form leaves `.compose-lint.yml` outside the container, so every suppression is silently absent and findings you disabled come back. compose-lint cannot tell that apart from having no config at all, so it does not fail — but when a run reports findings with no config in effect it says so on stderr, naming the directory it looked in.
+> The second form leaves `.compose-lint.yml` outside the container, so every suppression is absent and findings you disabled come back. compose-lint cannot tell that apart from having no config at all, so it neither fails nor warns; the banner's `config: none` is the sign.
 
 ## Which files get linted
 
@@ -155,7 +155,7 @@ A `.compose-lint.yml` that silently fails to take effect is a security risk — 
 - **A `reason` without `enabled: false` warns.** Inside a rule block, `reason` is the justification that goes with a suppression. On its own it suppresses nothing — the rule stays on and still fails the build — so a lone `reason:` warns and names the rule id. <!-- diag: reason-without-enabled-false -->
 - **A `severity` on a disabled rule warns.** `enabled: false` suppresses every finding the rule produces, and a suppressed finding is never re-graded, so the `severity:` beside it has no effect. The warning names the rule id; the value is still validated. <!-- diag: severity-on-disabled-rule -->
 - **An `exclude_services` name no linted file defines warns.** Checked once every file has been read, so a service that was renamed, or never existed under that spelling, is not silently left uncovered by an exclusion the config appears to grant. <!-- diag: unknown-excluded-service -->
-- **Both config spellings present warns.** When `.compose-lint.yml` and `.compose-lint.yaml` both exist in the working directory, `.compose-lint.yml` is used and the other is ignored; the warning says which one was read. <!-- diag: both-config-spellings -->
+- **Both config spellings present warns.** When `.compose-lint.yml` and `.compose-lint.yaml` both exist in the directory the config is read from, `.compose-lint.yml` is used and the other is ignored; the warning says which one was read. <!-- diag: both-config-spellings -->
 - **`enabled` must be a real boolean.** A quoted `'false'`, `0`, or any non-boolean is a **hard error** (exit 2), not a silent no-op that would leave the rule on. YAML's boolean keywords (`true`/`false`, `yes`/`no`, `on`/`off`) all parse to a real boolean and work as expected.
 - **A blank section is empty, not an error.** In YAML a key with no value is `null`, so `rules:`, a blank per-rule block, and a blank `exclude_services:` are read as the empty mapping — exactly as if you had written `{}`. Stubbing a section out is a normal thing to do, not a typo, so the blank value itself does not warn. Every *other* wrong type stays a hard error: `rules: hello` and `exclude_services: 5` still exit 2.
 

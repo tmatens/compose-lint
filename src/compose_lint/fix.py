@@ -661,11 +661,49 @@ def collect_edits(
     return result
 
 
+# git's diff colors, so the dry run reads the way `git diff` does: the file
+# header bold, each hunk's `@@` line cyan, removals red, additions green. The
+# behavior-changing caveats above the diff are yellow, the warning color the
+# text report gives MEDIUM.
+_DIFF_HEADER = "\033[1m"
+_DIFF_HUNK = "\033[36m"
+_DIFF_REMOVED = "\033[31m"
+_DIFF_ADDED = "\033[32m"
+_DIFF_CAVEAT = "\033[33m"
+_DIFF_DIM = "\033[2m"
+_DIFF_RESET = "\033[0m"
+
+
+def _paint(line: str, code: str) -> str:
+    """Wrap one already-sanitized line in ``code``, keeping its newline outside.
+
+    Called only on sanitized text: sanitizing escapes ESC, so the codes added
+    here are the only ones that can reach the terminal.
+    """
+    body = line[:-1] if line.endswith("\n") else line
+    return f"{code}{body}{_DIFF_RESET}" + line[len(body) :]
+
+
+def _diff_line_color(index: int, line: str) -> str | None:
+    """The color for line ``index`` of a unified diff, or None for context."""
+    if index < 2:
+        return _DIFF_HEADER
+    if line.startswith("@@"):
+        return _DIFF_HUNK
+    if line.startswith("-"):
+        return _DIFF_REMOVED
+    if line.startswith("+"):
+        return _DIFF_ADDED
+    return None
+
+
 def render_file_diff(
     path: str,
     original: str,
     patched: str,
     caveats: list[tuple[str, str]],
+    *,
+    color: bool = False,
 ) -> str:
     """Render the dry-run output for one file: caveat banner + unified diff.
 
@@ -679,6 +717,10 @@ def render_file_diff(
     marker. ``difflib`` omits it, which would otherwise glue that line and the
     next onto one line and garble the diff (issue #261 M2).
 
+    ``color`` adds git's diff colors. The caller decides it from the stream the
+    diff is written to — on only for a terminal (``color_enabled``) — so a
+    redirected diff stays a patch that ``git apply`` and ``patch`` accept.
+
     Content is sanitized here rather than at the three call sites, because this
     is the surface a human reads to authorise a destructive write and it must
     show what will actually be written. Bidi and zero-width codepoints are
@@ -688,11 +730,13 @@ def render_file_diff(
     untouched.
     """
     chunks: list[str] = []
-    for raw_line in difflib.unified_diff(
-        split_lines(original),
-        split_lines(patched),
-        fromfile=sanitize_line(path),
-        tofile=sanitize_line(path),
+    for index, raw_line in enumerate(
+        difflib.unified_diff(
+            split_lines(original),
+            split_lines(patched),
+            fromfile=sanitize_line(path),
+            tofile=sanitize_line(path),
+        )
     ):
         if raw_line.endswith("\r\n"):
             # A trailing CR is the file's line-ending convention, not content;
@@ -701,28 +745,39 @@ def render_file_diff(
             # below — that embedded shape is what sanitize guards against.
             raw_line = raw_line[:-2] + "\n"
         line = sanitize(raw_line)
+        code = _diff_line_color(index, line) if color else None
         # Header lines (`---`/`+++`/`@@`) always end in a newline; only a final
         # content line can lack one. Re-terminate it and add the git sentinel.
-        if line.endswith("\n"):
-            chunks.append(line)
-        else:
-            chunks.append(line + "\n\\ No newline at end of file\n")
+        sentinel = ""
+        if not line.endswith("\n"):
+            line += "\n"
+            sentinel = "\\ No newline at end of file\n"
+        if code is not None:
+            line = _paint(line, code)
+            sentinel = sentinel and _paint(sentinel, _DIFF_DIM)
+        chunks.append(line + sentinel)
     diff = "".join(chunks)
     if not diff:
         return ""
-    return render_caveat_banner(caveats) + diff
+    return render_caveat_banner(caveats, color=color) + diff
 
 
-def render_caveat_banner(caveats: list[tuple[str, str]]) -> str:
+def render_caveat_banner(caveats: list[tuple[str, str]], *, color: bool = False) -> str:
     """Render one ``⚠ behavior-changing`` line per caveat, newline-terminated.
 
     Shared by the dry-run diff header and the ``--apply`` summary (issue #428):
     the caveat must reach the user on whichever path they took, in the same
     form, so the warning cannot be bypassed by skipping the dry run.
     """
-    return "".join(
-        f"⚠ behavior-changing · {rule_id}: {caveat}\n" for rule_id, caveat in caveats
-    )
+    lines = (sanitize(line) + "\n" for line in caveat_lines(caveats))
+    if color:
+        return "".join(_paint(line, _DIFF_CAVEAT) for line in lines)
+    return "".join(lines)
+
+
+def caveat_lines(caveats: list[tuple[str, str]]) -> list[str]:
+    """The ``⚠ behavior-changing`` lines, unterminated and unstyled."""
+    return [f"⚠ behavior-changing · {rule_id}: {caveat}" for rule_id, caveat in caveats]
 
 
 def reparse_or_error(patched: str, base_dir: Path | None = None) -> str | None:

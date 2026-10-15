@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from compose_lint._output import emit
-from compose_lint._safe_read import read_text_bounded
+from compose_lint._safe_read import containment_root, read_text_bounded
 from compose_lint._scalar import as_scalar_text
 from compose_lint._yaml_error import describe_yaml_error
 from compose_lint.models import Severity
@@ -31,13 +31,13 @@ KNOWN_TOP_LEVEL_KEYS = frozenset({"rules"})
 # separate diagnostic in `_parse_rules` (issue #723).
 _KNOWN_RULE_KEYS = frozenset({"enabled", "reason", "severity", "exclude_services"})
 
-# The file names an implicit run (no `--config`) looks for in the working
-# directory, in precedence order. `.yml` has been the documented name from the
-# start; `.yaml` is accepted because the pre-commit hook already excluded both
-# spellings as config files, so a repository using the second one had its
-# policy skipped by the hook and ignored by the linter at once — every
-# suppression silently absent, with nothing naming why. When both exist the
-# first wins and `_read_raw_config` says so.
+# The file names an implicit run (no `--config`) looks for, in precedence
+# order, in the directories `config_search_dirs` names. `.yml` has been the
+# documented name from the start; `.yaml` is accepted because the pre-commit
+# hook already excluded both spellings as config files, so a repository using
+# the second one had its policy skipped by the hook and ignored by the linter
+# at once — every suppression silently absent, with nothing naming why. When
+# both exist the first wins and `_read_raw_config` says so.
 CONFIG_FILENAMES: tuple[str, ...] = (".compose-lint.yml", ".compose-lint.yaml")
 
 
@@ -64,18 +64,42 @@ def _warn(message: str, strict: bool = False) -> None:
     emit(f"Warning: {message}")
 
 
-def discover_config_path() -> Path | None:
+def config_search_dirs(start: Path | None = None) -> list[Path]:
+    """Return the directories an implicit run looks in, nearest first.
+
+    ``start`` is the directory of the first compose file the run lints — the
+    directory Compose itself treats as the project directory — so
+    ``compose-lint app/docker-compose.yml`` reads ``app/.compose-lint.yml``
+    from wherever it was run. The working directory follows as the fallback,
+    which keeps a config at the root of a checkout applying to compose files
+    in subdirectories that have none of their own (ADR-039). Parents are not
+    searched: which file is in force should be answerable by looking in two
+    places, and the banner names the one that was read.
+    """
+    dirs = [Path(".")]
+    if start is not None and start.resolve() != Path.cwd().resolve():
+        dirs.insert(0, start)
+    return dirs
+
+
+def _present_in(directory: Path) -> list[Path]:
+    """The config file names that exist in ``directory``, in precedence order."""
+    return [
+        directory / name for name in CONFIG_FILENAMES if (directory / name).exists()
+    ]
+
+
+def discover_config_path(start: Path | None = None) -> Path | None:
     """Return the config file an implicit run would read, or None.
 
     Pure: the both-spellings warning belongs to ``load_config``, which knows
-    whether the run is strict, so the CLI can ask this a second time — to
-    decide whether a failing run had any config in effect — without the
-    warning printing twice.
+    whether the run is strict, so the CLI can ask this a second time — to name
+    the file in the banner — without the warning printing twice.
     """
-    for name in CONFIG_FILENAMES:
-        path = Path(name)
-        if path.exists():
-            return path
+    for directory in config_search_dirs(start):
+        present = _present_in(directory)
+        if present:
+            return present[0]
     return None
 
 
@@ -202,6 +226,7 @@ _StrictLoader.add_constructor(
 def load_config(
     path: str | Path | None = None,
     strict: bool = False,
+    start: Path | None = None,
 ) -> tuple[dict[str, str | None], dict[str, Severity], ExcludedServices]:
     """Load a .compose-lint.yml (or .compose-lint.yaml) config file.
 
@@ -209,15 +234,17 @@ def load_config(
     disabled_rules maps rule ID to an optional reason string.
     excluded_services maps rule ID to a mapping of service name to optional
     per-service reason (see ADR-010).
-    If path is None, looks for the names in CONFIG_FILENAMES in the current
-    directory, in that order; when more than one exists the first is used and
-    a diagnostic says so. If no config file is found, returns empty defaults.
+    If path is None, looks for the names in CONFIG_FILENAMES in ``start`` (the
+    first compose file's directory) and then the current directory — see
+    ``config_search_dirs``; the first directory holding either name wins, and
+    when it holds both the first name is used and a diagnostic says so. If no
+    config file is found, returns empty defaults.
     When strict is True, config diagnostics that are normally warnings (unknown
     top-level key, unknown/typo'd rule id, unknown rule key, an inert reason or
     severity, both config spellings present) are raised as ConfigError instead
     (#380).
     """
-    data = _read_raw_config(path, strict)
+    data = _read_raw_config(path, strict, start)
     if data is None:
         return {}, {}, {}
 
@@ -247,8 +274,23 @@ def load_config(
     return _parse_rules(data.get("rules", {}), strict)
 
 
+def _containment_root(config_path: Path) -> Path:
+    """The directory a discovered config may not resolve outside of.
+
+    The working directory's own config keeps the boundary it always had. One
+    found beside the Compose file is contained the way every other file that
+    Compose file leads to is (ADR-038): to the repository holding it, else the
+    run directory when that holds it, else its own directory. Deciding that
+    by hand from lexical paths refused ``../other/.compose-lint.yml`` and any
+    config under a linked directory as an escape it was not.
+    """
+    if config_path.parent == Path("."):
+        return Path.cwd()
+    return containment_root(config_path.parent)
+
+
 def _read_raw_config(
-    path: str | Path | None, strict: bool = False
+    path: str | Path | None, strict: bool = False, start: Path | None = None
 ) -> dict[str, Any] | None:
     """Read and parse a config file to a mapping, or None when there is none.
 
@@ -261,7 +303,11 @@ def _read_raw_config(
         if not config_path.exists():
             raise ConfigError(f"Config file not found: {path}")
     else:
-        present = [p for p in map(Path, CONFIG_FILENAMES) if p.exists()]
+        present = []
+        for directory in config_search_dirs(start):
+            present = _present_in(directory)
+            if present:
+                break
         if not present:
             return None
         if len(present) > 1:
@@ -284,10 +330,13 @@ def _read_raw_config(
         # A discovered config is part of the checkout, not something the user
         # pointed at, so it gets the containment every other file the project
         # names gets: a `.compose-lint.yml` committed as a symlink to a file
-        # elsewhere on the runner is refused rather than read. `--config` is a
-        # path the user typed and is read as given.
+        # elsewhere on the runner is refused rather than read. The boundary is
+        # the working directory when the config sits inside it, and otherwise
+        # the config's own directory — the compose file's, which the user
+        # named. `--config` is a path the user typed and is read as given.
         content = read_text_bounded(
-            config_path, within=None if path is not None else Path.cwd()
+            config_path,
+            within=None if path is not None else _containment_root(config_path),
         )
     except OSError as e:
         # UnsafeFileError is an OSError, so one clause covers both the refusal

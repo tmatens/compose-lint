@@ -473,9 +473,8 @@ def test_fix_rewrites_only_the_file_it_was_pointed_at(
         cli.main(["fix", "--apply", str(target)])
     assert exc.value.code == 0
     assert included.read_text(encoding="utf-8") == before
-    assert (
-        "apps/api.yml and need manual review there"
-        in capsys.readouterr().err.replace("\\", "/")
+    assert "apps/api.yml; fix by hand there" in capsys.readouterr().err.replace(
+        "\\", "/"
     )
 
 
@@ -537,7 +536,7 @@ def test_fix_defers_an_included_files_findings_under_an_overlay(
     assert exc.value.code == 0
     assert included.read_text(encoding="utf-8") == before
     err = capsys.readouterr().err.replace("\\", "/")
-    assert "apps/api.yml and need manual review there" in err
+    assert "apps/api.yml; fix by hand there" in err
     assert "read_only: true" in target.read_text(encoding="utf-8")
 
 
@@ -576,7 +575,7 @@ def test_fix_converges_on_a_merged_run_with_no_overlay(
     assert "read_only: true" in written
     err = capsys.readouterr().err.replace("\\", "/")
     assert "does not converge" not in err
-    assert "parts/a.yml and need manual review there" in err
+    assert "parts/a.yml; fix by hand there" in err
 
 
 def test_a_config_beside_an_included_file_does_not_widen_suppression(

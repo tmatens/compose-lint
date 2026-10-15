@@ -14,8 +14,9 @@ page is the full contract behind the README's summary.
   which would otherwise be handed those bits.
 - **Only mechanically unambiguous fixes are applied.** Findings whose
   remediation is context-dependent (e.g. CL-0006 capability lists, CL-0001
-  socket mounts) are reported as needing manual review, never auto-edited — the
-  tool refuses rather than guess at a value only you can choose.
+  socket mounts) are never auto-edited — the tool refuses rather than guess at a
+  value only you can choose. Each one is listed on stderr with its line, rule and
+  the fix to make by hand, so a refused finding still comes with its remedy.
 - **Behavior-changing edits are labelled, not withheld.** Every edit that alters
   runtime behavior emits a `⚠ behavior-changing` line naming what breaks, on the
   dry-run *and* on `--apply`, so the warning reaches you on whichever path you
@@ -35,7 +36,7 @@ page is the full contract behind the README's summary.
 - **A key deleted with `!reset` is deferred, not written back.** `!reset`
   removes the key from the configuration Compose runs, so an absence rule fires
   on it — but writing the key into a document the reset applies to changes
-  nothing there. That finding is reported as needing manual review, naming the
+  nothing there. That finding is listed to fix by hand, with a note naming the
   key and the file the `!reset` is written in, and every other fix in the file
   still applies. The refusal is the finding's, not the file's.
 - **Diff is data, status is human.** The diff goes to stdout; progress and

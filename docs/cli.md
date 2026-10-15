@@ -30,7 +30,8 @@ check options:
                                and `${VAR}` values) and every `env_file:` a service
                                names, which leaves CL-0020/CL-0021 blind to them
   --config PATH                Path to config file (default: .compose-lint.yml,
-                               then .compose-lint.yaml, in the working directory)
+                               then .compose-lint.yaml, beside the first Compose
+                               file, else in the working directory)
   --strict-config              Treat config diagnostics (unknown rule id or key, inert reason
                                or severity, stale exclude_services name, both config
                                spellings present) as errors, not warnings
@@ -52,7 +53,8 @@ fix options:
                                `--only` id that names no rule as errors, not warnings
 
 init options:
-  -o, --output PATH            Where to write the config (default: .compose-lint.yml)
+  -o, --output PATH            Where to write the config (default: .compose-lint.yml
+                               beside FILE, where check looks for it first)
   --force                      Overwrite an existing config file
   --no-merge-overrides         Baseline the file alone instead of merging the
                                `compose.override.yml` Compose merges beside it
@@ -87,13 +89,13 @@ not the failure.
 
 | | `check` | `fix` | `init` |
 |---|---|---|---|
-| **0** | No finding at or above `--fail-on`. | The diff was printed, or the fixes were written, or there was nothing to fix. Findings left for manual review, and coverage gaps it reported, do not change this. | The config was written, or there were no findings to write one from. |
+| **0** | No finding at or above `--fail-on`. | The diff was printed, or the fixes were written, or there was nothing to fix. Findings left to fix by hand, and coverage gaps it reported, do not change this. | The config was written, or there were no findings to write one from. |
 | **1** | A finding at or above `--fail-on`. | Never. | Never. |
 | **2** | compose-lint could not run, or could not see the whole stack: bad arguments; a file missing, not valid Compose, or over a [size limit](what-a-run-reads.md#size-limits); a crashed rule; a config error, or a config warning under `--strict-config`; or a [coverage gap](compatibility.md#coverage-gaps-are-not-findings) not accepted with `--allow-partial-coverage`. | Bad arguments; a file missing or not valid Compose; a crashed rule or fixer; the 20,000-findings limit; a computed fix that fails the re-parse or verify check; a refused write (read-only file, symlink, hard link, unwritable directory); a config error. Nothing is written to that file, and the rest of the batch still runs. | Bad arguments; the file missing or not valid Compose; a crashed rule; the 20,000-findings limit; an existing config without `--force`; a failed write. |
 
 ## Color
 
-Color is on when stdout is a terminal. Set `NO_COLOR` to any non-empty value to
+Color is on when stdout is a terminal. It covers `check`'s report, `--explain` on a terminal (see [Pager](#pager)), and `fix`'s dry-run diff, which is colored the way `git diff` colors one: removals red, additions green, `@@` lines cyan, the behavior-changing caveats yellow. `fix`'s status lines on stderr follow the same scheme — `applied N fix(es)` green, `N to fix by hand:` bold, rule ids dim as in `check` — and are colored when stderr, rather than stdout, is a terminal, so `fix > changes.diff` on a terminal still colors the status around the plain patch. Set `NO_COLOR` to any non-empty value to
 disable it (even on a terminal); it wins over everything. `FORCE_COLOR`, when
 set, overrides terminal detection: `0` or `false`, in any case, turns color off, and any other
 value, the empty string included, turns it on. That is the convention of
@@ -110,8 +112,15 @@ q quit`) instead of less's bare `:`; a custom `PAGER` keeps its own prompt. `PAG
 different pager, and a blank `PAGER` disables paging; so do `--no-pager`, a
 non-empty `NO_PAGER`, and an unset or `dumb` `TERM`; a pager binary that isn't installed falls back to a plain
 dump. Piped or redirected output never pages and is byte-identical to the
-pre-pager behavior, so scripts and CI need no changes. The findings report
-itself never pages.
+pre-pager behavior — the rule doc's raw markdown — so scripts and CI need no
+changes. The findings report itself never pages.
+
+On a terminal the doc is also rendered rather than dumped, whether or not it
+pages: headings and `**bold**` print bold, `` `code` `` cyan, a link keeps its
+text (a web link adds its address, dimmed), tables line up or become one record
+per row, and prose re-wraps to the terminal, at most 100 columns. Color follows
+the [Color](#color) rules; without it the markup is still stripped, and code
+keeps its backticks.
 
 ## End of options
 
@@ -156,8 +165,8 @@ A bare `compose-lint fix` prints a diff and writes nothing; `--apply` writes
 in place through an atomic swap, guarded by a re-parse and a verify-apply pass.
 It deliberately refuses regions it cannot rewrite safely — anchors, merge keys,
 `${VAR}` interpolation — and reports findings whose remediation is
-context-dependent (CL-0006 capability lists, CL-0001 socket mounts) as needing
-manual review rather than guessing at a value only the operator can choose.
+context-dependent (CL-0006 capability lists, CL-0001 socket mounts) as fixes
+to make by hand, each with its rule's guidance, rather than guessing at a value only the operator can choose.
 That is the contract, not an unfinished fixer: see [the fix design
 contract](fix.md). When `fix` declines a finding, hand-editing the same change
 into place discards the guard that made the decline correct.

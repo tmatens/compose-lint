@@ -71,7 +71,7 @@ CONTRIBUTING.md is the source of truth for commits, signing, and PRs. Key points
   `scripts/validate_rule_premises.py` (see the ADR-016 amendment); other wordings
   (coreutils/bash/application) are captured-but-not-asserted and labeled as such.
   Mechanism claims are observed against a live container, never reasoned from docs.
-- **Never add front matter** to any `docs/*.md` — `--explain` prints files raw.
+- **Never add front matter** to any `docs/*.md` — `--explain` prints files raw when piped, and renders them on a terminal (`_terminal_markdown.py`), which knows no front matter either.
 - The docs site builds from `docs/` on every main push (`docs` workflow →
   GitHub Pages). `docs/google*.html` is the Search Console verification file and
   must stay in place permanently.
