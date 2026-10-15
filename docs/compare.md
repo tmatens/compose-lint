@@ -224,9 +224,9 @@ two. Its `--fix` applies the formatting rules.
 compose-lint does not validate the schema. An invalid file is a usage error,
 not a finding. Its 27 rules are all security rules: capabilities,
 `no-new-privileges`, `read_only`, the Docker socket, host namespaces,
-resource limits, credentials in `environment:`, digest pinning. Each rule
-ships with the fix, the error message you will see if the fix breaks
-something, and the OWASP or CIS citation behind it. Where both tools flag
+resource limits, credentials in `environment:` and command lines, digest
+pinning. Each rule ships with the fix, the error message you will see if the
+fix breaks something, and the OWASP or CIS citation behind it. Where both tools flag
 the same thing, such as an image without a tag or a port bound to
 `0.0.0.0`, compose-lint grades it as a security finding with a severity and
 DCLint reports it as a lint error.
@@ -290,9 +290,9 @@ and your files keep `version:`. If you have removed `version:`, as Compose
 now recommends, the ruleset does nothing and reports nothing.
 
 compose-lint covers those six and the rest of its 27 rules: capability
-tiers, resource limits, credentials in environment variables and connection
-strings, digest pinning, sensitive host paths, mount propagation, logging
-disabled. Severities are set per rule from a stated model rather than one
+tiers, resource limits, credentials in environment variables, connection
+strings and command-line arguments, digest pinning, sensitive host paths,
+mount propagation, logging disabled. Severities are set per rule from a stated model rather than one
 level for everything, and each finding carries fix guidance that a one-line
 Semgrep message has no room for.
 

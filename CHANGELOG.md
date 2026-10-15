@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   two that only make sense in an argument list: `$$VAR` is what the shell
   expands at runtime (a reference, not the literal it is under
   `environment:`), and a path-shaped value is the fix pattern. Over the
-  11,111-file corpus this adds findings on 148 services in 188 files, 115 of
+  11,111-file corpus this adds findings on 170 services in 153 files, 111 of
   them services with no credential finding before; 64 further files that pass
   `$$REDIS_PASSWORD` or a secrets path are correctly left alone. Labels are
   not read (every candidate was a secret's name, not a secret). (#1077)
