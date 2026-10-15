@@ -38,8 +38,9 @@ report above the `FAIL` verdict.
 service that never had its hardening filled in. The dry run prints the three
 `⚠ behavior-changing` caveats and the diff it *would* apply — `read_only`,
 `no-new-privileges`, and rebinding the published port to `127.0.0.1` — writes
-nothing, and names the one finding it refuses to touch (CL-0019, a tag-only
-image pin, which has no safe automatic fix). The second screen applies those
+nothing, and lists the one finding it leaves to fix by hand with the fix to
+make (CL-0019, a tag-only image pin: the digest is a value only the user can
+supply). The second screen applies those
 three edits and re-lints: `FAIL` becomes `PASS`, with the leftover MEDIUM still
 reported rather than silently dropped. The cast copies the fixture to `/tmp`
 before running, because `--apply` rewrites the file in place.
@@ -81,7 +82,9 @@ Each cast is sized to its output in the tape's `Set Height`, and the arithmetic
 is written down beside it. After rendering, check neither screen scrolled: a
 release that adds a line to `check` or `fix` output overflows the terminal and
 silently cuts the top of the screen off. Raise the tape's `Height` by 30px per
-extra row and re-render.
+extra row and re-render, then check the background is one flat color: at some
+heights (970 was one) VHS paints alternate rows a shade off the window, and the
+GIF palette turns that into faint horizontal stripes. 940 and 1000 are clean.
 
 Bump the digest-pinned VHS base image via Renovate, same as any other base
 image (see CLAUDE.md).

@@ -12,17 +12,20 @@ Require compose-lint
 # behavior-changing caveat lines clip at the right edge instead of wrapping
 # and pushing the diff off screen.
 #
-# Height gives 30 rows, exactly what the taller of the two screens needs on
-# 0.25.0 (its no-config Note line took the spare row):
-#   screen 1 — command + 28 lines of dry-run output + prompt       = 30 rows
-#   screen 2 — apply (command + 5) + check (command + 16) + prompt = 24 rows
+# Height gives 32 rows, one more than the taller of the two screens needs,
+# and matches the hero cast so the two GIFs sit at the same size:
+#   screen 1 — command + 29 lines of dry-run output + prompt       = 31 rows
+#   screen 2 — apply (command + 6) + check (command + 16) + prompt = 25 rows
+# Not every height records cleanly: at 970 VHS painted alternate text rows a
+# shade off the window background, which the GIF palette turned into visible
+# stripes. 940 and 1000 were measured clean.
 # A release that adds a line to either output overflows and scrolls, which
 # tests/test_demo_fixture.py is what catches (it pins the finding set the two
 # screens are sized around).
 Set Shell bash
 Set FontSize 22
 Set Width 1500
-Set Height 940
+Set Height 1000
 Set Padding 20
 Set Theme "Dracula"
 Set TypingSpeed 45ms
@@ -47,9 +50,9 @@ Sleep 1s
 # 1. Dry run. `fix` writes nothing by default: it prints the unified diff it
 #    would apply, led by a behavior-changing caveat for each fix that can
 #    change how the container runs (CL-0009's re-applied seccomp profile,
-#    CL-0007's read_only, CL-0005's rebind to 127.0.0.1). The summary line
-#    names what it will not touch — the tag-only image pin (CL-0019), which
-#    has no safe automatic fix.
+#    CL-0007's read_only, CL-0005's rebind to 127.0.0.1). Below the summary
+#    it lists what it leaves to fix by hand, with the fix — the tag-only image
+#    pin (CL-0019), which has no safe automatic fix: it needs the real digest.
 Type "compose-lint fix docker-compose.yml"
 Sleep 1900ms
 Enter
