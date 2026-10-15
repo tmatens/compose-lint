@@ -102,6 +102,13 @@ value, the empty string included, turns it on. That is the convention of
 [no-color.org](https://no-color.org) and of Node's `supports-color`. Use it to
 keep color through a pipe, e.g. into `less -R` or a CI log that renders ANSI.
 
+On Windows, a classic console window (the cmd.exe and PowerShell default on
+Windows 10 and Server) shows color only once a program asks it to interpret
+escape sequences; compose-lint asks. A console that cannot — Windows 8.1, or
+Windows 10 before version 1511 — gets plain text instead of raw `←[31m` codes.
+Windows Terminal, VS Code's terminal and Git Bash render color as on any other
+platform.
+
 ## Pager
 
 `--explain` pages its rule doc through `less -RFX` when stdout is a terminal

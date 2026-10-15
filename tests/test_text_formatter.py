@@ -13,6 +13,7 @@ import sys
 import pytest
 
 from compose_lint._output import sanitize as _sanitize
+from compose_lint.formatters import text as text_formatter
 from compose_lint.formatters.text import (
     _COLORS,
     _LABEL_WIDTH,
@@ -34,7 +35,9 @@ def _force_color(monkeypatch: pytest.MonkeyPatch) -> None:
     """Make _colorize emit ANSI codes regardless of the test's real stdout.
 
     Also clears NO_COLOR/FORCE_COLOR so the color-on baseline is deterministic
-    no matter what the test runner's environment sets.
+    no matter what the test runner's environment sets, and answers yes for
+    the Windows console check (#1089): the fake terminal has no console
+    behind it, which on a Windows runner would correctly mean no color.
     """
 
     class _Tty:
@@ -42,6 +45,7 @@ def _force_color(monkeypatch: pytest.MonkeyPatch) -> None:
             return True
 
     monkeypatch.setattr(sys, "stdout", _Tty())
+    monkeypatch.setattr(text_formatter, "interprets_ansi", lambda _stream: True)
     monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.delenv("FORCE_COLOR", raising=False)
 
@@ -558,6 +562,8 @@ def test_color_enabled_judges_the_stream_it_is_given(
 
     monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.delenv("FORCE_COLOR", raising=False)
+    # A console check of its own on Windows, covered by test_windows_console.
+    monkeypatch.setattr(text_formatter, "interprets_ansi", lambda _stream: True)
     assert color_enabled(Terminal()) is True
     assert color_enabled(io.StringIO()) is False
     assert color_enabled(None) is color_enabled()
