@@ -1198,7 +1198,7 @@ jobs:
   # maintainer (verify-tag exists to catch tags a stolen credential could
   # mint, so CI must never hold that key). The signed, immutable claim is
   # the release tag; the major tag is a mutable convenience pointer and is
-  # documented as such (docs/hardening.md) — consumers who want integrity
+  # documented as such (docs/running-hardened.md) — consumers who want integrity
   # pin the SHA or the exact version, exactly as this repo's own workflows
   # do. Trigger filter above excludes "v1" so this push cannot re-enter the
   # pipeline. If GitHub's immutable-releases setting is ever enabled, keep

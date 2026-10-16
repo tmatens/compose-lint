@@ -2,7 +2,7 @@
 # feed `--explain` and the GitHub blob view. Never duplicate content here; the
 # markdown stays front-matter-free because `--explain` prints it raw.
 # mkdocs (not branch-mode Jekyll) because Jekyll's Liquid pass eats `{{ }}`
-# inside code fences (CL-0004, CL-0019, hardening.md docker --format examples).
+# inside code fences (CL-0004, CL-0019, running-hardened.md docker --format examples).
 site_name: compose-lint
 site_description: >-
   Security linter for Docker Compose files — 27 rules with actionable,
@@ -126,7 +126,8 @@ nav:
       - "GitHub Action": github-action.md
       - "Forgejo Actions": forgejo.md
       - Severity levels: severity.md
-      - Hardening walkthrough: hardening.md
+      - "Docker Compose security: hardening guide": hardening.md
+      - Running compose-lint hardened: running-hardened.md
       - Verifying releases: verifying.md
       - Compatibility: compatibility.md
       - "Compared with DCLint, KICS, Checkov, Trivy": compare.md

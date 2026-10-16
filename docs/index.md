@@ -54,8 +54,11 @@ reading here) in the terminal.
   assigned, and why severities are deliberately not inflated.
 - **[GitHub Action](github-action.md)** — inputs, SHA pin versus `v1`, and
   why the `permissions:` block is part of the recipe.
-- **[Hardening walkthrough](hardening.md)** — taking a real Compose file from
-  default to hardened, finding by finding.
+- **[Docker Compose security: hardening guide](hardening.md)** — taking a
+  real Compose file from default to hardened, one setting at a time, with the
+  rule and the study figure behind each step.
+- **[Running compose-lint hardened](running-hardened.md)** — the fully
+  hardened `docker run` for the linter's own container.
 - **[Verifying a release](verifying.md)** — checking an image's or a
   package's signature before you pin it.
 - **[Compared with other tools](compare.md)** — which of DCLint, KICS,

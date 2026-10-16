@@ -282,6 +282,16 @@ def test_study_page_emits_article_without_breadcrumb() -> None:
     assert "dateModified" not in data
 
 
+def test_hardening_guide_emits_article_like_the_study() -> None:
+    page = _page("hardening.md", meta={"title": "Guide", "description": "d"})
+
+    data = _jsonld(_head(page))
+
+    assert data["@type"] == "Article"
+    assert data["headline"] == "Guide"
+    assert "breadcrumb" not in data
+
+
 def test_script_terminator_inside_a_title_cannot_close_the_script_element() -> None:
     meta = {"title": "a</script><b>", "description": "d"}
     page = _page("rules/CL-0001.md", meta=meta)
