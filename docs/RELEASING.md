@@ -353,14 +353,14 @@ five before opening the bump PR.
       It was omitted from this list when #554 introduced it, and
       `release-prep.yml` did not bump it either — so the 0.18.0 prep PR
       failed its own required check and needed a hand-pushed commit.
-- [ ] `README.md` + `docs/hardening.md` — version references in
+- [ ] `README.md` + `docs/running-hardened.md` — version references in
       copy-paste integration snippets. All need bumping each release;
       otherwise users land on a stale version (v0.14.0 shipped with all
       of them stale). Four forms exist:
       - `tmatens/compose-lint@<sha> # v0.X.Y` (README — GitHub Action snippet)
       - `rev: v0.X.Y` (README — pre-commit snippet)
       - `compose-lint==0.X.Y` (README — Forgejo Actions snippet, pip pin)
-      - `:0.X.Y` image tags (docs/hardening.md — hardened `docker run`
+      - `:0.X.Y` image tags (docs/running-hardened.md — hardened `docker run`
         snippet, plus the digest-lookup prose below it; NOT in README)
 
       **All four are automated — nothing to do by hand here.** The first
