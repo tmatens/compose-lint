@@ -3,7 +3,7 @@
 This document tells you, the user of compose-lint, what to expect — and
 what *not* to expect — from the tool in security terms. It is the
 plain-English companion to [docs/ASSURANCE.md](ASSURANCE.md) (the
-formal assurance case) and [.github/SECURITY.md](../.github/SECURITY.md)
+formal assurance case) and [.github/SECURITY.md](https://github.com/tmatens/compose-lint/blob/main/.github/SECURITY.md)
 (the vulnerability-reporting policy).
 
 If you are evaluating whether to put compose-lint in a production
@@ -20,7 +20,7 @@ pipeline, this is the page to read.
 2. **It will not connect to the network.** The product code performs no
    network I/O — no DNS, no HTTP, no telemetry. You can prove this: the
    documented hardened `docker run` recipe in
-   [README.md](../README.md#running-with-full-hardening) sets
+   [README.md](https://github.com/tmatens/compose-lint/blob/main/README.md#running-with-full-hardening) sets
    `--network none`, and CI runs the full smoke battery under that flag
    set on every release.
 
@@ -46,7 +46,7 @@ pipeline, this is the page to read.
    - Container manifest signed with cosign; SBOM and OpenVEX attested
      to the image manifest.
    - Verification commands and the OIDC identity to expect are in
-     [.github/SECURITY.md](../.github/SECURITY.md) §"Supply Chain".
+     [.github/SECURITY.md](https://github.com/tmatens/compose-lint/blob/main/.github/SECURITY.md) §"Supply Chain".
 
 5. **The runtime image is minimal.** The Docker image runs on
    [distroless](https://github.com/GoogleContainerTools/distroless)
@@ -57,7 +57,7 @@ pipeline, this is the page to read.
 
 6. **Tampered tags cannot publish.** `publish.yml` only runs on
    annotated, main-reachable tags whose SSH signature is verified
-   against [`.github/allowed_signers`](../.github/allowed_signers). An
+   against [`.github/allowed_signers`](https://github.com/tmatens/compose-lint/blob/main/.github/allowed_signers). An
    attacker who pushed a malicious tag to the repo could not get it to
    ship.
 
@@ -67,7 +67,7 @@ The promises above are the headline. These eight properties are the
 precise version, and they define what counts as a vulnerability in
 compose-lint: a defect is a vulnerability when it breaks one of them, can
 be triggered by someone with less trust than you, and shipped in a
-release (see [.github/SECURITY.md](../.github/SECURITY.md) §"What counts
+release (see [.github/SECURITY.md](https://github.com/tmatens/compose-lint/blob/main/.github/SECURITY.md) §"What counts
 as a vulnerability"). "Content" below means anything compose-lint reads
 from the project: Compose files, env files, `.compose-lint.yml`, and the
 names of files and directories.
@@ -116,16 +116,16 @@ following a policy it should not have (P6).
 5. **It is not exhaustive.** The 27 rules cover the misconfigurations
    that the OWASP Docker Security Cheat Sheet, CIS Docker Benchmark,
    and Docker official documentation ground (see
-   [README.md](../README.md#rules) for the full list). Misconfigurations
+   [README.md](https://github.com/tmatens/compose-lint/blob/main/README.md#rules) for the full list). Misconfigurations
    that none of those sources document, and that are not severe enough
    to be unmistakably wrong, are intentionally not flagged. The bar for
    adding a rule is documented in
-   [CONTRIBUTING.md](../CONTRIBUTING.md) §"Rule requirements".
+   [CONTRIBUTING.md](https://github.com/tmatens/compose-lint/blob/main/CONTRIBUTING.md) §"Rule requirements".
 
 6. **It does not promise zero false positives or zero false
    negatives.** Every rule ships positive *and* negative tests
    including "hardened-but-unusual" fixtures, and the
-   [corpus snapshot](../tests/corpus_snapshot.json.gz) regression-tests
+   [corpus snapshot](https://github.com/tmatens/compose-lint/blob/main/tests/corpus_snapshot.json.gz) regression-tests
    findings against ~1,500 real-world Compose files — but the threat
    model in [docs/ASSURANCE.md](ASSURANCE.md) acknowledges both
    classes as real risks. Report a false positive or false negative as
@@ -133,7 +133,7 @@ following a policy it should not have (P6).
    with a deliberately crafted file (see §"Security properties").
 
 7. **It does not maintain old releases.** Per
-   [.github/SECURITY.md](../.github/SECURITY.md) §"Supported Versions",
+   [.github/SECURITY.md](https://github.com/tmatens/compose-lint/blob/main/.github/SECURITY.md) §"Supported Versions",
    only the latest minor release receives security fixes. Pin to a
    recent version and bump on a regular cadence.
 
@@ -160,11 +160,11 @@ following a policy it should not have (P6).
   on positive, negative, and hardened-but-unusual fixtures. CI runs the
   same on Python 3.11–3.14 on every PR.
 - **Run the corpus snapshot.** See
-  [CONTRIBUTING.md](../CONTRIBUTING.md) §"Corpus snapshot" for the
+  [CONTRIBUTING.md](https://github.com/tmatens/compose-lint/blob/main/CONTRIBUTING.md) §"Corpus snapshot" for the
   out-of-tree corpus. Findings against ~1,500 real Compose files are
   locked in `tests/corpus_snapshot.json.gz`; PR diffs show any drift.
 - **Verify a release signature.** Commands and the expected OIDC
-  identity are in [.github/SECURITY.md](../.github/SECURITY.md)
+  identity are in [.github/SECURITY.md](https://github.com/tmatens/compose-lint/blob/main/.github/SECURITY.md)
   §"Supply Chain".
 - **Read the assurance case.** [docs/ASSURANCE.md](ASSURANCE.md) maps
   every claim above to the design choices and tooling that enforce it.
@@ -172,5 +172,5 @@ following a policy it should not have (P6).
 ## Reporting a security issue with compose-lint itself
 
 Use the private-vulnerability process in
-[.github/SECURITY.md](../.github/SECURITY.md). Do not open public issues
+[.github/SECURITY.md](https://github.com/tmatens/compose-lint/blob/main/.github/SECURITY.md). Do not open public issues
 for security findings. Acknowledgment SLA is 7 days.

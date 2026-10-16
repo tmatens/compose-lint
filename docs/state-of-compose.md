@@ -44,7 +44,7 @@ Examples, templates, and demos are deliberately **not** synthetic: copy-paste ma
 
 ### Tool
 
-All findings come from [compose-lint 0.26.0](https://github.com/tmatens/compose-lint/releases/tag/v0.26.0) — **27 rules** — installed from PyPI and running with `--fail-on low` (every severity reported, not gated). Each rule cites OWASP, CIS, or Docker docs; rule definitions are in [`docs/rules/`](rules/). Severities come from the derived two-axis model in [`docs/severity.md`](severity.md).
+All findings come from [compose-lint 0.26.0](https://github.com/tmatens/compose-lint/releases/tag/v0.26.0) — **27 rules** — installed from PyPI and running with `--fail-on low` (every severity reported, not gated). Each rule cites OWASP, CIS, or Docker docs; rule definitions are in [`docs/rules/`](index.md#rules). Severities come from the derived two-axis model in [`docs/severity.md`](severity.md).
 
 ### Severity weights
 

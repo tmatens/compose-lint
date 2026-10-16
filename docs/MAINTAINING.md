@@ -1,7 +1,7 @@
 # Maintaining
 
 How a maintainer reviews and merges a contribution from outside the
-repository. [CONTRIBUTING.md](../CONTRIBUTING.md) is the contributor's side of
+repository. [CONTRIBUTING.md](https://github.com/tmatens/compose-lint/blob/main/CONTRIBUTING.md) is the contributor's side of
 the same workflow and stays the source of truth for commits, signing and PR
 expectations; this page covers only what a maintainer does that a contributor
 cannot see.
@@ -134,7 +134,7 @@ only home.
 
 compose-lint's contribution process is stricter than most, and it — not the
 patch — is where a first PR usually stalls. All of it is in
-[CONTRIBUTING.md](../blob/main/CONTRIBUTING.md); the short version:
+[CONTRIBUTING.md](https://github.com/tmatens/compose-lint/blob/main/CONTRIBUTING.md); the short version:
 
 - Fork, then add this repo as `upstream` — `origin` is your fork, and
   `git rebase origin/main` does nothing useful there.

@@ -8,8 +8,8 @@ criterion and tracks the access grants needed by every credential the
 project depends on.
 
 For the related governance question (who decides, how to add a
-co-maintainer), see [GOVERNANCE.md](../GOVERNANCE.md). For the
-maintainer roster, see [MAINTAINERS.md](../MAINTAINERS.md).
+co-maintainer), see [GOVERNANCE.md](https://github.com/tmatens/compose-lint/blob/main/GOVERNANCE.md). For the
+maintainer roster, see [MAINTAINERS.md](https://github.com/tmatens/compose-lint/blob/main/MAINTAINERS.md).
 
 ## Short version
 
@@ -33,7 +33,7 @@ been zero, the issue queue is light, and releases are infrequent — so
 the path to a second maintainer is "someone wants in," not "someone
 takes over a burden." The project is structured to mitigate the
 bus-factor risk rather than to deny it — see
-[GOVERNANCE.md](../GOVERNANCE.md) for the path to adding a second
+[GOVERNANCE.md](https://github.com/tmatens/compose-lint/blob/main/GOVERNANCE.md) for the path to adding a second
 maintainer.
 
 ## What does not depend on the maintainer
@@ -51,11 +51,11 @@ without the maintainer's local state:
   determined image build for the same commit.
 - **Documented release process**: [docs/RELEASING.md](RELEASING.md)
   is the full checklist. The release pipeline
-  ([.github/workflows/publish.yml](../.github/workflows/publish.yml))
+  ([.github/workflows/publish.yml](https://github.com/tmatens/compose-lint/blob/main/.github/workflows/publish.yml))
   runs from the GitHub Actions runner, not the maintainer's machine —
   no local secrets are used.
 - **Tag-rooted provenance**: release tags are SSH-signed with the keys
-  in [.github/allowed_signers](../.github/allowed_signers). A successor
+  in [.github/allowed_signers](https://github.com/tmatens/compose-lint/blob/main/.github/allowed_signers). A successor
   who is added to that file can sign tags that pass the `verify-tag`
   gate without inheriting the prior maintainer's key.
 - **Trusted Publisher (PyPI)**: PyPI publish runs via OIDC — no
@@ -79,15 +79,15 @@ it, and the recovery procedure if the maintainer is unavailable.
 | `DOCKERHUB_PUSH_TOKEN` / `DOCKERHUB_DESCRIPTION_TOKEN` | @tmatens | Environment secrets (`dockerhub` / `dockerhub-description`) | A new Docker Hub admin generates a Read & Write token for push and a Read/Write/Delete token for the description sync, and stores each in its environment — see [docs/RELEASING.md](RELEASING.md#docker-hub-credential-scoping). |
 | `DOCKERHUB_USERNAME`                       | @tmatens              | Repo Actions secret                                               | The Docker Hub account the tokens belong to.                                                                                                         |
 | `DOCKERHUB_READ_TOKEN`                     | @tmatens              | Repo Actions secret                                               | Public Repo Read-only PAT for the scan jobs; any Docker Hub account that can pull the public image can mint a replacement.                            |
-| Tag-signing SSH key                        | @tmatens              | Listed in [.github/allowed_signers](../.github/allowed_signers)   | A new maintainer adds their own key in a PR; revoke the old key in the same or a follow-up PR. Old tags remain verifiable as long as the old key entry stays.  |
+| Tag-signing SSH key                        | @tmatens              | Listed in [.github/allowed_signers](https://github.com/tmatens/compose-lint/blob/main/.github/allowed_signers)   | A new maintainer adds their own key in a PR; revoke the old key in the same or a follow-up PR. Old tags remain verifiable as long as the old key entry stays.  |
 | Forgejo / personal infra references in docs| @tmatens              | n/a (informational)                                               | Successor scrubs personal infra references; nothing in product depends on them.                                                                       |
 
 ## Continuity checklist when promoting a co-maintainer
 
 When a second maintainer is added per
-[GOVERNANCE.md](../GOVERNANCE.md) §"Adding a maintainer", grant each
+[GOVERNANCE.md](https://github.com/tmatens/compose-lint/blob/main/GOVERNANCE.md) §"Adding a maintainer", grant each
 of the following before they take their first on-call shift. The PR
-that adds them to [MAINTAINERS.md](../MAINTAINERS.md) should reference
+that adds them to [MAINTAINERS.md](https://github.com/tmatens/compose-lint/blob/main/MAINTAINERS.md) should reference
 this checklist as completed.
 
 - [ ] GitHub repo: Admin role on `tmatens/compose-lint`.
@@ -113,7 +113,7 @@ this checklist as completed.
    normal lazy-consensus rules. If not, contributors should:
    - Continue normal PRs against `main`. They will accumulate.
    - For urgent security issues, follow the disclosure process in
-     [.github/SECURITY.md](../.github/SECURITY.md) and additionally
+     [.github/SECURITY.md](https://github.com/tmatens/compose-lint/blob/main/.github/SECURITY.md) and additionally
      post a public security advisory on a reputable forum if the issue
      warrants it.
 4. **90+ days with no response**: per GOVERNANCE.md, an existing

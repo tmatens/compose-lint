@@ -9,7 +9,7 @@ security-sensitive pipeline.
 
 For the narrower question of *what compose-lint will and will not detect
 in your Compose files*, see [SECURITY-EXPECTATIONS.md](SECURITY-EXPECTATIONS.md).
-For the vulnerability-reporting process, see [SECURITY.md](../.github/SECURITY.md).
+For the vulnerability-reporting process, see [SECURITY.md](https://github.com/tmatens/compose-lint/blob/main/.github/SECURITY.md).
 
 ## What compose-lint is
 
