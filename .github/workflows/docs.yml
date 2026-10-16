@@ -12,6 +12,7 @@ on:
       # The hooks mkdocs.yml loads: they shape the built HTML and sitemap, so
       # editing one has to rebuild the site the same as editing a page does.
       - "scripts/mkdocs_*_hook.py"
+      - scripts/indexnow.py
       - requirements-docs.lock
       - .github/workflows/docs.yml
   pull_request:
@@ -21,6 +22,7 @@ on:
       # The hooks mkdocs.yml loads: they shape the built HTML and sitemap, so
       # editing one has to rebuild the site the same as editing a page does.
       - "scripts/mkdocs_*_hook.py"
+      - scripts/indexnow.py
       - requirements-docs.lock
       - .github/workflows/docs.yml
   workflow_dispatch:
@@ -72,3 +74,31 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  # Tell IndexNow (Bing and the engines that share its endpoint) which pages
+  # this push changed, so a retitled or rewritten page is recrawled within
+  # days instead of waiting for an organic crawl. Runs after deploy because
+  # the engines fetch the pages and the key file (docs/<key>.txt) at once.
+  # The script decides the URL set; see its docstring. A failure here marks
+  # the run red but leaves the deployed site as it is.
+  indexnow:
+    if: github.event_name != 'pull_request'
+    needs: deploy
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The changed-page set is `git diff <before> HEAD`, which needs the
+          # push's base commit in the clone.
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Submit changed pages to IndexNow
+        env:
+          # Empty on workflow_dispatch, which the script reads as "submit
+          # every page" — the manual lever for a full resubmission.
+          BEFORE: ${{ github.event.before }}
+        run: python scripts/indexnow.py --before "$BEFORE"
