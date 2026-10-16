@@ -36,6 +36,15 @@ exclude_docs: |
   dockerhub-overview.md
   publishing/
 
+# A link from a page to a file outside docs/ builds to a 404 on the site.
+# mkdocs reports that as a warning, or for a link it cannot classify (a bare
+# directory, a non-Markdown file) only as info; raising the second to a warning
+# and building with --strict (.github/workflows/docs.yml) fails the PR instead.
+# Point such links at the file on GitHub.
+validation:
+  links:
+    unrecognized_links: warn
+
 # Per-page <title> and meta description, derived from existing content
 # (front matter is unavailable: --explain prints these files raw), plus the
 # Open Graph/Twitter tags, JSON-LD and "last updated" date built from them.

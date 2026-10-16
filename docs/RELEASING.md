@@ -2,7 +2,7 @@
 
 Maintainer-only. This is the step-by-step for cutting a new release of
 compose-lint. Contributors don't need to read this; see
-[CONTRIBUTING.md](../CONTRIBUTING.md) instead.
+[CONTRIBUTING.md](https://github.com/tmatens/compose-lint/blob/main/CONTRIBUTING.md) instead.
 
 The release pipeline is **tag-triggered**: pushing an annotated, signed
 `vX.Y.Z` tag to `main` kicks off `.github/workflows/publish.yml`, which
@@ -537,7 +537,7 @@ After approval, `publish` and `docker-publish` run in parallel.
 ## Security advisories
 
 What gets an advisory is decided by the test in
-[.github/SECURITY.md](../.github/SECURITY.md) §"What counts as a
+[.github/SECURITY.md](https://github.com/tmatens/compose-lint/blob/main/.github/SECURITY.md) §"What counts as a
 vulnerability", when the fix is written, and recorded in its changelog
 entry. The steps for one that does:
 

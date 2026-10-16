@@ -11,7 +11,7 @@ faithfully: the recorded `--explain` step shows a single-frame whoosh and
 settles on the ATT&CK table. The GIF is a symptom; the terminal UX is the
 problem.
 
-The constraint is [the CLI output contract](../../AGENTS.md): stdout carries
+The constraint is [the CLI output contract](https://github.com/tmatens/compose-lint/blob/main/AGENTS.md): stdout carries
 data, and `--explain` prints the doc raw — machine consumers pipe it, tests
 byte-compare it, and `fix`/CI never touch a pager.
 

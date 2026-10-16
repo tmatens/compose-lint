@@ -164,7 +164,7 @@ on purpose: `security`, whose `python -m pip install --upgrade pip` bootstraps
 pip itself before the hash-pinned install and the audit, and `dist-check`,
 which mirrors `publish.yml`'s install exactly. That pip upgrade is the one
 unhashed install. Regeneration instructions
-live in [`CLAUDE.md`](../CLAUDE.md) under "Regenerating lockfiles".
+live in [`CLAUDE.md`](https://github.com/tmatens/compose-lint/blob/main/AGENTS.md) under "Regenerating lockfiles".
 
 ---
 
@@ -313,7 +313,7 @@ Tag-triggered, plus a manual Docker-only republish (below). Full detail in
 `docker-publish` in parallel → `create-release` →
 `bump-marketplace-smoke-pin`.
 
-`docker-smoke` calls [`release-docker-smoke.yml`](../.github/workflows/release-docker-smoke.yml),
+`docker-smoke` calls [`release-docker-smoke.yml`](https://github.com/tmatens/compose-lint/blob/main/.github/workflows/release-docker-smoke.yml),
 the shared pre-publish battery — build the image, then assert the version
 matches the tag, the clean fixture exits 0, the insecure fixture exits 1,
 and SARIF output parses, each under the fully-hardened flag set README

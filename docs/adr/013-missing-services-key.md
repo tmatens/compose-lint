@@ -248,8 +248,8 @@ and are not settled here.
 that was asserting a clean grade on an ungraded project; it does not add a code
 or move a boundary. Affected files move from `PASS` to `FAIL` where the base
 carries a finding, which is new findings appearing on tightened coverage — the
-MINOR behaviour `docs/compatibility.md` already describes, and the shape #648,
-#657 and #668 each shipped under.
+MINOR behaviour `docs/compatibility.md` already describes, and the shape
+issues #648, #657 and #668 each shipped under.
 
 **Amendment (2026-08-23, issue #673) — the remaining two buckets, plus two
 corrections to the record above:**
