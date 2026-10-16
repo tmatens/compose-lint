@@ -60,7 +60,7 @@ The Docker image is distroless, multi-arch, and runs nonroot — see [Security p
 
 ### Running with full hardening
 
-Want to dogfood compose-lint's own rules against the container that runs it? See [the hardening guide](https://tmatens.github.io/compose-lint/hardening/) for the fully-hardened `docker run` invocation, the flag-to-rule mapping, and digest-pinning instructions.
+Want to dogfood compose-lint's own rules against the container that runs it? See [the hardening guide](https://tmatens.github.io/compose-lint/running-hardened/) for the fully-hardened `docker run` invocation, the flag-to-rule mapping, and digest-pinning instructions.
 
 ## Quick Start
 
