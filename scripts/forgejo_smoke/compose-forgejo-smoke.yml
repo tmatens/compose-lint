@@ -20,7 +20,7 @@
 # digest>`; scripts/forgejo_smoke_bump.py refuses a per-arch digest.
 services:
   forgejo:
-    image: codeberg.org/forgejo/forgejo:16.0.6@sha256:e2c34a699543ca8a00217ee9ab2bea5feedc98bd6d0ea95ec287d3b7ae1355c6
+    image: codeberg.org/forgejo/forgejo:17.0.0@sha256:06d38310de496a10186d952bdad5ca764c153c8023ede8dfa0944c79a1dc5412
     environment:
       # Headless install: lock the installer and configure via env.
       FORGEJO__security__INSTALL_LOCK: "true"
