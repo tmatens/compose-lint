@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Before, only some rules' fix guidance mentioned `--explain`, so a finding
   such as CL-0020's gave no hint that its rule page holds the full procedure.
   Not printed under `-q`, on a clean run, or in JSON or SARIF.
+- **CL-0021's interim fix says what it leaves behind.** The fix guidance
+  offered `${DB_PASSWORD}` substitution as "pull the credential from process
+  env", which read as if the exposure went away. It now says the substitution
+  takes the literal out of the file, and that Compose fills it in at deploy,
+  so the password still reaches the container's environment, as the rule
+  page already said.
 
 ## [0.36.0] - 2026-10-15
 
