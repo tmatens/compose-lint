@@ -80,9 +80,21 @@ secrets:
     file: ./secrets/db_password.txt   # add to .gitignore
 ```
 
-The secret file holds the value alone, with no `KEY=` prefix and no quotes. A
-file-sourced secret is mounted byte for byte, so an env-file-style line would
-become the password. The same fix applies when the credential lives in an
+The secret file is an ordinary file you create on the host, next to the
+Compose file. It holds the value alone, with no `KEY=` prefix, no quotes and
+no trailing newline:
+
+```bash
+mkdir -p secrets
+openssl rand -base64 32 | tr -d '\n' > secrets/db_password.txt
+chmod 600 secrets/db_password.txt
+echo 'secrets/' >> .gitignore
+```
+
+A file-sourced secret is mounted byte for byte and keeps the host file's owner
+and mode, so an env-file-style line would become the password, and the
+process that reads it in the container must be able to open it. The
+[CL-0020](rules/CL-0020.md) page covers both. The same fix applies when the credential lives in an
 `env_file:`; that file's values land in the process environment exactly as
 `environment:` values do, and keeping it out of git does not change that.
 
