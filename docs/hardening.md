@@ -91,6 +91,13 @@ chmod 600 secrets/db_password.txt
 echo 'secrets/' >> .gitignore
 ```
 
+A new random value only works on a database that has not started yet. The
+postgres image reads the password once, when it initialises an empty data
+directory, so on the starting file's existing `pgdata` volume it keeps the old
+password and refuses the new one. For a database that already holds data, put
+its current password in the file instead; the CL-0020 page shows how in
+[moving an existing database's password](rules/CL-0020.md#moving-an-existing-databases-password).
+
 A file-sourced secret is mounted byte for byte and keeps the host file's owner
 and mode, so an env-file-style line would become the password, and the
 process that reads it in the container must be able to open it. The
@@ -263,7 +270,7 @@ function exercised. What remains is the set whose removal broke it.
 | Image | `cap_add` | `tmpfs` needed under `read_only` | Why |
 |---|---|---|---|
 | `nginx:1.27-alpine` | `CHOWN, SETUID, SETGID` | `/tmp`, `/run`, `/var/cache/nginx` | the entrypoint chowns the cache directory, then drops the workers to the `nginx` user |
-| `postgres:16` | `CHOWN, DAC_OVERRIDE, SETGID, SETUID` | `/run/postgresql` | the entrypoint chowns the data and socket directories and switches to the `postgres` user; on every later start it reads the `0700` data directory as root, and it reads the secret file, which Compose mounts `0600` and owned by the host user |
+| `postgres:16` | `CHOWN, DAC_OVERRIDE, SETGID, SETUID` | `/run/postgresql` | the entrypoint chowns the data and socket directories and switches to the `postgres` user; on every later start it reads the `0700` data directory as root, and it reads the secret file, which Compose mounts with the host file's owner and mode (`0600` after step 1) |
 
 Both follow the most common pattern: an entrypoint that starts as root, fixes
 ownership of something, and drops to a service user needs `SETUID` and
@@ -272,9 +279,11 @@ which entrypoints of this kind often need, was not required for `postgres:16`
 under the drop test.
 
 Two things the postgres measurement shows that apply to any image. First,
-test a restart, not only the first start: without `DAC_OVERRIDE` postgres
-initialises and serves, then fails every later start with
-`find: '/var/lib/postgresql/data': Permission denied`. Second, not every
+a capability can be needed by more than one step, so test a restart, not only
+the first start. Without `DAC_OVERRIDE` and with the step 1 secret, postgres
+fails its first start, unable to read the `0600` file. With a world-readable
+secret it initialises and serves, then fails every later start, unable to read
+its own `0700` data directory. Second, not every
 logged failure is a missing capability: even with the full set, the first
 start logs `chmod: changing permissions of '/var/lib/postgresql/data':
 Operation not permitted`, which the entrypoint tolerates because `initdb`
@@ -307,7 +316,7 @@ rule page is short:
 
 Reading failures out of logs works, but it is slow when an application
 swallows the error, and it says nothing about what the service would have
-written to a read-only root. These narrow the loop. All of them run on the
+written to a read-only root. These narrow the loop. The tracers run on the
 host and need root there.
 
 - **The entrypoint script.** Most official images publish theirs. A `gosu`,
@@ -318,12 +327,19 @@ host and need root there.
   `read_only: true` will refuse. Volumes do not appear in it, because they
   stay writable.
 - **Inspektor Gadget** (`ig`). `ig run trace_capabilities --containername
-  <name>` prints each capability check a container's processes trigger, with
-  a `CAPABLE` column that reads `false` when the check failed. Run the real
-  workload with `cap_drop: [ALL]` in place and the failed rows are the set to
-  add back. `ig run trace_open --containername <name> --failed` does the same
-  for file opens, with the path and the error, which is the quickest way to
-  see what a read-only root refused.
+  <name> --audit-only` prints the capability checks a container's processes
+  trigger, with a `CAPABLE` column that reads `false` when the check failed.
+  `<name>` is the container's runtime name (`<project>-<service>-1`), not the
+  Compose service name. Keep `--audit-only`: without it the trace also lists
+  hundreds of `CAP_SYS_ADMIN` checks the kernel makes on ordinary calls such
+  as `mmap` and `execve`, which fail harmlessly, and adding those back would
+  grant the most dangerous capability for nothing. Even then a `false` row is
+  a candidate, not a verdict: on `nginx:1.27-alpine` the trace also flagged
+  `DAC_OVERRIDE`, which the service does not need. Confirm each one with a
+  drop-and-observe run. `ig run trace_open --containername <name> --failed`
+  lists failed file opens with the path and the error. It does not show a
+  failed `mkdir` or `chown`, so a read-only root can refuse more than it
+  lists.
 - **BCC `capable`** (bpftrace ships `capable.bt`). A capability trace across
   the whole host rather than one container; useful where `ig` is not
   available. It lists the checks, not whether they failed, so treat its
@@ -388,7 +404,8 @@ Rules: [CL-0007](rules/CL-0007.md), [CL-0022](rules/CL-0022.md).
 
 ## 7. Set memory and CPU limits
 
-**Share of real files affected: 97.4%** set neither.
+**Share of real files affected: 97.4%** lack a memory limit, a CPU limit or
+both.
 
 Docker imposes no limit by default, so one runaway or malicious process can
 take the host down with it. Set both, sized from what the workload uses at
@@ -506,8 +523,8 @@ remembers what it fixed. Each of the reasons people reach for it has a narrower 
 |---|---|
 | Access to one device | `devices: [/dev/foo]` |
 | Network configuration | `cap_add: [NET_ADMIN, NET_RAW]` |
-| A debugger sidecar | `cap_add: [SYS_PTRACE]` (which also reads other processes' memory) |
-| Docker-in-Docker | `sysbox-runc` or rootless DinD |
+| A debugger sidecar | `cap_add: [SYS_PTRACE]` with `pid: "service:<name>"`, so it sees only that service's processes (`SYS_PTRACE` also reads their memory) |
+| Docker-in-Docker | the `sysbox-runc` runtime. Rootless DinD is not a way out: it still needs `privileged`, or seccomp unconfined plus more (see the rule page) |
 
 Narrower is not free: `NET_ADMIN` is itself a HIGH finding and `SYS_PTRACE`
 is graded too. If you do not know which capability a workload needs, remove
@@ -543,7 +560,9 @@ Rules: [CL-0008](rules/CL-0008.md), [CL-0010](rules/CL-0010.md).
 
 ## 12. Look hard at every host path you mount
 
-**Share of real files affected: 2.5%** bind-mount a sensitive host path.
+**Share of real files affected: 2.5%** bind-mount a sensitive host path
+that CL-0013 flags. Writable mounts of root-equivalent paths, CL-0025's
+subject, are under 2%.
 
 A bind mount of `/etc`, `/proc`, `/root`, `/var/lib/docker` or a home
 directory hands the container the host's secrets even when read-only. Writable,
@@ -692,8 +711,8 @@ versions you run.
 | No explicit `user: root` | [CL-0018](rules/CL-0018.md) | — |
 | No Docker socket mount | [CL-0001](rules/CL-0001.md) | 7.8% |
 | No `privileged: true` | [CL-0002](rules/CL-0002.md) | 2.4% |
-| No `network_mode: host`, `pid: host`, `ipc: host` | [CL-0008](rules/CL-0008.md), [CL-0010](rules/CL-0010.md) | 2.8% |
-| Host paths mounted only when needed, `:ro` where possible | [CL-0013](rules/CL-0013.md), [CL-0025](rules/CL-0025.md) | 2.5% |
+| No `network_mode: host`, `pid: host`, `ipc: host` | [CL-0008](rules/CL-0008.md), [CL-0010](rules/CL-0010.md) | 2.8% / under 2% |
+| Host paths mounted only when needed, `:ro` where possible | [CL-0013](rules/CL-0013.md), [CL-0025](rules/CL-0025.md) | 2.5% / under 2% |
 | No host devices, no `shared` mount propagation | [CL-0016](rules/CL-0016.md), [CL-0017](rules/CL-0017.md) | — |
 | Logging driver not `none` | [CL-0014](rules/CL-0014.md) | — |
 
@@ -732,7 +751,8 @@ each tool reads.
 
 **Where do I start if I can only do one thing?** Step 1 if any credential is in
 `environment:`; otherwise step 4, `no-new-privileges`, because it is one line
-with no workload cost, and then step 5.
+and rarely changes what a service does (step 4 says what it quietly breaks
+when it does), and then step 5.
 
 ## Running compose-lint itself hardened
 
