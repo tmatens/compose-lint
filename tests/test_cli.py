@@ -1718,3 +1718,32 @@ def test_a_flag_prefix_is_not_the_flag(tmp_path: Path, args: list[str]) -> None:
     assert result.returncode == 2
     assert "unrecognized arguments" in result.stderr
     assert compose.read_text() == before
+
+
+def test_text_output_points_at_explain_once_before_the_verdict(
+    tmp_path: Path,
+) -> None:
+    """One pointer per run, not per finding; absent when quiet, clean, or JSON."""
+    (tmp_path / "compose.yml").write_text(
+        "services:\n  db:\n    image: postgres:16\n"
+        "    environment:\n      POSTGRES_PASSWORD: hunter2\n",
+        encoding="utf-8",
+    )
+    hint = "Details on any rule: compose-lint --explain <RULE-ID>"
+    env = {"NO_COLOR": "1"}
+    result = run_cli("check", "compose.yml", cwd=tmp_path, env_extra=env)
+    lines = result.stdout.rstrip().splitlines()
+    assert result.stdout.count(hint) == 1, result.stdout
+    assert lines[-2].startswith(hint), lines[-2]
+    assert "(e.g. compose-lint --explain CL-0020)" in lines[-2]
+
+    quiet = run_cli("check", "-q", "compose.yml", cwd=tmp_path, env_extra=env)
+    assert hint not in quiet.stdout
+    as_json = run_cli(
+        "check", "--format", "json", "compose.yml", cwd=tmp_path, env_extra=env
+    )
+    assert hint not in as_json.stdout
+
+    (tmp_path / "compose.yml").write_text("services: {}\n", encoding="utf-8")
+    clean = run_cli("check", "compose.yml", cwd=tmp_path, env_extra=env)
+    assert hint not in clean.stdout, clean.stdout

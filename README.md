@@ -186,6 +186,7 @@ docker-compose.yml
           fix: Move 'POSTGRES_PASSWORD' to Compose's `secrets:` primitive. If the image supports the `*_FILE` convention (Postgres, MySQL, MariaDB, MinIO, etc.), set `POSTGRES_PASSWORD_FILE: /run/secrets/<name>` and declare the secret under the top-level `secrets:` block sourced from a gitignored file or `external: true`. Otherwise, have the entrypoint read the secret file at startup and export the value into the workload's environment.
           ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-12-utilize-docker-secrets-for-sensitive-data-management
 docker-compose.yml: 1 high, 1 medium  ·  1 suppressed (not counted)
+Details on any rule: compose-lint --explain <RULE-ID>  (e.g. compose-lint --explain CL-0020)
 ✗ FAIL  ·  1 finding at or above high
 ```
 

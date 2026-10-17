@@ -65,6 +65,7 @@ from compose_lint.formatters.sarif import format_findings as format_sarif
 from compose_lint.formatters.text import (
     color_enabled,
     format_aggregate_summary,
+    format_explain_hint,
     format_header,
     format_summary,
     format_verdict,
@@ -1333,6 +1334,9 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                     len(config_errors),
                 )
             )
+        explain_hint = None if args.quiet else format_explain_hint(all_file_findings)
+        if explain_hint is not None:
+            _stdout_print(explain_hint)
         _stdout_print(
             format_verdict(
                 all_file_findings,

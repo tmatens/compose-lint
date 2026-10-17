@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Text output names `--explain` once per run.** A `check` with findings now
+  prints `Details on any rule: compose-lint --explain <RULE-ID>`, with a real
+  rule id from the run as the example, between the summary and the verdict.
+  Before, only some rules' fix guidance mentioned `--explain`, so a finding
+  such as CL-0020's gave no hint that its rule page holds the full procedure.
+  Not printed under `-q`, on a clean run, or in JSON or SARIF.
+
 ## [0.36.0] - 2026-10-15
 
 ### Changed
