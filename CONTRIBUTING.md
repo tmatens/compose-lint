@@ -209,8 +209,17 @@ the test that enforces it, or says that a reviewer does.
    rule's trigger and easy to misread). These can live in the rule's mixed
    fixture or in a dedicated `tests/compose_files/safe_*.yml`.
 6. Add fixture YAML files in `tests/compose_files/`
-7. Add rule documentation in `docs/rules/CL-{NNNN}.md`
-8. Fix guidance must be specific and actionable — show the exact YAML change
+7. Add rule documentation in `docs/rules/CL-{NNNN}.md`, fix first: the H1,
+   `**Severity:** <LEVEL> ([how it is derived](#severity-derivation))`, a
+   two-sentence summary of the problem and the fix, then `## Fix`,
+   `## What it detects`, `## Why it matters`, `## ATT&CK coverage`,
+   `## See also`, and last `## Severity derivation`, which holds the
+   derivation block and the references. Rule pages are moving to this order a
+   few at a time; follow it for a new page, and for a page you restructure
+8. Fix guidance must be specific and actionable — show the exact YAML change,
+   the commands that find the right values and check the result, each run
+   against a live container, and finish with a check that the finding is gone
+   (`compose-lint -q compose.yaml | grep CL-{NNNN}` prints nothing)
 9. Include a direct link to the supporting OWASP/CIS/Docker docs section
 10. If the rule describes container *runtime* state, add a premise check to
     `scripts/validate_rule_premises.py` proving the insecure state is Docker's
