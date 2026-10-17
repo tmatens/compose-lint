@@ -37,6 +37,19 @@ A filtering proxy holds the real socket and publishes a restricted one:
 
 and the agent consumes it by pointing `DOCKER_HOST` at the published socket instead of mounting the real one.
 
+Two things have to exist before the first start. The proxy runs as `nobody`, so
+`./sockets` must be writable by the docker group, and Compose needs that
+group's id to fill in `${DOCKER_GID}`:
+
+```bash
+install -d -m 0770 -g docker sockets
+echo "DOCKER_GID=$(getent group docker | cut -d: -f3)" >> .env
+```
+
+Without the first line the proxy cannot create its socket and exits with
+`listen unix /sock/docker.sock: bind: permission denied` (re-checked on Docker
+29.7.2 with a `./sockets` directory owned by the deploying user, mode `0755`).
+
 ### Why a unix socket rather than a loopback TCP port
 
 A TCP proxy would be simpler to wire up, and it is the wrong choice here. The agent runs with host networking, so a proxy on a bridge network would have to publish a host port — and `GET /containers/<id>/json`, which is on the allow-list because the agent genuinely needs it, returns `.Config.Env`: every container's environment variables, which is where secrets live.
