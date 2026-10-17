@@ -574,6 +574,29 @@ def _run_error_parts(rule_error_count: int, config_error_count: int) -> list[str
     return parts
 
 
+def format_explain_hint(
+    file_findings: list[tuple[list[Finding], str]],
+) -> str | None:
+    """Return the one-line pointer to ``--explain``, or None when nothing was found.
+
+    Each finding line already names its rule, so the command that prints a
+    rule's full page is shown once per run rather than once per finding. The
+    example id is the first unsuppressed finding at the highest severity, so
+    the line can be copied and run as it stands.
+    """
+    findings = [f for findings, _ in file_findings for f in findings]
+    candidates = [f for f in findings if not f.suppressed] or findings
+    if not candidates:
+        return None
+    top = max(f.severity for f in candidates)
+    example = next(f.rule_id for f in candidates if f.severity == top)
+    return _colorize(
+        "Details on any rule: compose-lint --explain <RULE-ID>"
+        f"  (e.g. compose-lint --explain {example})",
+        _DIM,
+    )
+
+
 def format_verdict(
     file_findings: list[tuple[list[Finding], str]],
     fail_on: Severity,

@@ -24,6 +24,7 @@ from compose_lint.formatters.text import (
     _excerpt,
     _find_token,
     format_aggregate_summary,
+    format_explain_hint,
     format_findings,
     format_summary,
     format_verdict,
@@ -567,3 +568,31 @@ def test_color_enabled_judges_the_stream_it_is_given(
     assert color_enabled(Terminal()) is True
     assert color_enabled(io.StringIO()) is False
     assert color_enabled(None) is color_enabled()
+
+
+def test_the_explain_hint_is_absent_when_nothing_was_found() -> None:
+    assert format_explain_hint([]) is None
+    assert format_explain_hint([([], "a.yml"), ([], "b.yml")]) is None
+
+
+def test_the_explain_hint_names_the_first_finding_at_the_highest_severity() -> None:
+    findings = [
+        Finding("CL-0003", Severity.MEDIUM, "web", "m", line=2),
+        Finding("CL-0020", Severity.HIGH, "db", "h", line=5),
+        Finding("CL-0021", Severity.HIGH, "app", "h", line=9),
+    ]
+    hint = format_explain_hint([(findings[:2], "a.yml"), (findings[2:], "b.yml")])
+    assert hint is not None
+    assert "compose-lint --explain <RULE-ID>" in hint
+    assert "(e.g. compose-lint --explain CL-0020)" in hint
+
+
+def test_the_explain_hint_prefers_an_unsuppressed_example() -> None:
+    suppressed = Finding(
+        "CL-0001", Severity.CRITICAL, "proxy", "c", line=3, suppressed=True
+    )
+    live = Finding("CL-0003", Severity.MEDIUM, "web", "m", line=2)
+    hint = format_explain_hint([([suppressed, live], "a.yml")])
+    assert hint is not None and "--explain CL-0003)" in hint
+    only_suppressed = format_explain_hint([([suppressed], "a.yml")])
+    assert only_suppressed is not None and "--explain CL-0001)" in only_suppressed
