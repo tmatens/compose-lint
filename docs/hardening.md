@@ -475,6 +475,17 @@ services:
       - ./sockets:/sock               # the filtered socket, not the real one
 ```
 
+The proxy runs as `nobody`, so create its socket directory for the docker
+group, and give Compose the group id, before the first start:
+
+```bash
+install -d -m 0770 -g docker sockets
+echo "DOCKER_GID=$(getent group docker | cut -d: -f3)" >> .env
+```
+
+Without the first line the proxy exits with
+`listen unix /sock/docker.sock: bind: permission denied`.
+
 The proxy still holds the socket, so it has to be at least as hardened as
 anything else would be, and its CL-0001 finding is suppressed for that one
 service with the reason written down, so the rule stays live for the rest of
