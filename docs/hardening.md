@@ -55,8 +55,8 @@ in the container running as the same user, and is in git for whoever reads the
 file. Compose's `secrets:` element mounts the value as a file at
 `/run/secrets/<name>` instead, absent from the environment, the daemon's
 metadata and process listings. Images
-that follow the `*_FILE` convention (Postgres, MySQL, MariaDB, MinIO, the
-Bitnami images, many others) make it a one-line change:
+that follow the `*_FILE` convention (Postgres, MySQL, MariaDB, the Bitnami
+images, many others) make it a one-line change:
 
 ```yaml
 # ❌ Before
@@ -91,22 +91,26 @@ chmod 600 secrets/db_password.txt
 echo 'secrets/' >> .gitignore
 ```
 
+If the same password also goes into a connection URL, generate it with
+`openssl rand -hex 32` instead: base64 output can contain `/`, which ends a
+URL's host part.
+
 A new random value only works on a database that has not started yet. The
 postgres image reads the password once, when it initialises an empty data
 directory, so on the starting file's existing `pgdata` volume it keeps the old
 password and refuses the new one. For a database that already holds data, put
-its current password in the file instead; the CL-0020 page shows how in
-[moving an existing database's password](rules/CL-0020.md#moving-an-existing-databases-password).
+its current password in the file instead, as the CL-0020 page's section on
+moving an existing database's password shows.
 
 A file-sourced secret is mounted byte for byte and keeps the host file's owner
 and mode, so an env-file-style line would become the password, and the
 process that reads it in the container must be able to open it. The
-[CL-0020](rules/CL-0020.md) page covers both. The same fix applies when the credential lives in an
+CL-0020 page covers both. The same fix applies when the credential lives in an
 `env_file:`; that file's values land in the process environment exactly as
 `environment:` values do, and keeping it out of git does not change that.
 
 Connection strings with a password inside (`postgresql://app:hunter2@db/app`)
-have the same exposure. The [CL-0021](rules/CL-0021.md) page gives three ways
+have the same exposure. The CL-0021 page gives three ways
 to take the password out, in order of preference.
 
 Rules: [CL-0020](rules/CL-0020.md), [CL-0021](rules/CL-0021.md).
@@ -142,12 +146,11 @@ image: nginx:1.27-alpine
 image: nginx:1.27-alpine@sha256:…
 ```
 
-Get the digest without pulling the whole image:
+Get the digest without pulling the whole image. `crane` runs from its own
+container, so nothing needs installing:
 
 ```bash
-crane digest nginx:1.27-alpine
-# or
-docker buildx imagetools inspect nginx:1.27-alpine --format '{{ .Manifest.Digest }}'
+docker run --rm gcr.io/go-containerregistry/crane digest nginx:1.27-alpine
 ```
 
 Pin the index digest those commands return, not a per-architecture digest; a
@@ -165,7 +168,7 @@ Rules: [CL-0004](rules/CL-0004.md), [CL-0019](rules/CL-0019.md).
 interfaces. Steps 4 to 7 score higher, but they count settings a file leaves
 out; this is the most common thing a file writes in that it should not.
 
-`"8080:80"` binds to `0.0.0.0`. Docker publishes a port by writing its own
+`"8080:80"` binds to every interface, IPv4 and IPv6 (`0.0.0.0` and `[::]`). Docker publishes a port by writing its own
 iptables rules, so the binding is reachable from the network even where UFW or
 firewalld would normally block it. That is the mechanism behind the
 long-running "Docker bypasses my firewall" surprise.
@@ -203,10 +206,9 @@ security_opt:
 ```
 
 Most of what it blocks fails quietly: a setuid helper runs, without the
-privilege, and later fails with an ordinary `Permission denied`. The one
-failure that names the flag is `sudo`: `sudo: The "no new privileges" flag is
-set, which prevents sudo from running as root.` A container that needs `sudo` in
-its entrypoint is a container that should be fixed at the image, not by
+privilege, and later fails with an ordinary `Permission denied`; the rule
+page lists what it breaks and the one message that names the flag. A
+container that needs `sudo` in its entrypoint is a container that should be fixed at the image, not by
 leaving escalation open; the rule page covers the cases.
 
 While you are in `security_opt`, do not disable the kernel profiles. Docker
@@ -223,7 +225,7 @@ security_opt:
 
 # ✅ If the default profile is in the way
 security_opt:
-  - seccomp:custom-seccomp.json
+  - seccomp:./seccomp.json   # the CL-0009 page shows how to build it
 ```
 
 Rules: [CL-0003](rules/CL-0003.md), [CL-0009](rules/CL-0009.md).
@@ -256,9 +258,8 @@ has the method for finding it. Two things worth knowing before you start:
   Docker 20.10), so it is inert, and on its own it leaves the entrypoint's
   `chown` failing.
 - When a container crash-loops after the change, the log line names the
-  missing capability. `chown(...) failed (1: Operation not permitted)` is
-  `CHOWN`. The rule page maps the common "Operation not permitted" messages
-  to the capability that clears each one.
+  operation that failed, and the rule page maps each message to the
+  capability that clears it.
 
 ### Two measured examples
 
@@ -269,7 +270,7 @@ function exercised. What remains is the set whose removal broke it.
 
 | Image | `cap_add` | `tmpfs` needed under `read_only` | Why |
 |---|---|---|---|
-| `nginx:1.27-alpine` | `CHOWN, SETUID, SETGID` | `/tmp`, `/run`, `/var/cache/nginx` | the entrypoint chowns the cache directory, then drops the workers to the `nginx` user |
+| `nginx:1.27-alpine` | `CHOWN, SETUID, SETGID` | `/run`, `/var/cache/nginx` | the entrypoint chowns the cache directory, then drops the workers to the `nginx` user |
 | `postgres:16` | `CHOWN, DAC_OVERRIDE, SETGID, SETUID` | `/run/postgresql` | the entrypoint chowns the data and socket directories and switches to the `postgres` user; on every later start it reads the `0700` data directory as root, and it reads the secret file, which Compose mounts with the host file's owner and mode (`0600` after step 1) |
 
 Both follow the most common pattern: an entrypoint that starts as root, fixes
@@ -285,14 +286,14 @@ fails its first start, unable to read the `0600` file. With a world-readable
 secret it initialises and serves, then fails every later start, unable to read
 its own `0700` data directory. Second, not every
 logged failure is a missing capability: even with the full set, the first
-start logs `chmod: changing permissions of '/var/lib/postgresql/data':
-Operation not permitted`, which the entrypoint tolerates because `initdb`
-sets the mode itself.
+start logs an `Operation not permitted` from a `chmod` of the data
+directory, which the entrypoint tolerates because `initdb` sets the mode
+itself.
 
 An image that
 starts directly as its service user, or that is a single static binary, often
 needs nothing at all. Measured for the tags shown in October 2026 on Docker
-29; the nginx set is also verified on the rule page. A different `user:`, a volume that already
+29.7.2, on a host without AppArmor; the nginx set is also verified on the rule page. A different `user:`, a volume that already
 holds data, an overridden entrypoint or a new major version can change a set
 in either direction, so measure again for what you run.
 
@@ -315,9 +316,7 @@ rule page is short:
 ### Tools that shorten the search
 
 Reading failures out of logs works, but it is slow when an application
-swallows the error, and it says nothing about what the service would have
-written to a read-only root. These narrow the loop. The tracers run on the
-host and need root there.
+swallows the error. Two things narrow the loop before you start:
 
 - **The entrypoint script.** Most official images publish theirs. A `gosu`,
   `su-exec` or `chown` call in it tells you the capability set before the
@@ -326,32 +325,11 @@ host and need root there.
   it lists every path written in the writable layer, which is the list
   `read_only: true` will refuse. Volumes do not appear in it, because they
   stay writable.
-- **Inspektor Gadget** (`ig`). `ig run trace_capabilities --containername
-  <name> --audit-only` prints the capability checks a container's processes
-  trigger, with a `CAPABLE` column that reads `false` when the check failed.
-  `<name>` is the container's runtime name (`<project>-<service>-1`), not the
-  Compose service name. Keep `--audit-only`: without it the trace also lists
-  hundreds of `CAP_SYS_ADMIN` checks the kernel makes on ordinary calls such
-  as `mmap` and `execve`, which fail harmlessly, and adding those back would
-  grant the most dangerous capability for nothing. Even then a `false` row is
-  a candidate, not a verdict: on `nginx:1.27-alpine` the trace also flagged
-  `DAC_OVERRIDE`, which the service does not need. Confirm each one with a
-  drop-and-observe run. `ig run trace_open --containername <name> --failed`
-  lists failed file opens with the path and the error. It does not show a
-  failed `mkdir` or `chown`, so a read-only root can refuse more than it
-  lists.
-- **BCC `capable`** (bpftrace ships `capable.bt`). A capability trace across
-  the whole host rather than one container; useful where `ig` is not
-  available. It lists the checks, not whether they failed, so treat its
-  output as candidates and confirm each one with a drop-and-observe run.
-- **Mint** (formerly DockerSlim). Its `slim` command runs the image in a
-  temporary container, observes it, and generates seccomp and AppArmor
-  profiles from what it saw. The result is only as complete as the workload
-  it watched, so the same rule applies: exercise the real function, not just
-  startup, before trusting the profile.
 
-None of these replace the loop above. They tell you faster what the loop
-would have told you.
+Tracers (Inspektor Gadget, BCC `capable`) and Mint are on the rule page, with
+the caveats that decide whether their output can be trusted. None of these
+replace the loop above. They tell you faster what the loop would have told
+you.
 
 ### Start new services from nothing
 
@@ -366,10 +344,12 @@ each capability unnecessary is an afternoon, which is why it rarely happens
 and why the study's numbers look the way they do.
 
 Rules: [CL-0006](rules/CL-0006.md). The capabilities you add back are graded
-too, by what each one reaches: [CL-0011](rules/CL-0011.md),
-[CL-0024](rules/CL-0024.md), [CL-0027](rules/CL-0027.md),
-[CL-0028](rules/CL-0028.md), [CL-0029](rules/CL-0029.md),
-[CL-0030](rules/CL-0030.md).
+too, by what each one reaches: [CL-0024](rules/CL-0024.md) (`ALL`,
+`SYS_ADMIN`, `SYS_MODULE`, `SYS_RAWIO`), [CL-0011](rules/CL-0011.md)
+(`NET_ADMIN`, `BPF`, `SYS_BOOT`), [CL-0027](rules/CL-0027.md) (`SYS_PTRACE`,
+`DAC_READ_SEARCH`), [CL-0028](rules/CL-0028.md) (`PERFMON`, `SYS_TIME`),
+[CL-0029](rules/CL-0029.md) (`SYS_NICE`, `IPC_LOCK`, `LEASE`) and
+[CL-0030](rules/CL-0030.md) (`SYSLOG`).
 
 ## 6. Make the root filesystem read-only
 
@@ -422,8 +402,8 @@ deploy:
 
 Compose honours `deploy.resources.limits` outside Swarm, so this works for a
 plain `docker compose up`. Size memory with more headroom than CPU: a memory
-limit kills (exit code 137, `OOMKilled: true`, no log line), a CPU limit only
-throttles. The rule page has the sizing procedure and the failure table.
+limit kills, a CPU limit only throttles. The rule page has the sizing
+procedure and how to read each failure.
 
 Rules: [CL-0026](rules/CL-0026.md).
 
@@ -442,9 +422,9 @@ user: root
 user: "1000:1000"
 ```
 
-Non-root on a bind mount the host owns as root fails with `Permission denied`.
-The rule page walks through fixing the ownership rather than reverting to
-root.
+A non-root user cannot write a bind mount the host owns as root, and Compose
+creates a missing bind source as root. The rule page walks through fixing the
+ownership rather than reverting to root.
 
 Rules: [CL-0018](rules/CL-0018.md).
 
@@ -455,8 +435,8 @@ Rules: [CL-0018](rules/CL-0018.md).
 A container that can reach `/var/run/docker.sock` can start a privileged
 container with the host's root filesystem mounted. It is host root with one
 extra step, and `:ro` does not change that; the API accepts writes over a
-read-only socket mount. The study rates it CRITICAL and it is the most common
-CRITICAL finding.
+read-only socket mount. compose-lint rates it CRITICAL, and in the study it is
+the most common CRITICAL finding.
 
 The right fix depends on why the socket is there, and there are four correct
 answers, in order of preference: delete the service that wanted it, re-design
@@ -481,11 +461,12 @@ services:
       - ./sockets:/sock
     command:
       - -proxysocketendpoint=/sock/docker.sock
-      - -proxysocketendpointfilemode=432   # 0660, so the consumer can connect
+      - -proxysocketendpointfilemode=432   # 0660, so a consumer in the docker group can connect
       # Only the GET endpoints the consumer calls; every write answers 405.
       - -allowGET=^(/v[0-9]+\.[0-9]+)?/(_ping|version|info|images/json(\?.*)?|containers/json(\?.*)?|containers/[a-zA-Z0-9_.-]+/json(\?.*)?)$$
 
   netdata:
+    # image and the rest as in the netdata example; it runs as root
     environment:
       DOCKER_HOST: unix:///sock/docker.sock
     volumes:
@@ -500,8 +481,10 @@ install -d -m 0770 -g docker sockets
 echo "DOCKER_GID=$(getent group docker | cut -d: -f3)" >> .env
 ```
 
-Without the first line the proxy exits with
-`listen unix /sock/docker.sock: bind: permission denied`.
+Without the first line the proxy cannot create its socket and exits. A
+consumer that runs as root, as netdata does, connects to the `0660` socket as
+it is; a non-root consumer needs the docker group, as the CL-0001 page's
+example shows.
 
 The proxy still holds the socket, so it has to be at least as hardened as
 anything else would be, and its CL-0001 finding is suppressed for that one
@@ -689,9 +672,8 @@ secrets:
 Both capability lists are measured ones: `web` is the set the
 [CL-0006](rules/CL-0006.md) page verifies for `nginx:1.27-alpine`, and `db`
 is the `postgres:16` example in step 5. Without the `/run/postgresql`
-tmpfs, postgres fails under `read_only` with `FATAL:  could not create lock
-file "/var/run/postgresql/.s.PGSQL.5432.lock": Read-only file system`, which is the kind of line
-step 6's `docker diff` pass is there to predict. Measure again for the
+tmpfs, postgres cannot create its lock file and exits under `read_only`;
+step 6's `docker diff` pass is there to predict paths like that one. Measure again for the
 versions you run.
 
 ## Checklist
@@ -705,6 +687,7 @@ versions you run.
 | `no-new-privileges:true` | [CL-0003](rules/CL-0003.md) | 97.3% |
 | Seccomp, AppArmor and SELinux labelling left on | [CL-0009](rules/CL-0009.md) | — |
 | `cap_drop: [ALL]`, image-specific `cap_add` | [CL-0006](rules/CL-0006.md) | 98.6% |
+| Added capabilities limited to what the image needs | [CL-0011](rules/CL-0011.md), [CL-0024](rules/CL-0024.md), [CL-0027](rules/CL-0027.md) to [CL-0030](rules/CL-0030.md) | 3.5% / under 2% |
 | `read_only: true` with `tmpfs` for writable paths | [CL-0007](rules/CL-0007.md) | 98.7% |
 | No `:exec` or `:suid` on `tmpfs` | [CL-0022](rules/CL-0022.md) | — |
 | Memory and CPU limits | [CL-0026](rules/CL-0026.md) | 97.4% |
@@ -724,14 +707,13 @@ mechanically and shows the diff before writing anything.
 
 **Does binding to 127.0.0.1 fix the firewall problem?** For that port, yes:
 nothing off the host can reach it. For the host as a whole, no; any other
-service that publishes on `0.0.0.0` still bypasses UFW. The `DOCKER-USER`
+service that publishes on `0.0.0.0` still bypasses UFW or firewalld. The `DOCKER-USER`
 chain is the host-wide answer. See [CL-0005](rules/CL-0005.md).
 
 **My container crash-loops after `cap_drop: ALL`. Which capability is it?**
-The log line says. `Operation not permitted` on a `chown` is `CHOWN`; on a
-`setuid` or `setgid` call it is `SETUID` and `SETGID` together. The
-[CL-0006](rules/CL-0006.md) page maps the messages to the capabilities and
-explains how to find the full set for an image.
+The log line names the operation that failed. The
+[CL-0006](rules/CL-0006.md) page maps each message to the capability it
+needs and explains how to find the full set for an image.
 
 **My `.env` is gitignored. Do I still need `secrets:`?** Yes. The gain is not
 that the value leaves git, which it may already have. It is that the value
