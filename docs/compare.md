@@ -98,14 +98,8 @@ The run contradicted the documentation in three places:
 - **DockSec's Compose rules need only Trivy installed.** Its default mode
   also scans each service's image, which needs the Docker CLI, and runs an
   AI explanation pass, which needs an AI provider key, OpenAI by default.
-  Without either, the Compose findings are still reported but the run exits
-  3. The run used `--scan-only`, which skips the AI pass. Its Compose rules
-  caught 11 of 16 and also reported two cross-service "exploit chains", for
-  example an internet-facing service sharing the default network with a
-  service that holds a committed credential. Its all-interfaces port rule
-  only covers a fixed list of sensitive ports. It does not flag a missing
-  `cap_drop` or an explicit `user: root`; it flags the absence of `user:`
-  instead.
+  Without either, it still reports the Compose findings but exits with
+  code 3. The run used `--scan-only`, which skips the AI pass.
 
 Checkov, Trivy and Hadolint were run on the same file to confirm the
 documentation, and none of them read it. Checkov reported `resource_count: 0`
@@ -418,8 +412,10 @@ image and an AI provider key adds the explanation pass. In the run above
 its Compose rules caught 11 of 16: the socket mount, `privileged`, host
 network and namespaces, the sensitive host path, seccomp unconfined, the
 plaintext secret, the `:latest` tag, missing `no-new-privileges`, writable
-root and missing limits. It also reports cross-service "exploit chains",
-which no other tool here attempts. It did not flag the `0.0.0.0` bind,
+root and missing limits. It also reported two cross-service "exploit
+chains", such as an internet-facing service sharing the default network with
+a service that holds a committed credential, which no other tool here
+attempts. It did not flag the `0.0.0.0` bind,
 because its port rule only covers sensitive ports, the missing `cap_drop`,
 `logging: none`, the missing digest, or an explicit `user: root`. Its
 `--fix` applies mechanical Dockerfile changes only. Compose findings are
