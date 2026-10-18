@@ -8,10 +8,8 @@ complete hardened file is at the end, with a checklist.
 
 The prevalence figures come from [the State of Docker Compose Security
 study](state-of-compose.md): 11,111 public Compose files from GitHub, of which
-99.2% of the files that parsed carried at least one security finding. The
-pattern behind that number is the point of this page. The findings are mostly
-not exotic mistakes. They are hardening settings that Docker leaves off by
-default and almost nobody turns on.
+99.2% of the files that parsed carried at least one security finding.
+Mostly, they're defaults nobody changed.
 
 ## The starting file
 
@@ -117,10 +115,9 @@ Rules: [CL-0020](rules/CL-0020.md), [CL-0021](rules/CL-0021.md).
 
 ### Secrets vs environment variables
 
-The question comes up often enough to answer directly. An environment variable
-is the right place for configuration that is not sensitive: hostnames, feature
+An environment variable is the right place for configuration that is not sensitive: hostnames, feature
 flags, log levels. It is the wrong place for anything that would matter if it
-leaked, because the container's environment is not a private place. Compose's
+leaked, because anyone with Docker API access can read it with `docker inspect`. Compose's
 `secrets:` exists for exactly that distinction, and it works outside Swarm: on
 a single host, a file-sourced secret is a read-only bind mount of that file.
 
@@ -129,9 +126,9 @@ a single host, a file-sourced secret is a read-only bind mount of that file.
 **Share of real files affected: 50.2%** use a mutable tag or no tag, and 50.2%
 pin a tag but not a digest.
 
-`nginx:latest` means a different image every time the registry's tag moves. It
-breaks reproducibility, makes a rollback impossible, and turns a compromised
-upstream push into an automatic deployment. A version tag fixes the first two
+`nginx:latest` means a different image every time the registry's tag moves. You
+can't reproduce it or roll it back, and a compromised upstream push deploys
+itself. A version tag fixes the first two
 problems. A digest fixes the third, because Docker resolves a digest to
 content and ignores the tag.
 
@@ -170,8 +167,7 @@ out; this is the most common thing a file writes in that it should not.
 
 `"8080:80"` binds to every interface, IPv4 and IPv6 (`0.0.0.0` and `[::]`). Docker publishes a port by writing its own
 iptables rules, so the binding is reachable from the network even where UFW or
-firewalld would normally block it. That is the mechanism behind the
-long-running "Docker bypasses my firewall" surprise.
+firewalld would normally block it.
 
 ```yaml
 # ❌ Before
@@ -196,8 +192,8 @@ Rules: [CL-0005](rules/CL-0005.md).
 **Share of real files affected: 97.3%** do not set it.
 
 `no-new-privileges` stops a process in the container from gaining privileges
-through setuid binaries like `sudo` and `su`. It is one line, it costs nothing
-for almost every workload, and it closes a whole class of escalation.
+through setuid binaries like `sudo` and `su`. It is one line, and most
+services run unchanged with it.
 
 ```yaml
 # ✅ After
@@ -235,9 +231,8 @@ Rules: [CL-0003](rules/CL-0003.md), [CL-0009](rules/CL-0009.md).
 **Share of real files affected: 98.6%** keep Docker's default capability set.
 
 A container starts with Docker's fixed set of fourteen Linux capabilities. Most workloads use
-none of them once running. Dropping them all and adding back the specific ones
-an image's entrypoint needs is the single biggest reduction in what a
-compromised process can do.
+none of them once running. Dropping them all and only adding back the ones
+required removes privileges the service never uses but an attacker could.
 
 ```yaml
 # ✅ After, for nginx:1.27-alpine
@@ -263,7 +258,7 @@ has the method for finding it. Two things worth knowing before you start:
 
 ### Two measured examples
 
-The sets below were measured, not read off documentation. Each was run under
+The sets below were determined through testing, not read off documentation. Each was run under
 `read_only: true` with the image's own entrypoint and no `user:` override;
 one capability was removed at a time, the service restarted, and its real
 function exercised. What remains is the set whose removal broke it.
@@ -279,7 +274,7 @@ ownership of something, and drops to a service user needs `SETUID` and
 which entrypoints of this kind often need, was not required for `postgres:16`
 under the drop test.
 
-Two things the postgres measurement shows that apply to any image. First,
+What the postgres measurement shows applies to any image. First,
 a capability can be needed by more than one step, so test a restart, not only
 the first start. Without `DAC_OVERRIDE` and with the step 1 secret, postgres
 fails its first start, unable to read the `0600` file. With a world-readable
@@ -313,10 +308,14 @@ rule page is short:
    common messages to the capability each one needs.
 4. **Add back only the capability implicated, one at a time, and repeat.**
 
+For a new service, put `cap_drop: [ALL]`, `read_only: true` and
+`no-new-privileges` in its first definition. Adding back what fails is quicker
+than proving each default unnecessary later.
+
 ### Tools that shorten the search
 
 Reading failures out of logs works, but it is slow when an application
-swallows the error. Two things narrow the loop before you start:
+swallows the error. Before you start, check:
 
 - **The entrypoint script.** Most official images publish theirs. A `gosu`,
   `su-exec` or `chown` call in it tells you the capability set before the
@@ -330,18 +329,6 @@ Tracers (Inspektor Gadget, BCC `capable`) and Mint are on the rule page, with
 the caveats that decide whether their output can be trusted. None of these
 replace the loop above. They tell you faster what the loop would have told
 you.
-
-### Start new services from nothing
-
-The method above is for a service that is already running with Docker's
-defaults and has to be hardened in place, where every removed privilege is a
-possible regression and nobody remembers which ones are load-bearing. A new
-service has none of that history. Write `cap_drop: [ALL]`, `read_only: true`
-and `no-new-privileges` into its first definition, bring it up, and add back
-only what the first failure names. Starting from nothing and adding one
-capability is a few minutes of work. Starting from everything and proving
-each capability unnecessary is an afternoon, which is why it rarely happens
-and why the study's numbers look the way they do.
 
 Rules: [CL-0006](rules/CL-0006.md). The capabilities you add back are graded
 too, by what each one reaches: [CL-0024](rules/CL-0024.md) (`ALL`,
@@ -498,9 +485,8 @@ Rules: [CL-0001](rules/CL-0001.md).
 **Share of real files affected: 2.4%.**
 
 `privileged: true` grants every capability, disables the seccomp and AppArmor
-profiles, and exposes every host device. It usually arrives as a fix for a
-container that would not start, and then stays in the file long after anyone
-remembers what it fixed. Each of the reasons people reach for it has a narrower setting:
+profiles, and exposes every host device. It is often added to get a stuck
+container running. Each of those reasons has a narrower setting:
 
 | Need | Instead of `privileged: true` |
 |---|---|
@@ -523,7 +509,7 @@ Rules: [CL-0002](rules/CL-0002.md), [CL-0011](rules/CL-0011.md),
 `network_mode: host` puts the container on the host's interfaces directly.
 Port-publish rules do not apply, so the firewall bypass from step 3 becomes
 total, and the container sees every host interface. Bridge networking with an
-explicit port mapping buys the isolation back. `pid: host` and `ipc: host` share the host's process
+explicit port mapping restores the isolation. `pid: host` and `ipc: host` share the host's process
 and shared-memory namespaces; a sidecar that needs to see another container's
 processes can use `pid: "service:<name>"` instead.
 
@@ -715,10 +701,9 @@ The log line names the operation that failed. The
 [CL-0006](rules/CL-0006.md) page maps each message to the capability it
 needs and explains how to find the full set for an image.
 
-**My `.env` is gitignored. Do I still need `secrets:`?** Yes. The gain is not
-that the value leaves git, which it may already have. It is that the value
-leaves the container's process environment, which `docker inspect` returns
-to anyone with Docker API access. See [CL-0020](rules/CL-0020.md).
+**My `.env` is gitignored. Do I still need `secrets:`?** Yes. Gitignoring
+keeps the value out of git, but it still lands in the container's environment,
+where `docker inspect` shows it to anyone with Docker API access. See [CL-0020](rules/CL-0020.md).
 
 **The image only publishes `latest`. How do I pin it?** By digest:
 `image: name:latest@sha256:<digest>`. Docker resolves by digest and ignores
