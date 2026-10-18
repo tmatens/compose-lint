@@ -830,17 +830,10 @@ def _t27_group_read() -> tuple[bool, str]:
     # owned 1000:1000 is refused to uid 2000 and readable once group_add
     # gives it group 1000.
     vol = "clpremise-cl0027-grp"
+    setup = "echo s >/data/file && chown 1000:1000 /data/file && chmod 0640 /data/file"
     subprocess.run(["docker", "volume", "create", vol], capture_output=True, timeout=90)
     try:
-        _run_err(
-            ["-v", f"{vol}:/data"],
-            [
-                "sh",
-                "-c",
-                "echo s > /data/file && chown 1000:1000 /data/file"
-                " && chmod 0640 /data/file",
-            ],
-        )
+        _run_err(["-v", f"{vol}:/data"], ["sh", "-c", setup])
         return _remedy(
             ["--user", "2000", "-v", f"{vol}:/data"],
             ["--user", "2000", "--group-add", "1000", "-v", f"{vol}:/data"],
