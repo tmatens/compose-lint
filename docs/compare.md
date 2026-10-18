@@ -101,14 +101,9 @@ The run contradicted the documentation in three places:
   Without either, it still reports the Compose findings but exits with
   code 3. The run used `--scan-only`, which skips the AI pass.
 
-Checkov, Trivy and Hadolint were run on the same file to confirm the
-documentation, and none of them read it. Checkov reported `resource_count: 0`
-and rejects `--framework docker_compose` as "Invalid frameworks specified".
-Trivy's config scan downloaded its checks bundle and returned a report with
-no results section. Hadolint parsed the file as a Dockerfile and stopped at
-line 3 with `DL1000`. That is the expected result, not a miss. They are on
-this page because people search for them with Compose questions, and the
-sections below say what each one does instead.
+Checkov, Trivy and Hadolint were run on the same file too and, as their
+documentation says, none of them read it as a Compose file. Their sections
+below say what each one checks instead.
 
 Versions, as each tool reported them: compose-lint 0.34.0, DCLint 3.1.0,
 KICS 2.1.20, DockSec 2026.8.19 (image tag 2026.9.21; the release declares
