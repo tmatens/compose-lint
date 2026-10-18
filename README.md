@@ -338,18 +338,32 @@ interpolation is refused rather than guessed. The full contract is in the
 
 ## How it compares
 
-| Tool | Compose security rules | Auto-fix | Scope | Zero config |
-|------|----------------------|----------|-------|-------------|
-| **compose-lint** | Yes | Yes — dry-run diff first | Docker Compose | Yes |
-| **KICS** | Yes | Yes (`remediate` command) | Broad IaC (Terraform, K8s, Compose, ...) | No |
-| **Hadolint** | No — Dockerfile only | No | Dockerfile | Yes |
-| **dclint** | Yes — schema/structure only | Style/formatting only | Docker Compose | Yes |
-| **Trivy** | No — image/CVE + IaC misconfig scanning, no dedicated Compose ruleset | No | Dockerfiles, images, IaC | Yes |
-| **Checkov** | No — no dedicated Compose ruleset | No | Broad IaC (Terraform, K8s, ...) | No |
+| Tool | Reads Compose files | Compose security rules | Auto-fix for Compose | Scope |
+|---|---|---|---|---|
+| **compose-lint** | Yes | 27, each citing OWASP, CIS or Docker docs | Six rules, dry-run diff first | Docker Compose only |
+| **OWASP DockSec** | Yes (`--compose`) | 17 | No (Dockerfiles only) | Dockerfiles, images, Compose |
+| **KICS** | Yes | 21 queries | Not documented for Compose | Broad IaC |
+| **Semgrep `p/docker-compose`** | Yes | 6, all requiring the obsolete `version:` key | 1 of 6 | General-purpose code scanner |
+| **DCLint** | Yes | 2 of 15 (the rest are style and schema) | Formatting rules only | Compose style, structure and schema |
+| **Checkov** | No | 0 | — | Terraform, Kubernetes, Dockerfile, ... |
+| **Trivy** | No | 0 | — | Images, filesystems, IaC |
+| **Hadolint** | No | 0 | — | Dockerfile only |
 
-*A capability snapshot, verified July 2026 — check each tool's docs for current state.*
+compose-lint grades the stack Compose deploys, not each file as written. Run
+against the same fixtures as the other four tools that read Compose, it was
+the only one that caught a privileged container, a Docker socket mount and a
+port published on all interfaces through every one of `extends:`,
+`include:`, an override file, `${VAR:-default}` and `.env`, and it reported
+none of the settings that look dangerous as written but deploy safely. How it
+does that is under
+[Grades what actually deploys](#grades-what-actually-deploys).
 
-**Not in scope**: compose-lint does not validate Compose schema, scan images for CVEs, or lint Dockerfiles. Pair it with [dclint](https://github.com/zavoloklom/docker-compose-linter) for schema/structure, [Hadolint](https://github.com/hadolint/hadolint) for Dockerfiles, and [Trivy](https://github.com/aquasecurity/trivy) for image CVEs.
+*Rules checked against each tool's documentation in October 2026. The
+[full comparison](https://tmatens.github.io/compose-lint/compare/) has the
+runs, fixtures, commands and versions behind every cell, and the
+OWASP cheat-sheet items compose-lint has no rule for.*
+
+**Not in scope**: compose-lint does not validate Compose schema, scan images for CVEs, or lint Dockerfiles. Pair it with [DCLint](https://github.com/zavoloklom/docker-compose-linter) for schema/structure, [Hadolint](https://github.com/hadolint/hadolint) for Dockerfiles, and [Trivy](https://github.com/aquasecurity/trivy) for image CVEs.
 
 ## Versioning & stability
 
