@@ -34,7 +34,8 @@ What it fixes:
   Every indexable page now gets them, built from the title and description
   above and the repository's social preview image, plus JSON-LD: a
   `SoftwareApplication` on the homepage, `TechArticle` + `BreadcrumbList` on
-  rule pages and `Article` on the study, with `dateModified` from git. mkdocs
+  rule pages and `Article` on the study and the hardening guide, with
+  `dateModified` from git. mkdocs
   itself emits none of this, and the search-engine guidance for it is explicit
   about wanting it.
 - **Last updated.** The sitemap already carries a real per-page git date (see
@@ -260,6 +261,7 @@ _PYPI_URL = "https://pypi.org/project/compose-lint/"
 _MIT_URL = "https://opensource.org/license/mit"
 _RULE_PAGE = re.compile(r"^rules/CL-\d{4}\.md$")
 _STUDY_PAGE = "state-of-compose.md"
+_GUIDE_PAGE = "hardening.md"
 
 
 def _project(config) -> tuple[str | None, str | None]:
@@ -340,7 +342,7 @@ def _jsonld(page, config, meta: dict) -> dict | None:
     article_type = None
     if _RULE_PAGE.match(src_uri):
         article_type = "TechArticle"
-    elif src_uri == _STUDY_PAGE:
+    elif src_uri in (_STUDY_PAGE, _GUIDE_PAGE):
         article_type = "Article"
     if article_type is None:
         return None

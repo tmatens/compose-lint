@@ -635,7 +635,7 @@ jobs:
               sys.exit("::error::Version drift: " + ", ".join(f"{k} ({v})" for k, v in drift.items()))
           PY
       # Self-referencing version pins in living docs (README integration
-      # snippets, docs/hardening.md) must equal the current version. A
+      # snippets, docs/running-hardened.md) must equal the current version. A
       # hand-maintained checklist can't self-discover new references — v0.14.0
       # shipped with every doc pin stale despite RELEASING.md listing them —
       # so any new doc that pins our own artifacts is covered from its first
