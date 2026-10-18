@@ -769,6 +769,88 @@ def _t7_volume_writable() -> tuple[bool, str]:
     return ok, f"volume write rc={rc_vol}; rootfs write rc={rc_root} msg={err!r}"
 
 
+def _t7_config_rewrite() -> tuple[bool, str]:
+    # The doc's "config rewritten at startup" row: a shell redirect into /etc
+    # fails under read_only, and a named volume over the directory takes the
+    # write. busybox 1.38 prefixes the line with "sh: line 0:"; 1.37 prints
+    # "sh:" alone, so the assertion is the part both share.
+    vol = "clpremise-cl0007-etc"
+    subprocess.run(["docker", "volume", "create", vol], capture_output=True, timeout=90)
+    try:
+        return _remedy(
+            ["--read-only"],
+            ["--read-only", "-v", f"{vol}:/etc"],
+            ["sh", "-c", "echo x > /etc/app.conf"],
+            "can't create /etc/app.conf: Read-only file system",
+        )
+    finally:
+        subprocess.run(["docker", "volume", "rm", vol], capture_output=True, timeout=90)
+
+
+def _refused(args: list[str], cmd: list[str], msg: str) -> tuple[bool, str]:
+    """Prove a quoted refusal: ``cmd`` fails under ``args`` with ``msg``.
+
+    For wordings whose remedy is not portable to every CI host (the
+    AppArmor-held runner refuses ``SYS_ADMIN`` mounts and namespaces too), so
+    only the refusal at Docker's defaults is asserted.
+    """
+    rc, err = _run_err(args, cmd)
+    return rc != 0 and msg in err, f"rc={rc} msg={err!r}"
+
+
+def _t24_mount_refused() -> tuple[bool, str]:
+    return _refused(
+        [],
+        ["sh", "-c", "mkdir -p /x && mount -t tmpfs none /x"],
+        "mount: permission denied (are you root?)",
+    )
+
+
+def _t24_unshare_refused() -> tuple[bool, str]:
+    return _refused(
+        [],
+        ["unshare", "-U", "-r", "id", "-u"],
+        "unshare: unshare(0x10000000): Operation not permitted",
+    )
+
+
+def _t10_sethostname_refused() -> tuple[bool, str]:
+    # uts: host shares the host's hostname, but setting it needs SYS_ADMIN.
+    # The command re-sets the current value, so it is harmless even if a
+    # departed posture ever let it through.
+    return _refused(
+        ["--uts", "host"],
+        ["sh", "-c", 'hostname "$(hostname)"'],
+        "hostname: sethostname: Operation not permitted",
+    )
+
+
+def _t27_group_read() -> tuple[bool, str]:
+    # CL-0027's "use a group instead of DAC_READ_SEARCH" step: a 0640 file
+    # owned 1000:1000 is refused to uid 2000 and readable once group_add
+    # gives it group 1000.
+    vol = "clpremise-cl0027-grp"
+    subprocess.run(["docker", "volume", "create", vol], capture_output=True, timeout=90)
+    try:
+        _run_err(
+            ["-v", f"{vol}:/data"],
+            [
+                "sh",
+                "-c",
+                "echo s > /data/file && chown 1000:1000 /data/file"
+                " && chmod 0640 /data/file",
+            ],
+        )
+        return _remedy(
+            ["--user", "2000", "-v", f"{vol}:/data"],
+            ["--user", "2000", "--group-add", "1000", "-v", f"{vol}:/data"],
+            ["cat", "/data/file"],
+            "cat: can't open '/data/file': Permission denied",
+        )
+    finally:
+        subprocess.run(["docker", "volume", "rm", vol], capture_output=True, timeout=90)
+
+
 # --- CL-0018 / CL-0022 symptom-table mappings (#479) -----------------------
 #
 # Same contract as the CL-0006/CL-0007 mapping checks (ADR-016 amendment).
@@ -1743,6 +1825,16 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool | None, str]]]] = [
     ("CL-0007", "map: mkdir EROFS -> tmpfs", _t7_mkdir_tmpfs),
     ("CL-0007", "map: masked ENOENT -> tmpfs mountpoint", _t7_tmpfs_creates_mountpoint),
     ("CL-0007", "premise: named volume writable under read_only", _t7_volume_writable),
+    ("CL-0007", "map: config rewrite EROFS -> named volume", _t7_config_rewrite),
+    # Quoted refusals whose remedy is host-dependent: the wording only.
+    ("CL-0024", "wording: mount refused at default caps", _t24_mount_refused),
+    ("CL-0024", "wording: unshare refused at default caps", _t24_unshare_refused),
+    (
+        "CL-0010",
+        "wording: sethostname refused under uts: host",
+        _t10_sethostname_refused,
+    ),
+    ("CL-0027", "map: group_add reads a group-readable file", _t27_group_read),
     # CL-0018 / CL-0022 symptom-table mappings (#479).
     ("CL-0022", "map: exec from noexec tmpfs", _t22_exec_tmpfs),
     ("CL-0018", "map: non-root write to root-owned path", _t18_rootfs_write),
