@@ -486,7 +486,7 @@ Rules: [CL-0001](rules/CL-0001.md).
 
 `privileged: true` grants every capability, disables the seccomp and AppArmor
 profiles, and exposes every host device. It is often added to get a stuck
-container running. Each of those reasons has a narrower setting:
+container running. Use the narrower setting instead:
 
 | Need | Instead of `privileged: true` |
 |---|---|
