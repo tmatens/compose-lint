@@ -153,7 +153,7 @@ container, so nothing needs installing:
 docker run --rm gcr.io/go-containerregistry/crane digest nginx:1.27-alpine
 ```
 
-Pin the index digest those commands return, not a per-architecture digest; a
+Pin the index digest that command returns, not a per-architecture digest; a
 per-architecture pin breaks every user on the other architecture. Then let
 Renovate or Dependabot bump the digest when the tag moves. Projects that
 publish only a `latest` tag can still be digest-pinned:
