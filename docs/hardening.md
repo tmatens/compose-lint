@@ -308,6 +308,10 @@ rule page is short:
    common messages to the capability each one needs.
 4. **Add back only the capability implicated, one at a time, and repeat.**
 
+For a new service, put `cap_drop: [ALL]`, `read_only: true` and
+`no-new-privileges` in its first definition. Adding back what fails is quicker
+than proving each default unnecessary later.
+
 ### Tools that shorten the search
 
 Reading failures out of logs works, but it is slow when an application
@@ -325,18 +329,6 @@ Tracers (Inspektor Gadget, BCC `capable`) and Mint are on the rule page, with
 the caveats that decide whether their output can be trusted. None of these
 replace the loop above. They tell you faster what the loop would have told
 you.
-
-### Start new services from nothing
-
-The method above is for a service that is already running with Docker's
-defaults and has to be hardened in place, where every removed privilege is a
-possible regression and nobody remembers which ones are load-bearing. A new
-service has none of that history. Write `cap_drop: [ALL]`, `read_only: true`
-and `no-new-privileges` into its first definition, bring it up, and add back
-only what the first failure names. Starting from nothing and adding one
-capability is a few minutes of work. Starting from everything and proving
-each capability unnecessary is an afternoon, which is why it rarely happens
-and why the study's numbers look the way they do.
 
 Rules: [CL-0006](rules/CL-0006.md). The capabilities you add back are graded
 too, by what each one reaches: [CL-0024](rules/CL-0024.md) (`ALL`,
