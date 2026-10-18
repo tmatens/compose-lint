@@ -23,10 +23,10 @@ under each heading.
 | Tool | Reads Compose files | Compose security rules it has | Auto-fix for Compose | SARIF | Scope |
 |---|---|---|---|---|---|
 | **compose-lint** | Yes | 27, each citing OWASP, CIS or Docker docs | Six rules, dry-run diff first | Yes | Docker Compose only |
-| **DCLint** | Yes | 2 of 15 (unbound port interfaces, explicit image tag) | Formatting and ordering rules | — | Docker Compose style, structure and schema |
 | **KICS** | Yes | 21 queries | `remediate` command; Compose support not documented | Yes | Terraform, Kubernetes, CloudFormation, Compose and more |
-| **Semgrep `p/docker-compose`** | Yes | 6 | 1 of the 6 carries a fix | Yes | General-purpose code scanner |
 | **OWASP DockSec** | Yes (`--compose`) | 17 | No (`--fix` edits Dockerfiles only) | Yes | Dockerfiles, images, Compose |
+| **Semgrep `p/docker-compose`** | Yes | 6 | 1 of the 6 carries a fix | Yes | General-purpose code scanner |
+| **DCLint** | Yes | 2 of 15 (unbound port interfaces, explicit image tag) | Formatting and ordering rules | — | Docker Compose style, structure and schema |
 | **Checkov** | No | 0 | — | Yes | Terraform, Kubernetes, CloudFormation, Dockerfile and more |
 | **Trivy** | No | 0 | — | Yes | Images, filesystems, IaC |
 | **Hadolint** | No | 0 | — | Yes | Dockerfile only |
@@ -46,17 +46,17 @@ obsolete `version:` key. Each tool was run from its published image on
 2026-10-09. The fixture and the exact commands are in
 [Reproduce it](#reproduce-it).
 
-| Misconfiguration | compose-lint | KICS | DockSec | DCLint | Semgrep |
+| Misconfiguration | compose-lint | KICS | DockSec | Semgrep | DCLint |
 |---|---|---|---|---|---|
-| Docker socket mounted | ✅ | ✅ | ✅ | — | ✗ † |
-| `privileged: true` | ✅ | ✅ | ✅ | — | ✗ † |
-| `no-new-privileges` missing | ✅ | ✅ | ✅ | — | ✗ † |
-| Unpinned `:latest` tag | ✅ | — | ✅ | ✅ | — |
-| Port published on `0.0.0.0` | ✅ | ✅ | ✗ ‡ | ✅ | — |
+| Docker socket mounted | ✅ | ✅ | ✅ | ✗ † | — |
+| `privileged: true` | ✅ | ✅ | ✅ | ✗ † | — |
+| `no-new-privileges` missing | ✅ | ✅ | ✅ | ✗ † | — |
+| Unpinned `:latest` tag | ✅ | — | ✅ | — | ✅ |
+| Port published on `0.0.0.0` | ✅ | ✅ | ✗ ‡ | — | ✅ |
 | No `cap_drop: [ALL]` | ✅ | ✅ | — | — | — |
-| Writable root filesystem | ✅ | — | ✅ | — | ✗ † |
+| Writable root filesystem | ✅ | — | ✅ | ✗ † | — |
 | `network_mode: host` | ✅ | ✅ | ✅ | — | — |
-| `seccomp:unconfined` | ✅ | ✅ | ✅ | — | ✗ † |
+| `seccomp:unconfined` | ✅ | ✅ | ✅ | ✗ † | — |
 | `pid: host` / `ipc: host` | ✅ | ✅ | ✅ | — | — |
 | Sensitive host path mounted | ✅ | ✅ | ✅ | — | — |
 | `logging: driver: none` | ✅ | — | — | — | — |
@@ -64,7 +64,7 @@ obsolete `version:` key. Each tool was run from its published image on
 | Tag without digest | ✅ | — | — | — | — |
 | Credential in `environment:` | ✅ | ✅ | ✅ | — | — |
 | No memory/CPU limits | ✅ | ✗ \* | ✅ | — | — |
-| **Caught, of 16** | **16** | **10** | **11** | **2** | **0** † |
+| **Caught, of 16** | **16** | **10** | **11** | **0** † | **2** |
 
 ✅ flagged · ✗ not flagged · — no rule for it. \* KICS's memory and CPU
 queries fire only when the file carries the obsolete `version:` key; with
@@ -192,44 +192,48 @@ commands are in [Reproduce it](#reproduce-it).
 
 Each cell lists `privileged`, the socket and the port, in that order.
 
-| Where the settings come from | compose-lint | KICS | DockSec | Semgrep | DCLint |
-|---|---|---|---|---|---|
-| Written inline (control) | ✅ ✅ ✅ | ✅ ✅ ✅ | ✅ ✅ — | ✗ ✗ — † | — — ✅ |
-| `extends:` a service in the same file | ✅ ✅ ✅ | ◐ ◐ ◐ | ◐ ◐ — | ✗ ✗ — † | — — ◐ |
-| `extends:` a service in another file | ✅ ✅ ✅ | ◐ ◐ ◐ | ✗ ✗ — | ✗ ✗ — † | — — ✗ |
-| `include:` of another file | ✅ ✅ ✅ | ✅ ✅ ✅ | ✗ ✗ — | ✗ ✗ — † | — — ✗ |
-| `compose.override.yml` | ✅ ✅ ✅ | ✗ ✗ ✗ | ✗ ✗ — | ✗ ✗ — † | — — ✅ |
-| YAML anchor and `<<:` merge key | ✅ ✅ ✅ | ✅ ✅ ✅ | ✅ ✅ — | ✗ ✗ — † | — — ✗ |
-| `${VAR:-default}` | ✅ ✅ ✅ | ✗ ✗ ✗ | ✗ ✅ — | ✗ ✗ — | — — ✅ ‡ |
-| A value from `.env` | ✅ ✅ ✅ | ✗ ✗ ✅ ‡ | ✗ ✗ — | ✗ ✗ — | — — ✅ ‡ |
+| Where the settings come from | compose-lint | KICS | DockSec | Semgrep |
+|---|---|---|---|---|
+| Written inline (control) | ✅ ✅ ✅ | ✅ ✅ ✅ | ✅ ✅ — | ✗ ✗ — † |
+| `extends:` a service in the same file | ✅ ✅ ✅ | ◐ ◐ ◐ | ◐ ◐ — | ✗ ✗ — † |
+| `extends:` a service in another file | ✅ ✅ ✅ | ◐ ◐ ◐ | ✗ ✗ — | ✗ ✗ — † |
+| `include:` of another file | ✅ ✅ ✅ | ✅ ✅ ✅ | ✗ ✗ — | ✗ ✗ — † |
+| `compose.override.yml` | ✅ ✅ ✅ | ✗ ✗ ✗ | ✗ ✗ — | ✗ ✗ — † |
+| YAML anchor and `<<:` merge key | ✅ ✅ ✅ | ✅ ✅ ✅ | ✅ ✅ — | ✗ ✗ — † |
+| `${VAR:-default}` | ✅ ✅ ✅ | ✗ ✗ ✗ | ✗ ✅ — | ✗ ✗ — |
+| A value from `.env` | ✅ ✅ ✅ | ✗ ✗ ✅ ‡ | ✗ ✗ — | ✗ ✗ — |
 
-Three more scenarios each carry one setting:
+Four more scenarios carry one or two settings each:
 
-| Scenario | compose-lint | KICS | DockSec | Semgrep | DCLint |
-|---|---|---|---|---|---|
-| Socket and port in the long `volumes:` and `ports:` syntax | ✅ ✅ | ✗ ✅ | ✅ — | ✗ — † | — ✅ |
-| Socket as `secrets:` with `file: /var/run/docker.sock` | ✅ | ✗ | ✗ | ✗ | — |
-| `seccomp=unconfined` | ✅ | ✗ | ✗ | ✗ | — |
-| `seccomp:unconfined` (control) | ✅ | ✅ | ✅ | ✗ † | — |
+| Scenario | compose-lint | KICS | DockSec | Semgrep |
+|---|---|---|---|---|
+| Socket and port in the long `volumes:` and `ports:` syntax | ✅ ✅ | ✗ ✅ | ✅ — | ✗ — † |
+| Socket as `secrets:` with `file: /var/run/docker.sock` | ✅ | ✗ | ✗ | ✗ |
+| `seccomp=unconfined` | ✅ | ✗ | ✗ | ✗ |
+| `seccomp:unconfined` (control) | ✅ | ✅ | ✅ | ✗ † |
 
 ✅ flagged on the service Compose deploys · ◐ flagged on the base service,
 not on the service that extends it · ✗ has a rule for it, did not flag it ·
 — no rule for it. † Semgrep's rules require the `version:` key; with it
 added, Semgrep flags the inline, `include:` and override settings, flags the
 base for both `extends:` rows, flags the socket but not `privileged` behind
-the anchor, and catches the long-syntax socket and `seccomp:unconfined`. ‡ the
-same tool flags the port when it resolves to `127.0.0.1`, from `.env` or as
-the default, so the finding comes from an address it cannot read rather than
-from the address Compose deploys.
+the anchor, and catches the long-syntax socket and `seccomp:unconfined`. ‡ KICS
+also flags the port when `.env` sets it to `127.0.0.1`, so the finding comes
+from an address it cannot read rather than from the address Compose deploys.
+
+DCLint is left off these tables because it has a rule for the port only. It
+flagged a port set from a variable whether it resolved to `0.0.0.0` or
+`127.0.0.1`, and it did not read a base or included file
+([compose-lint vs DCLint](#compose-lint-vs-dclint)).
 
 The four scenarios that deploy safely, where ✅ means no finding:
 
-| Looks dangerous, deploys safely | compose-lint | KICS | DockSec | Semgrep | DCLint |
-|---|---|---|---|---|---|
-| `privileged: true`, set back to `false` by `compose.override.yml` | ✅ | ✗ | ✗ | ✅ † | — |
-| Port bound to `${BIND:-127.0.0.1}` | ✅ | ✅ | — | — | ✗ |
-| `no-new-privileges=true`, the `=` spelling | ✅ | ✗ | ✗ | ✅ † | — |
-| Port, socket and `privileged` from a `.env` with safe values | ✅ | ✗ | ✅ | ✅ | ✗ |
+| Looks dangerous, deploys safely | compose-lint | KICS | DockSec | Semgrep |
+|---|---|---|---|---|
+| `privileged: true`, set back to `false` by `compose.override.yml` | ✅ | ✗ | ✗ | ✅ † |
+| Port bound to `${BIND:-127.0.0.1}` | ✅ | ✅ | — | — |
+| `no-new-privileges=true`, the `=` spelling | ✅ | ✗ | ✗ | ✅ † |
+| Port, socket and `privileged` from a `.env` with safe values | ✅ | ✗ | ✅ | ✅ |
 
 ✅ no finding · ✗ reported a setting Compose does not deploy · — no rule for
 it. † with the `version:` key added, Semgrep reports both.
