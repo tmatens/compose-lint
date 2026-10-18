@@ -15,7 +15,10 @@ below.
 The table was checked against each tool's documentation on 2026-10-08. The
 next day all eight tools were run against the same deliberately broken
 Compose file, and that run corrected the documentation in three places. The
-run is described further down. Sources are linked under each heading.
+run is described further down. On 2026-10-17 the five tools that read Compose
+were run again on stacks spread across several files, where the setting comes
+from `extends:`, `include:`, an override file or `.env`. Sources are linked
+under each heading.
 
 | Tool | Reads Compose files | Compose security rules it has | Auto-fix for Compose | SARIF | Scope |
 |---|---|---|---|---|---|
@@ -29,7 +32,7 @@ run is described further down. Sources are linked under each heading.
 | **Hadolint** | No | 0 | — | Yes | Dockerfile only |
 | **A script of your own** (`yq`/`jq`, Conftest/OPA, a custom Semgrep or KICS rule) | Whatever it parses | Whatever you write | Whatever you write | — | See [below](#when-a-script-of-your-own-is-enough) |
 
-The table says which rules each tool documents. The two runs below show
+The table says which rules each tool documents. The three runs below show
 which of them fired on which file. compose-lint's own gaps are listed at the
 end of the page. It does not replace the image scanner or the Dockerfile linter you
 already run.
@@ -178,6 +181,98 @@ old version 2 format, and it has no query for `restart: always`. No tool
 flags a read-write bind mount that could be `:ro`, and none flags
 `restart: always`. Only compose-lint flags a missing digest.
 
+## Run on a stack spread across files
+
+Both fixtures above are single, self-contained files. Most stacks are not. A
+service inherits from a base with `extends:`, another file is pulled in with
+`include:`, `compose.override.yml` is merged on top, and values come from
+`.env`. Compose deploys the merged result. A tool that grades each file as
+written can miss a setting that only exists after the merge, or report one
+the merge has already undone.
+
+The third run tests that. Each scenario puts `privileged: true`, the Docker
+socket mount and a port published on all interfaces behind one Compose
+mechanism, and `docker compose config` confirmed that each one deploys them.
+Four more scenarios look dangerous as written and deploy safely. Every
+scenario was run once as written and once with `version: "3.9"` prepended.
+KICS, Semgrep and DCLint were given the whole directory, so a base, included
+or override file was in front of them as a file of its own. compose-lint and
+DockSec were given `compose.yaml`, the file `docker compose` starts from. The
+run is from 2026-10-17, with every image pinned by digest; the fixtures and
+commands are in [Reproduce it](#reproduce-it).
+
+Each cell lists `privileged`, the socket and the port, in that order.
+
+| Where the settings come from | compose-lint | KICS | DockSec | Semgrep | DCLint |
+|---|---|---|---|---|---|
+| Written inline (control) | ✅ ✅ ✅ | ✅ ✅ ✅ | ✅ ✅ — | ✗ ✗ — † | — — ✅ |
+| `extends:` a service in the same file | ✅ ✅ ✅ | ◐ ◐ ◐ | ◐ ◐ — | ✗ ✗ — † | — — ◐ |
+| `extends:` a service in another file | ✅ ✅ ✅ | ◐ ◐ ◐ | ✗ ✗ — | ✗ ✗ — † | — — ✗ |
+| `include:` of another file | ✅ ✅ ✅ | ✅ ✅ ✅ | ✗ ✗ — | ✗ ✗ — † | — — ✗ |
+| `compose.override.yml` | ✅ ✅ ✅ | ✗ ✗ ✗ | ✗ ✗ — | ✗ ✗ — † | — — ✅ |
+| YAML anchor and `<<:` merge key | ✅ ✅ ✅ | ✅ ✅ ✅ | ✅ ✅ — | ✗ ✗ — † | — — ✗ |
+| `${VAR:-default}` | ✅ ✅ ✅ | ✗ ✗ ✗ | ✗ ✅ — | ✗ ✗ — | — — ✅ ‡ |
+| A value from `.env` | ✅ ✅ ✅ | ✗ ✗ ✅ ‡ | ✗ ✗ — | ✗ ✗ — | — — ✅ ‡ |
+
+Three more scenarios each carry one setting:
+
+| Scenario | compose-lint | KICS | DockSec | Semgrep | DCLint |
+|---|---|---|---|---|---|
+| Socket and port in the long `volumes:` and `ports:` syntax | ✅ ✅ | ✗ ✅ | ✅ — | ✗ — † | — ✅ |
+| Socket as `secrets:` with `file: /var/run/docker.sock` | ✅ | ✗ | ✗ | ✗ | — |
+| `seccomp=unconfined` | ✅ | ✗ | ✗ | ✗ | — |
+| `seccomp:unconfined` (control) | ✅ | ✅ | ✅ | ✗ † | — |
+
+✅ flagged on the service Compose deploys · ◐ flagged on the base service,
+not on the service that extends it · ✗ has a rule for it, did not flag it ·
+— no rule for it. † Semgrep's rules require the `version:` key; with it
+added, Semgrep flags the inline, `include:` and override settings, flags the
+base for both `extends:` rows, flags the socket but not `privileged` behind
+the anchor, and catches the long-syntax socket and `seccomp:unconfined`. ‡ the
+same tool flags the port when it resolves to `127.0.0.1`, from `.env` or as
+the default, so the finding comes from an address it cannot read rather than
+from the address Compose deploys.
+
+The four scenarios that deploy safely, where ✅ means no finding:
+
+| Looks dangerous, deploys safely | compose-lint | KICS | DockSec | Semgrep | DCLint |
+|---|---|---|---|---|---|
+| `privileged: true`, set back to `false` by `compose.override.yml` | ✅ | ✗ | ✗ | ✅ † | — |
+| Port bound to `${BIND:-127.0.0.1}` | ✅ | ✅ | — | — | ✗ |
+| `no-new-privileges=true`, the `=` spelling | ✅ | ✗ | ✗ | ✅ † | — |
+| Port, socket and `privileged` from a `.env` with safe values | ✅ | ✗ | ✅ | ✅ | ✗ |
+
+✅ no finding · ✗ reported a setting Compose does not deploy · — no rule for
+it. † with the `version:` key added, Semgrep reports both.
+
+What the run shows:
+
+- **`extends:` is not merged.** KICS, DockSec and Semgrep report the base
+  service and give the service that extends it only their baseline findings,
+  such as a missing healthcheck, so they read that service without merging
+  the base into it. When the base is in another file, KICS and Semgrep report
+  that file and DockSec, which reads the file it is given, reports nothing.
+- **Other files are graded only if the tool happens to scan them.** KICS
+  catches `include:` because it scans the included file as a file of its own.
+  It parsed one file in the override scenario: `compose.override.yml` was not
+  picked up as a Compose file. DCLint read only `compose.yaml` in the
+  `extends:` and `include:` scenarios.
+- **No other tool reads `.env`.** KICS and DCLint flag a port whose address
+  is a variable whether it resolves to `0.0.0.0` or `127.0.0.1`.
+- **Spelling matters.** Docker disables seccomp for `seccomp=unconfined` and
+  `seccomp:unconfined` alike (`Seccomp: 0` in `/proc/self/status` for both).
+  KICS and DockSec catch only the `:` form, and both report
+  `no-new-privileges=true` as missing.
+- **Only compose-lint flags the socket arriving as a secret.**
+
+The run does not show that YAML anchors are a problem for the other tools:
+KICS reports the anchored settings at the anchor's lines and DockSec on the
+service. Compose profiles, several `-f` files and `COMPOSE_FILE` were not
+tested.
+
+Versions: compose-lint 0.36.0, KICS 2.1.20, DockSec image 2026.9.21,
+Semgrep 1.180.0, DCLint 3.1.0.
+
 ## Does Checkov scan docker-compose.yml?
 
 No. Checkov's Docker coverage is its [Dockerfile policy
@@ -219,7 +314,10 @@ services, key order, quoted ports) or structure (no `version:` field, no
 duplicate container names or exported ports, a project name). Two overlap
 with security: `no-unbound-port-interfaces` and
 `service-image-require-explicit-tag`. In both runs it caught exactly those
-two. Its `--fix` applies the formatting rules.
+two. On a [stack spread across files](#run-on-a-stack-spread-across-files)
+its port rule flagged an address set from a variable whether it resolved to
+`0.0.0.0` or `127.0.0.1`, and it did not read a base file or an included
+file. Its `--fix` applies the formatting rules.
 
 compose-lint does not validate the schema. An invalid file is a usage error,
 not a finding. Its 27 rules are all security rules: capabilities,
@@ -263,6 +361,13 @@ compose-lint accepts both spellings). An anonymous volume is reported as
 ([#8047](https://github.com/Checkmarx/kics/issues/8047), open since May
 2026).
 
+On a [stack spread across files](#run-on-a-stack-spread-across-files), KICS
+reported the base service rather than the one that extends it, did not pick
+up `compose.override.yml`, did not resolve `${VAR:-default}` or `.env`,
+missed the socket written in the long `volumes:` syntax, and caught
+`seccomp:unconfined` but not `seccomp=unconfined`, which Docker treats the
+same.
+
 compose-lint is Compose-only and puts its effort into the fix. Each rule page
 explains what the setting does at runtime, which error messages the hardened
 configuration produces when an image was not built for it, and how to tell a
@@ -288,6 +393,13 @@ an explicit `user: root` is not detected
 merge, the ruleset is one line to enable if Semgrep already runs in your CI
 and your files keep `version:`. If you have removed `version:`, as Compose
 now recommends, the ruleset does nothing and reports nothing.
+
+Two narrower gaps showed up on a
+[stack spread across files](#run-on-a-stack-spread-across-files), both with
+`version:` present. The socket rule did not fire on
+`/var/run/docker.sock:/sock`, the socket mounted at another path inside the
+container. The seccomp rule fired on a `security_opt:` list holding only
+`seccomp:unconfined`, and not on one that also held `apparmor:unconfined`.
 
 compose-lint covers those six and the rest of its 27 rules: capability
 tiers, resource limits, credentials in environment variables, connection
@@ -319,6 +431,13 @@ its auto-fix works on the Compose file. Which matters more depends on
 whether the linter is a CI gate or an advisor. The explicit `user: root` gap
 was not on DockSec's tracker as of 2026-10-09.
 
+On a [stack spread across files](#run-on-a-stack-spread-across-files),
+DockSec resolved YAML anchors but read only the file it was given: it did not
+follow `extends:` into another file, `include:` or `compose.override.yml`. In
+the same file it reported the base service rather than the one that extends
+it. It caught `seccomp:unconfined` but not `seccomp=unconfined`, and reported
+`no-new-privileges=true` as missing.
+
 ## When a script of your own is enough
 
 Search results and AI answers for these questions often suggest skipping the
@@ -347,7 +466,10 @@ deploys has to:
 
 compose-lint runs each of those checks ([how it works](how-it-works.md),
 [what a run reads](what-a-run-reads.md)), and most of them were added
-because a real file slipped past a simpler version. Compose changes over
+because a real file slipped past a simpler version. The
+[run on a stack spread across files](#run-on-a-stack-spread-across-files)
+shows the tools above missing several of them too: `extends:`, overrides,
+`.env`, the long volume syntax and the socket as a secret. Compose changes over
 time, and a script has to change with it.
 
 Custom rules for the tools above inherit the tool's parser, which makes them
@@ -494,10 +616,170 @@ The SELinux service (`security_opt: [label:disable]`) was run the same way
 on 2026-10-14, with each image pinned to the digest the 2026-10-09 run had
 recorded.
 
+### The stack spread across files
+
+Each scenario is its own directory. Every image is `nginx:1.27.2-alpine`,
+and none of the scenarios is meant to be started.
+
+```yaml
+# inline/compose.yaml (control)
+services:
+  app:
+    image: nginx:1.27.2-alpine
+    privileged: true
+    ports: ["8080:80"]
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
+
+# extends-same-file/compose.yaml
+services:
+  base:
+    image: nginx:1.27.2-alpine
+    privileged: true
+    ports: ["8080:80"]
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
+  app:
+    extends: base
+
+# extends-other-file/common.yml holds the base service above;
+# extends-other-file/compose.yaml
+services:
+  app:
+    extends:
+      file: common.yml
+      service: base
+
+# include/sub/stack.yml holds the inline app service;
+# include/compose.yaml
+include:
+  - sub/stack.yml
+services:
+  web:
+    image: nginx:1.27.2-alpine
+
+# override/compose.yaml
+services:
+  app:
+    image: nginx:1.27.2-alpine
+# override/compose.override.yml
+services:
+  app:
+    privileged: true
+    ports: ["8080:80"]
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
+
+# anchor/compose.yaml
+x-danger: &danger
+  privileged: true
+  ports: ["8080:80"]
+  volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
+services:
+  app:
+    <<: *danger
+    image: nginx:1.27.2-alpine
+
+# interpolation-default/compose.yaml
+services:
+  app:
+    image: nginx:1.27.2-alpine
+    privileged: ${PRIV:-true}
+    ports: ["${BIND:-0.0.0.0}:8080:80"]
+    volumes: ["${SOCK:-/var/run/docker.sock}:/sock"]
+
+# dotenv/compose.yaml, with dotenv/.env holding
+# PRIV=true, BIND=0.0.0.0 and SOCK=/var/run/docker.sock
+services:
+  app:
+    image: nginx:1.27.2-alpine
+    privileged: ${PRIV}
+    ports: ["${BIND}:8080:80"]
+    volumes: ["${SOCK}:/sock"]
+
+# long-syntax/compose.yaml
+services:
+  app:
+    image: nginx:1.27.2-alpine
+    ports:
+      - target: 80
+        published: "8080"
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+
+# secret-file/compose.yaml
+services:
+  app:
+    image: nginx:1.27.2-alpine
+    secrets: [sock]
+secrets:
+  sock:
+    file: /var/run/docker.sock
+
+# seccomp-equals/compose.yaml; seccomp-colon is the same with seccomp:unconfined
+services:
+  app:
+    image: nginx:1.27.2-alpine
+    security_opt: ["seccomp=unconfined"]
+
+# socket-elsewhere/compose.yaml (the Semgrep socket-rule probe)
+services:
+  app:
+    image: nginx:1.27.2-alpine
+    volumes: ["/var/run/docker.sock:/sock"]
+```
+
+The four that deploy safely:
+
+```yaml
+# safe-override/compose.yaml
+services:
+  app:
+    image: nginx:1.27.2-alpine
+    privileged: true
+# safe-override/compose.override.yml
+services:
+  app:
+    privileged: false
+
+# safe-default/compose.yaml
+services:
+  app:
+    image: nginx:1.27.2-alpine
+    ports: ["${BIND:-127.0.0.1}:8080:80"]
+
+# safe-nnp-equals/compose.yaml
+services:
+  app:
+    image: nginx:1.27.2-alpine
+    cap_drop: [ALL]
+    read_only: true
+    security_opt: ["no-new-privileges=true"]
+
+# safe-dotenv/ is dotenv/ with .env holding
+# PRIV=false, BIND=127.0.0.1 and SOCK=/srv/data
+```
+
+Each scenario directory was mounted read-only at `/src`. compose-lint runs
+with `/src` as its working directory, so the scenario directory is the
+boundary it reads within:
+
+```bash
+docker run --rm -w /src -v "$PWD:/src:ro" composelint/compose-lint:0.36.0@sha256:b6742a7ff80a1a75e824a8aa1c6579946fdd48c771f7085a046a18f95c3fe19d check --format json /src/compose.yaml
+docker run --rm -v "$PWD:/src:ro" -v "$PWD/out:/out" checkmarx/kics:v2.1.20@sha256:3e5a268eb8adda2e5a483c9359ddfc4cd520ab856a7076dc0b1d8784a37e2602 scan -p /src -o /out --report-formats json -t DockerCompose --disable-secrets
+docker run --rm -v "$PWD:/src:ro" -v "$PWD/out:/root/.docksec/results" owasp/docksec:2026.9.21@sha256:646e8250e2dc98ac4c8fd5f9a5d37f9aecae149a468271b5b1dc04092f927be4 --compose /src/compose.yaml --format json --scan-only
+docker run --rm -v "$PWD:/src:ro" semgrep/semgrep:1.180.0@sha256:529ee8a277ec8adc5b534d7c74eea0a47e9de21d62852b6ba7ac6ba9566845c3 semgrep --metrics=off --config p/docker-compose --json /src
+docker run --rm -v "$PWD:/src:ro" zavoloklom/dclint:3.1.0@sha256:dd6e0faa9fa8856a643a1e55476077d555b8e9c946cc481f8fbee203662c3e77 -f json -r /src
+```
+
+`docker compose config` in each directory is the ground truth for what
+deploys. A finding counts for a row only when it comes from that tool's own
+rule for the setting.
+
 ## Corrections
 
 The counts in the summary table come from the linked documentation as read
-on 2026-10-08. The runs are from 2026-10-09 with the versions listed above.
+on 2026-10-08. The runs are from 2026-10-09 and 2026-10-17 with the versions
+listed above.
 Tools change. If a row is out of date, [open an
 issue](https://github.com/tmatens/compose-lint/issues) with the link or the
 output that shows it and the row will be corrected.
@@ -507,7 +789,9 @@ Known changes that would move these results when they land:
 - Semgrep's column goes from 0 to 6 of 21 when
   [semgrep-rules#4037](https://github.com/semgrep/semgrep-rules/pull/4037)
   merges, and gains `user: root` with
-  [#4048](https://github.com/semgrep/semgrep-rules/pull/4048).
+  [#4048](https://github.com/semgrep/semgrep-rules/pull/4048). The same fix
+  moves its column in the run on a stack spread across files to the
+  `version:` results in the † notes.
 - KICS stops reporting the `no-new-privileges=true` spelling as missing when
   [#7077](https://github.com/Checkmarx/kics/issues/7077) is fixed.
 - Trivy gets a column if
