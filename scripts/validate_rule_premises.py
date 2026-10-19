@@ -58,7 +58,7 @@ if TYPE_CHECKING:
 # Renovate stops seeing it.
 # renovate: datasource=docker depName=busybox
 IMAGE = (
-    "busybox:1.38@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d"
+    "busybox:1.38@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e"
 )
 # python:3.13-alpine — for checks busybox can't express: syscalls needing a
 # libc caller (mlockall, clock_settime) and the CL-0003 setuid-interpreter
