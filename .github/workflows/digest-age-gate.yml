@@ -1,7 +1,7 @@
 name: Age-gate gcr/ghcr digest PRs
 
 # Merges Renovate's digest refreshes from gcr.io and ghcr.io (distroless,
-# the oss-fuzz builder, vhs) once they have been open and unchanged for the
+# the oss-fuzz builder, vhs) once they have aged the
 # same three days the Docker Hub digests wait under Renovate's own
 # minimumReleaseAge gate (#1059).
 #
@@ -17,14 +17,34 @@ name: Age-gate gcr/ghcr digest PRs
 # are required via `ci-ok`. The click added nothing but the age check.
 # This is the age check.
 #
-# The clock: the head commit's committer timestamp. "First time we saw this
-# digest" is never earlier than its publish time, so 72h from first-seen is
-# at least 72h from publish -- the gate's threat model (a compromised or
-# broken release is usually pulled within days) is served, conservatively.
-# PR created_at would NOT do: Renovate force-pushes the branch when the
-# digest moves again, so an old PR can carry a minutes-old digest. The head
-# commit resets with every push, so a fresh digest waits its own 72h and a
-# plain rebase waits again too (over-conservative, never leaky).
+# The clock, preferred: the registry's upload time for every digest the PR
+# adds. gcr.io's tags/list returns `timeUploadedMs` per manifest, stamped by
+# the registry when the manifest was pushed, so a publisher (or an attacker
+# holding its credentials) cannot backdate it. That is exactly the gate's
+# threat model -- a compromised or broken release is usually pulled within
+# days of going public -- and a rebase no longer restarts the wait, because
+# a rebase does not change the image. Never `timeCreatedMs`: it comes from
+# the image config, which the publisher writes, and distroless's
+# reproducible builds set it to 0, which would read as fifty years old.
+#
+# The clock, fallback: the head commit's committer timestamp. "First time we
+# saw this digest" is never earlier than its publish time, so 72h from
+# first-seen is at least 72h from publish, conservatively. It is used for
+# every PR the upload clock cannot vouch for: a ghcr.io image (no upload time
+# in its API), a lookup that fails, a digest missing from the listing, or an
+# upload time later than the commit that pins it. Failing closed means
+# waiting longer, never merging sooner. PR created_at would NOT do as a
+# clock: Renovate force-pushes the branch when the digest moves again, so an
+# old PR can carry a minutes-old digest.
+#
+# Stalls. Either clock restarts when upstream publishes a newer digest, and
+# Renovate always proposes the newest, so an image released more often than
+# every 72h never merges. A PR still waiting on age after STALL_DAYS is
+# therefore handed to a human: `manual-merge` plus one comment giving the
+# head digest's age, and saying that merging it now skips the gate.
+#
+# Hourly, so an aged PR merges within the hour instead of waiting up to a day
+# for the next run -- a day in which a newer digest can land and restart it.
 #
 # Built to be deleted. If upstream Renovate gains a registry-agnostic
 # release timestamp (renovatebot/renovate#39064; the OCI `created` draft
@@ -65,7 +85,7 @@ on:
         type: boolean
         default: true
   schedule:
-    - cron: "23 6 * * *"
+    - cron: "23 * * * *"
 
 permissions: {}
 
@@ -73,15 +93,19 @@ env:
   # Matches `minimumReleaseAge: "3 days"` on the Docker Hub digest rule in
   # .github/renovate.json; change both or neither.
   MIN_AGE_HOURS: "72"
+  # An age-gated PR still waiting on age this long after it opened is
+  # stalled (see "Stalls" above) and gets manual-merge.
+  STALL_DAYS: "7"
 
 jobs:
   select:
     name: Select digest PRs that have aged 72h
     runs-on: ubuntu-26.04
-    timeout-minutes: 3
+    timeout-minutes: 5
     permissions:
       # write: the step adds/removes `manual-merge` on candidates it refuses
-      # for a non-age reason. Labels only; it never merges or pushes.
+      # for a non-age reason, and comments once on a stalled one. Labels and
+      # comments only; it never merges or pushes.
       pull-requests: write
     outputs:
       eligible: ${{ steps.select.outputs.eligible }}
@@ -105,16 +129,55 @@ jobs:
             --json number --jq '.[].number' > numbers.txt
           while read -r n; do
             gh pr view "${n}" \
-              --json number,title,headRefName,headRefOid,isDraft,isCrossRepository,mergeStateStatus,commits,statusCheckRollup,labels
+              --json number,title,createdAt,headRefName,headRefOid,isDraft,isCrossRepository,mergeStateStatus,commits,statusCheckRollup,labels
           done < numbers.txt | jq -s '.' > candidates.json
+          # Upload clock: for each PR, the newest gcr.io upload time among the
+          # digests its diff adds, or nothing if any one of them cannot be
+          # vouched for (then the commit clock applies). The refs come from
+          # the diff Renovate wrote; the regex admits only a registry path and
+          # a 64-hex digest, and only gcr.io is ever queried.
+          upload_ms() {
+            local n="$1" refs ref path digest ms newest=0
+            refs=$(gh api "repos/${GH_REPO}/pulls/${n}/files" --paginate --jq '.[].patch // empty' \
+              | grep -E '^[+]' \
+              | grep -oE '[a-z0-9.-]+(/[a-z0-9._-]+)+(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}' \
+              | sort -u) || return 0
+            [ -n "${refs}" ] || return 0
+            while read -r ref; do
+              case "${ref}" in gcr.io/*) ;; *) return 0 ;; esac
+              digest="${ref##*@}"
+              path="${ref#gcr.io/}"
+              path="${path%@*}"
+              path="${path%%:*}"
+              ms=$(curl --fail --silent --show-error --max-time 30 "https://gcr.io/v2/${path}/tags/list" \
+                | jq -r --arg d "${digest}" '.manifest[$d].timeUploadedMs // empty | tonumber') || return 0
+              [[ "${ms}" =~ ^[0-9]+$ ]] || return 0
+              if [ "${ms}" -gt "${newest}" ]; then newest="${ms}"; fi
+            done <<< "${refs}"
+            echo "${newest}"
+          }
+          while read -r n; do
+            ms=$(upload_ms "${n}" || true)
+            printf '{"number":%s,"uploaded_ms":%s}\n' "${n}" "${ms:-null}"
+          done < numbers.txt | jq -s '.' > uploads.json
           # One row per PR: eligible or the first reason it is not. All
           # conditions are conjunctive; a PR has to be clean on every one.
           # Each refusal is also classed: `human` (red, conflict, draft, fork,
           # hand-touched) gets the manual-merge label below; `wait` (checks
           # still running, merge state not settled, not aged yet) does not.
-          jq -r --argjson now "${now}" --argjson min_hours "${MIN_AGE_HOURS}" '
-            def head_commit: . as $pr | ($pr.commits[] | select(.oid == $pr.headRefOid)) // $pr.commits[-1];
-            def age_hours: (($now - (head_commit.committedDate | fromdateiso8601)) / 3600 | floor);
+          jq -r --argjson now "${now}" --argjson min_hours "${MIN_AGE_HOURS}" --argjson stall_days "${STALL_DAYS}" \
+            --slurpfile uploads uploads.json '
+            ($uploads[0] | map({key: (.number | tostring), value: .uploaded_ms}) | from_entries) as $up
+            | def head_commit: . as $pr | ($pr.commits[] | select(.oid == $pr.headRefOid)) // $pr.commits[-1];
+            def committed: head_commit.committedDate | fromdateiso8601;
+            # An upload time after the commit that pins the digest cannot be
+            # right; distrust it and fall back to the commit.
+            def uploaded: $up[.number | tostring] as $ms
+              | if $ms != null and ($ms / 1000) <= committed then $ms / 1000 else null end;
+            def clock: if uploaded != null then "upload" else "commit" end;
+            def age_hours: (($now - (uploaded // committed)) / 3600 | floor);
+            def age_text: if clock == "upload" then "head digest was uploaded \(age_hours)h ago" else "head commit is \(age_hours)h old" end;
+            def open_days: (($now - (.createdAt | fromdateiso8601)) / 86400 | floor);
             def ci_runs: [.statusCheckRollup[]? | select(.name == "ci-ok")];
             def ci_state:
               if (ci_runs | any(.status == "COMPLETED" and .conclusion == "SUCCESS")) then "green"
@@ -131,19 +194,25 @@ jobs:
               elif ci_state == "running" then ["wait", "ci-ok has not completed on the head commit"]
               elif .mergeStateStatus == "DIRTY" then ["human", "merge state is DIRTY (conflict)"]
               elif .mergeStateStatus != "CLEAN" then ["wait", "merge state is \(.mergeStateStatus), not CLEAN"]
-              elif age_hours < $min_hours then ["wait", "head commit is \(age_hours)h old, needs \($min_hours)h"]
+              elif age_hours < $min_hours and open_days >= $stall_days then ["human", "stalled: open \(open_days)d and the \(age_text), needs \($min_hours)h"]
+              elif age_hours < $min_hours then ["wait", "\(age_text), needs \($min_hours)h"]
               else ["eligible", "eligible"] end;
-            .[] | verdict as $v | [.number, .headRefOid, (age_hours|tostring), .mergeStateStatus, $v[1], (has_manual|tostring), $v[0], .title] | @tsv
+            .[] | verdict as $v | [.number, .headRefOid, (age_hours|tostring), .mergeStateStatus, $v[1], (has_manual|tostring), $v[0], .title, clock] | @tsv
           ' candidates.json > rows.tsv
-          eligible=$(awk -F'\t' '$7 == "eligible" {printf "%s{\"number\":%s,\"head\":\"%s\"}", (n++ ? "," : ""), $1, $2}' rows.tsv)
+          eligible=$(awk -F'\t' '$7 == "eligible" {printf "%s{\"number\":%s,\"head\":\"%s\",\"clock\":\"%s\"}", (n++ ? "," : ""), $1, $2, $9}' rows.tsv)
           echo "eligible=[${eligible}]" >> "${GITHUB_OUTPUT}"
           # Keep manual-merge truthful: on a PR a human has to act on, make
           # sure it is there; on one that is merely waiting, make sure it is
           # not. A dry run reports and touches nothing.
           if [ "${DRY_RUN}" != "true" ]; then
-            while IFS=$'\t' read -r n _ _ _ _ has_manual verdict _; do
+            while IFS=$'\t' read -r n _ _ _ reason has_manual verdict _ _; do
               if [ "${verdict}" = "human" ] && [ "${has_manual}" = "false" ]; then
                 gh pr edit "${n}" --add-label manual-merge || echo "::warning::could not add manual-merge to #${n}"
+                # Once per stall: the label goes on only when it is absent.
+                if [[ "${reason}" == stalled:* ]]; then
+                  gh pr comment "${n}" --body "Age gate stalled: ${reason#stalled: }. Upstream keeps publishing newer digests and Renovate keeps moving this PR to the newest, so it may never age ${MIN_AGE_HOURS}h on its own. Merging it now **skips the age gate** for a digest that young; the alternative is to keep waiting for a quiet spell upstream. \`manual-merge\` is on until a human decides; the gate still merges it by itself if it does age. See \`digest-age-gate.yml\`." \
+                    || echo "::warning::could not comment on stalled #${n}"
+                fi
               elif [ "${verdict}" != "human" ] && [ "${has_manual}" = "true" ]; then
                 gh pr edit "${n}" --remove-label manual-merge || echo "::warning::could not remove manual-merge from #${n}"
               fi
@@ -156,9 +225,9 @@ jobs:
             if [ ! -s rows.tsv ]; then
               echo "No open age-gated PR from Renovate."
             else
-              echo "| PR | head age | state | decision | class |"
-              echo "|---|---|---|---|---|"
-              awk -F'\t' '{printf "| #%s %s | %sh | %s | %s | %s |\n", $1, $8, $3, $4, $5, $7}' rows.tsv
+              echo "| PR | age | clock | state | decision | class |"
+              echo "|---|---|---|---|---|---|"
+              awk -F'\t' '{printf "| #%s %s | %sh | %s | %s | %s | %s |\n", $1, $8, $3, $9, $4, $5, $7}' rows.tsv
             fi
           } >> "${GITHUB_STEP_SUMMARY}"
           echo "eligible: [${eligible}]"
@@ -190,6 +259,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           PR: ${{ matrix.number }}
           HEAD: ${{ matrix.head }}
+          CLOCK: ${{ matrix.clock }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -197,7 +267,12 @@ jobs:
             echo "::warning::MARKETPLACE_SMOKE_PAT is not configured -- #${PR} is eligible but is left for a human (a GITHUB_TOKEN merge would skip main's push workflows)."
             exit 0
           fi
-          gh pr comment "${PR}" --body "Age-gated merge: head commit \`${HEAD:0:7}\` has been unchanged for at least ${MIN_AGE_HOURS}h (first-seen is never earlier than publish, so this is the same wait Docker Hub digests get from Renovate's \`minimumReleaseAge\`), \`ci-ok\` is green and the PR is clean. Merging it pinned to that head; see \`digest-age-gate.yml\` ([run](${RUN_URL}))." \
+          if [ "${CLOCK}" = "upload" ]; then
+            why="every digest it pins was uploaded to gcr.io at least ${MIN_AGE_HOURS}h ago (the registry's own upload time)"
+          else
+            why="head commit \`${HEAD:0:7}\` has been unchanged for at least ${MIN_AGE_HOURS}h (first-seen is never earlier than publish)"
+          fi
+          gh pr comment "${PR}" --body "Age-gated merge: ${why}, so this is the same wait Docker Hub digests get from Renovate's \`minimumReleaseAge\`; \`ci-ok\` is green and the PR is clean. Merging it pinned to head \`${HEAD:0:7}\`; see \`digest-age-gate.yml\` ([run](${RUN_URL}))." \
             || echo "::warning::could not comment on #${PR}; merging anyway"
       - name: Merge, pinned to the head the selection saw
         id: arm
@@ -206,7 +281,7 @@ jobs:
           pull-request: ${{ matrix.number }}
           token: ${{ secrets.MARKETPLACE_SMOKE_PAT }}
           expected-head: ${{ matrix.head }}
-          note: It is eligible for the age gate; merge it by hand or wait for tomorrow's run.
+          note: It is eligible for the age gate; merge it by hand or wait for the next hourly run.
       - name: Record the outcome (and disarm if it only armed)
         env:
           GH_TOKEN: ${{ secrets.MARKETPLACE_SMOKE_PAT }}
@@ -223,12 +298,12 @@ jobs:
               # is wrong for this gate: GitHub keeps auto-merge armed across
               # pushes by a collaborator, so a newer digest Renovate pushes
               # onto the branch would merge the moment it went green, with
-              # no 72h behind it. Disarm; tomorrow's run re-evaluates.
+              # no 72h behind it. Disarm; the next hourly run re-evaluates.
               gh pr merge "${PR}" --disable-auto \
                 || echo "::error::could not disarm auto-merge on #${PR} -- disarm it by hand (Disable auto-merge on the PR) or its next push merges unaged"
-              echo "::warning::#${PR} was no longer clean when the merge ran; auto-merge was armed and has been disarmed again. It is re-evaluated tomorrow." ;;
+              echo "::warning::#${PR} was no longer clean when the merge ran; auto-merge was armed and has been disarmed again. It is re-evaluated on the next hourly run." ;;
             *)
-              echo "::warning::#${PR} did not merge (${RESULT}); it stays open, age-gated, and is re-evaluated tomorrow." ;;
+              echo "::warning::#${PR} did not merge (${RESULT}); it stays open, age-gated, and is re-evaluated on the next hourly run." ;;
           esac
 
   # Scheduled runs have no PR to go red on. Without this the only signal

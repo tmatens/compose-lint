@@ -20,7 +20,7 @@ per-channel publish contract see [`DISTRIBUTION.md`](DISTRIBUTION.md).
 | `marketplace-smoke.yml`   | Push to `main` touching the file + manual + weekly cron | Verifies the published action, pre-commit hook, and the `uvx`/`pipx run` one-shot forms end-to-end |
 | `forgejo-smoke.yml`       | PRs + pushes to `main` touching the harness + manual + weekly cron | Runs the Forgejo guide's snippet on a live containerized Forgejo |
 | `forgejo-smoke-bump.yml`  | Daily (05:17 UTC) + manual                 | Opens the PR that moves the harness to the newest Forgejo + runner, docs claim included |
-| `digest-age-gate.yml`     | Daily (06:23 UTC) + manual (dry run by default) | Merges Renovate's gcr.io/ghcr.io digest PRs once unchanged for 72h, the age gate Renovate cannot apply to them |
+| `digest-age-gate.yml`     | Hourly (:23) + manual (dry run by default) | Merges Renovate's gcr.io/ghcr.io digest PRs once they have aged 72h, the age gate Renovate cannot apply to them; flags ones that stall |
 | `os-smoke.yml`            | Called by `ci.yml` on PRs touching code + push to `main` + manual + weekly cron | pytest (3.11 and 3.13) + pre-commit hook on macOS and Windows — **gates via `ci-ok`** |
 | `sarif-ingestion.yml`     | Push to `main` touching SARIF inputs + manual + weekly cron | Uploads a probe SARIF to Code Scanning and asserts GitHub ingested it — then deletes its own alerts |
 
@@ -617,14 +617,36 @@ was already mechanical (`dockerfile-digests` and both `docker-smoke` legs
 are required via `ci-ok`); the human click added only the age check, and
 this is the age check.
 
-The clock is the **head commit's timestamp**: "first time we saw this
-digest" is never earlier than its publish time, so 72h from first-seen is
-at least 72h from publish — conservative by construction. PR `created_at`
-would not do, because Renovate force-pushes the branch when the digest
-moves again; the head commit resets with every push, so a fresh digest
-waits its own 72h and a plain rebase waits again too (over-conservative,
-never leaky). The 72h constant is `MIN_AGE_HOURS` at the top of the
-workflow and must move with `renovate.json`'s `minimumReleaseAge`.
+The clock is the **registry's upload time** where there is one. gcr.io's
+`tags/list` returns `timeUploadedMs` for every manifest, stamped by the
+registry when the manifest was pushed, so whoever publishes the image
+cannot backdate it. That measures what the gate is for, how long a digest
+has been public, and a rebase no longer restarts the wait, since a rebase
+does not change the image. The gate takes the newest upload time among the
+digests the PR's diff adds. It never reads `timeCreatedMs`: that comes from
+the image config the publisher writes, and distroless's reproducible
+builds set it to 0.
+
+Where the upload clock cannot vouch for a PR, the clock is the **head
+commit's timestamp**: "first time we saw this digest" is never earlier than
+its publish time, so 72h from first-seen is at least 72h from publish. That
+covers ghcr.io (its API has no upload time), a failed lookup, a digest
+missing from the listing, and an upload time later than the commit pinning
+it. Every failure therefore means waiting longer, never merging sooner. PR
+`created_at` would not do as a clock, because Renovate force-pushes the
+branch when the digest moves again. The 72h constant is `MIN_AGE_HOURS` at
+the top of the workflow and must move with `renovate.json`'s
+`minimumReleaseAge`. The step summary names the clock used for each PR.
+
+**Stalls.** Either clock restarts when upstream publishes a newer digest,
+and Renovate always proposes the newest, so an image released more often
+than every 72h would never merge and nothing would say so. A PR still
+waiting on age `STALL_DAYS` (7) after it opened gets `manual-merge` and one
+comment giving the head digest's age and stating that merging it now skips
+the age gate. If it does age before anyone acts, the gate merges it as
+usual. The gate runs hourly rather than daily for the same reason: a daily
+run added up to a day to every wait, a day in which a newer digest could
+land and restart it.
 
 Selection is conjunctive and the step summary shows every candidate with
 its decision: author `renovate[bot]`, head `renovate/*`, label
@@ -632,8 +654,8 @@ its decision: author `renovate[bot]`, head `renovate/*`, label
 digests automerge via Renovate and carry no label, so this is exactly the
 gcr/ghcr set), no draft, no fork, every commit authored by Renovate (a
 hand-touched branch needs a human, Renovate's own automerge rule),
-`ci-ok` green on the head, merge state `CLEAN`, head commit ≥ 72h old. A
-red, conflicting, draft or hand-touched PR is left alone and gets
+`ci-ok` green on the head, merge state `CLEAN`, aged ≥ 72h. A
+red, conflicting, draft, hand-touched or stalled PR is left alone and gets
 `manual-merge` added (removed again once it is clean), so the "what needs
 me" query stays truthful; a PR whose `ci-ok` is still running is simply
 waited for. To hold one back deliberately, convert it to a draft. A dry
