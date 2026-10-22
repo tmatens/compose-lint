@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The release SBOM names the package.** The SPDX document attached to
+  each GitHub Release as the bill of materials for the wheel and sdist
+  listed one package, the `dist/` directory, because syft's directory scan
+  does not open an archive; every release through 0.36.1 shipped that. It
+  is now generated from the unpacked distributions with syft's Python
+  catalogers, so it carries `compose-lint` at the released version, its
+  licence, its PyPI purl and the dependencies the wheel declares, and the
+  release fails if that record is missing. Earlier releases' SBOM assets
+  are unchanged.
+
 ## [0.36.1] - 2026-10-18
 
 ### Changed

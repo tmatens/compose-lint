@@ -347,9 +347,20 @@ build jobs too — see docs/RELEASING.md "Docker Hub credential scoping". The ga
 with a single maintainer, a second approval on the same run would be the
 same person clicking twice.
 
-`build` generates an SPDX SBOM (`sbom.spdx.json`) covering the wheel
-and sdist via `anchore/sbom-action`. `create-release` attaches it to
-the GitHub Release alongside the distributions and Sigstore bundles.
+`build` generates an SPDX SBOM (`sbom.spdx.json`) for the wheel and
+sdist via `anchore/sbom-action`, scanning the *unpacked* distributions
+with syft's Python catalogers: syft's directory scan does not open an
+archive, so a scan of `dist/` itself lists one package, the directory
+(every release through 0.36.1 shipped that). Unpacked, the wheel's
+`.dist-info` gives the record a bill of materials is for: `compose-lint`
+at the built version, its licence, its PyPI purl and its declared
+dependencies, and the job fails if that record is missing. Only the
+Python catalogers run because the sdist carries the repository's
+`.github/` tree, which syft's github-actions cataloger would list as
+packages. `release-actions-smoke` in `ci.yml` runs the same unpack, scan
+and check on every PR that touches a workflow. `create-release` attaches
+the document to the GitHub Release alongside the distributions and
+Sigstore bundles.
 `docker-publish` does the equivalent for the image — generates an SBOM
 and `cosign attest`s it to the manifest digest.
 

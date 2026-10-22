@@ -179,17 +179,51 @@ jobs:
             fi
           done
           echo "All ${#dists[@]} distributions have matching signatures."
-      # Generate an SPDX SBOM covering everything in dist/ (wheel + sdist).
-      # docker-publish already attests an SBOM to the image; this closes
-      # the PyPI gap so every shipped channel has a machine-readable bill
-      # of materials. Attached as a Release asset by create-release.
+      # Generate an SPDX SBOM for the wheel and sdist. docker-publish already
+      # attests an SBOM to the image; this closes the PyPI gap so every
+      # shipped channel has a machine-readable bill of materials. Attached
+      # as a Release asset by create-release.
+      #
+      # Scanned unpacked, not as `dir:dist/`: syft's directory scan does not
+      # open a wheel or an sdist, so a scan of dist/ itself yields one
+      # package, the directory, and every release through 0.36.1 shipped
+      # that. Unpacked, the wheel's .dist-info is a Python package record:
+      # compose-lint at the built version, its licence, its PyPI purl and
+      # its declared dependencies. Only the Python catalogers run, because
+      # the sdist carries the repository's .github/ tree and syft's
+      # github-actions cataloger would list every workflow and composite
+      # action in it as a "package", which is noise in a bill of materials
+      # for a Python distribution. The check after the scan asserts the
+      # record is there at the version the wheel's name carries.
+      - name: Unpack the dists for the SBOM
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p sbom-src/wheel sbom-src/sdist
+          for w in dist/*.whl; do unzip -q "${w}" -d sbom-src/wheel; done
+          for s in dist/*.tar.gz; do tar -xzf "${s}" -C sbom-src/sdist; done
+          ls sbom-src/wheel sbom-src/sdist
       - name: Generate SPDX SBOM for dists
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        env:
+          SYFT_SELECT_CATALOGERS: python
         with:
-          path: dist/
+          path: sbom-src/
           format: spdx-json
           output-file: sbom.spdx.json
           upload-artifact: false
+      - name: SBOM names the package at the built version
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for w in dist/*.whl; do
+            b="$(basename "${w}")"; v="${b#compose_lint-}"; v="${v%%-*}"
+            if ! jq -e --arg v "${v}" '.packages[] | select(.name == "compose-lint" and .versionInfo == $v)' sbom.spdx.json >/dev/null; then
+              echo "::error::sbom.spdx.json does not list compose-lint ${v}"
+              exit 1
+            fi
+            echo "SBOM lists compose-lint ${v}."
+          done
       # Generate SLSA build provenance for each dist. The attestation is
       # pushed to GitHub's attestations API (verifiable via `gh attestation
       # verify`) and also written to disk so we can attach .intoto.jsonl

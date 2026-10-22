@@ -644,27 +644,39 @@ jobs:
             fi
           done
           echo "All ${#dists[@]} distributions have matching signatures."
+      # The same unpack, scan and check as publish.yml's build job, so a
+      # bump of sbom-action (or of syft underneath it) that stops producing
+      # the package record fails here, before the tag. See publish.yml for
+      # why the dists are unpacked and only the Python catalogers run.
+      - name: Unpack the dists for the SBOM
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p sbom-src/wheel sbom-src/sdist
+          for w in dist/*.whl; do unzip -q "${w}" -d sbom-src/wheel; done
+          for s in dist/*.tar.gz; do tar -xzf "${s}" -C sbom-src/sdist; done
       - name: Generate SPDX SBOM for dists
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        env:
+          SYFT_SELECT_CATALOGERS: python
         with:
-          path: dist/
+          path: sbom-src/
           format: spdx-json
           output-file: sbom.spdx.json
           upload-artifact: false
           upload-release-assets: false
-      - name: SBOM is a well-formed SPDX document
-        # What a bump of sbom-action can break here is the action running at
-        # all and writing the document publish.yml attaches: a parseable SPDX
-        # file naming its version, the scanned source and a creation record.
-        # Not asserted: that the document lists the wheel's contents. syft's
-        # directory scan does not open a wheel or an sdist, so the dists'
-        # SBOM carries one package, the directory itself (measured with syft
-        # 1.55.0 on `dir:dist/`); making it list what the wheel ships is a
-        # publish.yml change, not this smoke's.
+      - name: SBOM names the package at the built version
         run: |
-          jq -e '.spdxVersion and .name and .creationInfo.created and (.packages | length) >= 1' sbom.spdx.json >/dev/null \
-            || { echo "::error::sbom.spdx.json is not a well-formed SPDX document"; exit 1; }
-          echo "SBOM: $(jq -r '.spdxVersion' sbom.spdx.json), $(jq '.packages | length' sbom.spdx.json) package(s)."
+          set -euo pipefail
+          shopt -s nullglob
+          for w in dist/*.whl; do
+            b="$(basename "${w}")"; v="${b#compose_lint-}"; v="${v%%-*}"
+            if ! jq -e --arg v "${v}" '.packages[] | select(.name == "compose-lint" and .versionInfo == $v)' sbom.spdx.json >/dev/null; then
+              echo "::error::sbom.spdx.json does not list compose-lint ${v}"
+              exit 1
+            fi
+            echo "SBOM lists compose-lint ${v}."
+          done
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - run: cosign version
 
