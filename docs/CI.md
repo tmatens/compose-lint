@@ -644,12 +644,15 @@ the top of the workflow and must move with `renovate.json`'s
 **Stalls.** Either clock restarts when upstream publishes a newer digest,
 and Renovate always proposes the newest, so an image released more often
 than every 72h would never merge and nothing would say so. A PR still
-waiting on age `STALL_DAYS` (7) after it opened gets `manual-merge` and one
-comment giving the head digest's age and stating that merging it now skips
-the age gate. If it does age before anyone acts, the gate merges it as
-usual. The gate runs hourly rather than daily for the same reason: a daily
-run added up to a day to every wait, a day in which a newer digest could
-land and restart it.
+waiting on age `STALL_DAYS` (7) after it opened gets one comment giving the
+head digest's age, and keeps waiting: Renovate keeps the PR current, so
+nothing is lost by waiting for a quiet week upstream, and the only thing a
+person could do instead is merge a digest younger than the gate allows. The
+comment is posted once per PR (the gate reads the PR's comments before
+posting), and the gate merges the PR by itself in the first quiet 72h. The
+gate runs hourly rather than daily for the same reason: a daily run added
+up to a day to every wait, a day in which a newer digest could land and
+restart it.
 
 Selection is conjunctive and the step summary shows every candidate with
 its decision: author `renovate[bot]`, head `renovate/*`, label
@@ -658,10 +661,10 @@ digests automerge via Renovate and carry no label, so this is exactly the
 gcr/ghcr set), no draft, no fork, every commit authored by Renovate (a
 hand-touched branch needs a human, Renovate's own automerge rule),
 `ci-ok` green on the head, merge state `CLEAN`, aged ≥ 72h. A
-red, conflicting, draft, hand-touched or stalled PR is left alone and gets
+red, conflicting, draft or hand-touched PR is left alone and gets
 `manual-merge` added (removed again once it is clean), so the "what needs
-me" query stays truthful; a PR whose `ci-ok` is still running is simply
-waited for. To hold one back deliberately, convert it to a draft. A dry
+me" query stays truthful; a PR whose `ci-ok` is still running, or whose
+digest is still too young, stalled or not, is simply waited for. To hold one back deliberately, convert it to a draft. A dry
 run touches no labels.
 
 The merge is the shared `arm-auto-merge` action with `expected-head` set
