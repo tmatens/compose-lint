@@ -108,15 +108,19 @@ PR that adds a dependency of any kind does all four of these:
    add a `# renovate: datasource=… depName=…` annotation beside the pin and a
    `customManagers` entry that matches it, as `COMPOSE_VERSION` and
    `ACTIONLINT_VERSION` in ci.yml do.
-3. **Place it in the update policy.** Find its row in the "Dependency updates"
-   table in docs/CI.md: that row says whether it merges itself or waits for a
-   person, and why. If it fits no row, add a `packageRules` entry in
-   `.github/renovate.json` and a table row in the same PR. If it must not be
-   managed by Renovate, add a rule with `enabled: false` whose `description`
-   says what moves it instead (the demo `compose-lint` pin and the Forgejo
-   smoke pins are the models).
-4. **Make the PR exercise it**, if it is to merge itself: the policy is that a
-   green run is the review, so a dependency CI never runs cannot automerge.
+3. **Make the PR exercise it.** Every bump merges itself by default
+   (`.github/renovate.json`; the "Dependency updates" table in docs/CI.md
+   lists the exceptions), on the policy that a green run is the review. So
+   name, in the PR that adds the dependency, the CI job that runs the new
+   version on a bump. If no job does, add one (`demo-lock` and
+   `release-actions-smoke` in ci.yml exist for exactly this), or add a
+   `packageRules` exception and a table row in the same PR saying why it
+   waits instead. A dependency CI never runs would otherwise merge on nothing
+   but its age.
+4. **Or take it out of Renovate's hands.** If the pin records a fact rather
+   than a dependency choice, or another workflow owns it, add a rule with
+   `enabled: false` whose `description` says what moves it instead (the demo
+   `compose-lint` pin and the Forgejo smoke pins are the models).
 
 ### Regenerating lockfiles
 
