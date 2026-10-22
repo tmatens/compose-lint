@@ -47,6 +47,7 @@ jobs:
       workflows: ${{ steps.filter.outputs.workflows }}
       dockerfile: ${{ steps.filter.outputs.dockerfile }}
       locks: ${{ steps.filter.outputs.locks }}
+      demo: ${{ steps.filter.outputs.demo }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -68,6 +69,7 @@ jobs:
               echo "workflows=true"
               echo "dockerfile=true"
               echo "locks=true"
+              echo "demo=true"
             } >> "$GITHUB_OUTPUT"
             echo "push event — running all job groups."
             exit 0
@@ -76,7 +78,7 @@ jobs:
           echo "Changed files:"
           echo "${changed}"
           match() { echo "${changed}" | grep -qE "$1"; }
-          code=false; docker=false; workflows=false; dockerfile=false; locks=false
+          code=false; docker=false; workflows=false; dockerfile=false; locks=false; demo=false
           # Python sources, tests, helper scripts, the package manifest,
           # hash-pinned lockfiles, and the action contract all warrant the
           # full lint/type/test/coverage/security/smoke suite.
@@ -124,12 +126,20 @@ jobs:
           if match '^(pyproject\.toml$|requirements[.-].*lock$|\.github/workflows/ci\.yml$)'; then
             locks=true
           fi
+          # The demo toolchain's own lock is installed by nothing above (it
+          # feeds the VHS container that re-renders the README GIFs, which
+          # runs only by hand), so a Renovate bump of it ran no job that
+          # used it. `demo-lock` installs it.
+          if match '^scripts/demo/requirements\.(in|lock)$'; then
+            demo=true
+          fi
           {
             echo "code=${code}"
             echo "docker=${docker}"
             echo "workflows=${workflows}"
             echo "dockerfile=${dockerfile}"
             echo "locks=${locks}"
+            echo "demo=${demo}"
           } >> "$GITHUB_OUTPUT"
 
   lint:
@@ -568,6 +578,191 @@ jobs:
           fi
           if tar tzf dist/*.tar.gz | grep -E '(pyvenv\.cfg|AGENTS\.md|CLAUDE\.md|/\.env$|/\.git/|/\.claude/|site-packages/)'; then
             echo "::error::sdist contains forbidden files"
+            exit 1
+          fi
+
+  # The three release actions that can run without publishing anything, run
+  # on the PR's own dists. publish.yml's signing and SBOM steps execute only
+  # after the tag is pushed, so a bump of sigstore/gh-action-sigstore-python,
+  # anchore/sbom-action or sigstore/cosign-installer used to meet its first
+  # real run after the irreversible step, and Renovate held those minors for
+  # a human whose only evidence was the release notes. Here the same three
+  # actions, at the same pins, run against freshly built dists:
+  # sigstore-python signs them against Sigstore's *staging* instance (nothing
+  # from a PR lands in the production transparency log), sbom-action writes
+  # an SPDX document for dist/ and uploads nothing, and cosign-installer
+  # installs the CLI publish.yml attests with. Renovate keeps the two copies
+  # of each pin aligned: the ci.yml copy moves in the github-actions group
+  # and runs here, and the publish.yml copy then merges itself as an action
+  # already exercised on the CI path (renovate.json, docs/CI.md).
+  # actions/attest-build-provenance and pypa/gh-action-pypi-publish have no
+  # run that does not publish, so they are not here; they age instead.
+  #
+  # PRs only, and never from a fork: keyless signing needs the job's OIDC
+  # token, which GitHub does not issue to fork PRs, and a push to main has
+  # nothing to prove that the PR run did not.
+  release-actions-smoke:
+    name: Release signing and SBOM actions on the PR's dists
+    needs: changes
+    if: >-
+      github.event_name == 'pull_request'
+      && needs.changes.outputs.workflows == 'true'
+      && !github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # Keyless signing: sigstore-python exchanges the job's OIDC token for a
+      # short-lived certificate. Write here means "may request a token", not
+      # a write to anything in the repository.
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install pinned build env
+        run: pip install --require-hashes -r requirements-dev.lock
+      - run: python -m build
+      - uses: sigstore/gh-action-sigstore-python@790bc6befb9d733738f18d8f895854b453640ec9 # v3.5.0
+        with:
+          inputs: ./dist/*.tar.gz ./dist/*.whl
+          staging: true
+          release-signing-artifacts: false
+          upload-signing-artifacts: false
+      - name: Verify every dist has a matching signature
+        # The same check publish.yml makes before it trusts the bundles.
+        run: |
+          shopt -s nullglob
+          dists=(dist/*.tar.gz dist/*.whl)
+          for d in "${dists[@]}"; do
+            if [ ! -f "${d}.sigstore.json" ] && [ ! -f "${d}.sigstore" ]; then
+              echo "::error::No Sigstore bundle written for ${d}"
+              exit 1
+            fi
+          done
+          echo "All ${#dists[@]} distributions have matching signatures."
+      - name: Generate SPDX SBOM for dists
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          path: dist/
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: SBOM names both distributions
+        run: |
+          shopt -s nullglob
+          for d in dist/*.tar.gz dist/*.whl; do
+            name="$(basename "${d}")"
+            if ! jq -e --arg n "${name}" '[.. | strings] | any(. == $n)' sbom.spdx.json >/dev/null; then
+              echo "::error::SBOM does not mention ${name}"
+              exit 1
+            fi
+          done
+          echo "SBOM covers every distribution."
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - run: cosign version
+
+  # The demo toolchain's Python deps, installed the way scripts/demo's
+  # Dockerfile installs them. No other job touches scripts/demo/requirements
+  # .lock, so until this job existed a Renovate bump of pillow or numpy ran
+  # nothing that used it, and "a bump merges itself when the PR's own CI runs
+  # the new version" (docs/CI.md) had no run to point at. The import and the
+  # --help cover what retime.py needs; a dependency that no longer installs
+  # from its hashes or no longer imports fails here, not at the next GIF
+  # render. Python 3.13 because the lock was compiled for it (its header).
+  demo-lock:
+    name: Demo toolchain lock installs
+    needs: changes
+    if: needs.changes.outputs.demo == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - run: pip install --require-hashes -r scripts/demo/requirements.lock
+      - name: Import what the demo scripts use
+        run: |
+          python -c "import PIL, numpy, compose_lint; print(PIL.__version__, numpy.__version__, compose_lint.__version__)"
+          python scripts/demo/retime.py --help >/dev/null
+
+  # A dependency bump can pass every job above while shrinking what those
+  # jobs check: a pytest major that collects fewer tests, a plugin that stops
+  # descending into a directory. Nothing would notice, because every test
+  # that ran still passed. This collects the suite twice, on the PR head and
+  # on its base, each in its own hash-pinned dev env, and fails when the head
+  # collects fewer tests without the PR having touched the tests themselves.
+  # It is what lets a major of dev tooling merge itself (docs/CI.md,
+  # Dependency updates): a green run then proves the suite ran whole, not
+  # only that what ran passed. PRs only: a push to main has no base to
+  # compare against. The count is informational on a PR that changes tests/
+  # or src/, which may legitimately add or remove tests.
+  suite-size:
+    name: Collected test count did not shrink
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.locks == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.13.1"
+          enable-cache: true
+          cache-dependency-glob: "requirements*.lock"
+      - name: Collect the suite on the head
+        run: |
+          uv venv /tmp/head-venv
+          uv pip install --python /tmp/head-venv/bin/python --require-hashes -r requirements-dev.lock
+          uv pip install --python /tmp/head-venv/bin/python --no-deps -e .
+          /tmp/head-venv/bin/python -m pytest --collect-only -q -p no:cacheprovider | tail -1 | tee /tmp/head-count.txt
+      - name: Collect the suite on the base, with the base's own dev env
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git worktree add /tmp/base "${BASE_SHA}"
+          uv venv /tmp/base-venv
+          uv pip install --python /tmp/base-venv/bin/python --require-hashes -r /tmp/base/requirements-dev.lock
+          uv pip install --python /tmp/base-venv/bin/python --no-deps -e /tmp/base
+          cd /tmp/base
+          /tmp/base-venv/bin/python -m pytest --collect-only -q -p no:cacheprovider | tail -1 | tee /tmp/base-count.txt
+      - name: Compare
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          count() { grep -oE '^[0-9]+' "$1" || echo 0; }
+          head=$(count /tmp/head-count.txt)
+          base=$(count /tmp/base-count.txt)
+          echo "collected: base=${base} head=${head}"
+          if git diff --name-only "${BASE_SHA}" "${HEAD_SHA}" | grep -qE '^(tests/|src/|conftest\.py$)'; then
+            echo "The PR changes tests/ or src/, so a different count is expected; informational only."
+            exit 0
+          fi
+          if [ "${head}" -lt "${base}" ]; then
+            echo "::error::The head collects ${head} tests, the base ${base}, and the PR touches no test: a dependency in this PR shrank the suite."
+            exit 1
+          fi
+          if [ "${head}" -eq 0 ]; then
+            echo "::error::Nothing was collected on the head."
             exit 1
           fi
 
@@ -1737,6 +1932,9 @@ jobs:
       - dockerfile-digests
       - lockfiles
       - dist-check
+      - release-actions-smoke
+      - demo-lock
+      - suite-size
       - docker-smoke
       - action-smoke
       - precommit-smoke
