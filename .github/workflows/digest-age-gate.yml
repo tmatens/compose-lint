@@ -39,9 +39,14 @@ name: Age-gate gcr/ghcr digest PRs
 #
 # Stalls. Either clock restarts when upstream publishes a newer digest, and
 # Renovate always proposes the newest, so an image released more often than
-# every 72h never merges. A PR still waiting on age after STALL_DAYS is
-# therefore handed to a human: `manual-merge` plus one comment giving the
-# head digest's age, and saying that merging it now skips the gate.
+# every 72h never merges on its own. A PR still waiting on age after
+# STALL_DAYS gets one comment saying so, and keeps waiting: Renovate keeps
+# it current, nothing is lost by waiting for a quiet week upstream, and the
+# only thing a human could do instead is merge a digest younger than the
+# gate allows, which is never the safe answer. (The stall used to hand the
+# PR to a human with `manual-merge`; that asked a question whose answer was
+# always "keep waiting".) A release that needs the newer base before then
+# can still be cut by hand.
 #
 # Hourly, so an aged PR merges within the hour instead of waiting up to a day
 # for the next run -- a day in which a newer digest can land and restart it.
@@ -67,12 +72,12 @@ name: Age-gate gcr/ghcr digest PRs
 #
 # Red, conflicting, draft or hand-touched PRs are left alone and get
 # `manual-merge` added (removed again once the PR is clean), so the "what
-# needs me" query stays truthful; a PR whose ci-ok is still running is
-# simply waited for. Converting a PR to a draft is the hold lever. Majors,
-# release-only actions and sigstore are judgment calls, not tooling gaps,
-# and are out of scope by selection: this touches only PRs that are all
-# of (author renovate[bot], head renovate/*, label age-gated, title
-# "Update <image> Docker digest to <sha>").
+# needs me" query stays truthful; a PR whose ci-ok is still running, or
+# whose digest is still too young, is simply waited for. Converting a PR to
+# a draft is the hold lever. Everything else Renovate opens merges under
+# renovate.json's own rules and is out of scope by selection: this touches
+# only PRs that are all of (author renovate[bot], head renovate/*, label
+# age-gated, title "Update <image> Docker digest to <sha>").
 
 on:
   workflow_dispatch:
@@ -94,7 +99,7 @@ env:
   # .github/renovate.json; change both or neither.
   MIN_AGE_HOURS: "72"
   # An age-gated PR still waiting on age this long after it opened is
-  # stalled (see "Stalls" above) and gets manual-merge.
+  # stalled (see "Stalls" above): it gets one comment and keeps waiting.
   STALL_DAYS: "7"
 
 jobs:
@@ -104,8 +109,9 @@ jobs:
     timeout-minutes: 5
     permissions:
       # write: the step adds/removes `manual-merge` on candidates it refuses
-      # for a non-age reason, and comments once on a stalled one. Labels and
-      # comments only; it never merges or pushes.
+      # for a non-age reason, and comments once on a stalled one (reading
+      # the PR's comments to post it only once). Labels and comments only;
+      # it never merges or pushes.
       pull-requests: write
     outputs:
       eligible: ${{ steps.select.outputs.eligible }}
@@ -164,7 +170,8 @@ jobs:
           # conditions are conjunctive; a PR has to be clean on every one.
           # Each refusal is also classed: `human` (red, conflict, draft, fork,
           # hand-touched) gets the manual-merge label below; `wait` (checks
-          # still running, merge state not settled, not aged yet) does not.
+          # still running, merge state not settled, not aged yet, stalled)
+          # does not. A stall is a wait with one comment.
           jq -r --argjson now "${now}" --argjson min_hours "${MIN_AGE_HOURS}" --argjson stall_days "${STALL_DAYS}" \
             --slurpfile uploads uploads.json '
             ($uploads[0] | map({key: (.number | tostring), value: .uploaded_ms}) | from_entries) as $up
@@ -194,7 +201,7 @@ jobs:
               elif ci_state == "running" then ["wait", "ci-ok has not completed on the head commit"]
               elif .mergeStateStatus == "DIRTY" then ["human", "merge state is DIRTY (conflict)"]
               elif .mergeStateStatus != "CLEAN" then ["wait", "merge state is \(.mergeStateStatus), not CLEAN"]
-              elif age_hours < $min_hours and open_days >= $stall_days then ["human", "stalled: open \(open_days)d and the \(age_text), needs \($min_hours)h"]
+              elif age_hours < $min_hours and open_days >= $stall_days then ["wait", "stalled: open \(open_days)d and the \(age_text), needs \($min_hours)h"]
               elif age_hours < $min_hours then ["wait", "\(age_text), needs \($min_hours)h"]
               else ["eligible", "eligible"] end;
             .[] | verdict as $v | [.number, .headRefOid, (age_hours|tostring), .mergeStateStatus, $v[1], (has_manual|tostring), $v[0], .title, clock] | @tsv
@@ -203,18 +210,23 @@ jobs:
           echo "eligible=[${eligible}]" >> "${GITHUB_OUTPUT}"
           # Keep manual-merge truthful: on a PR a human has to act on, make
           # sure it is there; on one that is merely waiting, make sure it is
-          # not. A dry run reports and touches nothing.
+          # not. A stalled PR is waiting, and says so once. A dry run reports
+          # and touches nothing.
           if [ "${DRY_RUN}" != "true" ]; then
             while IFS=$'\t' read -r n _ _ _ reason has_manual verdict _ _; do
               if [ "${verdict}" = "human" ] && [ "${has_manual}" = "false" ]; then
                 gh pr edit "${n}" --add-label manual-merge || echo "::warning::could not add manual-merge to #${n}"
-                # Once per stall: the label goes on only when it is absent.
-                if [[ "${reason}" == stalled:* ]]; then
-                  gh pr comment "${n}" --body "Age gate stalled: ${reason#stalled: }. Upstream keeps publishing newer digests and Renovate keeps moving this PR to the newest, so it may never age ${MIN_AGE_HOURS}h on its own. Merging it now **skips the age gate** for a digest that young; the alternative is to keep waiting for a quiet spell upstream. \`manual-merge\` is on until a human decides; the gate still merges it by itself if it does age. See \`digest-age-gate.yml\`." \
-                    || echo "::warning::could not comment on stalled #${n}"
-                fi
               elif [ "${verdict}" != "human" ] && [ "${has_manual}" = "true" ]; then
                 gh pr edit "${n}" --remove-label manual-merge || echo "::warning::could not remove manual-merge from #${n}"
+              fi
+              # Once per PR: the comment is the marker, so a restarted clock
+              # (a newer digest) does not post it again.
+              if [[ "${reason}" == stalled:* ]]; then
+                posted=$(gh pr view "${n}" --json comments --jq '[.comments[].body | select(startswith("Age gate stalled:"))] | length' || echo 1)
+                if [ "${posted}" = "0" ]; then
+                  gh pr comment "${n}" --body "Age gate stalled: ${reason#stalled: }. Upstream keeps publishing newer digests and Renovate keeps moving this PR to the newest, so it has not aged ${MIN_AGE_HOURS}h on its own. The gate keeps waiting and merges it by itself in the first quiet ${MIN_AGE_HOURS}h upstream; nothing is needed from a person. Merging it by hand would ship a digest younger than the gate allows. See \`digest-age-gate.yml\`." \
+                    || echo "::warning::could not comment on stalled #${n}"
+                fi
               fi
             done < rows.tsv
           fi
