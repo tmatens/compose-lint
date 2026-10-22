@@ -71,9 +71,10 @@ publish = [
     "build==1.6.1",
     "twine==7.0.0",
     # Used by the post-release canary in publish.yml to verify the
-    # Sigstore bundles attached to the GitHub Release. Matches the
-    # version bundled by sigstore/gh-action-sigstore-python v3.5.0 so
-    # the signer and verifier are in lockstep.
+    # Sigstore bundles attached to the GitHub Release. Kept at the
+    # version sigstore/gh-action-sigstore-python bundles (4.5.0 as of
+    # the action's v3.5.0); both move through Renovate on their own, and
+    # the canary is where a signer/verifier mismatch would surface.
     "sigstore==4.5.0",
 ]
 # Minimal build-tool set for the Dockerfile build stage. Kept narrow so

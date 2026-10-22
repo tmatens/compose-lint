@@ -6,9 +6,13 @@
     ":pinDevDependencies",
     ":semanticCommitsDisabled"
   ],
+  "description": "Every bump merges itself once its PR is green and the release has aged; the packageRules below are the exceptions. The repo-wide defaults carry the policy so that a shape nobody has named yet (a new manager, a new depType, a new file) merges under the same terms as everything else instead of waiting for a person by accident, which is how transitive pins, CalVer packages and action inputs each spent weeks as a 'manual' row before anyone noticed there was no decision behind it. The condition that makes the default safe is enforced outside this file: a dependency may only be added together with a PR-time run that exercises it (AGENTS.md 'Adding a dependency'), and ci.yml's suite-size job fails a bump that passes by shrinking what CI checks. Three-day age because a compromised or broken upstream release is usually pulled or yanked within days of going public, and hash-locked installs do not help with that (they pin whatever release was current). Renovate merges by itself after its own stability check; platformAutomerge is false so that GitHub's native auto-merge, which lands a PR as soon as the required ci-ok passes and knows nothing of renovate/stability-days, can never route around the age. Labels: nothing by default, `manual-merge` only where a rule below says a person decides, `age-gated` on the digests digest-age-gate.yml merges, `security` added on advisory PRs; so an open Renovate PR with no label is green-and-waiting or red, never forgotten. docs/CI.md 'Dependency updates' is the human-readable table of the same policy; change both together.",
   "schedule": ["before 4am on monday"],
   "automergeSchedule": ["at any time"],
-  "labels": ["manual-merge"],
+  "automerge": true,
+  "automergeType": "pr",
+  "platformAutomerge": false,
+  "minimumReleaseAge": "3 days",
   "addLabels": ["renovate"],
   "osvVulnerabilityAlerts": true,
   "logLevelRemap": [
@@ -18,7 +22,7 @@
     }
   ],
   "vulnerabilityAlerts": {
-    "description": "Open a security PR the moment an advisory lands instead of waiting for the weekly schedule. osvVulnerabilityAlerts covers the uv/pip-compile *.lock files that GitHub's native Dependabot does not parse. Renovate applies this block as a `force` package rule appended AFTER the packageRules below (workers/repository/init/vulnerability.ts), carrying its own defaults for the alert: minimumReleaseAge null, schedule [], prCreation immediate, groupName null. So a security PR is ungrouped, opens at once and skips the three-day gate; whether it then merges itself is decided by the same packageRules as any other update. A security patch, or a security minor of dev tooling, of pyyaml, of a CI-path action or of a pinned release binary, automerges once ci-ok is green and carries no manual-merge label; a security major, or a security minor of sigstore or of a release-only action, opens for review. `addLabels` (not `labels`) so `security` stacks on whatever label the update rules left instead of replacing it. This is the continuous-detection half of the pip-audit split (PR audit informational, publish audit blocking — see .github/workflows/ci.yml). Verified against Renovate 44.157.",
+    "description": "Open a security PR the moment an advisory lands instead of waiting for the weekly schedule. osvVulnerabilityAlerts covers the uv/pip-compile *.lock files that GitHub's native Dependabot does not parse. Renovate applies this block as a `force` package rule appended AFTER the packageRules below (workers/repository/init/vulnerability.ts), carrying its own defaults for the alert: minimumReleaseAge null, schedule [], prCreation immediate, groupName null. So a security PR is ungrouped, opens at once and skips every age below, the seven-day one on majors included; whether it then merges itself is decided by the same rules as any other update, and since the default is automerge and the only row a person decides is a pyyaml major, a security PR waits for a human only when it is that, or red. Transitive pins: the pip-compile manager extracts every lock entry pyproject.toml does not declare with depType `indirect` and `enabled: false`, and this force block is what enables one, so a transitive dependency moves only in a security PR (and in the weekly lock maintenance, which refreshes every pin). `addLabels` (not `labels`) so `security` stacks on whatever the rules below left. This is the continuous-detection half of the pip-audit split (PR audit informational, publish audit blocking — see .github/workflows/ci.yml). Verified against Renovate 44.175.",
     "addLabels": ["security"]
   },
   "lockFileMaintenance": {
@@ -36,7 +40,7 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "The Docker Compose plugin the differential suites are graded against. The runner image pins its own — images/ubuntu/toolsets/toolset-2404.json in actions/runner-images holds it at 2.38.2 while docker/compose is on 5.x — and that version is not a choice this project made: CI was grading ADR-036's include: orderings, every one measured on Compose 5.5.0, against a binary that refuses the documents describing them ('services.web conflicts with imported resource'). .github/scripts/install-compose-plugin.sh installs the pin ahead of the image's copy; this manager moves it. Patch and minor bumps automerge under the custom.regex rule below: ci.yml is in the `code` change filter, so the bump PR runs the differential suites it exists to re-prove, and a green run means the new binary still agrees with every graded ordering. A red run is precisely the PR that has to be triaged into 'Compose changed', 'we were wrong', or 'a new deliberate divergence', and Renovate never merges a red PR, so that triage still reaches a human.",
+      "description": "The Docker Compose plugin the differential suites are graded against. The runner image pins its own — images/ubuntu/toolsets/toolset-2404.json in actions/runner-images holds it at 2.38.2 while docker/compose is on 5.x — and that version is not a choice this project made: CI was grading ADR-036's include: orderings, every one measured on Compose 5.5.0, against a binary that refuses the documents describing them ('services.web conflicts with imported resource'). .github/scripts/install-compose-plugin.sh installs the pin ahead of the image's copy; this manager moves it. Its bumps merge under the repo defaults: ci.yml is in the `code` change filter, so the bump PR runs the differential suites it exists to re-prove, and a green run means the new binary still agrees with every graded ordering. A red run is precisely the PR that has to be triaged into 'Compose changed', 'we were wrong', or 'a new deliberate divergence', and Renovate never merges a red PR, so that triage still reaches a human.",
       "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>[a-z-]+?) depName=(?<depName>.+?)\\s+COMPOSE_VERSION: (?<currentValue>v\\S+)"
@@ -45,7 +49,7 @@
     },
     {
       "customType": "regex",
-      "description": "Release binaries that ci.yml jobs download from a GitHub Release and verify against the release's checksums file (actionlint, hadolint). The version is a bare X.Y.Z literal beside a `# renovate:` annotation; the tag carries a v prefix, so extractVersion strips it. Patch and minor bumps automerge under the custom.regex rule below: each bump runs the linter it bumps on the PR itself (ci.yml is in the `workflows` change filter for actionlint and in the `dockerfile` filter for hadolint), so a green run is the review and a red one waits for a human with the tool's release notes.",
+      "description": "Release binaries that ci.yml jobs download from a GitHub Release and verify against the release's checksums file (actionlint, hadolint). The version is a bare X.Y.Z literal beside a `# renovate:` annotation; the tag carries a v prefix, so extractVersion strips it. Their bumps merge under the repo defaults: each runs the linter it bumps on the PR itself (ci.yml is in the `workflows` change filter for actionlint and in the `dockerfile` filter for hadolint), so a green run is the review and a red one waits for a human with the tool's release notes.",
       "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>[a-z-]+?) depName=(?<depName>.+?)\\s+[A-Z_]+_VERSION: \"(?<currentValue>[0-9][^\"]*)\""
@@ -55,7 +59,7 @@
     },
     {
       "customType": "regex",
-      "description": "Container images the premise validator runs (busybox, and python:3.13-alpine for the checks busybox cannot express). They are string constants in a Python script, which no built-in manager reads, so until this manager existed both digests sat where they were pinned (busybox from May 2026, python from June) with nothing to say they were stale. Each pin is a `# renovate: datasource=docker depName=…` line, then `NAME = (`, then one string `\"name:tag@sha256:<index digest>\"`; the tag is what Renovate looks the digest up by. Digest refreshes automerge under the Docker Hub digest rule below, because the rule-premises job re-runs every premise against the new image on the PR; a tag change (busybox 1.39, python 3.14-alpine) is a minor and opens with manual-merge.",
+      "description": "Container images the premise validator runs (busybox, and python:3.13-alpine for the checks busybox cannot express). They are string constants in a Python script, which no built-in manager reads, so until this manager existed both digests sat where they were pinned (busybox from May 2026, python from June) with nothing to say they were stale. Each pin is a `# renovate: datasource=docker depName=…` line, then `NAME = (`, then one string `\"name:tag@sha256:<index digest>\"`; the tag is what Renovate looks the digest up by. Digest refreshes and tag moves alike merge under the repo defaults, because the rule-premises job re-runs every premise against the new image on the PR, and busybox's error wordings are asserted there verbatim, so a release line whose wordings changed goes red.",
       "managerFilePatterns": ["/^scripts/validate_rule_premises\\.py$/"],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)\\n[A-Z_]+ = \\(\\n\\s+\"[^\":]+:(?<currentValue>[^@\"]+)@(?<currentDigest>sha256:[0-9a-f]{64})\""
@@ -70,7 +74,7 @@
       "groupName": "github-actions"
     },
     {
-      "description": "Workflows that run only after the tag is pushed (publish.yml and the reusable workflows it calls) get their own group. Minors split by whether the action also runs on the CI path: the nine that do are exercised on the PR itself and automerge under their own rule below, while a minor of the five that run only after the tag (actions/attest-build-provenance, anchore/sbom-action, pypa/gh-action-pypi-publish, sigstore/cosign-installer, sigstore/gh-action-sigstore-python) is exercised for the first time at release, after the irreversible trigger, so it keeps manual-merge and holds the group for a human. Separate groups because Renovate automerges a group only when every update in it is eligible: one release-path minor would otherwise hold the whole weekly batch for a human.",
+      "description": "Workflows that run only after the tag is pushed (publish.yml and the reusable workflows it calls) get their own group, because Renovate automerges a group only when every update in it is eligible, and this group's two publish-only actions wait seven days (the rule below) while the rest wait three: in one group a fresh attest-build-provenance minor would hold the weekly actions batch for four extra days.",
       "matchManagers": ["github-actions"],
       "matchFileNames": [".github/workflows/publish.yml", ".github/workflows/verify-tag.yml", ".github/workflows/release-docker-smoke.yml"],
       "groupName": "github-actions-release"
@@ -87,14 +91,42 @@
       "pinDigests": true
     },
     {
-      "description": "Production runtime + build-stage base images bypass the weekly schedule. Debian and distroless rebuilds carry CVE patches we cannot apply ourselves (no shell, no apt at runtime), so opening the bump PR same-day shrinks the window between upstream patch and our published image. Whether the bump then merges itself is decided by the Docker Hub digest rule at the end of this list: debian does, distroless cannot (gcr.io gives Renovate no release timestamp to age against).",
+      "description": "Production runtime + build-stage base images bypass the weekly schedule. Debian and distroless rebuilds carry CVE patches we cannot apply ourselves (no shell, no apt at runtime), so opening the bump PR same-day shrinks the window between upstream patch and our published image. debian then merges under the defaults; distroless is age-gated (its rule below).",
       "matchManagers": ["dockerfile"],
       "matchFileNames": ["Dockerfile"],
       "matchPackageNames": ["debian", "gcr.io/distroless/python3-debian13"],
       "schedule": ["at any time"]
     },
     {
-      "description": "Demo toolchain: the compose-lint pin in scripts/demo records which release the committed GIF was rendered on, so it moves only as part of a deliberate demo regeneration (docs/RELEASING.md), never via Renovate. pillow/numpy and transitives in the same lock stay managed.",
+      "description": "Majors wait seven days instead of three. The PR-time review is the same as for a minor (the full suite, the smokes, and ci.yml's suite-size job, which fails a bump that passes by collecting fewer tests), so a green major proves what a green minor proves. The extra days are for a different reason: a major's first week is when early adopters find its regressions and the x.0.1 lands, so waiting usually means the PR proposes the version people actually run, and CI exercises that one. Applies to every manager: dev tooling, actions on either path, the ubuntu runner image (datasource github-runners, which carries release dates), the release binaries ci.yml downloads, and a container image's tag moving to a new release line (debian:14, postgres:19). pyyaml majors are the one exception, next rule.",
+      "matchUpdateTypes": ["major"],
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "A pyyaml major is a person's call, not a bump. pyproject.toml declares the range `pyyaml>=6.0.2,<7` for every user of the wheel, so a major crosses that ceiling and changes what pip resolves for them, which after 1.0 is a compose-lint MAJOR with its own release decision (docs/compatibility.md). A pyyaml minor moves only the hash-pinned locks, never the wheel's range, and merges under the defaults.",
+      "matchPackageNames": ["pyyaml"],
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "labels": ["manual-merge"]
+    },
+    {
+      "description": "Minors of the two release actions that cannot run without publishing wait seven days. actions/attest-build-provenance writes attestations to GitHub's API and pypa/gh-action-pypi-publish uploads to an index, so there is no PR-time run of either that does not publish; the other three release-only actions (gh-action-sigstore-python, sbom-action, cosign-installer) do run on the PR, in ci.yml's release-actions-smoke job, and merge under the defaults. What a human review of these two could catch, a bad minor, fails the release run before anything irreversible (verify-tag, build and the TestPyPI smoke precede the release-gate approval) and is recovered by re-running the job or with a patch release. What it could not catch, a compromised release of the action, is what the SHA pin and the age are for; seven days because here the age is the only review.",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["actions/attest-build-provenance", "pypa/gh-action-pypi-publish"],
+      "matchUpdateTypes": ["minor"],
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "Digests from gcr.io and ghcr.io (distroless, the oss-fuzz builder, vhs) cannot be aged by Renovate: its docker datasource takes releaseTimestamp from Docker Hub's tag_last_pushed and from nowhere else, and under the default minimumReleaseAgeBehaviour=timestamp-required a digest with no timestamp is pending forever and never even opens a PR. So the age is lifted here and automerge is off, and .github/workflows/digest-age-gate.yml merges each one once it has aged 72h by gcr.io's registry-stamped upload time, or by the head commit's age where the registry gives none (first-seen is never earlier than publish). The review on the PR is the same as for a Docker Hub digest: dockerfile-digests fails a per-arch pin and docker-smoke builds and runs the image on amd64 and arm64, both required via ci-ok. `age-gated` is the label the gate selects on: rename both or neither. The gate adds `manual-merge` to one it refuses for a reason other than age (red, conflict, draft, fork, hand-touched). Goes away if upstream Renovate ships a registry-agnostic release timestamp (renovatebot/renovate#39064). Verified against 44.132 (lookup/digest.ts, datasource/docker releaseTimestampNote).",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["gcr.io/distroless/python3-debian13", "gcr.io/oss-fuzz-base/base-builder-python", "ghcr.io/charmbracelet/vhs"],
+      "matchUpdateTypes": ["digest"],
+      "minimumReleaseAge": null,
+      "automerge": false,
+      "labels": ["age-gated"]
+    },
+    {
+      "description": "Demo toolchain: the compose-lint pin in scripts/demo records which release the committed GIF was rendered on, so it moves only as part of a deliberate demo regeneration (docs/RELEASING.md), never via Renovate. pillow/numpy and transitives in the same lock stay managed; ci.yml's demo-lock job installs that lock on the PR.",
       "matchFileNames": ["scripts/demo/requirements.in", "scripts/demo/requirements.lock"],
       "matchPackageNames": ["compose-lint"],
       "enabled": false
@@ -106,93 +138,7 @@
       "enabled": false
     },
     {
-      "description": "Automerge low-risk routine updates once CI is green. Patch-level Python dep bumps, pinned-digest refreshes for GitHub Actions, and lockFileMaintenance go in without human review. Docker digests have their own rule at the end of this list (Docker Hub only; it explains why). minimumReleaseAge is the one human-shaped gate on that path: a release merges itself only after it has been public for three days, which is the window in which a compromised or broken upstream release is usually pulled or yanked. Hash-locked installs do not help here — they pin whatever release was current. The PR still opens at once; Renovate holds a renovate/stability-days check pending until the age passes, then automerge proceeds. platformAutomerge is deliberately FALSE so that gate cannot be routed around: GitHub's native auto-merge lands a PR as soon as its REQUIRED checks pass, and the only required check here is ci-ok — renovate/stability-days is not one, so a platform-armed PR could merge inside the three days the option exists to enforce. Renovate merging on its own, after its own checks, is the behaviour this repo has always had (platform auto-merge was unavailable at repo level until the marketplace-pin job needed it), so this pins it rather than changes it. Security PRs are unaffected: vulnerabilityAlerts defaults minimumReleaseAge to null, so an OSV fix still lands immediately. Its updates carry no label: `labels: []` replaces the repo-wide `manual-merge` default. Not an `automerge` label, because a grouped PR (python, github-actions) takes the union of its updates' labels, while Renovate automerges a group only when EVERY update in it is eligible (`config.automerge = upgrades.every(...)` in workers/repository/updates/generate.ts). A mixed group therefore carried both labels and still needed a human. With no label on the eligible side, a PR has `manual-merge` exactly when at least one update in it is not automerge-eligible, which is exactly when Renovate will not merge it. A template cannot pick the label per PR instead: `automerge` is not an allowed template field. Verified against Renovate 44.117.",
-      "matchManagers": ["pep621", "pip_requirements", "pip-compile", "github-actions"],
-      "matchUpdateTypes": ["patch", "pin", "digest", "lockFileMaintenance"],
-      "minimumReleaseAge": "3 days",
-      "automerge": true,
-      "automergeType": "pr",
-      "platformAutomerge": false,
-      "labels": []
-    },
-    {
-      "description": "Minor bumps of Python dev tooling automerge too. Every optional-dependency group (lint, security, docs, dev, corpus, container) is installed and exercised by a PR gate (ruff, mypy, pytest, bandit, pip-audit, mkdocs, the Docker build), so a green run is the review. The runtime dependency (project.dependencies: pyyaml) has its own rule below: its minors move the locks only, never the wheel's range. sigstore is excluded: it must move in lockstep with the sigstore/gh-action-sigstore-python action that signs what it verifies (the pin's comment in pyproject.toml), and that action's minors are manual, so a sigstore minor opens for review alongside it. twine is not excluded: ci.yml's dist-check job builds the sdist and wheel and runs `twine check --strict` on every PR that touches code or the locks, so a twine minor is exercised before the tag like any other dev tool. pep621 and pip-compile tag deps with the same depType (verified with `renovate --platform=local --dry-run=extract` on 44.132), so the pyproject edit and the lock regeneration are both eligible and the grouped PR automerges as a whole.",
-      "matchManagers": ["pep621", "pip-compile"],
-      "matchDepTypes": ["project.optional-dependencies"],
-      "matchPackageNames": ["!sigstore"],
-      "matchUpdateTypes": ["minor"],
-      "minimumReleaseAge": "3 days",
-      "automerge": true,
-      "automergeType": "pr",
-      "platformAutomerge": false,
-      "labels": []
-    },
-    {
-      "description": "Minor bumps of actions on the CI path automerge. Every action here is SHA-pinned and runs in the PR's own workflow, so the bump tests itself. The release-path workflows are carved into the github-actions-release group above and excluded here; the rule after this one takes their minors for the actions that also run on the CI path, and the release-only actions' minors keep the manual-merge label. Majors, including the ubuntu runner image (datasource github-runners), stay manual.",
-      "matchManagers": ["github-actions"],
-      "matchFileNames": ["!.github/workflows/publish.yml", "!.github/workflows/verify-tag.yml", "!.github/workflows/release-docker-smoke.yml"],
-      "matchUpdateTypes": ["minor"],
-      "minimumReleaseAge": "3 days",
-      "automerge": true,
-      "automergeType": "pr",
-      "platformAutomerge": false,
-      "labels": []
-    },
-    {
-      "description": "Minor bumps of release-path actions that ALSO run on the CI path automerge. These nine are SHA-pinned in ci.yml and the other PR and push workflows as well, so the same minor runs on the PR before it ever runs after a tag, and the github-actions-release group then holds only eligible updates and merges itself. The five actions that run only after the tag are deliberately not listed (see the group's description above): their minors keep manual-merge and hold the group for a human, because a first run after the irreversible trigger is not a review. depName is the owner/repo part of `uses:`, so github/codeql-action covers its upload-sarif sub-action (verified with `renovate --platform=local --dry-run=extract` on 44.157).",
-      "matchManagers": ["github-actions"],
-      "matchFileNames": [".github/workflows/publish.yml", ".github/workflows/verify-tag.yml", ".github/workflows/release-docker-smoke.yml"],
-      "matchPackageNames": ["actions/checkout", "actions/setup-python", "actions/upload-artifact", "actions/download-artifact", "docker/login-action", "docker/build-push-action", "docker/setup-buildx-action", "docker/scout-action", "github/codeql-action"],
-      "matchUpdateTypes": ["minor"],
-      "minimumReleaseAge": "3 days",
-      "automerge": true,
-      "automergeType": "pr",
-      "platformAutomerge": false,
-      "labels": []
-    },
-    {
-      "description": "Patch and minor bumps of the release binaries ci.yml downloads (the custom regex managers above: docker/compose, rhysd/actionlint, hadolint/hadolint) automerge. Each bump runs the tool it bumps on the PR, so a green run is the review. Compose: the plugin is what the differential suites grade against, and ci.yml is in the `code` change filter, so the bump re-runs every suite that could disagree with the new binary; green means no loader rule moved under us. actionlint: ci.yml is in the `workflows` filter, so the bumped linter runs over every workflow. hadolint: ci.yml is in the `dockerfile` filter for exactly this, so the bumped linter runs over the Dockerfile. Red stays manual on all three, because Renovate merges only a green PR, and a red Compose bump is the one that needs triage into 'Compose changed', 'we were wrong', or 'a new deliberate divergence'. Majors stay manual: a major of any of these is a changed rule set, not a refreshed one.",
-      "matchManagers": ["custom.regex"],
-      "matchPackageNames": ["docker/compose", "rhysd/actionlint", "hadolint/hadolint"],
-      "matchUpdateTypes": ["patch", "minor"],
-      "minimumReleaseAge": "3 days",
-      "automerge": true,
-      "automergeType": "pr",
-      "platformAutomerge": false,
-      "labels": []
-    },
-    {
-      "description": "Minor bumps of the runtime dependency (project.dependencies: pyyaml) automerge. pyproject.toml declares the range `pyyaml>=6.0.2,<7`, so a minor moves only the hash-pinned locks, which is what CI and the container image install, and never what the wheel asks of its users; a major would cross the `<7` ceiling and stays manual. The new lock is exercised on the PR by everything that loads YAML: the test suite, docker-smoke on the built image, and the lockfiles job re-proving the locks reproduce from pyproject.toml. pep621 (the pyproject range) and pip-compile (the lock pin) both tag it project.dependencies, so the grouped python PR is eligible as a whole.",
-      "matchManagers": ["pep621", "pip-compile"],
-      "matchDepTypes": ["project.dependencies"],
-      "matchPackageNames": ["pyyaml"],
-      "matchUpdateTypes": ["minor"],
-      "minimumReleaseAge": "3 days",
-      "automerge": true,
-      "automergeType": "pr",
-      "platformAutomerge": false,
-      "labels": []
-    },
-    {
-      "description": "Docker digest refreshes automerge where the three-day gate can actually be enforced, which is Docker Hub only. The images: debian (build stage), postgres (demo compose file), docker/dockerfile (syntax frontend), and busybox and python (the premise validator, via the custom manager above; rule-premises proves every premise on the new digest). Renovate's docker datasource takes releaseTimestamp from Docker Hub's tag_last_pushed and from nowhere else (gcr.io and ghcr.io yield none), and it attaches that timestamp to a digest update only when the tag parses as a version, which is why the build stage is pinned as debian:13-slim rather than trixie-slim (same manifest list). Under the default minimumReleaseAgeBehaviour=timestamp-required a digest with no timestamp is pending forever and never even opens a PR, so distroless (gcr.io, tag nonroot), the oss-fuzz builder (gcr.io) and vhs (ghcr.io) are deliberately NOT matched here; the rule after this one labels them `age-gated` and .github/workflows/digest-age-gate.yml merges each once it has aged 72h, by gcr.io's registry-stamped upload time where the registry gives one and by the head commit's age otherwise (first-seen is never earlier than publish, so that is at least the same wait), and goes away if upstream ever ships a registry-agnostic release timestamp (renovatebot/renovate#39064). The review a human used to do on these PRs is now mechanical: dockerfile-digests fails a per-arch pin, docker-smoke builds and runs the image on amd64 and arm64, and both are required via ci-ok. Verified 2026-10-03 against Renovate 44.132 (lookup/digest.ts, datasource/docker releaseTimestampNote). The branch-stage half of the age check cannot see a digest's timestamp; the last rule in this list covers that.",
-      "matchDatasources": ["docker"],
-      "matchPackageNames": ["debian", "postgres", "docker/dockerfile", "busybox", "python"],
-      "matchUpdateTypes": ["digest"],
-      "minimumReleaseAge": "3 days",
-      "automerge": true,
-      "automergeType": "pr",
-      "platformAutomerge": false,
-      "labels": []
-    },
-    {
-      "description": "The digest PRs the age gate owns carry their own label. gcr.io and ghcr.io digests cannot automerge (no release timestamp, see the rule above), but nobody needs to look at them either: .github/workflows/digest-age-gate.yml merges each one once it has aged 72h, and hands one that stalls (still waiting after 7 days because upstream keeps publishing) to a human with manual-merge. `age-gated` replaces the repo-wide manual-merge for exactly this set, so manual-merge means 'a human has to act' in every case. The gate adds manual-merge to a PR it refuses for a reason other than age (red ci-ok, a conflict, a hand-touched commit, a draft) and removes it again once the PR is clean; a PR whose checks are still running is simply waited for. The gate selects on this label: rename both or neither.",
-      "matchDatasources": ["docker"],
-      "matchPackageNames": ["gcr.io/distroless/python3-debian13", "gcr.io/oss-fuzz-base/base-builder-python", "ghcr.io/charmbracelet/vhs"],
-      "matchUpdateTypes": ["digest"],
-      "labels": ["age-gated"]
-    },
-    {
-      "description": "Workaround for renovatebot/renovate#45236 (fix in flight: renovatebot/renovate#46645), scoped to the update types it affects. Renovate checks minimumReleaseAge twice. The lookup stage has the real data: it ages a digest/pinDigest against the newest release matching the current value and, under the default internalChecksFilter=strict, holds the branch back (Dependency Dashboard 'Pending Status Checks') until the age passes; pin and lockFileMaintenance are exempt there by design because they introduce no new release. The branch stage then re-checks from upgrade.releaseTimestamp, which only version updates carry, and under the default timestamp-required marks every one of these update types yellow forever: renovate/stability-days never clears and automerge silently never fires. #933 (lockFileMaintenance, 2026-09-28) sat pending until a human merged it; #786 and #709 had automerged cleanly before the behaviour changed upstream. timestamp-optional here lets the branch stage stand aside for exactly the upgrades it has no data for. It does not shorten any wait: the three-day gate on digests is still enforced at lookup for every image that has a timestamp (Docker Hub), and the images without one are in no automerge rule. Remove once the upstream fix ships. Verified against 44.132 (workers/repository/update/branch/index.ts stability block vs lookup/digest.ts).",
+      "description": "Workaround for renovatebot/renovate#45236 (fix in flight: renovatebot/renovate#46645), scoped to the update types it affects. Renovate checks minimumReleaseAge twice. The lookup stage has the real data: it ages a digest/pinDigest against the newest release matching the current value and, under the default internalChecksFilter=strict, holds the branch back (Dependency Dashboard 'Pending Status Checks') until the age passes; pin and lockFileMaintenance are exempt there by design because they introduce no new release. The branch stage then re-checks from upgrade.releaseTimestamp, which only version updates carry, and under the default timestamp-required marks every one of these update types yellow forever: renovate/stability-days never clears and automerge silently never fires. #933 (lockFileMaintenance, 2026-09-28) sat pending until a human merged it; #786 and #709 had automerged cleanly before the behaviour changed upstream. timestamp-optional here lets the branch stage stand aside for exactly the upgrades it has no data for. It does not shorten any wait: the three-day gate on digests is still enforced at lookup for every image that has a timestamp (Docker Hub), and the images without one have the age lifted and automerge off in the age-gated rule above. Remove once the upstream fix ships. Verified against 44.132 (workers/repository/update/branch/index.ts stability block vs lookup/digest.ts).",
       "matchUpdateTypes": ["digest", "pinDigest", "pin", "lockFileMaintenance"],
       "minimumReleaseAgeBehaviour": "timestamp-optional"
     }
