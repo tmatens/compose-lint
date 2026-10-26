@@ -341,7 +341,10 @@ jobs:
             fi
           done 3< <(jq -r '.[] | select(.headRefName | startswith("age-gate/")) | [.number, .headRefOid] | @tsv' candidates.json)
           # Final eligibility: the selection's rows minus stale catch-ups.
-          eligible=$(awk -F'\t' 'NR == FNR {stale[$1] = 1; next} $7 == "eligible" && !($1 in stale) {printf "%s{\"number\":%s,\"head\":\"%s\",\"clock\":\"%s\"}", (n++ ? "," : ""), $1, $2, $9}' stale.txt rows.tsv)
+          # Keyed on FILENAME, not the NR == FNR idiom: with an empty
+          # stale.txt that idiom holds for every row of rows.tsv too and
+          # would mark everything stale (the first live run did exactly that).
+          eligible=$(awk -F'\t' 'FILENAME == "stale.txt" {stale[$1] = 1; next} $7 == "eligible" && !($1 in stale) {printf "%s{\"number\":%s,\"head\":\"%s\",\"clock\":\"%s\"}", (n++ ? "," : ""), $1, $2, $9}' stale.txt rows.tsv)
           echo "eligible=[${eligible}]" >> "${GITHUB_OUTPUT}"
           echo "eligible: [${eligible}]"
           # A PR waiting only on age may already have pinned a digest that
