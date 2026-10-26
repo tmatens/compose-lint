@@ -699,19 +699,37 @@ with a warning and the PRs wait. Each merge leaves a comment on the PR
 saying why it was eligible. A manual dispatch is a **dry run by default**
 (the summary table, no merge); untick the box to merge from a dispatch.
 
-**Catch-up candidates (report only, [#1152]).** A PR waiting on age may
-already have pinned a digest that has aged: Renovate force-pushes the
-branch to the newest digest on every upstream rebuild, and the one it
-replaced is gone from the PR but not from the registry. The select job's
-second step finds, per such PR, the newest digest the PR has ever pinned
-that a `renovate[bot]` commit introduced, is newer than what `main` pins,
-has aged 72h by the registry upload time or by the GitHub-stamped time of
-the force-push that introduced it, is still served by its registry, and
-comes no sooner than 72h after the last change to that image on `main`.
-The history comes from the PR's force-push events and the commits they
-name, never from a comment. Today the step only reports its decision in
-the summary; opening and merging the catch-up PR is the next step of
-#1152.
+**Catch-up merges ([#1152]).** A PR waiting on age may already have
+pinned a digest that has aged: Renovate force-pushes the branch to the
+newest digest on every upstream rebuild, and the one it replaced is gone
+from the PR but not from the registry. Without this the gate forgot it,
+and an image rebuilt more often than every 72h never merged on its own
+(one builder-image PR carried 19 digests over 18 days and was merged by
+hand). The select job's second step finds, per such PR, the newest digest
+the PR has ever pinned that a `renovate[bot]` commit introduced, is newer
+than what `main` pins, has aged 72h by the registry upload time or by the
+GitHub-stamped time of the force-push that introduced it, is still served
+by its registry, and comes no sooner than 72h after the last change to
+that image on `main` (one catch-up per image per age window, so a daily
+rebuild upstream is at most a merge every three days here, each still a
+digest at least 72h old). The history comes from the PR's force-push
+events and the commits they name, never from a comment the gate could
+have written.
+
+The `open-catchup` job then opens one PR per image on `age-gate/<image>`,
+authored by `github-actions[bot]`, labelled `age-gated`, with the same PAT
+the merge uses so `ci-ok` runs on it; its body records the source PR, the
+clock and the age the selection saw. The gate selects that PR like any
+other (head `age-gate/*`, every commit by `github-actions[bot]`, every
+check green, `CLEAN`) and treats it as aged by construction. A catch-up
+PR whose base line no longer matches `main` (anything else moved the
+image first) is closed, never merged, since it would pin a digest older
+than `main`; an open one that pins the same digest is left alone, and one
+that pins an older candidate is updated in place. After a catch-up
+merges, Renovate's PR conflicts and rebases itself on Renovate's next
+run, keeping its upload clock; in the hours between, that PR may carry
+`manual-merge` for the conflict, which the gate removes once it is clean.
+A dry run reports the candidate and opens nothing.
 
 Built to be deleted: if upstream Renovate gains a registry-agnostic
 release timestamp, scope these images back into the digest automerge rule
