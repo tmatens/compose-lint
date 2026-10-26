@@ -48,6 +48,30 @@ name: Age-gate gcr/ghcr digest PRs
 # always "keep waiting".) A release that needs the newer base before then
 # can still be cut by hand.
 #
+# Catch-up (#1152). Renovate force-pushes the PR to the newest digest on
+# every upstream rebuild, so the digest it replaced is gone from the PR but
+# not from the registry, and without this the gate forgot it even once it
+# had aged. For a PR waiting only on age, the select job finds the newest
+# digest the PR has ever pinned that a renovate[bot] commit introduced, is
+# newer than what main pins, has aged MIN_AGE_HOURS by the registry upload
+# time or by the GitHub-stamped time of the force-push that introduced it,
+# is still served by its registry, and comes no sooner than MIN_AGE_HOURS
+# after the last change to that image on main (one catch-up per image per
+# age window, so a daily rebuild upstream does not mean a daily merge
+# here). The open-catchup job then opens one PR per image on
+# age-gate/<image>, authored by github-actions[bot] and labelled age-gated,
+# with the same PAT the merge uses so ci-ok runs on it. The gate selects
+# that PR like any other, aged by construction (its body records the
+# clock and age the selection saw; a commit by anyone else refuses it),
+# and merges it pinned to head once every check is green. A catch-up PR
+# whose base line no longer matches main (anything else moved the image
+# first) is closed, never merged: it would pin a digest older than main.
+# Renovate then conflicts, rebases on its next run, and keeps proposing
+# the newest digest with its upload clock intact; that PR may wear
+# manual-merge for the hours until the rebase. The history is read from
+# force-push timeline events and the commits they name, never from a
+# comment the gate could have written: a comment is editable.
+#
 # Hourly, so an aged PR merges within the hour instead of waiting up to a day
 # for the next run -- a day in which a newer digest can land and restart it.
 #
@@ -73,17 +97,21 @@ name: Age-gate gcr/ghcr digest PRs
 # Red, conflicting, draft or hand-touched PRs are left alone and get
 # `manual-merge` added (removed again once the PR is clean), so the "what
 # needs me" query stays truthful; a PR with a check still running, or
-# whose digest is still too young, is simply waited for. "Red" means any
+# whose digest is still too young, is simply waited for. Selection covers
+# Renovate's PRs (head renovate/*, every commit by renovate[bot]) and the
+# gate's own catch-up PRs (head age-gate/*, every commit by
+# github-actions[bot]); both carry age-gated. "Red" means any
 # completed check on the head that is not a success or a skip, not only
 # ci-ok: ci.yml's path filters leave ci-ok green with every job skipped on
 # a change outside the paths it watches, and the check that does exercise
 # such a change (the fuzz build on .clusterfuzzlite/, from cflite-pr.yml)
 # is not a required check. The gate is about to merge on its own; it
 # should not merge past a red check because that check was optional.
-# Converting a PR to a draft is the hold lever. Everything else Renovate opens merges under
-# renovate.json's own rules and is out of scope by selection: this touches
-# only PRs that are all of (author renovate[bot], head renovate/*, label
-# age-gated, title "Update <image> Docker digest to <sha>").
+# Converting a PR to a draft is the hold lever. Everything else Renovate
+# opens merges under renovate.json's own rules and is out of scope by
+# selection: this touches only PRs that are all of (head renovate/* or
+# age-gate/*, label age-gated, title "Update <image> Docker digest to
+# <sha>", every commit by the bot that owns the branch).
 
 on:
   workflow_dispatch:
@@ -115,12 +143,14 @@ jobs:
     timeout-minutes: 5
     permissions:
       # write: the step adds/removes `manual-merge` on candidates it refuses
-      # for a non-age reason, and comments once on a stalled one (reading
-      # the PR's comments to post it only once). Labels and comments only;
-      # it never merges or pushes.
+      # for a non-age reason, comments once on a stalled one (reading the
+      # PR's comments to post it only once), and closes a stale catch-up PR
+      # of the gate's own. Labels, comments and closes only; it never
+      # merges or pushes.
       pull-requests: write
     outputs:
-      eligible: ${{ steps.select.outputs.eligible }}
+      eligible: ${{ steps.catchup.outputs.eligible }}
+      catchups: ${{ steps.catchup.outputs.catchups }}
     steps:
       - name: Evaluate every candidate PR
         id: select
@@ -137,7 +167,7 @@ jobs:
           # test below is the second guard.
           # Two calls, not one: asking `gh pr list` for commits and the check
           # rollup of 50 PRs at once exceeds GitHub's GraphQL node limit.
-          gh pr list --state open --author 'app/renovate' --label age-gated --limit 50 \
+          gh pr list --state open --label age-gated --limit 50 \
             --json number --jq '.[].number' > numbers.txt
           while read -r n; do
             gh pr view "${n}" \
@@ -198,7 +228,9 @@ jobs:
             # right; distrust it and fall back to the commit.
             def uploaded: $up[.number | tostring] as $ms
               | if $ms != null and ($ms / 1000) <= committed then $ms / 1000 else null end;
-            def clock: if uploaded != null then "upload" else "commit" end;
+            def catchup: .headRefName | startswith("age-gate/");
+            def owner: if catchup then "github-actions[bot]" else "renovate[bot]" end;
+            def clock: if catchup then "catch-up" elif uploaded != null then "upload" else "commit" end;
             def age_hours: (($now - (uploaded // committed)) / 3600 | floor);
             def age_text: if clock == "upload" then "head digest was uploaded \(age_hours)h ago" else "head commit is \(age_hours)h old" end;
             def open_days: (($now - (.createdAt | fromdateiso8601)) / 86400 | floor);
@@ -229,22 +261,21 @@ jobs:
               else "green" end;
             def has_manual: [.labels[]?.name] | index("manual-merge") != null;
             def verdict:
-              if (.headRefName | startswith("renovate/")) | not then ["human", "head branch is not renovate/*"]
+              if ((.headRefName | startswith("renovate/")) or catchup) | not then ["human", "head branch is not renovate/* or age-gate/*"]
               elif (.title | test("^Update .+ Docker digest to [0-9a-f]+$")) | not then ["human", "title is not a Docker digest update"]
               elif .isDraft then ["human", "draft"]
               elif .isCrossRepository then ["human", "head is in a fork"]
-              elif ([.commits[].authors[].login] | all(. == "renovate[bot]")) | not then ["human", "a commit is not authored by renovate[bot]"]
+              elif (owner as $o | [.commits[].authors[].login] | all(. == $o)) | not then ["human", "a commit is not authored by \(owner)"]
               elif ci_state == "red" then ["human", "a check failed on the head commit: \(red_checks)"]
               elif ci_state == "running" then ["wait", "a check has not completed on the head commit"]
               elif .mergeStateStatus == "DIRTY" then ["human", "merge state is DIRTY (conflict)"]
               elif .mergeStateStatus != "CLEAN" then ["wait", "merge state is \(.mergeStateStatus), not CLEAN"]
+              elif catchup then ["eligible", "eligible (catch-up PR, aged when opened)"]
               elif age_hours < $min_hours and open_days >= $stall_days then ["wait", "stalled: open \(open_days)d and the \(age_text), needs \($min_hours)h"]
               elif age_hours < $min_hours then ["wait", "\(age_text), needs \($min_hours)h"]
               else ["eligible", "eligible"] end;
             .[] | verdict as $v | [.number, .headRefOid, (age_hours|tostring), .mergeStateStatus, $v[1], (has_manual|tostring), $v[0], .title, clock] | @tsv
           ' candidates.json > rows.tsv
-          eligible=$(awk -F'\t' '$7 == "eligible" {printf "%s{\"number\":%s,\"head\":\"%s\",\"clock\":\"%s\"}", (n++ ? "," : ""), $1, $2, $9}' rows.tsv)
-          echo "eligible=[${eligible}]" >> "${GITHUB_OUTPUT}"
           # Keep manual-merge truthful: on a PR a human has to act on, make
           # sure it is there; on one that is merely waiting, make sure it is
           # not. A stalled PR is waiting, and says so once. A dry run reports
@@ -279,16 +310,40 @@ jobs:
               awk -F'\t' '{printf "| #%s %s | %sh | %s | %s | %s | %s |\n", $1, $8, $3, $9, $4, $5, $7}' rows.tsv
             fi
           } >> "${GITHUB_STEP_SUMMARY}"
-          echo "eligible: [${eligible}]"
           cat rows.tsv
-      - name: Find catch-up candidates (report only)
+      - name: Catch-up candidates, stale catch-up PRs, final eligibility
         id: catchup
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry-run }}
         run: |
           set -euo pipefail
           now=$(date -u +%s)
+          # Stale catch-up PRs first. The gate's own PR removes one ref and
+          # adds another; if the ref it removes is not what main pins now,
+          # main moved and the PR must not merge.
+          : > stale.txt
+          while IFS=$'\t' read -r -u 3 n head; do
+            file=$(gh api "repos/${GH_REPO}/pulls/${n}/files" --jq '.[0].filename')
+            removed=$(gh api "repos/${GH_REPO}/pulls/${n}/files" --jq '.[].patch // empty' | grep -E '^[-]' \
+              | grep -oE '[a-z0-9.-]+(/[a-z0-9._-]+)+(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}' | head -n 1 || true)
+            image="${removed%%@*}"
+            main_ref=$(gh api "repos/${GH_REPO}/contents/${file}" --jq '.content' | base64 -d \
+              | grep -oE "${image}@sha256:[0-9a-f]{64}" | head -n 1 || true)
+            if [ -z "${removed}" ] || [ "${removed}" != "${main_ref}" ]; then
+              echo "${n}" >> stale.txt
+              echo "::warning::catch-up #${n} is stale: main no longer pins the ref it replaces"
+              if [ "${DRY_RUN}" != "true" ]; then
+                gh pr close "${n}" --comment "Closing: main no longer pins the digest this catch-up replaces, so merging it would pin a digest older than main. The gate opens a fresh catch-up if one is still warranted. See \`digest-age-gate.yml\`." \
+                  || echo "::warning::could not close stale catch-up #${n}"
+              fi
+            fi
+          done 3< <(jq -r '.[] | select(.headRefName | startswith("age-gate/")) | [.number, .headRefOid] | @tsv' candidates.json)
+          # Final eligibility: the selection's rows minus stale catch-ups.
+          eligible=$(awk -F'\t' 'NR == FNR {stale[$1] = 1; next} $7 == "eligible" && !($1 in stale) {printf "%s{\"number\":%s,\"head\":\"%s\",\"clock\":\"%s\"}", (n++ ? "," : ""), $1, $2, $9}' stale.txt rows.tsv)
+          echo "eligible=[${eligible}]" >> "${GITHUB_OUTPUT}"
+          echo "eligible: [${eligible}]"
           # A PR waiting only on age may already have pinned a digest that
           # has aged: Renovate force-pushes the branch to the newest digest
           # on every upstream rebuild, and the one it replaced is gone from
@@ -299,7 +354,12 @@ jobs:
           # the GitHub-stamped time of the force-push that introduced it,
           # (4) is still served by its registry, and (5) comes no sooner
           # than MIN_AGE_HOURS after the last change to that image on main.
-          # It reports; it opens nothing (#1152, step 2 of 3).
+          # It reports in the summary and hands the open-catchup job the
+          # list, unless a catch-up PR for that image is already open and
+          # pins the same digest. A catch-up PR whose base line no longer
+          # matches main is stale (something else moved the image first):
+          # it is closed here and dropped from the eligible list, because
+          # merging it would pin a digest older than main (#1152).
           #
           # History comes from the force-push events (GraphQL, GitHub-stamped
           # createdAt, before/after commits), never from a comment the gate
@@ -350,6 +410,7 @@ jobs:
             esac
           }
           : > catchup.tsv
+          : > catchups.jsonl
           # Only PRs the selection left waiting on age (or stalled) qualify.
           # fd 3 carries the PR list so nothing inside the loop can eat it.
           while IFS=$'\t' read -r -u 3 n head; do
@@ -406,14 +467,30 @@ jobs:
                   gh api "repos/${GH_REPO}/commits/${sha}" --jq '.commit.committer.date'; break; fi; done)
               gap=$(( (now - $(date -u -d "${last:-1970-01-01T00:00:00Z}" +%s)) / 3600 ))
               if [ "${gap}" -lt "${MIN_AGE_HOURS}" ]; then decision="wait"; reason="candidate ${ref##*@sha256:} aged ${age}h (${clock}) but main changed this image ${gap}h ago, spacing is ${MIN_AGE_HOURS}h"; break; fi
-              decision="would-open"; reason="${ref} aged ${age}h (${clock}), present, main last changed ${gap}h ago"; break
+              # One branch per image. An open catch-up pinning this same ref
+              # is left alone; one pinning something else is updated.
+              slug=$(printf '%s' "${image}" | tr -c 'A-Za-z0-9.-' '-')
+              open_n=$(gh pr list --state open --head "age-gate/${slug}" --json number --jq '.[0].number // empty')
+              open_ref=""
+              if [ -n "${open_n}" ]; then
+                open_ref=$(gh api "repos/${GH_REPO}/pulls/${open_n}/files" --jq '.[].patch // empty' | refs_in_patch | grep -F "${image}@" | head -n 1 || true)
+              fi
+              if [ "${open_ref}" = "${ref}" ]; then decision="open-already"; reason="catch-up #${open_n} already pins ${ref##*@sha256:}"; break; fi
+              decision="would-open"; reason="${ref} aged ${age}h (${clock}), present, main last changed ${gap}h ago"
+              jq -nc --argjson source "${n}" --arg image "${image}" --arg ref "${ref}" --arg file "${file}" \
+                --arg slug "${slug}" --arg clock "${clock}" --argjson age "${age}" \
+                '{source: $source, image: $image, ref: $ref, file: $file, slug: $slug, clock: $clock, age: $age}' >> catchups.jsonl
+              break
             done < <(jq -c 'reverse | .[]' history.json)
             [ -n "${decision}" ] || { decision="none"; reason="no earlier digest of this PR has aged ${MIN_AGE_HOURS}h"; }
             printf '%s\t%s\t%s\t%s\n' "${n}" "${decision}" "${reason}" "${head}" >> catchup.tsv
           done 3< <(awk -F'\t' '$7 == "wait" && ($5 ~ /needs [0-9]+h$/) {print $1 "\t" $2}' rows.tsv)
+          catchups=$(jq -sc '.' catchups.jsonl)
+          echo "catchups=${catchups}" >> "${GITHUB_OUTPUT}"
+          echo "catchups: ${catchups}"
           {
             echo ""
-            echo "#### Catch-up candidates (report only; nothing is opened yet)"
+            echo "#### Catch-up candidates"
             echo ""
             if [ ! -s catchup.tsv ]; then
               echo "No PR is waiting on age."
@@ -424,6 +501,76 @@ jobs:
             fi
           } >> "${GITHUB_STEP_SUMMARY}"
           cat catchup.tsv
+
+  open-catchup:
+    name: "Catch-up for #${{ matrix.source }}"
+    needs: select
+    if: needs.select.outputs.catchups != '[]' && inputs.dry-run != true
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.select.outputs.catchups) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Open or update the catch-up PR
+        env:
+          GH_TOKEN: ${{ secrets.MARKETPLACE_SMOKE_PAT }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE: ${{ matrix.source }}
+          IMAGE: ${{ matrix.image }}
+          REF: ${{ matrix.ref }}
+          FILE: ${{ matrix.file }}
+          SLUG: ${{ matrix.slug }}
+          CLOCK: ${{ matrix.clock }}
+          AGE: ${{ matrix.age }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::warning::MARKETPLACE_SMOKE_PAT is not configured -- no catch-up PR is opened (a GITHUB_TOKEN PR would get no CI)."
+            exit 0
+          fi
+          # The matrix values came from the selection, which admits only a
+          # registry path and a 64-hex digest; re-check before writing them.
+          [[ "${REF}" =~ ^[a-z0-9.-]+(/[a-z0-9._-]+)+(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}$ ]] || { echo "::error::refusing ref ${REF}"; exit 1; }
+          [[ "${FILE}" =~ ^[A-Za-z0-9._/-]+$ && "${FILE}" != *..* ]] || { echo "::error::refusing path ${FILE}"; exit 1; }
+          [[ "${SLUG}" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "::error::refusing slug ${SLUG}"; exit 1; }
+          branch="age-gate/${SLUG}"
+          digest="${REF##*@sha256:}"
+          perl -pi -e 's/\Q$ENV{IMAGE}\E\@sha256:[0-9a-f]{64}/$ENV{REF}/' "${FILE}"
+          if git diff --quiet -- "${FILE}"; then
+            echo "::warning::${FILE} on main already pins ${REF}; nothing to open."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -q -b "${branch}"
+          git commit -q -am "Update ${IMAGE} Docker digest to ${digest:0:7}"
+          gh auth setup-git
+          git push --quiet --force origin "HEAD:refs/heads/${branch}"
+          if [ "${CLOCK}" = "upload" ]; then
+            why="the registry's own upload time put it at ${AGE}h when this PR was opened"
+          else
+            why="the GitHub-stamped force-push that first pinned it on #${SOURCE} was ${AGE}h ago when this PR was opened"
+          fi
+          body="Catch-up for #${SOURCE} (\`digest-age-gate.yml\`, [run](${RUN_URL})). Renovate has since moved that PR to a newer digest that has not aged yet; this one had, and the registry still serves it: ${why}. It is never younger than the ${MIN_AGE_HOURS}h gate allows. The gate merges this PR once every check is green, pinned to its head, and closes it instead if main moves this image first. #${SOURCE} stays open, rebases on Renovate's next run, and merges its newer digest when that ages in turn."
+          title="Update ${IMAGE} Docker digest to ${digest:0:7}"
+          existing=$(gh pr list --state open --head "${branch}" --json number --jq '.[0].number // empty')
+          if [ -n "${existing}" ]; then
+            gh pr edit "${existing}" --title "${title}" --body "${body}"
+            echo "- updated #${existing} to ${REF}" >> "${GITHUB_STEP_SUMMARY}"
+          else
+            url=$(gh pr create --base main --head "${branch}" --title "${title}" --body "${body}" --label age-gated)
+            echo "- opened ${url} for ${REF}" >> "${GITHUB_STEP_SUMMARY}"
+          fi
 
   merge:
     name: "Merge #${{ matrix.number }}"
@@ -459,7 +606,9 @@ jobs:
             echo "::warning::MARKETPLACE_SMOKE_PAT is not configured -- #${PR} is eligible but is left for a human (a GITHUB_TOKEN merge would skip main's push workflows)."
             exit 0
           fi
-          if [ "${CLOCK}" = "upload" ]; then
+          if [ "${CLOCK}" = "catch-up" ]; then
+            why="it is the gate's own catch-up PR, opened for a digest that had already aged ${MIN_AGE_HOURS}h (the PR body records the clock)"
+          elif [ "${CLOCK}" = "upload" ]; then
             why="every digest it pins was uploaded to gcr.io at least ${MIN_AGE_HOURS}h ago (the registry's own upload time)"
           else
             why="head commit \`${HEAD:0:7}\` has been unchanged for at least ${MIN_AGE_HOURS}h (first-seen is never earlier than publish)"
@@ -505,6 +654,7 @@ jobs:
     name: Report scheduled failure
     needs:
       - select
+      - open-catchup
       - merge
     if: failure() && github.event_name == 'schedule'
     runs-on: ubuntu-26.04
