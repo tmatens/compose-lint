@@ -671,17 +671,23 @@ its decision: author `renovate[bot]`, head `renovate/*`, label
 digests automerge via Renovate and carry no label, so this is exactly the
 gcr/ghcr set), no draft, no fork, every commit authored by Renovate (a
 hand-touched branch needs a human, Renovate's own automerge rule),
-`ci-ok` green on the head, merge state `CLEAN`, aged ≥ 72h. A
+`ci-ok` green and **no other check red** on the head, merge state `CLEAN`,
+aged ≥ 72h. "Red" is any completed check that is not a success or a skip,
+not only `ci-ok`: `ci.yml`'s path filters leave `ci-ok` green with every
+job skipped on a change outside the paths it watches, and the check that
+does exercise such a change (the fuzz build on `.clusterfuzzlite/`, from
+`cflite-pr.yml`) is not a required check. A gate that merges on its own
+must not merge past a red check because the check was optional. A
 red, conflicting, draft or hand-touched PR is left alone and gets
 `manual-merge` added (removed again once it is clean), so the "what needs
-me" query stays truthful; a PR whose `ci-ok` is still running, or whose
+me" query stays truthful; a PR with a check still running, or whose
 digest is still too young, stalled or not, is simply waited for. To hold one back deliberately, convert it to a draft. A dry
 run touches no labels.
 
 The merge is the shared `arm-auto-merge` action with `expected-head` set
 to the SHA the selection looked at (`gh pr merge --match-head-commit`), so
 a push that lands in between fails the merge rather than shipping content
-nobody aged. By the time the gate runs `ci-ok` finished long ago and the PR
+nobody aged. By the time the gate runs every check finished long ago and the PR
 is "clean", so the merge is immediate and the action reports
 **`merged-direct`**. Should a PR have stopped being clean in between and the
 action arm instead, the gate disarms it again: GitHub keeps auto-merge

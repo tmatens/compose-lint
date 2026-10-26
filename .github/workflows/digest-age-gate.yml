@@ -58,7 +58,7 @@ name: Age-gate gcr/ghcr digest PRs
 # remove this workflow and its docs/CI.md section.
 #
 # The merge is the shared arm-auto-merge action, pinned to the head SHA the
-# selection looked at. By the time this runs, ci-ok finished long ago, so
+# selection looked at. By the time this runs, every check finished long ago, so
 # the PR is in "clean" status and the merge is immediate (the action's
 # `merged-direct` outcome); the pin makes a push that lands in between fail
 # the merge rather than ship unreviewed content. If the PR has stopped being
@@ -72,9 +72,15 @@ name: Age-gate gcr/ghcr digest PRs
 #
 # Red, conflicting, draft or hand-touched PRs are left alone and get
 # `manual-merge` added (removed again once the PR is clean), so the "what
-# needs me" query stays truthful; a PR whose ci-ok is still running, or
-# whose digest is still too young, is simply waited for. Converting a PR to
-# a draft is the hold lever. Everything else Renovate opens merges under
+# needs me" query stays truthful; a PR with a check still running, or
+# whose digest is still too young, is simply waited for. "Red" means any
+# completed check on the head that is not a success or a skip, not only
+# ci-ok: ci.yml's path filters leave ci-ok green with every job skipped on
+# a change outside the paths it watches, and the check that does exercise
+# such a change (the fuzz build on .clusterfuzzlite/, from cflite-pr.yml)
+# is not a required check. The gate is about to merge on its own; it
+# should not merge past a red check because that check was optional.
+# Converting a PR to a draft is the hold lever. Everything else Renovate opens merges under
 # renovate.json's own rules and is out of scope by selection: this touches
 # only PRs that are all of (author renovate[bot], head renovate/*, label
 # age-gated, title "Update <image> Docker digest to <sha>").
@@ -185,11 +191,31 @@ jobs:
             def age_hours: (($now - (uploaded // committed)) / 3600 | floor);
             def age_text: if clock == "upload" then "head digest was uploaded \(age_hours)h ago" else "head commit is \(age_hours)h old" end;
             def open_days: (($now - (.createdAt | fromdateiso8601)) / 86400 | floor);
-            def ci_runs: [.statusCheckRollup[]? | select(.name == "ci-ok")];
+            # Every check on the head counts, not only ci-ok. The path filters
+            # in ci.yml skip its jobs on a change outside src/, so ci-ok is
+            # green on a builder-image PR while the workflow that builds the
+            # fuzzers (cflite-pr.yml) is a separate, non-required check. A
+            # completed check that is neither a success nor a skip refuses the
+            # PR; one still running is waited for; ci-ok itself must be green.
+            # The rollup carries check runs (status/conclusion) and commit
+            # statuses (state); both shapes are read, told apart by which field
+            # they carry rather than by __typename. No apostrophes here: the
+            # program is a single-quoted shell string.
+            def checks: [.statusCheckRollup[]?];
+            def check_name: .name // .context // "?";
+            def check_red:
+              (.status != null and .status == "COMPLETED"
+                and ((.conclusion | IN("SUCCESS", "SKIPPED", "NEUTRAL")) | not))
+              or (.state != null and ((.state | IN("SUCCESS", "PENDING", "EXPECTED")) | not));
+            def check_pending:
+              (.status != null and .status != "COMPLETED")
+              or (.state != null and (.state | IN("PENDING", "EXPECTED")));
+            def red_checks: [checks[] | select(check_red) | check_name] | unique | join(", ");
+            def ci_ok_green: checks | any(.name == "ci-ok" and .status == "COMPLETED" and .conclusion == "SUCCESS");
             def ci_state:
-              if (ci_runs | any(.status == "COMPLETED" and .conclusion == "SUCCESS")) then "green"
-              elif (ci_runs | any(.status != "COMPLETED")) or (ci_runs | length) == 0 then "running"
-              else "red" end;
+              if (checks | any(check_red)) then "red"
+              elif (ci_ok_green | not) or (checks | any(check_pending)) then "running"
+              else "green" end;
             def has_manual: [.labels[]?.name] | index("manual-merge") != null;
             def verdict:
               if (.headRefName | startswith("renovate/")) | not then ["human", "head branch is not renovate/*"]
@@ -197,8 +223,8 @@ jobs:
               elif .isDraft then ["human", "draft"]
               elif .isCrossRepository then ["human", "head is in a fork"]
               elif ([.commits[].authors[].login] | all(. == "renovate[bot]")) | not then ["human", "a commit is not authored by renovate[bot]"]
-              elif ci_state == "red" then ["human", "ci-ok failed on the head commit"]
-              elif ci_state == "running" then ["wait", "ci-ok has not completed on the head commit"]
+              elif ci_state == "red" then ["human", "a check failed on the head commit: \(red_checks)"]
+              elif ci_state == "running" then ["wait", "a check has not completed on the head commit"]
               elif .mergeStateStatus == "DIRTY" then ["human", "merge state is DIRTY (conflict)"]
               elif .mergeStateStatus != "CLEAN" then ["wait", "merge state is \(.mergeStateStatus), not CLEAN"]
               elif age_hours < $min_hours and open_days >= $stall_days then ["wait", "stalled: open \(open_days)d and the \(age_text), needs \($min_hours)h"]
