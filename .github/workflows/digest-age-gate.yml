@@ -148,12 +148,19 @@ jobs:
           # vouched for (then the commit clock applies). The refs come from
           # the diff Renovate wrote; the regex admits only a registry path and
           # a 64-hex digest, and only gcr.io is ever queried.
-          upload_ms() {
-            local n="$1" refs ref path digest ms newest=0
-            refs=$(gh api "repos/${GH_REPO}/pulls/${n}/files" --paginate --jq '.[].patch // empty' \
-              | grep -E '^[+]' \
+          # refs_in_patch: the image refs a patch adds, one per line. The regex
+          # admits only a registry path and a 64-hex digest.
+          refs_in_patch() {
+            grep -E '^[+]' \
               | grep -oE '[a-z0-9.-]+(/[a-z0-9._-]+)+(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}' \
-              | sort -u) || return 0
+              | sort -u || true
+          }
+          # upload_ms_refs: newest gcr.io upload time among the refs on stdin,
+          # or nothing if any one of them cannot be vouched for. Only gcr.io is
+          # ever queried.
+          upload_ms_refs() {
+            local refs ref path digest ms newest=0
+            refs=$(cat)
             [ -n "${refs}" ] || return 0
             while read -r ref; do
               case "${ref}" in gcr.io/*) ;; *) return 0 ;; esac
@@ -167,6 +174,10 @@ jobs:
               if [ "${ms}" -gt "${newest}" ]; then newest="${ms}"; fi
             done <<< "${refs}"
             echo "${newest}"
+          }
+          upload_ms() {
+            gh api "repos/${GH_REPO}/pulls/${1}/files" --paginate --jq '.[].patch // empty' \
+              | refs_in_patch | upload_ms_refs
           }
           while read -r n; do
             ms=$(upload_ms "${n}" || true)
@@ -270,6 +281,149 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
           echo "eligible: [${eligible}]"
           cat rows.tsv
+      - name: Find catch-up candidates (report only)
+        id: catchup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          now=$(date -u +%s)
+          # A PR waiting only on age may already have pinned a digest that
+          # has aged: Renovate force-pushes the branch to the newest digest
+          # on every upstream rebuild, and the one it replaced is gone from
+          # the PR but not from the registry. This step finds, per such PR,
+          # the newest digest the PR has ever pinned that (1) a renovate[bot]
+          # commit introduced, (2) is newer than what main pins, (3) has aged
+          # MIN_AGE_HOURS by the registry upload time or, failing that, by
+          # the GitHub-stamped time of the force-push that introduced it,
+          # (4) is still served by its registry, and (5) comes no sooner
+          # than MIN_AGE_HOURS after the last change to that image on main.
+          # It reports; it opens nothing (#1152, step 2 of 3).
+          #
+          # History comes from the force-push events (GraphQL, GitHub-stamped
+          # createdAt, before/after commits), never from a comment the gate
+          # could have written: a comment is editable, a timeline event is
+          # not. The digest a before-commit pinned is read from that commit
+          # itself, which GitHub keeps after a force-push.
+          refs_in_patch() {
+            grep -E '^[+]' \
+              | grep -oE '[a-z0-9.-]+(/[a-z0-9._-]+)+(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}' \
+              | sort -u || true
+          }
+          upload_ms_refs() {
+            local refs ref path digest ms newest=0
+            refs=$(cat)
+            [ -n "${refs}" ] || return 0
+            while read -r ref; do
+              case "${ref}" in gcr.io/*) ;; *) return 0 ;; esac
+              digest="${ref##*@}"
+              path="${ref#gcr.io/}"
+              path="${path%@*}"
+              path="${path%%:*}"
+              ms=$(curl --fail --silent --show-error --max-time 30 "https://gcr.io/v2/${path}/tags/list" \
+                | jq -r --arg d "${digest}" '.manifest[$d].timeUploadedMs // empty | tonumber') || return 0
+              [[ "${ms}" =~ ^[0-9]+$ ]] || return 0
+              if [ "${ms}" -gt "${newest}" ]; then newest="${ms}"; fi
+            done <<< "${refs}"
+            echo "${newest}"
+          }
+          # present: does the registry still serve this manifest? gcr.io
+          # answers a HEAD anonymously; ghcr.io wants an anonymous pull
+          # token first. Any other registry, or any failure, is "no".
+          present() {
+            local ref="$1" host path digest token
+            host="${ref%%/*}"
+            path="${ref#*/}"; path="${path%@*}"; path="${path%%:*}"
+            digest="${ref##*@}"
+            local accept='Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json'
+            case "${host}" in
+              gcr.io)
+                curl --fail --silent --output /dev/null --head --max-time 30 -H "${accept}" \
+                  "https://gcr.io/v2/${path}/manifests/${digest}" ;;
+              ghcr.io)
+                token=$(curl --fail --silent --max-time 30 "https://ghcr.io/token?scope=repository:${path}:pull" | jq -r '.token // empty') || return 1
+                [ -n "${token}" ] || return 1
+                curl --fail --silent --output /dev/null --head --max-time 30 -H "${accept}" -H "Authorization: Bearer ${token}" \
+                  "https://ghcr.io/v2/${path}/manifests/${digest}" ;;
+              *) return 1 ;;
+            esac
+          }
+          : > catchup.tsv
+          # Only PRs the selection left waiting on age (or stalled) qualify.
+          # fd 3 carries the PR list so nothing inside the loop can eat it.
+          while IFS=$'\t' read -r -u 3 n head; do
+            # The file the PR changes and the ref it currently pins.
+            file=$(gh api "repos/${GH_REPO}/pulls/${n}/files" --jq '.[0].filename')
+            current_ref=$(gh api "repos/${GH_REPO}/pulls/${n}/files" --jq '.[].patch // empty' | refs_in_patch | head -n 1)
+            image="${current_ref%%@*}"
+            # What main pins for this image right now.
+            main_ref=$(gh api "repos/${GH_REPO}/contents/${file}" --jq '.content' | base64 -d \
+              | grep -oE "${image}@sha256:[0-9a-f]{64}" | head -n 1 || true)
+            # Force-push history, oldest first. Each before-commit is a head
+            # the branch had; the digest it pinned was introduced by the
+            # previous event (or by the PR itself for the first head).
+            created=$(jq -r --argjson n "${n}" '.[] | select(.number == $n) | .createdAt' candidates.json)
+            cat > history.graphql <<'GQL'
+              query($owner: String!, $repo: String!, $n: Int!) {
+                repository(owner: $owner, name: $repo) { pullRequest(number: $n) {
+                  timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT], first: 100) { nodes {
+                    ... on HeadRefForcePushedEvent { createdAt beforeCommit { oid author { user { login } } } } } } } } }
+          GQL
+            cat > history.jq <<'JQ'
+              [.data.repository.pullRequest.timelineItems.nodes[] | select(.beforeCommit != null)]
+              | sort_by(.createdAt) | . as $ev | to_entries
+              | map({oid: .value.beforeCommit.oid,
+                     author: (.value.beforeCommit.author.user.login // ""),
+                     introduced: (if .key == 0 then null else $ev[.key - 1].createdAt end)})
+          JQ
+            gh api graphql -F owner="${GH_REPO%%/*}" -F repo="${GH_REPO#*/}" -F n="${n}" -F query=@history.graphql \
+              | jq -f history.jq > history.json
+            # Walk newest first. A head whose digest equals the current one
+            # (a plain rebase) or one main already pins is not a candidate;
+            # anything introduced before the digest main pins is older than
+            # main and skipped too.
+            decision="" reason=""
+            while read -r entry; do
+              oid=$(jq -r '.oid' <<< "${entry}")
+              author=$(jq -r '.author' <<< "${entry}")
+              introduced=$(jq -r '.introduced // empty' <<< "${entry}")
+              [ -n "${introduced}" ] || introduced="${created}"
+              ref=$(gh api "repos/${GH_REPO}/commits/${oid}" --jq '.files[].patch // empty' 2>/dev/null | refs_in_patch | grep -F "${image}@" | head -n 1 || true)
+              [ -n "${ref}" ] || continue
+              [ "${ref}" != "${current_ref}" ] || continue
+              if [ "${ref}" = "${main_ref}" ]; then break; fi
+              if [ "${author}" != "renovate[bot]" ]; then decision="skip"; reason="head ${oid:0:7} is not authored by renovate[bot]"; break; fi
+              seen=$(date -u -d "${introduced}" +%s)
+              ms=$(upload_ms_refs <<< "${ref}" || true)
+              if [ -n "${ms}" ] && [ "$((ms / 1000))" -le "${seen}" ]; then clock="upload"; since=$((ms / 1000)); else clock="first-seen"; since="${seen}"; fi
+              age=$(( (now - since) / 3600 ))
+              if [ "${age}" -lt "${MIN_AGE_HOURS}" ]; then continue; fi
+              if ! present "${ref}"; then decision="skip"; reason="${ref##*@sha256:} aged ${age}h but the registry no longer serves it"; continue; fi
+              # Spacing: the last change to this image on main.
+              last=$(gh api "repos/${GH_REPO}/commits?path=${file}&per_page=20" --jq '.[].sha' | while read -r sha; do
+                if gh api "repos/${GH_REPO}/commits/${sha}" --jq '.files[].patch // empty' | grep -qF "${image}@"; then
+                  gh api "repos/${GH_REPO}/commits/${sha}" --jq '.commit.committer.date'; break; fi; done)
+              gap=$(( (now - $(date -u -d "${last:-1970-01-01T00:00:00Z}" +%s)) / 3600 ))
+              if [ "${gap}" -lt "${MIN_AGE_HOURS}" ]; then decision="wait"; reason="candidate ${ref##*@sha256:} aged ${age}h (${clock}) but main changed this image ${gap}h ago, spacing is ${MIN_AGE_HOURS}h"; break; fi
+              decision="would-open"; reason="${ref} aged ${age}h (${clock}), present, main last changed ${gap}h ago"; break
+            done < <(jq -c 'reverse | .[]' history.json)
+            [ -n "${decision}" ] || { decision="none"; reason="no earlier digest of this PR has aged ${MIN_AGE_HOURS}h"; }
+            printf '%s\t%s\t%s\t%s\n' "${n}" "${decision}" "${reason}" "${head}" >> catchup.tsv
+          done 3< <(awk -F'\t' '$7 == "wait" && ($5 ~ /needs [0-9]+h$/) {print $1 "\t" $2}' rows.tsv)
+          {
+            echo ""
+            echo "#### Catch-up candidates (report only; nothing is opened yet)"
+            echo ""
+            if [ ! -s catchup.tsv ]; then
+              echo "No PR is waiting on age."
+            else
+              echo "| PR | decision | detail |"
+              echo "|---|---|---|"
+              awk -F'\t' '{printf "| #%s | %s | %s |\n", $1, $2, $3}' catchup.tsv
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+          cat catchup.tsv
 
   merge:
     name: "Merge #${{ matrix.number }}"

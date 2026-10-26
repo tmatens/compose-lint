@@ -699,9 +699,25 @@ with a warning and the PRs wait. Each merge leaves a comment on the PR
 saying why it was eligible. A manual dispatch is a **dry run by default**
 (the summary table, no merge); untick the box to merge from a dispatch.
 
+**Catch-up candidates (report only, [#1152]).** A PR waiting on age may
+already have pinned a digest that has aged: Renovate force-pushes the
+branch to the newest digest on every upstream rebuild, and the one it
+replaced is gone from the PR but not from the registry. The select job's
+second step finds, per such PR, the newest digest the PR has ever pinned
+that a `renovate[bot]` commit introduced, is newer than what `main` pins,
+has aged 72h by the registry upload time or by the GitHub-stamped time of
+the force-push that introduced it, is still served by its registry, and
+comes no sooner than 72h after the last change to that image on `main`.
+The history comes from the PR's force-push events and the commits they
+name, never from a comment. Today the step only reports its decision in
+the summary; opening and merging the catch-up PR is the next step of
+#1152.
+
 Built to be deleted: if upstream Renovate gains a registry-agnostic
 release timestamp, scope these images back into the digest automerge rule
 in `renovate.json` and remove this workflow and this section.
+
+[#1152]: https://github.com/tmatens/compose-lint/issues/1152
 
 [#1059]: https://github.com/tmatens/compose-lint/issues/1059
 [renovatebot/renovate#39064]: https://github.com/renovatebot/renovate/issues/39064
