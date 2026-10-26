@@ -67,7 +67,7 @@ RUN python3 -m venv /build-venv \
 # smokes, so the VEX justification cannot go stale without a red run.
 
 # --- runtime stage: distroless Python, nonroot by default ---
-FROM gcr.io/distroless/python3-debian13:nonroot@sha256:727eccc5d83f11273c954652667b5b5a1c66120bd4cfb884e879ab77dcdf966a
+FROM gcr.io/distroless/python3-debian13:nonroot@sha256:64e54c4b1200da244d80181d98e86fc01d73c8101f107d5baf472152d8e119a2
 LABEL org.opencontainers.image.title="compose-lint" \
       org.opencontainers.image.description="Security-focused linter for Docker Compose files" \
       org.opencontainers.image.url="https://github.com/tmatens/compose-lint" \
