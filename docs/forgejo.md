@@ -24,4 +24,4 @@ jobs:
         run: compose-lint --fail-on high
 ```
 
-Forgejo has no SARIF UI today — `--format sarif` still produces a valid document, but there's no security-tab equivalent to render it. Verified on Forgejo 17.0.0, runner 13.2.0 — this exact snippet is executed against a live Forgejo weekly by the [forgejo-smoke workflow](https://github.com/tmatens/compose-lint/blob/main/.github/workflows/forgejo-smoke.yml), which fails if this line and the versions it ran on disagree.
+Forgejo has no SARIF UI today — `--format sarif` still produces a valid document, but there's no security-tab equivalent to render it. Verified on Forgejo 17.0.1, runner 13.2.0 — this exact snippet is executed against a live Forgejo weekly by the [forgejo-smoke workflow](https://github.com/tmatens/compose-lint/blob/main/.github/workflows/forgejo-smoke.yml), which fails if this line and the versions it ran on disagree.
