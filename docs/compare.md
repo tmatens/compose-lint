@@ -759,7 +759,7 @@ with `/src` as its working directory, so the scenario directory is the
 boundary it reads within:
 
 ```bash
-docker run --rm -w /src -v "$PWD:/src:ro" composelint/compose-lint:0.36.1@sha256:b6742a7ff80a1a75e824a8aa1c6579946fdd48c771f7085a046a18f95c3fe19d check --format json /src/compose.yaml
+docker run --rm -w /src -v "$PWD:/src:ro" composelint/compose-lint:0.36.2@sha256:b6742a7ff80a1a75e824a8aa1c6579946fdd48c771f7085a046a18f95c3fe19d check --format json /src/compose.yaml
 docker run --rm -v "$PWD:/src:ro" -v "$PWD/out:/out" checkmarx/kics:v2.1.20@sha256:3e5a268eb8adda2e5a483c9359ddfc4cd520ab856a7076dc0b1d8784a37e2602 scan -p /src -o /out --report-formats json -t DockerCompose --disable-secrets
 docker run --rm -v "$PWD:/src:ro" -v "$PWD/out:/root/.docksec/results" owasp/docksec:2026.9.21@sha256:646e8250e2dc98ac4c8fd5f9a5d37f9aecae149a468271b5b1dc04092f927be4 --compose /src/compose.yaml --format json --scan-only
 docker run --rm -v "$PWD:/src:ro" semgrep/semgrep:1.180.0@sha256:529ee8a277ec8adc5b534d7c74eea0a47e9de21d62852b6ba7ac6ba9566845c3 semgrep --metrics=off --config p/docker-compose --json /src
