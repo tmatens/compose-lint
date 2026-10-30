@@ -1,11 +1,18 @@
 """Tell IndexNow which docs-site pages a deploy changed.
 
 Bing (and through it Copilot, ChatGPT search and DuckDuckGo), Yandex, Seznam
-and Naver share one IndexNow endpoint: a POST listing changed URLs, which they
-treat as a crawl hint. Without it a retitled or rewritten page waits for the
-next organic crawl, which for a small site with few inbound links can take
-weeks. Google does not take part; Search Console's Request indexing is its
-equivalent and stays manual.
+and Naver share the IndexNow protocol: a POST listing changed URLs, which they
+treat as a crawl hint, and each engine forwards what it receives to the
+others. Without it a retitled or rewritten page waits for the next organic
+crawl, which for a small site with few inbound links can take weeks. Google
+does not take part; Search Console's Request indexing is its equivalent and
+stays manual.
+
+The POST goes to Bing's own endpoint rather than the api.indexnow.org
+aggregator. Eleven days of HTTP 200 from the aggregator left a new page
+"Discovered but not crawled" on Bing and the Webmaster Tools IndexNow report
+empty, while URLs submitted through Webmaster Tools were crawled within three
+days; posting to the engine that matters removes one hop from that question.
 
 The protocol proves ownership with a key file served by the site. It lives at
 `docs/<key>.txt` (the key is the file's name and its whole content), so it
@@ -38,7 +45,7 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 SITE_URL = "https://tmatens.github.io/compose-lint/"
-ENDPOINT = "https://api.indexnow.org/indexnow"
+ENDPOINT = "https://www.bing.com/indexnow"
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCS = "docs/"
