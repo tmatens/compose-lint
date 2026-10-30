@@ -158,7 +158,7 @@ following a policy it should not have (P6).
 
 - **Run the test suite.** `pytest` exercises every rule and the parser
   on positive, negative, and hardened-but-unusual fixtures. CI runs the
-  same on Python 3.11–3.14 on every PR.
+  same on Python 3.11–3.15 on every PR.
 - **Run the corpus snapshot.** See
   [CONTRIBUTING.md](https://github.com/tmatens/compose-lint/blob/main/CONTRIBUTING.md) §"Corpus snapshot" for the
   out-of-tree corpus. Findings against ~1,500 real Compose files are

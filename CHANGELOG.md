@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Python 3.15 in the test matrix.** CPython 3.15.0 was released on
+  2026-10-09, and the roadmap adds each new minor within three months of
+  its October release. The `test` job now runs the suite on 3.11 through
+  3.15 and the wheel's classifiers list 3.15. Nothing in the package
+  changes; `requires-python` stays at 3.11.
+
 ## [0.36.2] - 2026-10-27
 
 ### Fixed
