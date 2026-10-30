@@ -32,10 +32,15 @@ sed -i "s/^\( *\)DEFAULT_VERSION=\".*\"/\1DEFAULT_VERSION=\"${version}\"/" "${ro
 # requires the flip in the same commit as the version bump, and
 # tests/test_release_layer.py fails the PR if the two disagree -- PyPI metadata
 # is immutable per version, so a 1.0.0 published as Beta stays Beta forever.
+# Set, not flip: the line is rewritten to whatever the major implies, so the
+# result does not depend on what the checkout held before the bump.
 major="${version%%.*}"
 if [ "${major}" -ge 1 ]; then
-    sed -i 's/"Development Status :: 4 - Beta"/"Development Status :: 5 - Production\/Stable"/' "${root}/pyproject.toml"
+    status="5 - Production\/Stable"
+else
+    status="4 - Beta"
 fi
+sed -i "s/\"Development Status :: [^\"]*\"/\"Development Status :: ${status}\"/" "${root}/pyproject.toml"
 
 echo "Bumped to ${version}:"
 grep '^version' "${root}/pyproject.toml"
