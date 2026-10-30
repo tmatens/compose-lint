@@ -245,6 +245,23 @@ was green. If that ever happens, adopt the merge queue then — it removes the
 gap at the cost of teaching `ci.yml` the `merge_group` trigger and turning
 every merge into a ten-minute enqueue.
 
+The trade has a measured cost as well. OpenSSF Scorecard reports
+`'up-to-date branches' is disabled on branch 'main'` in every run, and from
+the v5.6.0 engine (scorecard-action v2.5.0, #1138) that finding costs a
+point: Branch-Protection scores 3 rather than 4, about 0.1 of the overall
+score. Decided 2026-10-29 in [#1145](https://github.com/tmatens/compose-lint/issues/1145):
+leave it. Re-enabling the toggle for a tenth of a point would reinstate the
+cost #834 removed, and a merge queue is not worth building ahead of its
+trigger. When the watch condition above fires, the queue needs: `ci.yml`
+running on `merge_group` events, with the `changes` filter and `ci-ok`
+working there too; the `dco`, `commit-subjects` and `no-ai-attribution` jobs
+coping with the queue's temporary merge commits; a decision on how Renovate's
+self-merge enters the queue (`automergeType: pr` calls the merge API, which
+with a queue means "add to queue", while `platformAutomerge` stays off to
+keep the three-day age gate); `digest-age-gate.yml` and `arm-auto-merge`,
+which merge by SHA pin, checked against queue semantics; and confirmation
+that Scorecard credits a merge queue the way it credits the toggle.
+
 Contributor-side friction — the DCO check being invisible until approval, and
 the sign-off guidance that does not work — is tracked in
 [#686](https://github.com/tmatens/compose-lint/issues/686).
