@@ -31,7 +31,7 @@ Disables still produce suppressed findings. `reason` flows to `suppression_reaso
 
 ## Quality checks
 
-`ruff check src/ tests/`, `ruff format --check src/ tests/`, `mypy src/ tests/` (strict on `src/`, relaxed on `tests/`), `pytest`. All four must pass, scoped exactly as written — CI lints only `src/` and `tests/`, and a bare `ruff check` also sweeps `scripts/`, which has known, accepted violations. CI test matrix: Python 3.11–3.14 on ubuntu-24.04.
+`ruff check src/ tests/`, `ruff format --check src/ tests/`, `mypy src/ tests/` (strict on `src/`, relaxed on `tests/`), `pytest`. All four must pass, scoped exactly as written — CI lints only `src/` and `tests/`, and a bare `ruff check` also sweeps `scripts/`, which has known, accepted violations. CI test matrix: Python 3.11–3.15 on ubuntu-26.04.
 
 Coverage is gated twice in the `coverage` job: >= 80% statements repo-wide (the
 OpenSSF Silver criterion), and >= 90% of the lines a PR adds or changes

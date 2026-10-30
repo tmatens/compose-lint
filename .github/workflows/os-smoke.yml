@@ -60,7 +60,7 @@ jobs:
     # `pathlib`/`os` behavior and that is exactly where the floor is
     # furthest from the version the ubuntu matrix's other legs pin.
     #
-    # Deliberately the floor and the ceiling, not the full 3.11-3.14 range
+    # Deliberately the floor and the ceiling, not the full 3.11-3.15 range
     # the ubuntu matrix runs: the versions in between differ from their
     # neighbours far less than either end differs from the other, so they
     # would buy little for 6 more jobs on two of the slowest runners.

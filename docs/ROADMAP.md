@@ -126,6 +126,7 @@ Track current CPython: add new minor versions to the CI matrix within ~3 months 
 | 3.12    | 2023-10   | 2028-10   | 0.2.0           |
 | 3.13    | 2024-10   | 2029-10   | 0.2.0           |
 | 3.14    | 2025-10   | 2030-10   | 0.3.8           |
+| 3.15    | 2026-10   | 2031-10   | 0.36.3          |
 
 Python 3.10 was dropped ahead of its October 2026 upstream EOL (issue #643): because dropping a version is a MINOR pre-1.0 and a MAJOR after, landing the drop **before 1.0** avoided a routine EOL forcing a 2.0. The deprecation was announced and warned on stderr from 0.22.0, per [compatibility.md](compatibility.md#deprecation-lifecycle); 3.10 users stay on the last release that supported it (pip resolves `requires-python` to 0.23.0).
 

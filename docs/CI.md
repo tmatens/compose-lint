@@ -60,7 +60,7 @@ before merging, so `main`'s own run is what proves the merged result.
 | ------------------------- | ----------------------------------------------------------------------------------------- |
 | `lint`                    | `ruff check` + `ruff format --check` on `src/` and `tests/`                               |
 | `type-check`              | `mypy src/ tests/`; strict on `src/`, relaxed on `tests/`                                  |
-| `test`                    | `pytest -n auto` (pytest-xdist, one worker per core) across the Python matrix — 3.11, 3.12, 3.13, 3.14 |
+| `test`                    | `pytest -n auto` (pytest-xdist, one worker per core) across the Python matrix — 3.11, 3.12, 3.13, 3.14, 3.15 |
 | `coverage-shard`          | The suite under coverage in three parallel shards (the oracle harness, test files a–q, the rest), each uploading its coverage data |
 | `coverage`                | Merges the shards' data (`coverage combine`) and applies `--fail-under=80` — fails below 80% statement coverage repo-wide; on a PR, `diff-cover` also fails below 90% coverage of the lines that PR adds or changes (see note) |
 | `security`                | `bandit -r src/ -ll` (blocking) + `pip-audit` for dep CVEs (informational on PRs — see note) |
