@@ -367,7 +367,7 @@ OWASP cheat-sheet items compose-lint has no rule for.*
 
 ## Versioning & stability
 
-compose-lint follows [Semantic Versioning](https://semver.org/). From 1.0, the CLI, exit codes, config schema, and JSON/SARIF output are stable. New and tightened rules ship in MINOR releases, so pin a version or use `--fail-on` if you need deterministic CI. See [docs/compatibility.md](https://github.com/tmatens/compose-lint/blob/main/docs/compatibility.md) for the full stability promise and deprecation policy.
+compose-lint follows [Semantic Versioning](https://semver.org/). Since 1.0, the CLI, exit codes, config schema, and JSON/SARIF output are stable. New and tightened rules ship in MINOR releases, so pin a version or use `--fail-on` if you need deterministic CI. See [docs/compatibility.md](https://github.com/tmatens/compose-lint/blob/main/docs/compatibility.md) for the full stability promise and deprecation policy.
 Release-by-release changes are in
 [CHANGELOG.md](https://github.com/tmatens/compose-lint/blob/main/CHANGELOG.md);
 planned work is on the [roadmap](https://tmatens.github.io/compose-lint/ROADMAP/).
@@ -414,7 +414,7 @@ jobs:
 ```
 
 The `uses:` line pins a commit SHA, which is what OpenSSF Scorecard grades
-for and what Renovate keeps fresh; from 1.0, `tmatens/compose-lint@v1` floats
+for and what Renovate keeps fresh; since 1.0, `tmatens/compose-lint@v1` floats
 with releases instead. The `permissions:` blocks are part of the recipe: the
 job holds only the two scopes it uses. If you want the SARIF file without the
 Code Scanning upload, set `upload-sarif: "false"` and drop
