@@ -15,6 +15,7 @@ changed: re-render the GIF and update the descriptions (see
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 
 from compose_lint.engine import run_rules
@@ -97,3 +98,24 @@ def test_fix_fixture_verdict_flips_to_pass_once_fixed() -> None:
         "The fix demo's second screen shows PASS after --apply; the fixed "
         "file now retains a finding at or above HIGH."
     )
+
+
+def test_expected_output_masks_only_the_version_banner() -> None:
+    """The release job compares the casts' text across releases with the
+    banner masked, so a version digit alone never triggers a re-record while
+    any other change does."""
+    spec = importlib.util.spec_from_file_location(
+        "expected_output", DEMO_DIR / "expected_output.py"
+    )
+    assert spec is not None and spec.loader is not None
+    expected_output = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(expected_output)
+    text = (
+        "compose-lint 1.0.0\nfiles: a.yml\n\ncompose-lint 0.36.3\n  CL-0001 at 1.0.0\n"
+    )
+    masked = expected_output.mask(text)
+    assert masked == (
+        "compose-lint <version>\nfiles: a.yml\n\n"
+        "compose-lint <version>\n  CL-0001 at 1.0.0\n"
+    )
+    assert expected_output.mask(masked) == masked

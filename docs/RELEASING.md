@@ -518,19 +518,21 @@ After approval, `publish` and `docker-publish` run in parallel.
       PATCH endpoint. Verify
       `https://hub.docker.com/r/composelint/compose-lint` reflects the
       current overview file.
-- [ ] **README demo GIFs** — only if this release changed the text-output
-      appearance (finding layout, verdict line, colors), changed what
-      `fix` emits, or you want the banner to show the new version. The
-      demo toolchain installs compose-lint from PyPI, so this is
-      **post-publish**: bump the `compose-lint==` pin in
-      `scripts/demo/requirements.in`, recompile
-      `scripts/demo/requirements.lock` (exact `uv pip compile` command in
-      the lock's header), run `scripts/demo/render.sh` (both casts), and
-      open a follow-up PR with the updated `docs/assets/demo.gif`,
-      `docs/assets/demo-fix.gif`, and their README alt text. Output-only
-      or docs-only releases can skip this. Each cast is sized to its
-      terminal in the tape — if a release adds a line to `check` or `fix`
-      output, check the render didn't scroll before committing it.
+- [ ] **README demo GIFs** — automated, with a review. When the pin PR
+      merges, `marketplace-smoke.yml`'s `rerecord-demos` job compares what
+      the two casts would show on the new release with what the committed
+      GIFs show (`scripts/demo/expected-output.txt`, banner masked). If
+      nothing changed it says so in its summary and the demos stay. If
+      the output changed it renders both casts, moves the toolchain pin
+      and lock, and opens `Re-record the README demos on X.Y.Z` with both
+      recordings embedded. **That PR is not auto-merged**: look at both
+      GIFs — the banner reads the new version and did not scroll off, the
+      `--explain` page shows its status line, the fix cast still ends on
+      PASS — fix the README alt texts on the branch if the story changed,
+      then merge. To refresh the banner on a release that changed no
+      output, dispatch the workflow with `force: true`. The by-hand route
+      is unchanged (`scripts/demo/README.md`) and is what to use if the
+      job itself is broken.
 - [ ] **Fresh `[Unreleased]` section** — already inserted by
       `release-prep.yml` as part of the release bump PR. No follow-up
       PR needed.
