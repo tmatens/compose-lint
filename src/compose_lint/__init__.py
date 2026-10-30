@@ -1,3 +1,3 @@
 """A security-focused linter for Docker Compose files."""
 
-__version__ = "0.36.2"
+__version__ = "0.36.3"
