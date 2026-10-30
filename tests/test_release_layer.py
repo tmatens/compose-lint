@@ -508,7 +508,10 @@ def _bump_in_a_copy(tmp_path: Path, version: str) -> str:
     return (tmp_path / "pyproject.toml").read_text(encoding="utf-8")
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="runs a bash script with GNU sed")
+@pytest.mark.skipif(
+    sys.platform != "linux",
+    reason="the script uses GNU sed -i; release-prep runs it on ubuntu",
+)
 @pytest.mark.parametrize(
     ("version", "expected"),
     [
