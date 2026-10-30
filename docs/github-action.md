@@ -37,7 +37,7 @@ later `upload-artifact` step.
 
 The README's `uses:` line pins a commit SHA with the version in a trailing
 comment. That is the supply-chain-rigorous form: it is what OpenSSF Scorecard
-grades for, and Renovate or Dependabot keep the pin fresh. From 1.0 a floating
+grades for, and Renovate or Dependabot keep the pin fresh. Since 1.0 a floating
 major tag also exists, `uses: tmatens/compose-lint@v1`, for setups that prefer
 automatic updates. It is a mutable pointer moved by the release pipeline,
 deliberately *not* part of the signed-tag guarantee that release tags carry —

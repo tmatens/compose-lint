@@ -52,10 +52,11 @@ question to answer.
 The user-facing version of these guarantees — the stability promise and the
 deprecation lifecycle — lives in [compatibility.md](compatibility.md).
 
-### Pre-1.0 (current)
+### Pre-1.0 (historical: 0.x, through 0.36.3)
 
-While the major version is `0`, the guarantees are weaker and the MINOR
-slot does the work that MAJOR does post-1.0.
+While the major version was `0`, the guarantees were weaker and the MINOR
+slot did the work that MAJOR does post-1.0. Kept as the record of how 0.x
+releases were classified; every release since 1.0.0 uses the post-1.0 rules.
 
 - **PATCH** (`0.2.0 → 0.2.1`) — safe changes only. Bug fixes,
   false-positive fixes, parser fixes, docs, internal refactors,
@@ -76,6 +77,9 @@ slot does the work that MAJOR does post-1.0.
   it when you're ready to stand behind those guarantees.
 
 ### Cutting 1.0.0
+
+_Done: 1.0.0 shipped on 2026-10-30, with each item below recorded on its
+release-prep PR. Kept so the check is verifiable rather than folklore._
 
 The bump itself is a normal MINOR-shaped release mechanically; what makes it
 1.0.0 is the contract coming into force. Before dispatching release-prep with
@@ -110,9 +114,9 @@ The bump itself is a normal MINOR-shaped release mechanically; what makes it
 5. **After the release**: the post-1.0 rules below are in force, including
    the flipped tie-breaker — when in doubt, pick the higher bump.
 
-### Post-1.0 (future)
+### Post-1.0 (current, since 1.0.0)
 
-Once `1.0.0` ships, the contract tightens:
+Since `1.0.0` shipped on 2026-10-30, the contract is:
 
 - **PATCH** (`1.2.3 → 1.2.4`) — bug fixes that don't change which
   *correct* findings are emitted for a given input. Removing findings

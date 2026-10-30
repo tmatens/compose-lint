@@ -1,12 +1,12 @@
 # Roadmap
 
-compose-lint today ships 27 security rules, PyPI distribution, a published GitHub Action and Docker image, SARIF/JSON/text output, pre-commit support, per-service rule overrides, and `--explain`. The foundation is solid; the next milestone is the 1.0 stability commitment. Remaining investments make the tool more useful to the users already running it, not chase speculative distribution channels.
+compose-lint today ships 27 security rules, PyPI distribution, a published GitHub Action and Docker image, SARIF/JSON/text output, pre-commit support, per-service rule overrides, and `--explain`. The foundation is solid, and the 1.0 stability commitment shipped as 1.0.0 on 2026-10-30. Remaining investments make the tool more useful to the users already running it, not chase speculative distribution channels.
 
 ## Strategic framing
 
 compose-lint's differentiation is depth in Compose-specific security, not distribution breadth. Competitors (KICS, Checkov, Trivy) cover Compose as one format among many; they are wide and shallow per-format. Compose-lint wins by being the one tool that tells you exactly what's wrong with a Compose file and exactly how to fix it. Roadmap priorities are ordered around that thesis.
 
-The usage-driven asks that shaped the last two milestones — #5 (per-service overrides), #4 (CL-0006 capability guidance) and #111 (real-world examples library) — are all closed and shipped. The live signal now runs through the 1.0 stability commitment (Milestone 4). Milestone 3's last open item, shellcheck ([ADR-007](adr/007-shellcheck-integration.md)), moved to Milestone 5: it adds a rule source rather than changing the contract, so it does not gate 1.0. Distribution items beyond the already-shipped Docker image have no demand signal and are deprioritized accordingly.
+The usage-driven asks that shaped the last two milestones — #5 (per-service overrides), #4 (CL-0006 capability guidance) and #111 (real-world examples library) — are all closed and shipped. The 1.0 stability commitment (Milestone 4) shipped in 1.0.0; the live signal now runs through Milestone 5. Milestone 3's last open item, shellcheck ([ADR-007](adr/007-shellcheck-integration.md)), moved there: it adds a rule source rather than changing the contract, so it did not gate 1.0. Distribution items beyond the already-shipped Docker image have no demand signal and are deprioritized accordingly.
 
 ---
 
@@ -57,13 +57,13 @@ Turn findings into fixes. This is where the product's differentiation grows the 
 
 **Remediation snippets in SARIF** _(shipped in 0.11.0)_ — `check --format sarif` populates `fixes[].artifactChanges` so GitHub Code Scanning displays a suggested-change diff inline on pull requests.
 
-_Deferred:_ Shellcheck integration — moved to Milestone 5 (post-1.0). [ADR-007](adr/007-shellcheck-integration.md) stays pending; a new rule source lands as an additive MINOR after 1.0 ([compatibility.md](compatibility.md)), so nothing about it has to be settled before the freeze.
+_Deferred:_ Shellcheck integration — moved to Milestone 5 (post-1.0). [ADR-007](adr/007-shellcheck-integration.md) stays pending; a new rule source lands as an additive MINOR after 1.0 ([compatibility.md](compatibility.md)), so nothing about it had to be settled before the freeze.
 
 ---
 
 ## Milestone 3.5 — Severity Grounding (v0.16) [complete]
 
-A prerequisite for the 1.0 freeze rather than a feature: after 1.0 a severity change is a breaking change, so the numbers have to be defensible before the contract closes over them.
+A prerequisite for the 1.0 freeze rather than a feature: after 1.0 a severity upgrade carries a one-release runway ([ADR-031](adr/031-severity-upgrades-are-minor-with-runway.md)) and must be derived, so the numbers had to be defensible before the contract closed over them.
 
 **Severities are derived, not chosen** _(shipped in 0.16.0)_ — a two-axis matrix under a stated attacker baseline and a stated Docker posture produces each rule's value; shipping a different one requires a declared override from a closed reason list, with a link. Every rule page carries its derivation block, and a test fails if the page and the severity table disagree. See [ADR-020](adr/020-severity-scoping-and-overrides.md), [ADR-021](adr/021-critical-tier-posture.md), [ADR-022](adr/022-threat-model-grounding.md).
 
@@ -75,23 +75,23 @@ _Not covered by this milestone:_ the fixers, the parser, line-number accuracy an
 
 ---
 
-## Milestone 4 — GA / 1.0
+## Milestone 4 — GA / 1.0 [complete]
 
-v1.0 is the **stability commitment**: the CLI surface, exit codes, configuration schema, and the JSON/SARIF output shapes come under SemVer. Breaking any of them after 1.0 requires a major version bump. The VS Code extension is explicitly *not* a 1.0 blocker — it's a reach multiplier that doesn't gate stability, and moves to Milestone 5.
+Shipped as 1.0.0 on 2026-10-30. v1.0 is the **stability commitment**: the CLI surface, exit codes, configuration schema, and the JSON/SARIF output shapes are under SemVer, with the bump rules in [RELEASING.md](RELEASING.md#choosing-the-version-number) and the user-facing promise in [compatibility.md](compatibility.md). The VS Code extension was explicitly *not* a 1.0 blocker — it's a reach multiplier that doesn't gate stability, and sits in Milestone 5.
 
 **GA criteria:**
-- **Stable, documented contract** — CLI flags, exit codes ([ADR-006](adr/006-exit-codes.md)), the `.compose-lint.yml` schema, and the JSON + SARIF output shapes are frozen and documented as the 1.0 surface. _Versioned JSON envelope done._ It shipped under [ADR-015](adr/015-machine-readable-output-contract.md): `check --format json` emits a schema `version` alongside a `tool` block, so run-level metadata (parse errors, and more later) can be added without breaking consumers. What remains is the freeze itself — declaring the surface closed.
+- **Stable, documented contract** — CLI flags, exit codes ([ADR-006](adr/006-exit-codes.md)), the `.compose-lint.yml` schema, and the JSON + SARIF output shapes are frozen and documented as the 1.0 surface. _Versioned JSON envelope done._ It shipped under [ADR-015](adr/015-machine-readable-output-contract.md): `check --format json` emits a schema `version` alongside a `tool` block, so run-level metadata (parse errors, and more later) can be added without breaking consumers. _Freeze done:_ 1.0.0 declared the surface closed; [compatibility.md](compatibility.md) is the contract.
 - **`fix` resolved** — _done._ Shipped as GA and brought under the SemVer contract in 0.11.0 ([ADR-014](adr/014-fix-remediation.md)), independently of the 1.0 cut.
-- **Grounding + severity audit complete** — _done for severity._ Every rule cites OWASP/CIS/Docker and derives its severity from the documented model (Milestone 3.5). What remains before the freeze is confirming no further severity change is pending that would alter a CI gate.
-- **Documented upgrade/deprecation policy** — the SemVer stability promise (rule additions, severity changes, config and output-shape changes) and the deprecation lifecycle, in [compatibility.md](compatibility.md).
+- **Grounding + severity audit complete** — _done._ Every rule cites OWASP/CIS/Docker and derives its severity from the documented model (Milestone 3.5). [ADR-028](adr/028-pre-1.0-rule-id-sweep.md)'s watch items (CL-0029, CL-0013, CL-0014) were re-read at the 1.0 cut and none warranted a move; the verdicts are recorded on the 1.0.0 release-prep PR.
+- **Documented upgrade/deprecation policy** — _done._ The SemVer stability promise (rule additions, severity changes, config and output-shape changes) and the deprecation lifecycle, in [compatibility.md](compatibility.md), with the policy itself under the contract ([ADR-030](adr/030-the-policy-is-part-of-the-contract.md)).
 
-**At GA:** bump the PyPI classifier from `4 - Beta` to `5 - Production/Stable` in the version→1.0.0 commit. The moving `v1` Action tag needs no separate step: publish.yml's `action-major-tag` job force-moves the major tag on every non-v0 release (lightweight and unsigned by design — the signed claim is the release tag; README documents the trade).
+**At GA** _(done in 1.0.0)_: the PyPI classifier moved from `4 - Beta` to `5 - Production/Stable` in the version→1.0.0 commit (`scripts/bump-version.sh` sets it from the major). The moving `v1` Action tag needed no separate step: publish.yml's `action-major-tag` job force-moves the major tag on every non-v0 release (lightweight and unsigned by design — the signed claim is the release tag; README documents the trade), and ran for the first time on 1.0.0.
 
 ---
 
 ## Milestone 5 — Ecosystem Integrations (v1.x)
 
-Pursue based on user demand after v1.0.
+Pursue based on user demand, now that 1.0 has shipped.
 
 | Integration | Notes |
 |-------------|-------|
@@ -141,5 +141,5 @@ Python 3.10 was dropped ahead of its October 2026 upstream EOL (issue #643): bec
 | CL-0006 capability guidance + real-world examples | v0.4.x | complete (Homebrew tap moved to v1.x) |
 | Remediation (`--explain`, `fix`, SARIF fixes, shellcheck) | v0.5–0.11 | complete (shellcheck moved to v1.x) |
 | Severity grounding — derived severities, capability + host-path splits | v0.16 | complete |
-| GA / 1.0 — stable contract + `fix` + upgrade policy | v1.0 | next |
-| Ecosystem integrations (VS Code, custom rules, shellcheck) | v1.x | |
+| GA / 1.0 — stable contract + `fix` + upgrade policy | v1.0 | complete (1.0.0, 2026-10-30) |
+| Ecosystem integrations (VS Code, custom rules, shellcheck) | v1.x | next |
