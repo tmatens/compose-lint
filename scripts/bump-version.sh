@@ -27,10 +27,21 @@ sed -i "s/^__version__ = \".*\"/__version__ = \"${version}\"/" "${root}/src/comp
 # installs a different linter than it claims.
 sed -i "s/^\( *\)DEFAULT_VERSION=\".*\"/\1DEFAULT_VERSION=\"${version}\"/" "${root}/action.yml"
 
+# The PyPI "Development Status" classifier follows the major version: 1.x and
+# later are Production/Stable, 0.x is Beta. docs/RELEASING.md "Cutting 1.0.0"
+# requires the flip in the same commit as the version bump, and
+# tests/test_release_layer.py fails the PR if the two disagree -- PyPI metadata
+# is immutable per version, so a 1.0.0 published as Beta stays Beta forever.
+major="${version%%.*}"
+if [ "${major}" -ge 1 ]; then
+    sed -i 's/"Development Status :: 4 - Beta"/"Development Status :: 5 - Production\/Stable"/' "${root}/pyproject.toml"
+fi
+
 echo "Bumped to ${version}:"
 grep '^version' "${root}/pyproject.toml"
 grep '__version__' "${root}/src/compose_lint/__init__.py"
 grep 'DEFAULT_VERSION=' "${root}/action.yml"
+grep 'Development Status' "${root}/pyproject.toml"
 echo ""
 echo "Still to do by hand (see docs/RELEASING.md 'Bump the version'):"
 echo "  - README.md snippets: pre-commit rev:, pip ==, docker tag, Action # vX.Y.Z"
