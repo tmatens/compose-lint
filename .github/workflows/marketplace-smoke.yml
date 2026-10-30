@@ -399,12 +399,15 @@ jobs:
           grep -q "^compose-lint==${version} " scripts/demo/requirements.lock
 
       # The GIFs' pixel sizes before and after, for the PR body: a render
-      # that came out a different size is the first thing to look at.
+      # that came out a different size is the first thing to look at. Read
+      # from the GIF header (bytes 6-9, little-endian width and height): the
+      # runner image has neither ffprobe nor Pillow, and the proof dispatch
+      # of this job died on exactly that assumption.
       - name: Render both casts
         if: steps.compare.outputs.rerecord == 'true'
         run: |
           set -euo pipefail
-          dims() { ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$1"; }
+          dims() { python3 -c 'import struct,sys; w,h=struct.unpack("<HH", open(sys.argv[1],"rb").read(10)[6:10]); print(f"{w}x{h}")' "$1"; }
           before_demo=$(dims docs/assets/demo.gif); before_fix=$(dims docs/assets/demo-fix.gif)
           scripts/demo/render.sh
           after_demo=$(dims docs/assets/demo.gif); after_fix=$(dims docs/assets/demo-fix.gif)

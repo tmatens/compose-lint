@@ -24,6 +24,7 @@ they can be refreshed against any release.
 | `retime.py`          | Compacts the raw recording (see below)                        |
 | `expected_output.py` | Prints or checks the terminal text the casts show             |
 | `expected-output.txt`| That text as recorded by the committed GIFs (banner masked)   |
+| `frames.py`          | Writes five still frames of a GIF as PNGs, for review         |
 
 ## What each cast shows
 
