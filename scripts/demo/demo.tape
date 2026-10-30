@@ -11,9 +11,12 @@ Require compose-lint
 # off line wrapping so compose-lint's long finding and reference lines clip at
 # the right edge instead of wrapping raggedly — the structured left side
 # (severity, rule id, message, underline, fix/ref) stays clean. Height gives
-# 32 rows at this font; the lint step needs 31 (command + 29 output lines +
-# prompt), so the banner stays on screen with a row to spare. The fixture has two services, so the cast also
-# shows the per-service grouping the report uses.
+# 32 rows at this font; the lint step needs all 32 (command + 30 output lines
+# + prompt) since 0.36.1 added the `--explain` hint above the verdict, so the
+# banner stays on screen with no row to spare: a release that adds one more
+# line to check output scrolls it off, and tests/test_demo_fixture.py pins the
+# finding set but not the row count. The fixture has two services, so the
+# cast also shows the per-service grouping the report uses.
 Set Shell bash
 Set FontSize 22
 Set Width 1500
