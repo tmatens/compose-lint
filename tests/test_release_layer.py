@@ -13,6 +13,8 @@ no workflow resolves dependencies from an index it does not pin.
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -482,6 +484,52 @@ def test_the_development_status_classifier_matches_the_major_version() -> None:
             f"version is {version.group(1)}, so the classifier should still be "
             f"'4 - Beta', not {status!r}."
         )
+
+
+def _bump_in_a_copy(tmp_path: Path, version: str) -> str:
+    """Run scripts/bump-version.sh against copies of the files it rewrites.
+
+    The script locates the files through ``git rev-parse --show-toplevel``, so
+    the copy is a throwaway repository; the script itself runs from this
+    checkout. Returns the copied pyproject.toml after the bump.
+    """
+    for rel in ("pyproject.toml", "src/compose_lint/__init__.py", "action.yml"):
+        dest = tmp_path / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text((REPO_ROOT / rel).read_text(encoding="utf-8"), encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["bash", str(REPO_ROOT / "scripts" / "bump-version.sh"), version],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return (tmp_path / "pyproject.toml").read_text(encoding="utf-8")
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux",
+    reason="the script uses GNU sed -i; release-prep runs it on ubuntu",
+)
+@pytest.mark.parametrize(
+    ("version", "expected"),
+    [
+        ("1.0.0", "Development Status :: 5 - Production/Stable"),
+        ("12.3.4", "Development Status :: 5 - Production/Stable"),
+        ("0.99.0", "Development Status :: 4 - Beta"),
+    ],
+)
+def test_bump_version_flips_the_classifier_with_the_major(
+    tmp_path: Path, version: str, expected: str
+) -> None:
+    """release-prep.yml delegates the bump to this script, so this is what puts
+    the classifier flip in the same commit as ``version = "1.0.0"``. The
+    contract test above would fail the prep PR otherwise, and the only remedy
+    would be a hand-pushed commit on the release branch."""
+    text = _bump_in_a_copy(tmp_path, version)
+    assert f'version = "{version}"' in text
+    assert re.findall(r'"(Development Status :: [^"]+)"', text) == [expected]
 
 
 # --- Every job is bounded and every checkout drops the token --------------

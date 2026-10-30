@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The moving `v1` Action tag.** `uses: tmatens/compose-lint@v1` now
+  resolves, and the publish pipeline moves it to each 1.x release. It is a
+  lightweight, unsigned convenience pointer; the signed claim is the release
+  tag, so pin the commit SHA where integrity matters, as the README snippet
+  does. [docs/github-action.md](docs/github-action.md) describes the trade.
+
+### Changed
+
+- **1.0: the stability contract is in force.** Nothing in the package
+  changes between 0.36.3 and this release; what changes is the promise. From
+  this version the CLI surface (subcommands, flags, and the environment
+  variables the CLI reads), the exit-code contract, the `.compose-lint.yml`
+  schema and the JSON and SARIF output shapes are stable under the rules in
+  [docs/compatibility.md](docs/compatibility.md): new and tightened rules
+  and severity downgrades ship in MINOR releases, a severity upgrade is
+  announced one release ahead, and removing a flag, a config key, an output
+  field or an exit-code meaning takes a MAJOR. Rule IDs are permanent and
+  never reused; a rule leaves only through the deprecation lifecycle. Pin the
+  version, or gate on `--fail-on`, for deterministic CI. The maintainer-facing
+  bump rules in [docs/RELEASING.md](docs/RELEASING.md) switch to their
+  post-1.0 column.
+- **PyPI classifier is `Development Status :: 5 - Production/Stable`**,
+  previously `4 - Beta`. Nothing else in the wheel's metadata changes.
+
 ## [0.36.3] - 2026-10-30
 
 ### Added

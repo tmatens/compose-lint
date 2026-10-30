@@ -97,6 +97,11 @@ The bump itself is a normal MINOR-shaped release mechanically; what makes it
 3. **Classifier bump** — `Development Status :: 4 - Beta` becomes
    `5 - Production/Stable` in the same commit that sets `version = "1.0.0"`
    (both `pyproject.toml` and `src/compose_lint/__init__.py`, as always).
+   Automated: `scripts/bump-version.sh` flips it whenever the major it is
+   given is 1 or more, so the release-prep PR carries the flip in its bump
+   commit, and `tests/test_release_layer.py` fails any PR where the
+   classifier and the major disagree. Verify it in the prep PR's diff rather
+   than re-doing it.
 4. **The moving `v1` Action tag needs no manual step** — publish.yml's
    `action-major-tag` job runs for the first time on this release (it skips
    v0). After the pipeline finishes, verify `v1` exists and points at the
