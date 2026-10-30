@@ -22,6 +22,8 @@ they can be refreshed against any release.
 | `requirements.in`    | Toolchain Python deps (compose-lint pin = recorded version)   |
 | `requirements.lock`  | uv-compiled, hash-pinned resolve of `requirements.in`         |
 | `retime.py`          | Compacts the raw recording (see below)                        |
+| `expected_output.py` | Prints or checks the terminal text the casts show             |
+| `expected-output.txt`| That text as recorded by the committed GIFs (banner masked)   |
 
 ## What each cast shows
 
@@ -51,7 +53,17 @@ fixture change that would silently invalidate a GIF fails CI instead.
 
 ## Regenerate
 
-Requires Docker only (the toolchain image bundles everything else):
+**After a release this happens on its own.** `marketplace-smoke.yml`'s
+`rerecord-demos` job runs the commands the tapes type against the released
+wheel, compares the text with `expected-output.txt` (the version banner
+masked), and if anything differs — or when dispatched with `force: true` —
+renders both casts, moves the pin and lock, rewrites the snapshot and opens a
+PR with the recordings embedded for a human to look at and merge. The
+snapshot is written only as part of a re-record, by that job or by the steps
+below; it records what the GIFs show, not what the source tree prints today.
+
+By hand, Docker is the only requirement (the toolchain image bundles
+everything else):
 
 ```bash
 scripts/demo/render.sh          # both casts
@@ -68,6 +80,14 @@ file's header):
 ```bash
 uv pip compile scripts/demo/requirements.in --python-version=3.13 \
     --generate-hashes --output-file=scripts/demo/requirements.lock
+```
+
+Then record the text the new GIFs show, so the next release is compared
+against them:
+
+```bash
+scripts/demo/expected_output.py --compose-lint <the released compose-lint> \
+    --write scripts/demo/expected-output.txt
 ```
 
 The pin records which release the committed GIFs were rendered on — the banner

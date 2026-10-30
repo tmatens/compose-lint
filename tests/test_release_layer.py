@@ -532,6 +532,29 @@ def test_bump_version_flips_the_classifier_with_the_major(
     assert re.findall(r'"(Development Status :: [^"]+)"', text) == [expected]
 
 
+# --- The README demos are re-recorded by a job that never merges itself -----
+
+
+def test_the_demo_rerecord_job_is_wired_and_never_automerges() -> None:
+    """A recording is reviewed by looking at it, so the PR it opens waits for
+    a person. The job runs after the release is visible on PyPI (it installs
+    the released wheel), and its failure on the post-release push reaches the
+    reporter like every other job's."""
+    doc = _load("marketplace-smoke.yml")
+    job = doc["jobs"]["rerecord-demos"]
+    assert job["needs"] == "pypi-propagated"
+    assert "rerecord-demos" in doc["jobs"]["report-failure"]["needs"]
+    raw = (WORKFLOWS / "marketplace-smoke.yml").read_text(encoding="utf-8")
+    start = raw.index("\n  rerecord-demos:")
+    end = raw.index("\n  report-failure:")
+    body = raw[start:end]
+    for marker in ("arm-auto-merge", "pr merge", "--auto", "pulls/"):
+        assert marker not in body, f"rerecord-demos must not merge its PR ({marker!r})"
+    assert "scripts/demo/render.sh" in body
+    assert "expected-output.txt" in body
+    assert (REPO_ROOT / "scripts" / "demo" / "expected-output.txt").is_file()
+
+
 # --- Every job is bounded and every checkout drops the token --------------
 
 

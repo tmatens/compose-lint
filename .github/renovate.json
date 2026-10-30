@@ -126,7 +126,7 @@
       "labels": ["age-gated"]
     },
     {
-      "description": "Demo toolchain: the compose-lint pin in scripts/demo records which release the committed GIF was rendered on, so it moves only as part of a deliberate demo regeneration (docs/RELEASING.md), never via Renovate. pillow/numpy and transitives in the same lock stay managed; ci.yml's demo-lock job installs that lock on the PR.",
+      "description": "Demo toolchain: the compose-lint pin in scripts/demo records which release the committed GIF was rendered on, so it moves only when the demos are re-recorded (marketplace-smoke.yml's rerecord-demos job after a release that changed their output, or by hand per docs/RELEASING.md), never via Renovate. pillow/numpy and transitives in the same lock stay managed; ci.yml's demo-lock job installs that lock on the PR.",
       "matchFileNames": ["scripts/demo/requirements.in", "scripts/demo/requirements.lock"],
       "matchPackageNames": ["compose-lint"],
       "enabled": false

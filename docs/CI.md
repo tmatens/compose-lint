@@ -17,7 +17,7 @@ per-channel publish contract see [`DISTRIBUTION.md`](DISTRIBUTION.md).
 | `vuln-report.yml`         | Daily (06:30 UTC) + manual                 | Rolling issue listing every vulnerability with a fix   |
 | `publish.yml`             | `v*` tag push + manual (Docker republish on a tag) | Release pipeline — see `RELEASING.md`          |
 | `release-prep.yml`        | Manual (`workflow_dispatch`, maintainer)   | Opens the "Prepare X.Y.Z release" PR                   |
-| `marketplace-smoke.yml`   | Push to `main` touching the file + manual + weekly cron | Verifies the published action, pre-commit hook, and the `uvx`/`pipx run` one-shot forms end-to-end |
+| `marketplace-smoke.yml`   | Push to `main` touching the file + manual + weekly cron | Verifies the published action, pre-commit hook, and the `uvx`/`pipx run` one-shot forms end-to-end; after a release, re-records the README demos if their output changed |
 | `forgejo-smoke.yml`       | PRs + pushes to `main` touching the harness + manual + weekly cron | Runs the Forgejo guide's snippet on a live containerized Forgejo |
 | `forgejo-smoke-bump.yml`  | Daily (05:17 UTC) + manual                 | Opens the PR that moves the harness to the newest Forgejo + runner, docs claim included |
 | `digest-age-gate.yml`     | Hourly (:23) + manual (dry run by default) | Merges Renovate's gcr.io/ghcr.io digest PRs once they have aged 72h, the age gate Renovate cannot apply to them; flags ones that stall |
@@ -538,6 +538,26 @@ covered only by whoever merged the pin PR happening to watch the run,
 which stopped being a person when that PR started automerging. A manual
 `workflow_dispatch` opens no issue: someone set it off and is watching.
 
+The `rerecord-demos` job keeps the README's two demo GIFs current without
+a releaser remembering to. On the post-release push (and on a manual
+dispatch) it installs the just-released wheel, runs the commands the two
+tapes type (`scripts/demo/expected_output.py`) and compares the text with
+`scripts/demo/expected-output.txt`, the text the committed GIFs were
+recorded from, with the version banner masked. Unchanged means the GIFs
+are still current and the job ends with a one-line summary. A difference,
+or `force: true` on a dispatch, moves the toolchain pin and lock to the
+release, renders both casts with `scripts/demo/render.sh` in the pinned
+VHS image, rewrites the snapshot, and opens a `Re-record the README demos
+on X.Y.Z` PR with both recordings embedded in its body. That PR is
+deliberately **not** auto-merged: whether a banner scrolled off or a pager
+page rendered is a question for eyes, and the embedded GIFs make it a
+one-glance review. The snapshot is written only by that job (or a hand
+re-record), never held to the working tree by a test: if a PR updated it
+before the release, the job would have nothing to notice. Masking the
+banner means a release with no visible change leaves the README showing
+the previous version until output next changes; the `force` input is the
+way to move it anyway.
+
 ### `forgejo-smoke.yml`
 
 Proves README's Forgejo Actions snippet — and its "Verified on Forgejo X,
@@ -815,7 +835,7 @@ actions because there the age is the only review there is.
 | Minors of `attest-build-provenance` and `gh-action-pypi-publish` | Automerge after 7 days | Neither has a run that does not publish, so the age is the only review. A bad minor fails the release run before the release-gate approval and is recovered by re-running; a compromised one is what the SHA pin and the age are for |
 | gcr.io / ghcr.io digests (distroless, oss-fuzz builder, vhs) | `age-gated`, merged by `digest-age-gate.yml` | Same review as a Docker Hub digest, but those registries give Renovate no timestamp; the gate waits 72h from the registry's upload time or first sight instead (see [`digest-age-gate.yml`](#digest-age-gateyml)) |
 | `pyyaml` majors | `manual-merge` | `pyproject.toml` allows `>=6.0.2,<7` for every user of the wheel; a major crosses that ceiling and is a compose-lint MAJOR after 1.0, a release decision rather than a bump. Minors move only the locks and merge themselves |
-| The demo `compose-lint` pin (`scripts/demo/`) | Disabled | It records which release the committed GIF was rendered on; it moves only when the demo is regenerated ([`RELEASING.md`](RELEASING.md)) |
+| The demo `compose-lint` pin (`scripts/demo/`) | Disabled | It records which release the committed GIF was rendered on; it moves only when the demos are re-recorded, by `marketplace-smoke.yml`'s `rerecord-demos` job after a release that changed their output, or by hand ([`RELEASING.md`](RELEASING.md)) |
 | Forgejo smoke stack pins | Disabled | Owned by [`forgejo-smoke-bump.yml`](#forgejo-smoke-bumpyml), which also moves the docs claim Renovate cannot |
 
 **Labels.** `manual-merge` means a person decides, and only a pyyaml major
