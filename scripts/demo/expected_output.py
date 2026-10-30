@@ -38,12 +38,30 @@ import tempfile
 
 HERE = pathlib.Path(__file__).resolve().parent
 
-_BANNER = re.compile(r"^compose-lint \d+\.\d+\.\d+(\S*)$", re.M)
+# The banner is the only place the text spells `compose-lint X.Y.Z`; it may
+# sit inside colour codes, so the match is not anchored to the line.
+_BANNER = re.compile(r"compose-lint \d+\.\d+\.\d+")
 
 
 def mask(text: str) -> str:
-    """Replace the version in the ``compose-lint X.Y.Z`` banner line."""
-    return _BANNER.sub(r"compose-lint <version>\1", text)
+    """Replace the version in the ``compose-lint X.Y.Z`` banner."""
+    return _BANNER.sub("compose-lint <version>", text)
+
+
+# Rows the hero tape's terminal shows at its font and height, per the comment
+# above `Set Height` in demo.tape. The lint step must fit in them: the typed
+# command, every output line, and the prompt that follows. A `check` that
+# gained a line (0.36.1 added the --explain hint) pushes the banner off the
+# top of the recording, which nothing but eyes caught before this.
+HERO_ROWS = 32
+
+
+def hero_rows_needed(text: str) -> int:
+    """Rows the hero cast's lint step takes: command + output + prompt."""
+    section = text.split("=== ", 2)[1].rstrip("\n")  # the hero check comes first
+    lines = section.splitlines()[1:]  # drop the "demo.tape: ..." title
+    output = [ln for ln in lines if not ln.startswith("[exit ")]
+    return 1 + len(output) + 1
 
 
 def _run(binary: str, args: list[str], cwd: pathlib.Path) -> str:
@@ -53,9 +71,12 @@ def _run(binary: str, args: list[str], cwd: pathlib.Path) -> str:
         capture_output=True,
         text=True,
         check=False,
+        # Colour is forced so that a change to how the text is coloured
+        # counts as a change to what the GIF shows; TERM=dumb keeps the
+        # pager out of it (the --explain page is not compared).
         env={
             "PATH": "/usr/bin:/bin",
-            "NO_COLOR": "1",
+            "FORCE_COLOR": "1",
             "TERM": "dumb",
             "HOME": str(cwd),
         },
@@ -105,6 +126,15 @@ def main(argv: list[str] | None = None) -> int:
 
     binary = shutil.which(args.compose_lint) or args.compose_lint
     text = render(binary)
+    needed = hero_rows_needed(text)
+    if needed > HERO_ROWS:
+        print(
+            f"::error::the hero cast's lint step needs {needed} rows but demo.tape's "
+            f"terminal shows {HERO_ROWS}; the banner would scroll off. Raise "
+            "`Set Height` in scripts/demo/demo.tape (and HERO_ROWS here) first.",
+            file=sys.stderr,
+        )
+        return 2
     if args.write:
         args.write.write_text(text, encoding="utf-8")
         print(f"wrote {args.write}")

@@ -372,7 +372,7 @@ jobs:
               echo "The casts' output on ${CL_RELEASE_TAG} differs from what the committed GIFs show:"
               echo ""
               echo '```diff'
-              cat "${diff_file}"
+              sed 's/\x1b/\\e/g' "${diff_file}"
               echo '```'
             else
               echo "Output unchanged since the GIFs were recorded (banner aside); the demos are still current."
@@ -398,9 +398,20 @@ jobs:
             --generate-hashes --output-file=scripts/demo/requirements.lock
           grep -q "^compose-lint==${version} " scripts/demo/requirements.lock
 
+      # The GIFs' pixel sizes before and after, for the PR body: a render
+      # that came out a different size is the first thing to look at.
       - name: Render both casts
         if: steps.compare.outputs.rerecord == 'true'
-        run: scripts/demo/render.sh
+        run: |
+          set -euo pipefail
+          dims() { ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$1"; }
+          before_demo=$(dims docs/assets/demo.gif); before_fix=$(dims docs/assets/demo-fix.gif)
+          scripts/demo/render.sh
+          after_demo=$(dims docs/assets/demo.gif); after_fix=$(dims docs/assets/demo-fix.gif)
+          {
+            echo "DIMS_DEMO=${before_demo} -> ${after_demo}"
+            echo "DIMS_FIX=${before_fix} -> ${after_fix}"
+          } >> "$GITHUB_ENV"
 
       - name: Record the text the new GIFs show
         if: steps.compare.outputs.rerecord == 'true'
@@ -436,7 +447,7 @@ jobs:
           cat > "${RUNNER_TEMP}/pr-body.md" <<EOF
           **Post-release follow-up, opened by \`marketplace-smoke.yml\`'s \`rerecord-demos\` job.** ${reason}
 
-          Both casts were rendered by \`scripts/demo/render.sh\` in the pinned toolchain image, against the \`compose-lint==${version}\` wheel from PyPI. The toolchain pin, its lock and \`scripts/demo/expected-output.txt\` move with the recordings.
+          Both casts were rendered by \`scripts/demo/render.sh\` in the pinned toolchain image, against the \`compose-lint==${version}\` wheel from PyPI. The toolchain pin, its lock and \`scripts/demo/expected-output.txt\` move with the recordings. The hero cast's lint step fits the tape's rows (checked before rendering). Pixel sizes, previous -> new: \`demo.gif\` ${DIMS_DEMO}, \`demo-fix.gif\` ${DIMS_FIX}.
 
           **Not auto-merged.** A recording is reviewed by looking at it. Check, then merge:
 
@@ -456,7 +467,7 @@ jobs:
           <details><summary>Output diff against the previous recording</summary>
 
           \`\`\`diff
-          $(cat "${RUNNER_TEMP}/demo-output.diff")
+          $(sed 's/\x1b/\\e/g' "${RUNNER_TEMP}/demo-output.diff")
           \`\`\`
 
           </details>

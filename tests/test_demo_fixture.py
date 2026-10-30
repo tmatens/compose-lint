@@ -119,3 +119,19 @@ def test_expected_output_masks_only_the_version_banner() -> None:
         "compose-lint <version>\n  CL-0001 at 1.0.0\n"
     )
     assert expected_output.mask(masked) == masked
+
+
+def test_the_recorded_hero_cast_fits_its_terminal() -> None:
+    """What the committed GIF shows must fit the rows demo.tape gives it,
+    or the banner has scrolled off the top of the recording."""
+    spec = importlib.util.spec_from_file_location(
+        "expected_output", DEMO_DIR / "expected_output.py"
+    )
+    assert spec is not None and spec.loader is not None
+    expected_output = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(expected_output)
+    text = (DEMO_DIR / "expected-output.txt").read_text(encoding="utf-8")
+    needed = expected_output.hero_rows_needed(text)
+    rows = expected_output.HERO_ROWS
+    assert needed <= rows, f"hero lint step needs {needed} rows, demo.tape shows {rows}"
+    assert needed == 32  # command + 30 output lines + prompt, as demo.tape says

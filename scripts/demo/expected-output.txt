@@ -1,92 +1,92 @@
 === demo.tape: compose-lint docker-compose.yml
-compose-lint <version>
-files: docker-compose.yml  ·  config: none  ·  fail-on: high
+[1mcompose-lint <version>[0m
+files: docker-compose.yml  [2m·[0m  config: none  [2m·[0m  fail-on: high
 
-docker-compose.yml
+[1mdocker-compose.yml[0m
 
-  service: watchtower  (line 3)
-    line  severity    rule     message
-      15  CRITICAL    CL-0001  Docker runtime socket mounted via '/var/run/docker.sock:/var/run/docker.sock'. This gives the container full control over the Docker runtime — equivalent to root on the host.
-          15 │       - /var/run/docker.sock:/var/run/docker.sock
-             │         ─────────────────────────────────────────
-          fix: Don't mount the runtime socket or a directory holding one. If a service genuinely needs Docker API access, put a socket proxy (e.g. tecnativa/docker-socket-proxy) in front of it, restricted to the minimum endpoints; other runtimes have equivalent rootless or proxied integrations. Mounting read-only does not help.
+  [2mservice:[0m watchtower  ([2mline[0m 3)
+[2m    line  severity    rule     message[0m
+      15  [1;31mCRITICAL  [0m  [2mCL-0001[0m  Docker runtime socket mounted via '/var/run/docker.sock:/var/run/docker.sock'. This gives the container full control over the Docker runtime — equivalent to root on the host.
+          [2m15[0m [2m│[0m       - /var/run/docker.sock:/var/run/docker.sock
+             [2m│[0m [1;31m        ─────────────────────────────────────────[0m
+          [2mfix:[0m Don't mount the runtime socket or a directory holding one. If a service genuinely needs Docker API access, put a socket proxy (e.g. tecnativa/docker-socket-proxy) in front of it, restricted to the minimum endpoints; other runtimes have equivalent rootless or proxied integrations. Mounting read-only does not help.
                Full guide: compose-lint --explain CL-0001
-          ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-1-do-not-expose-the-docker-daemon-socket-even-to-the-containers
-       3  MEDIUM      CL-0019  Image 'containrrr/watchtower:1.7.1' is pinned to a tag but not a digest. Tags can be overwritten on the registry, so this does not guarantee image immutability.
-          3 │     image: containrrr/watchtower:1.7.1
-            │            ───────────────────────────
-          fix: Add a digest pin: image: containrrr/watchtower:1.7.1@sha256:<digest>
+          [2mref:[0m https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-1-do-not-expose-the-docker-daemon-socket-even-to-the-containers
+       3  [33mMEDIUM    [0m  [2mCL-0019[0m  Image 'containrrr/watchtower:1.7.1' is pinned to a tag but not a digest. Tags can be overwritten on the registry, so this does not guarantee image immutability.
+          [2m3[0m [2m│[0m     image: containrrr/watchtower:1.7.1
+            [2m│[0m [33m           ───────────────────────────[0m
+          [2mfix:[0m Add a digest pin: image: containrrr/watchtower:1.7.1@sha256:<digest>
                Use Dependabot or Renovate to keep digests current.
-          ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-13-enhance-supply-chain-security
+          [2mref:[0m https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-13-enhance-supply-chain-security
 
-  service: db  (line 33)
-    line  severity    rule     message
-      33  HIGH        CL-0020  Service has credential-shaped env key 'POSTGRES_PASSWORD' with a literal value. Env vars are exposed via `docker inspect`, `/proc/<pid>/environ`, `docker compose config`, process listings, and CI logs — any process or operator with daemon access can read them.
-          33 │       POSTGRES_PASSWORD: hunter2
-             │       ─────────────────
-          fix: Move 'POSTGRES_PASSWORD' to Compose's `secrets:` primitive. If the image supports the `*_FILE` convention (Postgres, MySQL, MariaDB, MinIO, etc.), set `POSTGRES_PASSWORD_FILE: /run/secrets/<name>` and declare the secret under the top-level `secrets:` block sourced from a gitignored file or `external: true`. Otherwise, have the entrypoint read the secret file at startup and export the value into the workload's environment.
-          ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-12-utilize-docker-secrets-for-sensitive-data-management
-docker-compose.yml: 1 critical, 1 high, 1 medium
-Details on any rule: compose-lint --explain <RULE-ID>  (e.g. compose-lint --explain CL-0001)
-✗ FAIL  ·  2 findings at or above high
+  [2mservice:[0m db  ([2mline[0m 33)
+[2m    line  severity    rule     message[0m
+      33  [31mHIGH      [0m  [2mCL-0020[0m  Service has credential-shaped env key 'POSTGRES_PASSWORD' with a literal value. Env vars are exposed via `docker inspect`, `/proc/<pid>/environ`, `docker compose config`, process listings, and CI logs — any process or operator with daemon access can read them.
+          [2m33[0m [2m│[0m       POSTGRES_PASSWORD: hunter2
+             [2m│[0m [31m      ─────────────────[0m
+          [2mfix:[0m Move 'POSTGRES_PASSWORD' to Compose's `secrets:` primitive. If the image supports the `*_FILE` convention (Postgres, MySQL, MariaDB, MinIO, etc.), set `POSTGRES_PASSWORD_FILE: /run/secrets/<name>` and declare the secret under the top-level `secrets:` block sourced from a gitignored file or `external: true`. Otherwise, have the entrypoint read the secret file at startup and export the value into the workload's environment.
+          [2mref:[0m https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-12-utilize-docker-secrets-for-sensitive-data-management
+[1mdocker-compose.yml[0m: [1;31m1 critical[0m, [31m1 high[0m, [33m1 medium[0m
+[2mDetails on any rule: compose-lint --explain <RULE-ID>  (e.g. compose-lint --explain CL-0001)[0m
+[31m✗ FAIL[0m  [2m·[0m  2 findings at or above high
 [exit 1]
 
 === fix.tape: compose-lint fix fix-compose.yml
-⚠ behavior-changing · CL-0009: Replacing the unconfined entries re-applies the default seccomp/AppArmor/SELinux profile; a workload that relies on a syscall the default profile blocks may fail.
-⚠ behavior-changing · CL-0007: read_only: true breaks the container if it writes to its root filesystem; declare writable paths via tmpfs/volumes first.
-⚠ behavior-changing · CL-0005: Binding to 127.0.0.1 drops the port's reachability from other hosts; intended LAN or remote access breaks — front public exposure with a reverse proxy and TLS instead.
---- fix-compose.yml
-+++ fix-compose.yml
-@@ -1,5 +1,6 @@
+[33m⚠ behavior-changing · CL-0009: Replacing the unconfined entries re-applies the default seccomp/AppArmor/SELinux profile; a workload that relies on a syscall the default profile blocks may fail.[0m
+[33m⚠ behavior-changing · CL-0007: read_only: true breaks the container if it writes to its root filesystem; declare writable paths via tmpfs/volumes first.[0m
+[33m⚠ behavior-changing · CL-0005: Binding to 127.0.0.1 drops the port's reachability from other hosts; intended LAN or remote access breaks — front public exposure with a reverse proxy and TLS instead.[0m
+[1m--- fix-compose.yml[0m
+[1m+++ fix-compose.yml[0m
+[36m@@ -1,5 +1,6 @@[0m
  services:
    api:
-+    read_only: true
+[32m+    read_only: true[0m
      image: ghcr.io/acme/api:2.4.0
      deploy:
        resources:
-@@ -7,11 +8,11 @@
+[36m@@ -7,11 +8,11 @@[0m
            memory: 256M
            cpus: '0.50'
      ports:
--      - "8080:8080"
-+      - "127.0.0.1:8080:8080"
+[31m-      - "8080:8080"[0m
+[32m+      - "127.0.0.1:8080:8080"[0m
      cap_drop:
        - ALL
      security_opt:
--      - seccomp:unconfined
-+      - no-new-privileges:true
+[31m-      - seccomp:unconfined[0m
+[32m+      - no-new-privileges:true[0m
      environment:
        DATABASE_URL: postgres://db:5432/acme
      volumes:
 fix-compose.yml: 3 fix(es) available
-fix-compose.yml: 1 to fix by hand:
-  line 3  CL-0019  Add a digest pin: image: ghcr.io/acme/api:2.4.0@sha256:<digest>
+fix-compose.yml: [1m1 to fix by hand:[0m
+  line 3  [2mCL-0019[0m  Add a digest pin: image: ghcr.io/acme/api:2.4.0@sha256:<digest>
 [exit 0]
 
 === fix.tape: compose-lint fix --apply fix-compose.yml
-⚠ behavior-changing · CL-0009: Replacing the unconfined entries re-applies the default seccomp/AppArmor/SELinux profile; a workload that relies on a syscall the default profile blocks may fail.
-⚠ behavior-changing · CL-0007: read_only: true breaks the container if it writes to its root filesystem; declare writable paths via tmpfs/volumes first.
-⚠ behavior-changing · CL-0005: Binding to 127.0.0.1 drops the port's reachability from other hosts; intended LAN or remote access breaks — front public exposure with a reverse proxy and TLS instead.
-fix-compose.yml: applied 3 fix(es)
-fix-compose.yml: 1 to fix by hand:
-  line 4  CL-0019  Add a digest pin: image: ghcr.io/acme/api:2.4.0@sha256:<digest>
+[33m⚠ behavior-changing · CL-0009: Replacing the unconfined entries re-applies the default seccomp/AppArmor/SELinux profile; a workload that relies on a syscall the default profile blocks may fail.[0m
+[33m⚠ behavior-changing · CL-0007: read_only: true breaks the container if it writes to its root filesystem; declare writable paths via tmpfs/volumes first.[0m
+[33m⚠ behavior-changing · CL-0005: Binding to 127.0.0.1 drops the port's reachability from other hosts; intended LAN or remote access breaks — front public exposure with a reverse proxy and TLS instead.[0m
+fix-compose.yml: [32mapplied 3 fix(es)[0m
+fix-compose.yml: [1m1 to fix by hand:[0m
+  line 4  [2mCL-0019[0m  Add a digest pin: image: ghcr.io/acme/api:2.4.0@sha256:<digest>
 [exit 0]
 
 === fix.tape: compose-lint fix-compose.yml
-compose-lint <version>
-files: fix-compose.yml  ·  config: none  ·  fail-on: high
+[1mcompose-lint <version>[0m
+files: fix-compose.yml  [2m·[0m  config: none  [2m·[0m  fail-on: high
 
-fix-compose.yml
+[1mfix-compose.yml[0m
 
-  service: api  (line 4)
-    line  severity    rule     message
-       4  MEDIUM      CL-0019  Image 'ghcr.io/acme/api:2.4.0' is pinned to a tag but not a digest. Tags can be overwritten on the registry, so this does not guarantee image immutability.
-          4 │     image: ghcr.io/acme/api:2.4.0
-            │            ──────────────────────
-          fix: Add a digest pin: image: ghcr.io/acme/api:2.4.0@sha256:<digest>
+  [2mservice:[0m api  ([2mline[0m 4)
+[2m    line  severity    rule     message[0m
+       4  [33mMEDIUM    [0m  [2mCL-0019[0m  Image 'ghcr.io/acme/api:2.4.0' is pinned to a tag but not a digest. Tags can be overwritten on the registry, so this does not guarantee image immutability.
+          [2m4[0m [2m│[0m     image: ghcr.io/acme/api:2.4.0
+            [2m│[0m [33m           ──────────────────────[0m
+          [2mfix:[0m Add a digest pin: image: ghcr.io/acme/api:2.4.0@sha256:<digest>
                Use Dependabot or Renovate to keep digests current.
-          ref: https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-13-enhance-supply-chain-security
-fix-compose.yml: 1 medium
-Details on any rule: compose-lint --explain <RULE-ID>  (e.g. compose-lint --explain CL-0019)
-✓ PASS  ·  threshold: high  ·  below: 1 medium
+          [2mref:[0m https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-13-enhance-supply-chain-security
+[1mfix-compose.yml[0m: [33m1 medium[0m
+[2mDetails on any rule: compose-lint --explain <RULE-ID>  (e.g. compose-lint --explain CL-0019)[0m
+[32m✓ PASS[0m  [2m·[0m  threshold: high  [2m·[0m  below: [33m1 medium[0m
 [exit 0]
