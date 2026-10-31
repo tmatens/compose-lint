@@ -219,6 +219,16 @@ re-chosen cell is not.
    grants strictly more, and confirm it scores at least as high.
 7. **Heterogeneity check.** Do your members land in different cells? Then it is
    two rules. Split now.
+8. **Ownership check.** If the furthest reach lands in an existing rule's cell,
+   ask whether the key is a second *spelling* of that rule's grant or a
+   *bundle* that grants more. A spelling joins the rule: rules split by tier,
+   never by the key a grant is spelled in
+   ([ADR-028](adr/028-pre-1.0-rule-id-sweep.md)). A key that bundles grants
+   beyond the rule's subject, so that an exclusion written for the rule would
+   silently accept the second grant, takes its own id, as `privileged` does
+   beside CL-0024 and `use_api_socket` beside CL-0001 (ADR-028, post-1.0
+   amendment). The bundle decides the id, not the number: the cell's severity
+   stands.
 
 ### Edge rules
 
