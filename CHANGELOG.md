@@ -42,6 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   amendment to [ADR-028](docs/adr/028-pre-1.0-rule-id-sweep.md). A tightening
   under ADR-030: no existing assignment moves, and nothing is promised less
   than before. ([#1178](https://github.com/tmatens/compose-lint/issues/1178))
+- **The CL-0007 fixer refuses a service that sets `use_api_socket: true`**,
+  with the reason on stderr. Compose copies that key's credentials file into
+  the root filesystem rather than mounting it and refuses to create it in a
+  read-only service (`cannot create config "" in read-only service`), so the
+  inserted `read_only: true` would lint clean and fail `up`. The key has to
+  go first, which is CL-0031's finding.
+  ([#1178](https://github.com/tmatens/compose-lint/issues/1178))
 
 ## [1.0.0] - 2026-10-30
 

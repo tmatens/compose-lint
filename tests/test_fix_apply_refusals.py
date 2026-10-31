@@ -216,6 +216,12 @@ class TestRefusalsSayWhy:
                 "CL-0005 on 'web': the entry's first value continues onto the "
                 "next line",
             ),
+            (
+                "services:\n  web:\n    image: nginx:1.27\n    use_api_socket: true\n",
+                "CL-0007 on 'web': the service sets use_api_socket: true, and "
+                "Compose refuses to place its credentials file in a read-only "
+                "service",
+            ),
         ],
     )
     def test_the_reason_is_printed(

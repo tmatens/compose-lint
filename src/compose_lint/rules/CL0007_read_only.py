@@ -9,9 +9,10 @@ from compose_lint._yaml_edit import (
     first_child_indent,
     is_anchored_or_merged,
 )
-from compose_lint.models import Finding, RuleMetadata, Severity, TextEdit
+from compose_lint.models import Finding, FixRefusal, RuleMetadata, Severity, TextEdit
 from compose_lint.rules import BaseRule, register_rule
 from compose_lint.rules._bool import as_bool
+from compose_lint.rules.CL0031_api_socket import delegates_api_socket
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -93,12 +94,14 @@ class ReadOnlyFilesystemRule(BaseRule):
         data: dict[str, Any],
         lines: dict[str, int],
         text: str,
-    ) -> list[TextEdit] | None:
+    ) -> list[TextEdit] | FixRefusal | None:
         """Insert ``read_only: true`` as the first child of the service.
 
         Refuses (returns ``None``) when the service is flow-style, anchored or
         aliased, uses a merge key, has no determinable child indentation, or
         already declares ``read_only`` (the explicit-value case is deferred).
+        Returns a :class:`FixRefusal` when the service sets
+        ``use_api_socket: true``, which Compose cannot run read-only.
         The edit carries a caveat because making the rootfs read-only changes
         runtime behavior (ADR-014).
         """
@@ -112,6 +115,18 @@ class ReadOnlyFilesystemRule(BaseRule):
         # read_only present but not True is a modify, not an insert; deferred.
         if "read_only" in service_config:
             return None
+        # Compose copies the registry-credentials file that `use_api_socket`
+        # places into the root filesystem rather than mounting it, so it
+        # refuses to create it in a read-only service and `up` fails. The
+        # inserted file would lint clean here, because verify_apply re-parses
+        # with this parser and never asks Compose. Refuse with the reason: the
+        # key is CL-0031's finding, and it has to go first.
+        if delegates_api_socket(service_config):
+            return FixRefusal(
+                "the service sets use_api_socket: true, and Compose refuses to "
+                "place its credentials file in a read-only service; remove the "
+                "key first (CL-0031)"
+            )
 
         key_line = lines.get(f"services.{service}")
         if key_line is None:
