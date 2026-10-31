@@ -61,10 +61,17 @@ so identity alone cannot tell a hook's finding from its parent's.
    `app.post_start[1]`, `jobs.migrate`. The brackets make a hook name
    impossible to confuse with a service, since Compose does not allow them
    in service names. A service literally named `jobs.<x>` beside a job
-   `<x>` would share a name; both are still reported. The name is what
-   `exclude_services` matches, what the text report groups under, and what
-   the SARIF fingerprint hashes, so a hook's finding and its parent's are
-   distinct alerts.
+   `<x>` would share a name; both are still reported. The name is what the
+   text report groups under and what the SARIF fingerprint hashes, so a
+   hook's finding and its parent's are distinct alerts. `exclude_services`
+   matches a unit by that full name, or by its **kind name**, the unit name
+   without its index (`app.pre_start`, `app.post_start`, `app.pre_stop`),
+   which covers every hook of that kind on the service. The index is the
+   identity because it is the only handle the file gives a hook; the kind
+   name is the exclusion to write, because a hook inserted above another
+   moves every index after it. This is the additive widening ADR-010 set
+   aside for later, a named set rather than a pattern language; inline
+   suppression stays rejected.
 
 3. **A hook is graded as what it deploys, attributed to what it wrote.**
    The mapping a rule sees for a `pre_start` unit is the parent's scalar
@@ -119,9 +126,12 @@ so identity alone cannot tell a hook's finding from its parent's.
   `compatibility.md`. On the corpus that is 11 findings in 7 files, and
   2 CL-0018 findings on `user: root` exec hooks. No existing finding changes
   identity, since service units keep their names and their evidence.
-- `exclude_services` accepts unit names. A service exclusion does not cover
-  the service's hooks: a hook is its own unit with its own name, the same
-  way the hook's findings are its own. Documented in `configuration.md`.
+- `exclude_services` accepts unit names and kind names. A service exclusion
+  does not cover the service's hooks: a hook is its own unit with its own
+  name, the same way the hook's findings are its own. `configuration.md`
+  documents both forms and recommends the kind name for hooks, with the
+  index caveat stated. The unknown-name warning treats a kind name as known
+  when the service has at least one hook of that kind.
 - CL-0018's message says "Service explicitly runs as root"; on an exec hook
   the engine supplies a name that makes the sentence read as the hook's, and
   the rule page gains the exec case. No rule text changes in this ADR.
