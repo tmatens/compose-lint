@@ -1747,3 +1747,20 @@ def test_text_output_points_at_explain_once_before_the_verdict(
     (tmp_path / "compose.yml").write_text("services: {}\n", encoding="utf-8")
     clean = run_cli("check", "compose.yml", cwd=tmp_path, env_extra=env)
     assert hint not in clean.stdout, clean.stdout
+
+
+class TestProviderServiceCli:
+    """End to end: a ``provider:`` service yields no finding and no fix (#1186)."""
+
+    FIXTURE = "tests/compose_files/provider_service.yml"
+
+    def test_check_reports_nothing_on_the_provider_service(self) -> None:
+        result = run_cli("check", "--format", "json", "--fail-on", "low", self.FIXTURE)
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(result.stdout)
+        assert [f for f in payload["findings"] if f["service"] == "db"] == []
+
+    def test_fix_leaves_the_provider_service_untouched(self) -> None:
+        result = run_cli("fix", self.FIXTURE)
+        assert result.returncode == 0, result.stderr
+        assert "nothing to fix" in result.stdout + result.stderr

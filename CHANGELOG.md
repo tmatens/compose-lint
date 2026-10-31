@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A `provider:` service is no longer graded as a container.** Compose
+  2.36 and later hands such a service to an external plugin and creates no
+  container for it, applying none of the container-only keys written on it.
+  compose-lint reported the absence rules on every provider service, and the
+  presence rules too when the service also carried `privileged`, a socket
+  mount or a credential-shaped environment literal (three CRITICAL findings
+  and exit 1 on a service that deploys nothing), and `fix` offered to write
+  `security_opt` into it. No rule runs on a service whose `provider` is a
+  mapping; the sibling services are graded as before. See
+  [compatibility](docs/compatibility.md#services-compose-does-not-run-as-containers)
+  (#1186).
+
 ## [1.1.0] - 2026-10-31
 
 ### Added

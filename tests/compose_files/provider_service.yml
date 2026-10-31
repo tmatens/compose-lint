@@ -1,0 +1,28 @@
+# A `provider:` service (Compose 2.36+) is set up by an external binary, not
+# run as a container. Compose accepts every container-only key on it and
+# applies none of them, so nothing here is graded. The sibling is hardened so
+# that `fix` has nothing to write anywhere in this file.
+services:
+  db:
+    provider:
+      type: awesomecloud
+      options:
+        type: mysql
+    image: alpine
+    privileged: true
+    cap_add: [SYS_ADMIN]
+    environment:
+      DB_PASSWORD: literal-not-a-secret
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+  app:
+    image: nginx:1.27@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: "0.5"
+    depends_on: [db]
