@@ -1,6 +1,6 @@
 # ADR-040: Grade Every Container the File Deploys
 
-**Status:** Proposed
+**Status:** Accepted
 
 **Context:** The engine grades one kind of unit, the mapping under
 `services.<name>`, and hands each rule that mapping. Since late 2024 Compose
@@ -81,16 +81,25 @@ so identity alone cannot tell a hook's finding from its parent's.
    (a hook under a `privileged: true` parent is privileged); collections are
    the hook's own so that a parent's socket mount is reported once, on the
    parent, and the hook's additions are reported on the hook with correct
-   line numbers. A finding on a hook unit is then dropped when its line is
-   `None` or is the unit's own line: that is a finding about a key the hook
-   did not write, an inherited scalar or an absence, and it belongs to the
-   parent, which already reports it. No rule needs to know any of this.
+   line numbers. A finding on a hook unit is then dropped when it is about a
+   key the hook did not write, an inherited scalar or an absence: it belongs
+   to the parent, which already reports it. The engine decides that by line,
+   without comparing lines: the line map a rule receives for a hook unit
+   omits the unit's own path (`services.app.pre_start[0]`), which is where
+   an absence finding lands, so such a finding has no line and is dropped
+   with the ones whose key the hook did not write. Comparing a finding's line
+   to the unit's own line instead would drop real findings, because a block
+   list item starts on the line of its first key: in `- image: alpine` the
+   unit and its `image` share a line. No rule needs to know any of this.
 
 4. **An exec hook is graded on `user` and `environment`, never
    `privileged`.** Its mapping is the parent's scalars overlaid by the
    hook's `user` and `working_dir`, with the hook's own `environment`. The
    hook's `privileged` is removed before grading: measured, it is not the
-   grant CL-0002 describes, and no rule describes what it is. It is recorded
+   grant CL-0002 describes, and no rule describes what it is. The paths of
+   the keys an exec hook writes but is not graded on, `command` and
+   `privileged`, are left out of its line map as well, so a parent's value
+   for either (inherited as a scalar) is never reported at the hook's line. It is recorded
    as not graded (issue #1189) with the measurement. The same drop rule as
    (3) applies, so a parent's absence findings are not repeated on its execs.
 
@@ -98,7 +107,17 @@ so identity alone cannot tell a hook's finding from its parent's.
    line paths live under `jobs.<name>`, so the engine gives the rules a line
    map in which `services.jobs.<name>.*` aliases them. A document with
    `jobs:` and no `services:` is a lintable Compose file; the parser's
-   missing-`services` error applies only when both are absent.
+   missing-`services` error applies only when both are absent. A job's
+   `env_file:` is read as a service's is (ADR-027). The spec lets a job
+   `extends:` another job, in the file or another file; this release does not
+   resolve that, so a job carrying `extends:` is not graded. Graded as
+   written it would report every key its base supplies as missing, and
+   skipped in silence it would be a false pass, so it is a coverage gap. Under
+   `compatibility.md` a new gap condition takes a one-release runway: the
+   release that ships this ADR reports it as an `unread_input` warning naming
+   the next MINOR, and the next MINOR makes it exit 2. Resolving job
+   `extends:` retires the gap; that is follow-up work, measured on Compose
+   first.
 
 6. **`fix` edits service units only.** A finding on a hook or job unit goes
    to the manual list with a note saying so. The fixers locate edits by
@@ -116,14 +135,29 @@ so identity alone cannot tell a hook's finding from its parent's.
    container, skipping (not failing) where the Compose plugin predates 5.6.
    A spec-shape change surfaces there first.
 
-9. **Nothing here is a coverage gap.** Every unit is graded; the gap list in
-   `compatibility.md` is unchanged. The unknown-name coverage warning for
+9. **One coverage gap, the extended job of (5)**, on its runway. Every
+   other unit is graded. The unknown-name coverage warning for
    `exclude_services` learns unit names so excluding a hook is not flagged.
+
+10. **Units share the service bound.** Hooks and jobs count against
+    `MAX_SERVICES` with services: each is graded by every rule, and an 8 MB
+    file holds hundreds of thousands of `- {}` hook entries. A hook list
+    counts its length once per service that uses it, so a list aliased into
+    every service cannot multiply past the bound. A new refusal also takes a
+    one-release runway (`compatibility.md`, "Resource limits"), so in the
+    release that ships this ADR a document past the bound with its hooks and
+    jobs counted, but not with its services alone, grades its services only,
+    exactly what the previous release graded, and says so with an
+    `unread_input` warning. The cost of grading it is then what it was. The
+    next MINOR refuses such a document as it refuses one with too many
+    services.
 
 **Consequences:**
 
 - Files that graded clean gain findings on their hooks and jobs: MINOR under
-  `compatibility.md`. On the corpus that is 11 findings in 7 files, and
+  `compatibility.md`. No file that exited 0 or 1 exits 2 because of this ADR
+  in the release that ships it; the two conditions that will are warnings
+  first. On the corpus that is 11 findings in 7 files, and
   2 CL-0018 findings on `user: root` exec hooks. No existing finding changes
   identity, since service units keep their names and their evidence.
 - `exclude_services` accepts unit names and kind names. A service exclusion

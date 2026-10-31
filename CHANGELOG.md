@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Every container a file deploys is graded, not only `services.<name>`.**
+  `pre_start` init containers (Compose 5.3), `post_start` and `pre_stop`
+  exec hooks (Compose 2.30) and top-level `jobs:` (Compose 5.6) are each
+  handed to the existing rules as a unit of their own, named by their path
+  below `services:` (`app.pre_start[0]`, `app.post_start[1]`,
+  `jobs.migrate`). That name is the finding's `service`, what the text
+  report groups under, and what the SARIF logical location and fingerprint
+  use, so a hook's finding and its service's are separate alerts. A hook is
+  graded as the container it deploys, the service's scalar keys overlaid by
+  its own, and reports only the keys it wrote: what it inherits, or what is
+  missing from both, stays the service's finding. An exec hook is graded on
+  its `user` and `environment` only; `privileged` on an exec is not graded,
+  because measured on Compose 5.6.1 it leaves seccomp filtering and the
+  device cgroup in place. Measured on the 11,111-file corpus: 13 new
+  findings in 9 files, all on hooks (CL-0004 x6, CL-0019 x3 and CL-0020 x2
+  on `pre_start` units, CL-0018 x2 on `post_start` units); the two CL-0020
+  findings are literal object-storage keys in an init container whose
+  service has no `environment:` at all. The hook inheritance, the exec grant
+  shape, the inert hook `env_file:` and the job container are re-proven on
+  every CI run. See
+  [graded units](docs/compatibility.md#graded-units) and
+  [ADR-040](docs/adr/040-grade-every-container-the-file-deploys.md)
+  (#1185).
+- **`exclude_services` accepts unit names and hook kind names.** A hook's
+  kind name, the unit name without its index (`app.pre_start`), covers every
+  hook of that kind on the service and survives the list being reordered,
+  so it is the form to write. An exclusion for a service does not cover its
+  hooks. See [configuration](docs/configuration.md#hooks-and-jobs).
+
+### Changed
+
+- **A file with `jobs:` and no `services:` is linted.** It is valid Compose,
+  and 1.1.0 refused it as "missing 'services' key" (exit 2).
+- **`fix` reports hook and job findings to fix by hand** with the note "fix
+  edits service blocks only; hook and job units are reported, not edited".
+  Fixes on the file's services still apply.
+- **Announced: two conditions become exit 2 in the next minor release.**
+  Each is an `unread_input` warning in this release, on stderr and in JSON
+  `warnings[]` and SARIF notifications, and changes no exit code yet:
+  a job that uses `extends:`, which compose-lint does not resolve for jobs
+  yet and does not grade, becomes a coverage gap; and a document with more
+  than 4,096 services, hooks and jobs together, which grades its services
+  only in this release, is refused like one with more than 4,096 services.
+
 ### Fixed
 
 - **A `provider:` service is no longer graded as a container.** Compose
