@@ -39,6 +39,7 @@ from compose_lint._service_env import (
     resolve_env_files,
 )
 from compose_lint._terminal_markdown import render as render_markdown
+from compose_lint._units import unit_names
 from compose_lint.config import (
     CONFIG_FILENAMES,
     ConfigError,
@@ -1184,6 +1185,9 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             for note in describe_unread(service_env_files, only=MACHINE_READABLE)
         )
         seen_services.update(data.get("services", {}).keys())
+        # Hook and job units, and hook kind names (ADR-040 §9), so excluding
+        # `app.pre_start` is not reported as an unknown service.
+        seen_services.update(unit_names(data))
 
         def _record_rule_error(
             rule_id: str,

@@ -38,6 +38,7 @@ from compose_lint._safe_read import (
     read_text_bounded,
 )
 from compose_lint._service_env import project_relative
+from compose_lint._units import container_specs, count_units, extended_jobs
 from compose_lint._yaml_error import describe_yaml_error
 from compose_lint.config import KNOWN_TOP_LEVEL_KEYS
 from compose_lint.rules._interpolation import (
@@ -780,8 +781,15 @@ def _validate_compose(
             "Not a valid Compose file: expected a YAML mapping at the top level"
         )
 
+    if "jobs" in data:
+        _validate_bodies(data["jobs"], "jobs", "job", merging=merging)
     if "services" not in data:
         if include_resolvable and "include" in data:
+            return data
+        if "jobs" in data:
+            # A file of jobs alone is valid Compose (`docker compose run <job>`
+            # runs one; measured on Compose 5.6.1), and every job is a graded
+            # unit (ADR-040 §5).
             return data
         classified = _classify_missing_services(data)
         if merging and isinstance(classified, ComposeFragmentError):
@@ -791,11 +799,16 @@ def _validate_compose(
             return data
         raise classified
 
-    services = data["services"]
-    if not isinstance(services, dict):
-        raise ComposeError("Not a valid Compose file: 'services' must be a mapping")
+    _validate_bodies(data["services"], "services", "service", merging=merging)
+    return data
 
-    for name, config in services.items():
+
+def _validate_bodies(block: Any, key: str, noun: str, *, merging: bool) -> None:
+    """Refuse a ``services:`` or ``jobs:`` block that is not a mapping of mappings."""
+    if not isinstance(block, dict):
+        raise ComposeError(f"Not a valid Compose file: '{key}' must be a mapping")
+
+    for name, config in block.items():
         if name is _LINES:
             continue
         if config is None and merging:
@@ -807,10 +820,8 @@ def _validate_compose(
             continue
         if not isinstance(config, dict):
             raise ComposeError(
-                f"Not a valid Compose file: service '{name}' must be a mapping"
+                f"Not a valid Compose file: {noun} '{name}' must be a mapping"
             )
-
-    return data
 
 
 def _lines_by_service(
@@ -1233,11 +1244,8 @@ def _rebase_env_files(
             return {**value, "path": _rebased(value["path"])}
         return value
 
-    services = data.get("services")
-    if not isinstance(services, dict):
-        return
-    for config in services.values():
-        if isinstance(config, dict) and "env_file" in config:
+    for _name, config in container_specs(data):
+        if "env_file" in config:
             config["env_file"] = _rebased(config["env_file"])
 
 
@@ -2034,12 +2042,7 @@ def unresolved_mount_sources(data: dict[str, Any]) -> list[str]:
     deploy, which the run is not the right place to discover.
     """
     notes: list[str] = []
-    services = data.get("services")
-    if not isinstance(services, dict):
-        return notes
-    for name, config in sorted(services.items()):
-        if not isinstance(config, dict):
-            continue
+    for name, config in sorted(container_specs(data), key=lambda spec: spec[0]):
         volumes = config.get("volumes")
         if not isinstance(volumes, list):
             continue
@@ -2119,12 +2122,10 @@ def _resolve_bind_sources(data: dict[str, Any], base_dir: Path) -> None:
                 resolved = _resolved_bind_source(file_value, base_dir)
                 if resolved is not None:
                     spec["file"] = resolved
-    services = data.get("services")
-    if not isinstance(services, dict):
-        return
-    for service in services.values():
-        if not isinstance(service, dict):
-            continue
+    # Every container the document writes, not only services: a `pre_start`
+    # hook or a job mounting `../../..` mounts the host root just the same
+    # (ADR-040).
+    for _name, service in container_specs(data):
         volumes = service.get("volumes")
         if not isinstance(volumes, list):
             continue
@@ -2247,21 +2248,19 @@ def load_compose_full(path: str | Path, *, use_env: bool = True) -> Loaded:
 
 
 def _check_service_count(document: dict[Any, Any], *, folded: bool = False) -> None:
-    """Refuse a document declaring more than ``MAX_SERVICES`` services.
+    """Refuse a document declaring more than ``MAX_SERVICES`` units.
 
-    Run on each document as parsed, and again on one whose ``include:`` files
-    have been folded in, so a stack cannot pass by spreading them across files.
+    A unit is a service, a hook or a job (ADR-040): each is graded by every
+    rule, so they share one bound. Run on each document as parsed, and again
+    on one whose ``include:`` files have been folded in, so a stack cannot
+    pass by spreading them across files.
     """
-    services = document.get("services")
-    if not isinstance(services, dict):
-        return
-    count = sum(1 for name in services if isinstance(name, str))
-    if count > MAX_SERVICES:
+    if count_units(document) > MAX_SERVICES:
         where = " once its 'include:' files are folded in" if folded else ""
         raise ComposeError(
             f"Not linted: this document declares more than {MAX_SERVICES} "
-            f"services{where}, so it was not graded. The limit is far above any "
-            "real Compose file."
+            f"services, hooks and jobs{where}, so it was not graded. The limit "
+            "is far above any real Compose file."
         )
 
 
@@ -2552,7 +2551,8 @@ def _loads_full(  # noqa: PLR0913
                 repeats=repeats,
             )
         )
-        if "include" in data and "services" not in data:
+        gaps.extend(_extended_job_gap(name) for name in extended_jobs(data))
+        if "include" in data and "services" not in data and "jobs" not in data:
             # Deferred from `_validate_compose`, and only for the document that
             # deferral applied to: an include-only file whose references could
             # not be followed linted nothing at all, and a verdict over nothing
@@ -2590,6 +2590,19 @@ def _dropped_directive_gap(paths: list[str]) -> str:
     )
 
 
+def _extended_job_gap(name: str) -> str:
+    """The coverage gap for a job that uses ``extends:`` (ADR-040 §5).
+
+    Compose lets a job extend another job, in this file or another, and this
+    release does not resolve that yet. Graded as written, the job would report
+    every key its base supplies as missing; graded not at all, the gap says so.
+    """
+    return (
+        f"job '{name}' uses 'extends:', which compose-lint does not resolve for "
+        "jobs yet, so the job was not graded."
+    )
+
+
 def _starved_substitution_gap(count: int) -> str:
     """The coverage gap for values the substitution budget left as written.
 
@@ -2615,16 +2628,17 @@ def _refuse_bodiless_services(data: dict[str, Any]) -> None:
     2, ``rule_crash``); Compose refuses it ("must be a mapping"), so the run
     reports that instead.
     """
-    services = data.get("services")
-    if not isinstance(services, dict):
-        return
-    for name, config in services.items():
-        if name is not _LINES and config is None:
-            raise ComposeError(
-                f"Not a valid Compose file: service '{name}' has no body, and "
-                f"no other file defines it (Compose: services.{name} must be a "
-                "mapping)"
-            )
+    for key, noun in (("services", "service"), ("jobs", "job")):
+        block = data.get(key)
+        if not isinstance(block, dict):
+            continue
+        for name, config in block.items():
+            if name is not _LINES and config is None:
+                raise ComposeError(
+                    f"Not a valid Compose file: {noun} '{name}' has no body, and "
+                    f"no other file defines it (Compose: {key}.{name} must be a "
+                    "mapping)"
+                )
 
 
 def _oversized_value_gap(count: int) -> str:
@@ -2842,7 +2856,7 @@ def load_merged(paths: list[str | Path], *, use_env: bool = True) -> Merged:
         _refuse_bodiless_services(merged.data)
     except ComposeError as exc:
         raise ComposeFileError(paths[0], str(exc)) from exc
-    if "services" not in merged.data:
+    if "services" not in merged.data and "jobs" not in merged.data:
         # No document contributed services, so the merged result has none to
         # lint. v1-shaped and own-config documents never reach here: they
         # raise from :func:`load_document` above.

@@ -38,6 +38,7 @@ observe and are listed as intentionally out of scope.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -1107,6 +1108,187 @@ def _cl0031_api_socket() -> tuple[bool | None, str]:
     )
 
 
+def _compose_at_least(major: int, minor: int) -> bool | None:
+    """Whether the compose plugin is at least ``major.minor``; ``None`` if absent."""
+    proc = subprocess.run(
+        ["docker", "compose", "version", "--short"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if proc.returncode:
+        return None
+    found = re.match(r"v?(\d+)\.(\d+)", proc.stdout.strip())
+    if found is None:
+        return None
+    return (int(found.group(1)), int(found.group(2))) >= (major, minor)
+
+
+# What one hook or job container prints about itself: uid, root filesystem,
+# effective and bounding capability masks, seccomp mode, and device-node count.
+# Masks and counts only; no variable's value is ever printed. No double quotes:
+# the probe is embedded through repr() into a YAML flow sequence. `$$` reaches
+# the container shell as `$`, because Compose interpolates `$VAR` in the file.
+_UNIT_PROBE = (
+    "echo U$$(id -u); "
+    "touch /probe-rootfs 2>/dev/null && echo RW || echo RO; "
+    "echo EFF$$(grep CapEff /proc/self/status | cut -f2); "
+    "echo BND$$(grep CapBnd /proc/self/status | cut -f2); "
+    "echo SEC$$(grep ^Seccomp: /proc/self/status | cut -f2); "
+    "echo DEV$$(ls /dev | wc -l); "
+    # `${VAR:+SET}` names presence without the value, and needs no quoting.
+    "echo PARENTVAR$${PARENT_VAR:+SET} HOOKVAR$${HOOK_VAR:+SET} "
+    "FILEVAR$${HOOK_FILE_VAR:+SET}"
+)
+
+
+def _unit_tokens(text: str) -> dict[str, str]:
+    """One probe's output as ``{prefix: value}`` plus bare flag tokens."""
+    tokens: dict[str, str] = {}
+    for token in text.split():
+        for prefix in ("U", "EFF", "BND", "SEC", "DEV"):
+            if token.startswith(prefix) and token[len(prefix) :].isalnum():
+                tokens.setdefault(prefix, token[len(prefix) :])
+                break
+        else:
+            tokens[token] = token
+    return tokens
+
+
+def _hook_units() -> tuple[bool | None, str]:
+    """ADR-040's measurements: what hooks and jobs deploy, on this daemon.
+
+    Four observations ground the engine's unit model rather than a rule:
+
+    - a ``pre_start`` hook that sets nothing inherits the parent's scalars
+      (``user``, ``read_only``), its ``cap_drop`` and environment, and the
+      parent's volume (the hook writes its result into it);
+    - a ``pre_start`` hook that sets ``privileged`` and ``user: root`` is a
+      full container: uid 0, every capability, the host's device nodes;
+    - a ``post_start`` exec with ``privileged: true`` widens the bounding set
+      but leaves seccomp in filter mode (mode 2), which is why it is not the
+      grant CL-0002 describes;
+    - a hook's ``env_file:`` is not applied (ADR-040 §7);
+
+    and a job with ``privileged: true`` run by ``docker compose run`` is a
+    full container (ADR-040 §5). Hook containers are removed after they run,
+    so each writes its tokens into a named volume a reader then prints. A
+    named volume rather than a bind mount, because the daemon may not share
+    this host's filesystem. Skipped, not failed, below Compose 5.6, which
+    rejects ``jobs:``.
+    """
+    supported = _compose_at_least(5, 6)
+    if supported is None:
+        return None, "docker compose plugin not available"
+    if not supported:
+        return None, "compose predates jobs: (needs 5.6)"
+    def probe(target: str = "") -> str:
+        # Grouped, so the redirect takes every line and not only the last.
+        return repr(f"({_UNIT_PROBE}) > /out/{target}" if target else _UNIT_PROBE)
+
+    compose = (
+        "services:\n"
+        "  app:\n"
+        f"    image: {IMAGE}\n"
+        "    user: '65534'\n"
+        "    read_only: true\n"
+        "    cap_drop: [ALL]\n"
+        "    environment: {PARENT_VAR: p}\n"
+        "    volumes: ['out:/out']\n"
+        "    command: ['sleep', '60']\n"
+        "    pre_start:\n"
+        "      - user: root\n"
+        "        command: ['sh', '-c', 'chmod 777 /out']\n"
+        "      - environment: {HOOK_VAR: h}\n"
+        "        env_file: hook.env\n"
+        f"        command: ['sh', '-c', {probe('inherit')}]\n"
+        "      - privileged: true\n"
+        "        user: root\n"
+        f"        command: ['sh', '-c', {probe('privileged')}]\n"
+        "    post_start:\n"
+        "      - privileged: true\n"
+        "        user: root\n"
+        f"        command: ['sh', '-c', {probe('exec')}]\n"
+        "  reader:\n"
+        f"    image: {IMAGE}\n"
+        "    profiles: [read]\n"
+        "    volumes: ['out:/out:ro']\n"
+        "    command: ['sh', '-c', 'for f in inherit privileged exec; do "
+        "echo @$$f; cat /out/$$f 2>/dev/null; done']\n"
+        "volumes:\n"
+        "  out: {}\n"
+        "jobs:\n"
+        "  probe:\n"
+        f"    image: {IMAGE}\n"
+        "    privileged: true\n"
+        "    triggers: {manual: true}\n"
+        f"    command: ['sh', '-c', {probe()}]\n"
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        Path(tmp, "compose.yml").write_text(compose)
+        Path(tmp, "hook.env").write_text("HOOK_FILE_VAR=f\n")
+        base = ["docker", "compose", "-f", f"{tmp}/compose.yml", "-p", "clhookunits"]
+        try:
+            up = subprocess.run(
+                [*base, "up", "-d", "app"], capture_output=True, text=True, timeout=300
+            )
+            read = subprocess.run(
+                [*base, "run", "--rm", "reader"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            job = subprocess.run(
+                [*base, "run", "--rm", "probe"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        finally:
+            subprocess.run(
+                [*base, "--profile", "read", "down", "-v", "--remove-orphans"],
+                capture_output=True,
+                timeout=120,
+            )
+    if up.returncode:
+        return False, f"compose up failed: {up.stderr.strip()[-160:]!r}"
+    sections: dict[str, dict[str, str]] = {}
+    for chunk in read.stdout.split("@")[1:]:
+        name, _, body = chunk.partition("\n")
+        sections[name.strip()] = _unit_tokens(body)
+    sections["job"] = _unit_tokens(job.stdout)
+    inherit = sections.get("inherit", {})
+    privileged = sections.get("privileged", {})
+    exec_ = sections.get("exec", {})
+    job_ = sections.get("job", {})
+
+    def full(tokens: dict[str, str]) -> bool:
+        eff, bnd = tokens.get("EFF"), tokens.get("BND")
+        return bool(eff) and eff == bnd and int(eff or "0", 16) >= (1 << 41) - 1
+
+    observed = {
+        "inherit": inherit.get("U") == "65534"
+        and "RO" in inherit
+        and int(inherit.get("EFF", "1"), 16) == 0
+        and "PARENTVARSET" in inherit
+        and "HOOKVARSET" in inherit,
+        "env_file-inert": "FILEVAR" in inherit,
+        "privileged-hook": privileged.get("U") == "0"
+        and full(privileged)
+        and int(privileged.get("DEV", "0")) > 20,
+        "exec-seccomp": exec_.get("U") == "0"
+        and exec_.get("SEC") == "2"
+        and int(exec_.get("BND", "0"), 16) >= (1 << 41) - 1,
+        "job": job_.get("U") == "0" and full(job_) and int(job_.get("DEV", "0")) > 20,
+    }
+    detail = " ".join(f"{k}={'ok' if v else 'NO'}" for k, v in observed.items())
+    counts = (
+        f"(dev nodes: hook {privileged.get('DEV', '?')}, job {job_.get('DEV', '?')}; "
+        f"exec seccomp {exec_.get('SEC', '?')})"
+    )
+    return all(observed.values()), f"{detail} {counts}"
+
+
 def _host_block_device() -> str:
     """Name of a whole-disk block device on the *daemon's* host, or ""."""
     _, dev = _run(
@@ -1924,6 +2106,11 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool | None, str]]]] = [
         "CL-0031",
         "premise: use_api_socket mounts the socket rw and places the user's logins",
         _cl0031_api_socket,
+    ),
+    (
+        "engine",
+        "premise: hooks and jobs deploy as ADR-040 grades them",
+        _hook_units,
     ),
     ("CL-0026", "premise: memory and cpu are unbounded by default", _cl0026),
     ("CL-0027", "premise: SYS_PTRACE traces a different-uid process", _t_sys_ptrace),

@@ -71,6 +71,12 @@ MAX_MERGED_PAIRS = 65536
 # Checked on each document as parsed and again once its `include:` files are
 # folded in, so a stack cannot pass by spreading its services across files. The
 # largest count in the corpus is 64 services, and the test suite's is 2,000.
+#
+# Hooks and jobs count too (ADR-040): each is a unit every rule grades, and a
+# hook list costs as much per entry as a service does. An 8 MB file holds
+# hundreds of thousands of `- {}` entries, and a hook list aliased into every
+# service multiplies them, so a hook list counts its length once per service
+# that uses it.
 MAX_SERVICES = 4096
 
 # The line map records a position per *path*, and a node reached by many paths

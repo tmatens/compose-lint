@@ -1,0 +1,33 @@
+services:
+  app:
+    image: nginx:1.27
+    user: "65534"
+    read_only: true
+    cap_drop: [ALL]
+    environment:
+      LOG_LEVEL: info
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    pre_start:
+      - image: alpine
+        environment:
+          POSTGRES_PASSWORD: hunter2
+      - image: busybox:1.37
+        privileged: true
+        user: root
+        volumes:
+          - /var/run/docker.sock:/var/run/docker.sock
+    post_start:
+      - command: [chown, -R, "65534", /data]
+        user: root
+      - command: ["true"]
+        privileged: true
+  bare:
+    image: redis:7
+    pre_start:
+      - image: redis:7
+        command: [redis-cli, ping]
+jobs:
+  migrate:
+    image: migrate:4
+    privileged: true

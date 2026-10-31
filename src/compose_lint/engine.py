@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from compose_lint._limits import MAX_FINDINGS
 from compose_lint._output import emit
+from compose_lint._units import Unit, units
 from compose_lint.models import Finding, Severity
 from compose_lint.rules import get_registered_rules
 
@@ -104,7 +105,18 @@ def run_rules(
     rule_classes = get_registered_rules()
     rules = [cls() for cls in rule_classes]
 
-    services = data.get("services", {})
+    # ADR-040: rules see every container the file deploys, not only services.
+    graded_units = units(data, lines)
+    # What each finding's references are quoted from. A service named
+    # `jobs.<x>` beside a job `<x>` shares its name (ADR-040 §2), so the two
+    # mappings are walked together rather than one replacing the other, which
+    # would leave the other's `.env` values unquoted in its findings.
+    by_name: dict[str, Any] = {}
+    for unit in graded_units:
+        if unit.name in by_name:
+            by_name[unit.name] = [by_name[unit.name], unit.config]
+        else:
+            by_name[unit.name] = unit.config
 
     for rule in rules:
         rule_id = rule.metadata.id
@@ -113,14 +125,20 @@ def run_rules(
         is_suppressed = rule_id in disabled
         rule_excluded = excluded.get(rule_id, {})
 
-        for service_name, service_config in services.items():
-            if _is_provider_service(service_config):
-                continue
+        for unit in graded_units:
+            service_name = unit.name
+            service_config = unit.config
             try:
                 rule_findings = list(
-                    rule.check(service_name, service_config, data, lines)
+                    rule.check(
+                        service_name, service_config, data, cast("Any", unit.lines)
+                    )
                 )
-                contributed = (env_files or {}).get(service_name)
+                contributed = (
+                    (env_files or {}).get(unit.env_key)
+                    if unit.env_key is not None
+                    else None
+                )
                 if contributed is not None and contributed.keys:
                     rule_findings += _env_file_findings(
                         rule, service_name, contributed, service_config, graded
@@ -128,6 +146,12 @@ def run_rules(
             except Exception as exc:  # noqa: BLE001 - isolate a crashing rule
                 report_error(rule_id, service_name, exc)
                 continue
+            if unit.hook:
+                # A hook's finding with no line is about a key the hook did not
+                # write: an inherited scalar, or an absence (its own path is
+                # hidden from the rules). The parent reports it (ADR-040 §3).
+                rule_findings = [f for f in rule_findings if f.line is not None]
+            excluded_as = _excluded_as(unit, rule_excluded)
             for finding in rule_findings:
                 # A severity override only makes sense on a finding that will be
                 # reported: if the rule is globally suppressed the finding is
@@ -154,13 +178,13 @@ def run_rules(
                         suppression_reason=disabled[rule_id] or None,
                         suppressed_by=f"disabled in {config_name}",
                     )
-                elif service_name in rule_excluded:
+                elif excluded_as is not None:
                     finding = replace(
                         finding,
                         suppressed=True,
-                        suppression_reason=rule_excluded[service_name] or None,
+                        suppression_reason=rule_excluded[excluded_as] or None,
                         suppressed_by=(
-                            f"excluded for service '{service_name}' in {config_name}"
+                            f"excluded for service '{excluded_as}' in {config_name}"
                         ),
                     )
                 findings.append(finding)
@@ -168,12 +192,12 @@ def run_rules(
                 # Quote before raising: the caller reports these findings, so
                 # they must not carry a value a reference resolved to either.
                 if env_values:
-                    findings = _quote_references(findings, services, env_values)
+                    findings = _quote_references(findings, by_name, env_values)
                 findings.sort(key=lambda f: (f.line is None, f.line or 0))
                 raise FindingLimitError(findings)
 
     if env_values:
-        findings = _quote_references(findings, services, env_values)
+        findings = _quote_references(findings, by_name, env_values)
     findings.sort(key=lambda f: (f.line is None, f.line or 0))
     return findings
 
@@ -184,22 +208,19 @@ def run_rules(
 _MAX_WALK = 100_000
 
 
-def _is_provider_service(service_config: Any) -> bool:
-    """True for a service Compose hands to a provider plugin, not to the daemon.
+def _excluded_as(unit: Unit, rule_excluded: Mapping[str, Any]) -> str | None:
+    """The ``exclude_services`` name that covers ``unit``, if any.
 
-    ``provider:`` (Compose 2.36 and later) declares a service that an external
-    binary sets up and tears down. Compose creates no container for it: on
-    ``up`` it runs the plugin and injects what the plugin publishes into the
-    services that depend on it, and every container-only key written on the
-    service (``privileged``, ``cap_add``, ``volumes``, ``environment``, even
-    ``image``) is accepted and ignored. There is no container whose
-    configuration a rule could describe, so no rule runs on it (issue #1186).
-    Only the shape the spec defines, a mapping, counts; any other value is
-    not a file Compose accepts, and is graded as written.
+    The full unit name, or for a hook its kind name (``app.pre_start``), which
+    covers every hook of that kind on the service however the list is
+    reordered (ADR-040 §2). A service's own name never covers its hooks.
     """
-    return isinstance(service_config, dict) and isinstance(
-        service_config.get("provider"), dict
-    )
+    if unit.name in rule_excluded:
+        return unit.name
+    kind = unit.kind_name
+    if kind is not None and kind in rule_excluded:
+        return kind
+    return None
 
 
 def _quote_references(
