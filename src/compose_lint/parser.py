@@ -38,7 +38,7 @@ from compose_lint._safe_read import (
     read_text_bounded,
 )
 from compose_lint._service_env import project_relative
-from compose_lint._units import container_specs, count_units, extended_jobs
+from compose_lint._units import container_specs
 from compose_lint._yaml_error import describe_yaml_error
 from compose_lint.config import KNOWN_TOP_LEVEL_KEYS
 from compose_lint.rules._interpolation import (
@@ -2248,19 +2248,25 @@ def load_compose_full(path: str | Path, *, use_env: bool = True) -> Loaded:
 
 
 def _check_service_count(document: dict[Any, Any], *, folded: bool = False) -> None:
-    """Refuse a document declaring more than ``MAX_SERVICES`` units.
+    """Refuse a document declaring more than ``MAX_SERVICES`` services.
 
-    A unit is a service, a hook or a job (ADR-040): each is graded by every
-    rule, so they share one bound. Run on each document as parsed, and again
-    on one whose ``include:`` files have been folded in, so a stack cannot
-    pass by spreading them across files.
+    Run on each document as parsed, and again on one whose ``include:`` files
+    have been folded in, so a stack cannot pass by spreading them across files.
+    Hooks and jobs share the bound (ADR-040 §10), but on a runway: for now a
+    document past it with its hooks and jobs counted grades its services only
+    and says so (:func:`compose_lint._units.unit_notes`), and the next MINOR
+    refuses it here.
     """
-    if count_units(document) > MAX_SERVICES:
+    services = document.get("services")
+    if not isinstance(services, dict):
+        return
+    count = sum(1 for name in services if isinstance(name, str))
+    if count > MAX_SERVICES:
         where = " once its 'include:' files are folded in" if folded else ""
         raise ComposeError(
             f"Not linted: this document declares more than {MAX_SERVICES} "
-            f"services, hooks and jobs{where}, so it was not graded. The limit "
-            "is far above any real Compose file."
+            f"services{where}, so it was not graded. The limit is far above any "
+            "real Compose file."
         )
 
 
@@ -2551,7 +2557,6 @@ def _loads_full(  # noqa: PLR0913
                 repeats=repeats,
             )
         )
-        gaps.extend(_extended_job_gap(name) for name in extended_jobs(data))
         if "include" in data and "services" not in data and "jobs" not in data:
             # Deferred from `_validate_compose`, and only for the document that
             # deferral applied to: an include-only file whose references could
@@ -2587,19 +2592,6 @@ def _dropped_directive_gap(paths: list[str]) -> str:
         f"the !reset/!override tags at '{shown}'{more} were not applied, because "
         "the document repeats an aliased mapping past the line budget, so the "
         "services using them were graded on a merge Compose does not build."
-    )
-
-
-def _extended_job_gap(name: str) -> str:
-    """The coverage gap for a job that uses ``extends:`` (ADR-040 §5).
-
-    Compose lets a job extend another job, in this file or another, and this
-    release does not resolve that yet. Graded as written, the job would report
-    every key its base supplies as missing; graded not at all, the gap says so.
-    """
-    return (
-        f"job '{name}' uses 'extends:', which compose-lint does not resolve for "
-        "jobs yet, so the job was not graded."
     )
 
 

@@ -39,7 +39,7 @@ from compose_lint._service_env import (
     resolve_env_files,
 )
 from compose_lint._terminal_markdown import render as render_markdown
-from compose_lint._units import unit_names
+from compose_lint._units import unit_names, unit_notes
 from compose_lint.config import (
     CONFIG_FILENAMES,
     ConfigError,
@@ -1184,6 +1184,13 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             Diagnostic(filepath, note, DiagnosticKind.UNREAD_INPUT)
             for note in describe_unread(service_env_files, only=MACHINE_READABLE)
         )
+        # Hook and job units not graded this release: runway warnings for a
+        # gap and a refusal the next MINOR enforces (ADR-040).
+        for note in unit_notes(data):
+            emit(f"note: {filepath}: {note}")
+            coverage_warnings.append(
+                Diagnostic(filepath, note, DiagnosticKind.UNREAD_INPUT)
+            )
         seen_services.update(data.get("services", {}).keys())
         # Hook and job units, and hook kind names (ADR-040 §9), so excluding
         # `app.pre_start` is not reported as an unknown service.
@@ -1691,6 +1698,8 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             continue
 
         _report_coverage_gaps(filepath, gaps, fatal=False, remedy=_FIX_GAP_REMEDY)
+        for note in unit_notes(data):
+            emit(f"note: {filepath}: {note}")
 
         try:
             # newline="" preserves the file's original line endings: read_text's
@@ -2040,6 +2049,8 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
         else {}
     )
     for note in describe_unread(service_env_files):
+        emit(f"note: {group.primary}: {note}")
+    for note in unit_notes(data):
         emit(f"note: {group.primary}: {note}")
 
     crashed = _CrashRecorder(group.primary)

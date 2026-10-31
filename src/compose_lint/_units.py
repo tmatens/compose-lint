@@ -28,6 +28,8 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from compose_lint._limits import MAX_SERVICES
+
 PRE_START = "pre_start"
 EXEC_HOOKS = ("post_start", "pre_stop")
 
@@ -203,24 +205,30 @@ def job_lines(lines: Mapping[str, int]) -> dict[str, int]:
 
 
 def units(data: Mapping[Any, Any], lines: Mapping[str, int]) -> list[Unit]:
-    """The document's units, services first, each hook after its service."""
+    """The document's units, services first, each hook after its service.
+
+    A document declaring more units than :data:`MAX_SERVICES` yields its
+    services only, which is what 1.1.0 graded, so grading it costs no more
+    than it did; :func:`unit_notes` says so. The next MINOR refuses it.
+    """
     found: list[Unit] = []
+    within_bound = count_units(data) <= MAX_SERVICES
     services = data.get("services")
     if isinstance(services, dict):
         for name, config in services.items():
             if _is_provider_service(config):
                 continue
             found.append(Unit(name, config, lines, env_key=name))
-            if isinstance(config, dict):
+            if within_bound and isinstance(config, dict):
                 found.extend(_service_hooks(str(name), config, lines))
     jobs = data.get("jobs")
-    if isinstance(jobs, dict) and jobs:
+    if within_bound and isinstance(jobs, dict) and jobs:
         aliased = job_lines(lines)
         for name, config in jobs.items():
             if not isinstance(config, dict) or "extends" in config:
                 # An extended job is not resolved yet: graded as written it
-                # would report every key its base supplies as absent. The
-                # parser reports it as a coverage gap instead.
+                # would report every key its base supplies as absent.
+                # `unit_notes` says it was not graded.
                 continue
             unit_name = f"jobs.{name}"
             view = UnitLines(lines, alias=aliased, alias_prefix=f"services.{unit_name}")
@@ -291,6 +299,30 @@ def extended_jobs(data: Mapping[Any, Any]) -> list[str]:
         for name, config in jobs.items()
         if isinstance(config, dict) and "extends" in config
     ]
+
+
+def unit_notes(data: Mapping[Any, Any]) -> list[str]:
+    """What this document deploys that was not graded, and why.
+
+    Both are runway warnings under ``compatibility.md``: a new coverage gap or
+    refusal is announced as a warning one MINOR before it exits 2. They name
+    the next MINOR so a threshold-gated pipeline has a release to act.
+    """
+    notes: list[str] = []
+    if count_units(data) > MAX_SERVICES:
+        notes.append(
+            f"this document declares more than {MAX_SERVICES} services, hooks "
+            "and jobs, so only its services were graded; from the next minor "
+            "release such a document is refused (exit 2)"
+        )
+        return notes
+    notes.extend(
+        f"job '{name}' uses 'extends:', which compose-lint does not resolve "
+        "for jobs yet, so the job was not graded; from the next minor release "
+        "this is a coverage gap (exit 2)"
+        for name in extended_jobs(data)
+    )
+    return notes
 
 
 def unit_names(data: Mapping[Any, Any]) -> set[str]:

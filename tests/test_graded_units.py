@@ -21,8 +21,15 @@ import pytest
 import yaml
 
 from compose_lint import cli
+from compose_lint._limits import MAX_SERVICES
 from compose_lint._service_env import resolve_env_files
-from compose_lint._units import UnitLines, unit_names, units
+from compose_lint._units import (
+    UnitLines,
+    count_units,
+    unit_names,
+    unit_notes,
+    units,
+)
 from compose_lint.engine import run_rules
 from compose_lint.fix import collect_edits
 from compose_lint.formatters.sarif import _logical_locations, _partial_fingerprints
@@ -530,7 +537,7 @@ class TestUnitLines:
         assert view.get("c") is None
         assert view.get("services.jobs.x") == 9
         assert view.get("services.jobs.x.y") is None
-        assert 1 not in view
+        assert not view.__contains__(1)  # a non-string key is never a path
         assert sorted(view) == ["a.b", "jobs.x", "services.jobs.x"]
         assert len(view) == 3
 
@@ -602,16 +609,19 @@ class TestCli:
 
 
 class TestBounds:
-    def test_hooks_count_against_the_unit_cap(self) -> None:
-        from compose_lint._limits import MAX_SERVICES
-
+    def _over(self) -> str:
         hooks = "".join("      - {}\n" for _ in range(MAX_SERVICES))
-        with pytest.raises(ComposeError, match=f"more than {MAX_SERVICES} services"):
-            loads(f"services:\n  a:\n    image: x:1\n    pre_start:\n{hooks}")
+        return f"services:\n  a:\n    image: x:1\n    pre_start:\n{hooks}"
+
+    def test_past_the_bound_only_services_are_graded(self) -> None:
+        data, lines = loads(self._over())
+        assert [u.name for u in units(data, lines)] == ["a"]
+        notes = unit_notes(data)
+        assert len(notes) == 1
+        assert "only its services were graded" in notes[0]
+        assert "next minor release" in notes[0]
 
     def test_an_aliased_hook_list_counts_per_service(self) -> None:
-        from compose_lint._limits import MAX_SERVICES
-
         per = 64
         services = MAX_SERVICES // per + 1
         text = (
@@ -620,48 +630,76 @@ class TestBounds:
             + "services:\n"
             + "".join(f"  s{i}:\n    pre_start: *hooks\n" for i in range(services))
         )
-        with pytest.raises(ComposeError, match="services, hooks and jobs"):
-            loads(text)
+        data, lines = loads(text)
+        assert count_units(data) > MAX_SERVICES
+        assert all(not u.hook for u in units(data, lines))
 
-    def test_jobs_count_against_the_unit_cap(self) -> None:
-        from compose_lint._units import count_units
-
+    def test_units_count_services_hooks_and_jobs(self) -> None:
         doc = {
             "services": {"a": {"post_start": [{}, {}], "pre_stop": [{}]}, 1: {}},
             "jobs": {"m": {}, "n": {}},
         }
         assert count_units(doc) == 6
 
+    def test_the_cli_warns_and_keeps_the_exit_code(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        compose = tmp_path / "compose.yml"
+        compose.write_text(self._over(), encoding="utf-8")
+        proc = _cli(["--format", "json", "--fail-on", "critical", str(compose)])
+        assert proc.returncode == 0
+        warnings = json.loads(proc.stdout)["warnings"]
+        assert [w["kind"] for w in warnings] == ["unread_input"]
+
 
 class TestExtendedJobs:
-    def test_an_extended_job_is_a_gap_not_a_graded_unit(self, tmp_path: Path) -> None:
-        from compose_lint.parser import load_compose_full
-
+    def _write(self, tmp_path: Path) -> Path:
         compose = tmp_path / "compose.yml"
         compose.write_text(
+            "services:\n  a:\n    image: x:1@sha256:"
+            + "0" * 64
+            + "\n    read_only: true\n    cap_drop: [ALL]\n"
+            "    security_opt: [no-new-privileges:true]\n"
             "jobs:\n"
             "  base:\n    image: x:1\n    cap_drop: [ALL]\n"
             "  child:\n    extends: base\n    command: ['true']\n",
             encoding="utf-8",
         )
-        loaded = load_compose_full(compose)
-        assert any("job 'child' uses 'extends:'" in gap for gap in loaded.gaps)
-        services = {f.service for f in run_rules(loaded.data, loaded.lines)}
+        return compose
+
+    def test_an_extended_job_is_not_graded(self, tmp_path: Path) -> None:
+        data, lines = load_compose(self._write(tmp_path))
+        services = {f.service for f in run_rules(data, lines)}
         assert "jobs.base" in services
         assert "jobs.child" not in services
+        assert unit_notes(data) == [
+            "job 'child' uses 'extends:', which compose-lint does not resolve "
+            "for jobs yet, so the job was not graded; from the next minor "
+            "release this is a coverage gap (exit 2)"
+        ]
 
-    def test_the_cli_exits_2_on_an_extended_job(self, tmp_path: Path) -> None:
-        compose = tmp_path / "compose.yml"
-        compose.write_text(
-            "services:\n  a:\n    image: x:1\n"
-            "jobs:\n  child:\n    extends: {file: base.yml, service: m}\n",
-            encoding="utf-8",
+    def test_the_cli_warns_without_exiting_2(self, tmp_path: Path) -> None:
+        proc = _cli(
+            ["--format", "json", "--fail-on", "critical", str(self._write(tmp_path))]
         )
-        proc = subprocess.run(
-            [sys.executable, "-m", "compose_lint", str(compose)],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-        )
-        assert proc.returncode == 2
-        assert "uses 'extends:'" in proc.stderr
+        assert proc.returncode == 0
+        warnings = json.loads(proc.stdout)["warnings"]
+        assert any("job 'child'" in w["message"] for w in warnings)
+        assert "note:" in proc.stderr
+
+    def test_fix_and_init_say_it_too(self, tmp_path: Path) -> None:
+        compose = self._write(tmp_path)
+        assert "job 'child'" in _cli(["fix", str(compose)]).stderr
+        out = tmp_path / "baseline.yml"
+        init = _cli(["init", str(compose), "--output", str(out)])
+        assert "job 'child'" in init.stderr
+
+
+def _cli(args: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", "compose_lint", *args],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
