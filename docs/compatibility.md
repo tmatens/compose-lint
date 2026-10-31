@@ -220,6 +220,19 @@ Docker's own error appears at the first `docker compose up`. Measured examples
 Refusing these would make compose-lint a partial schema validator. Grading
 them costs nothing a deployment could be hurt by.
 
+### Services Compose does not run as containers
+
+A service declared with `provider:` (Compose 2.36 and later) is set up and
+torn down by an external binary. Compose creates no container for it: on
+`up` it runs the plugin and injects what the plugin publishes into the
+services that depend on it, and every container-only key written on the
+service, `privileged`, `cap_add`, `volumes`, `environment`, even `image`, is
+accepted and applied to nothing (measured on Compose 5.0.0). No rule runs on
+such a service, and `fix` writes nothing into it. This is not a coverage gap:
+nothing of the service deploys as a container, so there is nothing a rule
+could have missed. What the plugin injects into its dependents at run time is
+not in the file and is not graded.
+
 ### Resource limits
 
 A few limits keep a crafted file from costing gigabytes. They are part of the

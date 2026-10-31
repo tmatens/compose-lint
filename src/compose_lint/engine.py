@@ -114,6 +114,8 @@ def run_rules(
         rule_excluded = excluded.get(rule_id, {})
 
         for service_name, service_config in services.items():
+            if _is_provider_service(service_config):
+                continue
             try:
                 rule_findings = list(
                     rule.check(service_name, service_config, data, lines)
@@ -180,6 +182,24 @@ def run_rules(
 # whole document instead. Aliases make a service a DAG that can be far larger
 # than the file; the fallback only ever quotes more references, never fewer.
 _MAX_WALK = 100_000
+
+
+def _is_provider_service(service_config: Any) -> bool:
+    """True for a service Compose hands to a provider plugin, not to the daemon.
+
+    ``provider:`` (Compose 2.36 and later) declares a service that an external
+    binary sets up and tears down. Compose creates no container for it: on
+    ``up`` it runs the plugin and injects what the plugin publishes into the
+    services that depend on it, and every container-only key written on the
+    service (``privileged``, ``cap_add``, ``volumes``, ``environment``, even
+    ``image``) is accepted and ignored. There is no container whose
+    configuration a rule could describe, so no rule runs on it (issue #1186).
+    Only the shape the spec defines, a mapping, counts; any other value is
+    not a file Compose accepts, and is graded as written.
+    """
+    return isinstance(service_config, dict) and isinstance(
+        service_config.get("provider"), dict
+    )
 
 
 def _quote_references(

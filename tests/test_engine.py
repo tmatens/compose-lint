@@ -348,3 +348,50 @@ class TestFilterFindings:
         ]
         filtered = filter_findings(findings, Severity.CRITICAL)
         assert len(filtered) == 0
+
+
+class TestProviderServices:
+    """A ``provider:`` service is set up by a plugin, never run as a container.
+
+    Compose 5.0.0 on a rootful Engine creates no container for it and applies
+    none of the container-only keys written on it (issue #1186), so no rule
+    has anything to describe.
+    """
+
+    FIXTURE = "tests/compose_files/provider_service.yml"
+
+    def _findings(self, path: str) -> list[Finding]:
+        from compose_lint.parser import load_compose
+
+        data, lines = load_compose(path)
+        return run_rules(data, lines)
+
+    def test_no_rule_grades_a_provider_service(self) -> None:
+        on_provider = [f for f in self._findings(self.FIXTURE) if f.service == "db"]
+        assert on_provider == []
+
+    def test_sibling_services_are_still_graded(self, tmp_path: Any) -> None:
+        doc = (
+            "services:\n"
+            "  db:\n"
+            "    provider:\n"
+            "      type: awesomecloud\n"
+            "  app:\n"
+            "    image: alpine\n"
+            "    privileged: true\n"
+        )
+        path = tmp_path / "compose.yml"
+        path.write_text(doc)
+        by_service = {f.service for f in self._findings(str(path))}
+        assert by_service == {"app"}
+
+    def test_provider_that_is_not_a_mapping_is_graded_as_written(
+        self, tmp_path: Any
+    ) -> None:
+        # `provider: awesomecloud` is not the shape the spec defines, so Compose
+        # refuses the file; compose-lint grades it like any other service.
+        doc = "services:\n  db:\n    provider: awesomecloud\n    privileged: true\n"
+        path = tmp_path / "compose.yml"
+        path.write_text(doc)
+        rule_ids = {f.rule_id for f in self._findings(str(path)) if f.service == "db"}
+        assert "CL-0002" in rule_ids
