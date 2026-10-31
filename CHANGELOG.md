@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A key that bundles grants takes its own rule id.** The severity model's
+  scoring procedure gains step 8, an ownership check: a key whose furthest
+  reach lands in an existing rule's cell joins that rule when it is a second
+  spelling of the same grant, and takes its own id when it bundles grants
+  beyond the rule's subject, so that an exclusion written for the rule would
+  silently accept the second grant. `privileged: true` beside CL-0024 is the
+  precedent already in the registry; `use_api_socket: true` beside CL-0001 is
+  the case that asked for the line to be written down. Recorded as a post-1.0
+  amendment to [ADR-028](docs/adr/028-pre-1.0-rule-id-sweep.md). A tightening
+  under ADR-030: no existing assignment moves, and nothing is promised less
+  than before. ([#1178](https://github.com/tmatens/compose-lint/issues/1178))
+
 ## [1.0.0] - 2026-10-30
 
 ### Added
