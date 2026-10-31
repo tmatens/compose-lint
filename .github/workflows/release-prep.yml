@@ -103,6 +103,12 @@ jobs:
       # the same three forms here, over the same file set and exclusions, so
       # the prep PR is green by construction.
       #
+      # An image tag followed by `@sha256:` is not a pin to move: the digest
+      # names one build, so a new tag beside the old digest would advertise a
+      # version the command does not run. docs/compare.md's reproduction
+      # command is the case: release-prep rewrote it from `:0.36.0@sha256:…`
+      # on every release after the measurement, leaving the 0.36.0 digest.
+      #
       # The `tmatens/compose-lint@<sha> # vX.Y.Z` action-pin form is
       # deliberately NOT handled here: the new tag's commit SHA does not exist
       # until the tag is pushed, so publish.yml's bump-marketplace-smoke-pin
@@ -119,7 +125,7 @@ jobs:
           # "self-referencing version pins" step in .github/workflows/ci.yml.
           patterns = [
               re.compile(r"(compose-lint==)(\d+\.\d+\.\d+)"),
-              re.compile(r"(composelint/compose-lint:)(\d+\.\d+\.\d+)"),
+              re.compile(r"(composelint/compose-lint:)(\d+\.\d+\.\d+)(?!\d|@sha256:)"),
               re.compile(r"(rev: v)(\d+\.\d+\.\d+)"),
               re.compile(r"(compose-lint/v)(\d+\.\d+\.\d+)(?=/requirements\.lock)"),
           ]

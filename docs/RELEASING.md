@@ -380,7 +380,10 @@ five before opening the bump PR.
       `README.md` or `docs/` (historical files excluded) must equal
       `pyproject.toml`'s version, so the prep PR fails CI if the rewrite
       ever misses one — including pins in docs this list doesn't know
-      about yet. The action-SHA form cannot be checked pre-tag (the new
+      about yet. An image tag followed by `@sha256:` is left alone by both:
+      the digest names the build a measurement ran on, so moving only its
+      tag would advertise a version the command does not run (see
+      `docs/compare.md`'s reproduction command, measured on 0.36.0). The action-SHA form cannot be checked pre-tag (the new
       tag's SHA exists only post-release), so `publish.yml`'s
       `bump-marketplace-smoke-pin` job rewrites it in both
       `marketplace-smoke.yml` and `README.md` in the post-release
