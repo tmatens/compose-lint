@@ -1242,6 +1242,16 @@ jobs:
       - name: Audit workflows and actions with zizmor
         # Workflows, the composite action, and the root action.yml. Exit is
         # non-zero on any finding, informational included.
+        #
+        # The token is what makes the online audits run: without one zizmor
+        # runs offline, skipping known-vulnerable-actions (published
+        # advisories against a pinned action) and the impostor-commit and
+        # ref-confusion checks, and says so only as a warning. This job sees
+        # an advisory when a workflow changes; vuln-report.yml lists one
+        # daily for the pins nobody touched. Read-only: the job has
+        # contents: read and the advisory data is public.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: zizmor --no-progress .github/ action.yml
 
   # Lints the Dockerfile. It has carried `# hadolint ignore=DL3008` since

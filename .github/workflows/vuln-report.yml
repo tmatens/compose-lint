@@ -25,6 +25,13 @@ name: Fixable vulnerability report
 # between two releases never reaches a scanner here (#1040). pip's advisory
 # list from OSV is diffed against the statement names instead; a missing ID
 # is a line in the rolling issue. No image is pulled for this.
+#
+# It also lists every GitHub Action this repository pins that has a published
+# advisory, from zizmor's known-vulnerable-actions audit. ci.yml runs zizmor
+# only when a workflow changes, and an advisory against a pin nobody touched
+# arrives with time, not with a diff: v1.14.2 of the PyPI publish action sat
+# under a critical advisory with every gate green until a release preflight
+# ran zizmor by hand.
 
 on:
   workflow_dispatch:
@@ -66,6 +73,24 @@ jobs:
       - name: pip-audit (no suppressions)
         continue-on-error: true
         run: pip-audit --skip-editable --format json --output pip-audit.json
+
+      # Online, because known-vulnerable-actions queries GitHub's advisory
+      # database and does not run offline. With no token zizmor falls back
+      # to offline mode and says so only as a warning, which would render as
+      # "None" here: the grep makes that a failure. --no-exit-codes because
+      # a finding is the normal case to report; a real error still exits 1.
+      - name: zizmor known-vulnerable-actions (online)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          zizmor --no-progress --no-exit-codes --format json .github/ action.yml \
+            > zizmor.json 2> zizmor.err || { cat zizmor.err >&2; exit 1; }
+          cat zizmor.err >&2
+          if grep -qi 'offline mode' zizmor.err; then
+            echo "::error::zizmor ran offline, so known-vulnerable-actions did not run"
+            exit 1
+          fi
 
       # Read-only PAT: this job pulls and scans, never pushes. The write
       # token is referenced only by the jobs that push or sync.
@@ -131,6 +156,7 @@ jobs:
             --osv osv-pip.json \
             --osv-package pip \
             --pip-floor 25.1 \
+            --zizmor zizmor.json \
             --run-url "${RUN_URL}" \
             --out body.md
 
