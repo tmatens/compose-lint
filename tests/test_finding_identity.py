@@ -243,6 +243,8 @@ EVIDENCE_CONTRACT = {
     "CL-0025": {"/etc"},
     "CL-0028": {"SYS_TIME"},
     "CL-0030": {"SYSLOG"},
+    # CL-0031 fires once per service, so its evidence is the key itself.
+    "CL-0031": {"use_api_socket"},
 }
 
 _CONTRACT_DOC = """
@@ -275,6 +277,7 @@ services:
     security_opt: ["apparmor:unconfined", "seccomp:unconfined"]
     pid: host
     ipc: host
+    use_api_socket: true
   # A second service so the six rules added below are exercised without
   # perturbing anything pinned above: `sink` mounts /etc read-only for
   # CL-0013, and CL-0025 needs the writable spelling of the same path.

@@ -478,7 +478,16 @@ anything else would be, and its CL-0001 finding is suppressed for that one
 service with the reason written down, so the rule stays live for the rest of
 the stack.
 
-Rules: [CL-0001](rules/CL-0001.md).
+One key grants the socket without a `volumes:` line. `use_api_socket: true`
+(Compose 2.37.1 and later) bind-mounts the socket read-write and copies the
+registry logins of whoever runs `docker compose up` into the container as
+well, so the service can push and pull as that person. Engine-management
+tools such as Docker's MCP gateway ask for it. The same four answers apply,
+with one more consideration for the credential half: it can only be narrowed
+on the host, by running the stack from a deploy identity whose Docker config
+holds no logins the stack does not need.
+
+Rules: [CL-0001](rules/CL-0001.md), [CL-0031](rules/CL-0031.md).
 
 ## 10. Never `privileged: true`
 

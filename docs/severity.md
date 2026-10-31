@@ -293,6 +293,7 @@ link. `tests/test_severity_matrix.py` enforces all four properties.
 | [CL-0028](rules/CL-0028.md) | A | Direct | Host | integrity-only | HIGH | HIGH | — |
 | [CL-0029](rules/CL-0029.md) | A | Direct | Host | availability-only | HIGH | HIGH | — |
 | [CL-0030](rules/CL-0030.md) | A | Direct | Host | read-only | HIGH | HIGH | — |
+| [CL-0031](rules/CL-0031.md) | A | Direct | Host | — | CRITICAL | CRITICAL | — |
 
 ### Notes on individual derivations
 
@@ -397,6 +398,7 @@ run does not mean the rule is broken.
 - **CL-0016** — `devices:` mapping a host disk (e.g. `/dev/sda`, `/dev/nvme0n1`), or a `device_cgroup_rules:` entry opening a block major
 - **CL-0017** — `volumes:` using `:rshared` (shared mount propagation)
 - **CL-0022** — `tmpfs` mount passing `exec` or `suid` (re-enabling Docker's default `noexec,nosuid`)
+- **CL-0031** — `use_api_socket: true`
 
 Other rules (CL-0005, CL-0008, CL-0009, CL-0010, CL-0011, CL-0013, CL-0018) are
 also presence-based but target patterns common enough in real compose files that

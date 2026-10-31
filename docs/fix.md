@@ -31,8 +31,10 @@ page is the full contract behind the README's summary.
   anything that wouldn't round-trip clean is refused with the diff surfaced for
   diagnosis. Where the refusal is the safety property rather than a shape the
   fixer does not handle, stderr says why, one line per finding: a list shared
-  through an anchor, a deletion whose value comes from a `${...}` default, and
-  a long-syntax port whose first value continues onto the next line.
+  through an anchor, a deletion whose value comes from a `${...}` default, a
+  long-syntax port whose first value continues onto the next line, and a
+  `read_only: true` insert on a service that sets `use_api_socket: true`,
+  which Compose refuses to run read-only ([CL-0031](rules/CL-0031.md)).
 - **A key deleted with `!reset` is deferred, not written back.** `!reset`
   removes the key from the configuration Compose runs, so an absence rule fires
   on it — but writing the key into a document the reset applies to changes

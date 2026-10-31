@@ -5,7 +5,7 @@
 # inside code fences (CL-0004, CL-0019, running-hardened.md docker --format examples).
 site_name: compose-lint
 site_description: >-
-  Security linter for Docker Compose files — 27 rules with actionable,
+  Security linter for Docker Compose files — 28 rules with actionable,
   runtime-proven fix guidance.
 site_url: https://tmatens.github.io/compose-lint/
 repo_url: https://github.com/tmatens/compose-lint
@@ -108,6 +108,7 @@ nav:
       - "CL-0028 cap_add: PERFMON, SYS_TIME": rules/CL-0028.md
       - "CL-0029 cap_add: SYS_NICE, IPC_LOCK, LEASE": rules/CL-0029.md
       - "CL-0030 cap_add: SYSLOG — host kernel log via dmesg": rules/CL-0030.md
+      - "CL-0031 use_api_socket: true — engine API delegated with registry credentials": rules/CL-0031.md
   - Examples:
       - "Real-world examples": examples/index.md
       - "1 — Delete the service": examples/portainer-removed/index.md

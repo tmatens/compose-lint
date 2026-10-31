@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from compose_lint.fix import apply_edits
+from compose_lint.models import FixRefusal
 from compose_lint.parser import load_compose, loads
 from compose_lint.rules.CL0007_read_only import ReadOnlyFilesystemRule
 
@@ -71,9 +72,9 @@ class TestReadOnlyFix:
     def setup_method(self) -> None:
         self.rule = ReadOnlyFilesystemRule()
 
-    def _fix(
+    def _fix_raw(
         self, tmp_path: Path, content: str, service: str = "web"
-    ) -> list[TextEdit] | None:
+    ) -> list[TextEdit] | FixRefusal | None:
         path = tmp_path / "docker-compose.yml"
         path.write_text(content)
         data, lines = load_compose(path)
@@ -82,6 +83,13 @@ class TestReadOnlyFix:
         )
         assert findings, "expected CL-0007 to fire"
         return self.rule.fix(findings[0], data, lines, content)
+
+    def _fix(
+        self, tmp_path: Path, content: str, service: str = "web"
+    ) -> list[TextEdit] | None:
+        result = self._fix_raw(tmp_path, content, service)
+        assert not isinstance(result, FixRefusal), result
+        return result
 
     def test_inserts_read_only_two_space_indent(self, tmp_path: Path) -> None:
         content = "services:\n  web:\n    image: nginx\n"
@@ -188,6 +196,24 @@ class TestReadOnlyFix:
     def test_refuses_explicit_read_only_value(self, tmp_path: Path) -> None:
         content = "services:\n  web:\n    read_only: false\n    image: nginx\n"
         assert self._fix(tmp_path, content) is None
+
+    def test_refuses_use_api_socket_with_a_reason(self, tmp_path: Path) -> None:
+        # Compose refuses `read_only: true` beside `use_api_socket: true`
+        # (`cannot create config "" in read-only service`), so the insert
+        # would lint clean and fail `up`. The refusal names the key.
+        content = "services:\n  web:\n    image: nginx\n    use_api_socket: true\n"
+        refusal = self._fix_raw(tmp_path, content)
+        assert isinstance(refusal, FixRefusal)
+        assert "use_api_socket" in refusal.reason
+        assert "CL-0031" in refusal.reason
+
+    def test_quoted_use_api_socket_does_not_block_the_fix(self, tmp_path: Path) -> None:
+        # The string form is one Compose rejects outright, so CL-0031 does not
+        # grade it and the fixer does not refuse on it either: same predicate.
+        content = 'services:\n  web:\n    image: nginx\n    use_api_socket: "true"\n'
+        edits = self._fix(tmp_path, content)
+        assert edits is not None
+        assert not isinstance(edits, FixRefusal)
 
 
 class TestStringBoolean:

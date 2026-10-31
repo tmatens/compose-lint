@@ -313,7 +313,7 @@ its port rule flagged an address set from a variable whether it resolved to
 file. Its `--fix` applies the formatting rules.
 
 compose-lint does not validate the schema. An invalid file is a usage error,
-not a finding. Its 27 rules are all security rules: capabilities,
+not a finding. Its 28 rules are all security rules: capabilities,
 `no-new-privileges`, `read_only`, the Docker socket, host namespaces,
 resource limits, credentials in `environment:` and command lines, digest
 pinning. Each rule ships with the fix, the error message you will see if the
@@ -394,7 +394,7 @@ Two narrower gaps showed up on a
 container. The seccomp rule fired on a `security_opt:` list holding only
 `seccomp:unconfined`, and not on one that also held `apparmor:unconfined`.
 
-compose-lint covers those six and the rest of its 27 rules: capability
+compose-lint covers those six and the rest of its 28 rules: capability
 tiers, resource limits, credentials in environment variables, connection
 strings and command-line arguments, digest pinning, sensitive host paths,
 mount propagation, logging disabled. Severities are set per rule from a stated model rather than one

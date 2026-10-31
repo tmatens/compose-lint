@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CL-0031 — engine API delegated with registry credentials** (CRITICAL):
+  flags `use_api_socket: true`, the Compose key (2.37.1 and later) that
+  bind-mounts the host's Docker socket read-write into the service and copies
+  the registry logins of the user running the stack in beside it, at
+  `/run/secrets/docker/config.json` with `DOCKER_CONFIG` pointed at it. The
+  socket is CL-0001's grant; the credential copy is a second grant no socket
+  mount makes, so the key takes its own id under the ownership check that
+  [ADR-028](docs/adr/028-pre-1.0-rule-id-sweep.md)'s post-1.0 amendment
+  records. Measured on Docker Engine 29.1.3 with Compose v5.0.0: the daemon
+  answers from inside the service, a login and a credential-helper entry on
+  the host both land in the file in plain JSON, a non-root `user:` reads it,
+  and a push to an authenticated registry through the socket succeeds with
+  the key and is refused with a plain socket volume. The premise is re-proven
+  on every CI run (`_cl0031_api_socket`). Only the YAML boolean is graded:
+  Compose rejects the quoted string and any interpolated form as `must be a
+  boolean`, so those never deploy. Eight files in the 11,111-file corpus set
+  the key, five of them Docker's MCP gateway; none also mounted the socket
+  under `volumes:`, so each is a new CRITICAL.
+  ([#1178](https://github.com/tmatens/compose-lint/issues/1178))
+
 ### Changed
 
 - **A key that bundles grants takes its own rule id.** The severity model's
@@ -20,6 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   amendment to [ADR-028](docs/adr/028-pre-1.0-rule-id-sweep.md). A tightening
   under ADR-030: no existing assignment moves, and nothing is promised less
   than before. ([#1178](https://github.com/tmatens/compose-lint/issues/1178))
+- **The CL-0007 fixer refuses a service that sets `use_api_socket: true`**,
+  with the reason on stderr. Compose copies that key's credentials file into
+  the root filesystem rather than mounting it and refuses to create it in a
+  read-only service (`cannot create config "" in read-only service`), so the
+  inserted `read_only: true` would lint clean and fail `up`. The key has to
+  go first, which is CL-0031's finding.
+  ([#1178](https://github.com/tmatens/compose-lint/issues/1178))
 
 ## [1.0.0] - 2026-10-30
 
