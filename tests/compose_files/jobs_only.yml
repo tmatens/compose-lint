@@ -1,0 +1,4 @@
+jobs:
+  migrate:
+    image: migrate:4
+    privileged: true

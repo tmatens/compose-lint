@@ -435,6 +435,23 @@ def _adapted_to_newline(edit: TextEdit, newline: str) -> TextEdit:
     return replace(edit, replacement=re.sub("(?<!\r)\n", newline, edit.replacement))
 
 
+def _service_unit_names(data: Mapping[str, Any]) -> frozenset[str]:
+    """Names whose findings a fixer may edit: the services, and nothing else.
+
+    A service literally named ``jobs.<x>`` beside a job ``<x>`` shares the
+    job's unit name (ADR-040 §2), so neither finding can be told to be the
+    service's; that name is left out, and both are reported, not edited.
+    """
+    services = data.get("services")
+    if not isinstance(services, dict):
+        return frozenset()
+    jobs = data.get("jobs")
+    job_names = {f"jobs.{name}" for name in jobs} if isinstance(jobs, dict) else set()
+    return frozenset(
+        name for name in services if isinstance(name, str) and name not in job_names
+    )
+
+
 def collect_edits(
     findings: Iterable[Finding],
     data: dict[str, Any],
@@ -488,6 +505,19 @@ def collect_edits(
 
     reset_manual: list[Finding] = []
     notes: list[str] = []
+    # ADR-040 §6: the fixers locate a block by its `services.<name>` span,
+    # which was designed for service blocks. A hook or job finding is reported
+    # and left for the user.
+    services_only = _service_unit_names(data)
+    unit_findings = [f for f in eligible if f.service not in services_only]
+    if unit_findings:
+        eligible = [f for f in eligible if f.service in services_only]
+        reset_manual.extend(unit_findings)
+        notes.append(
+            "fix edits service blocks only; hook and job units are reported, "
+            f"not edited ({len(unit_findings)} finding"
+            f"{'' if len(unit_findings) == 1 else 's'})"
+        )
     if resets:
         kept = []
         seen_notes: set[str] = set()

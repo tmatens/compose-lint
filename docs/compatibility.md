@@ -86,6 +86,42 @@ build. Every upgrade must still be *derived* — the two-axis model has to
 produce the new number (an axis correction or a declared override), so a
 severity never moves on judgment alone.
 
+1.2.0 is an example of the new-findings class: it grades the containers a file
+deploys outside `services.<name>` (below), so a file whose `pre_start` hooks
+or jobs carry an unpinned image or a literal credential reports findings on
+1.2.0 that 1.1.0 never showed.
+
+### Graded units
+
+The rules grade **units**: every container a file deploys, and every command
+it runs inside one ([ADR-040](adr/040-grade-every-container-the-file-deploys.md)).
+A unit's name is its path below `services:`, and it is what the `service`
+field of a finding carries, what the text report groups under, what the SARIF
+logical location and fingerprint use, and what `exclude_services` matches.
+
+| Unit | Name | Graded as |
+| --- | --- | --- |
+| `services.<name>` | `app` | the service, as before |
+| `services.<name>.pre_start[i]` (Compose 5.3) | `app.pre_start[0]` | the init container it deploys: the service's scalar keys overlaid by the hook's own keys, with only the hook's own lists and mappings |
+| `services.<name>.post_start[i]`, `pre_stop[i]` (Compose 2.30) | `app.post_start[1]` | a command run inside the service's container: only its `user` and `environment` are graded |
+| `jobs.<name>` (Compose 5.6) | `jobs.migrate` | a service |
+
+A hook reports only what it wrote. A key it inherits from its service, or one
+that is absent from both, is the service's finding, and the service reports
+it once. `privileged: true` on an exec hook is not graded: measured on Compose
+5.6.1, it widens the exec's capability set but leaves seccomp filtering and the
+device cgroup in place, which is not the grant CL-0002 describes. A file with
+`jobs:` and no `services:` is a Compose file and is linted.
+
+Two parts of a file are not graded in 1.2.0, and say so with an
+`unread_input` warning. Under the runway below, each exits 2 from the next
+minor release:
+
+- a job that uses `extends:`, which compose-lint does not resolve for jobs
+  yet;
+- the hooks and jobs of a document that has more than 4,096 units once they
+  are counted (its services are graded, as in 1.1.0).
+
 ### Coverage gaps are not findings
 
 When compose-lint cannot see part of a stack, it does not guess. It reports a
@@ -245,6 +281,7 @@ carry findings. Today's values, and what reaching each does:
 | --- | --- | --- |
 | Compose file size | 8 MiB | exit 2, `parse` (an included or extended file: a coverage gap) |
 | Services in one document, after `include:` | 4,096 | exit 2, `parse` |
+| Services, hooks and jobs in one document | 4,096 | 1.2.0: hooks and jobs not graded, `unread_input` warning; from the next minor, exit 2, `parse` |
 | Key/value pairs `<<:` merge keys copy | 65,536 | exit 2, `parse` |
 | `include:` / `extends: {file:}` depth, and files one document opens | 8 deep, 64 files | coverage gap |
 | `.env` size | 256 KiB | coverage gap |

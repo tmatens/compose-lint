@@ -128,6 +128,13 @@ are not the ones Compose loads. An
 `env_file:` written in an included or extended document is read from beside
 that document, as Compose reads it.
 
+A top-level job's `env_file:` is read the same way, because a job is a
+container Compose starts like a service. A `pre_start` hook's is not: the
+spec allows the key on a hook, and Compose 5.6.1 accepts it and does not
+apply it (measured: the hook did not see the file's variable), so there is
+nothing a rule could grade. A premise check re-proves that on every CI run,
+so a Compose release that starts applying it fails there first.
+
 ## `include:` and cross-file `extends:` are followed when they stay inside the project
 
 ([ADR-036](adr/036-resolve-references-that-stay-inside-the-project.md)),
@@ -171,7 +178,11 @@ accept it, because nothing in that document was graded:
 - a Compose file larger than 8 MiB (an included or extended file that large is
   a [coverage gap](compatibility.md#coverage-gaps-are-not-findings) instead);
 - a document declaring more than 4,096 services, counted again once its
-  `include:` files are merged in;
+  `include:` files are merged in. Hooks and jobs count toward that bound
+  too, each hook list once per service that uses it. Until the next minor
+  release, a document past it only once its hooks and jobs are counted is
+  not refused: its services are graded, its hooks and jobs are not, and an
+  `unread_input` warning says so;
 - a document whose `<<:` merge keys copy more than 65,536 key/value pairs into
   the mappings that use them.
 
@@ -188,8 +199,8 @@ the corpus is 1,225.
 
 compose-lint targets the [Compose
 Specification](https://github.com/compose-spec/compose-spec) used by Compose
-v2 and v3: any file with a top-level `services:` key, or an `include:`-only
-root. Three shapes are skipped with a stderr note rather than failing the run:
+v2 and v3: any file with a top-level `services:` or `jobs:` key, or an
+`include:`-only root. Three shapes are skipped with a stderr note rather than failing the run:
 
 - **Compose v1 files** — services declared at the top level, no `services:`
   wrapper. Docker [retired Compose v1 in

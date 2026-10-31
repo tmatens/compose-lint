@@ -1846,6 +1846,14 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
+      # ADR-040's premise check drives `jobs:` and hooks, which Compose added
+      # in 5.6 and 5.3; below that it skips, and a skip fails this job. Pinned
+      # to the same version as the test jobs, so one Renovate bump moves all.
+      - name: Install the pinned Docker Compose plugin
+        env:
+          # renovate: datasource=github-releases depName=docker/compose
+          COMPOSE_VERSION: v5.6.0
+        run: .github/scripts/install-compose-plugin.sh
       - name: Validate each runtime rule's premise against a live container
         env:
           # The CL-0016 /dev/mapper check stages a synthetic dm target; fail

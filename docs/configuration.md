@@ -139,9 +139,23 @@ rules:
 
 Excluded services still produce **SUPPRESSED** findings, with the per-service reason flowing to `suppression_reason` / SARIF `justification` — same shape as a global disable.
 
+### Hooks and jobs
+
+compose-lint grades every container a file deploys, so a `pre_start` init container, a `post_start` or `pre_stop` exec hook, and a top-level job each have a name of their own ([graded units](compatibility.md#graded-units)): `app.pre_start[0]`, `app.post_start[1]`, `jobs.migrate`. `exclude_services` accepts those names, and for a hook also its **kind name**, the name without the index, which covers every hook of that kind on the service:
+
+```yaml
+rules:
+  CL-0004:
+    exclude_services:
+      app.pre_start: "init image is rebuilt from a pinned base in CI"
+      jobs.migrate: "one-off tool, run by hand"
+```
+
+Prefer the kind name for hooks. The index is the hook's position in the list, so inserting a hook above another renumbers every hook after it, and an exclusion written as `app.pre_start[1]` would then cover a different hook. An exclusion for a service does **not** cover its hooks: a hook is a container of its own, and excluding `app` says nothing about what its init container runs.
+
 ### Behaviour
 
-- **Exact-match** service names. A name that no linted file defines warns on stderr and is an error under `--strict-config`; by default it does not change the exit code, since Compose files and config evolve independently and a rename must not break the linter. The check runs after the scan, because only then is the set of services known.
+- **Exact-match** service names, unit names and hook kind names. A kind name counts as defined when the service has at least one hook of that kind. A name that no linted file defines warns on stderr and is an error under `--strict-config`; by default it does not change the exit code, since Compose files and config evolve independently and a rename must not break the linter. The check runs after the scan, because only then is the set of services known.
 - **Global `enabled: false` wins** over per-service exclusions: if a rule is disabled globally, every service is suppressed regardless of `exclude_services`.
 - **No inline suppression syntax** — there is no `# compose-lint: disable` comment form. Suppressions are tracked in config so reviewers can audit them.
 

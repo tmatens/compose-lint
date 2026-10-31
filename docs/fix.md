@@ -41,6 +41,13 @@ page is the full contract behind the README's summary.
   nothing there. That finding is listed to fix by hand, with a note naming the
   key and the file the `!reset` is written in, and every other fix in the file
   still applies. The refusal is the finding's, not the file's.
+- **Hook and job findings are reported, not edited.** A finding on a
+  `pre_start`, `post_start` or `pre_stop` hook, or on a top-level job
+  ([graded units](compatibility.md#graded-units)), is listed to fix by hand
+  with the note "fix edits service blocks only; hook and job units are
+  reported, not edited". The fixers locate an edit by the service block it
+  belongs to, and a hook block is a list item inside one; teaching them that
+  shape is a change of its own. Fixes on the file's services still apply.
 - **Diff is data, status is human.** The diff goes to stdout; progress and
   counts go to stderr, so `compose-lint fix file.yml > changes.diff` captures
   the diff without the summary. The `⚠ behavior-changing` lines are the

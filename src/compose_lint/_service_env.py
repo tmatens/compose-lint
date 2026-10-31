@@ -52,6 +52,7 @@ from compose_lint._safe_read import (
     out_of_reach,
     read_text_bounded,
 )
+from compose_lint._units import container_specs
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Mapping
@@ -298,8 +299,11 @@ def resolve_env_files(
     ``env_file:`` target read while the ``.env`` went unread would be a third
     behaviour nobody asked for.
     """
-    services = data.get("services")
-    if not isinstance(services, dict):
+    # Services and jobs, keyed by unit name (`jobs.<name>` for a job): a job is
+    # graded as a service is (ADR-040 §5). A `pre_start` hook's `env_file:` is
+    # not applied by Compose (measured on 5.6.1), so hooks are left out.
+    services = dict(container_specs(data, hooks=False))
+    if not services:
         return {}
 
     # Paths are written relative to `base_dir`, the project directory, and
@@ -314,8 +318,6 @@ def resolve_env_files(
     plans: dict[str, list[tuple[EnvFileRef, Path | None, Unread | None]]] = {}
     texts: dict[Path, str | None] = {}
     for name, config in services.items():
-        if not isinstance(config, dict):
-            continue
         refs = env_file_refs(config.get("env_file"))
         if not refs:
             continue
