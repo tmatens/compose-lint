@@ -744,3 +744,58 @@ def test_each_dockerhub_token_is_read_inside_its_environment(
         f"{workflow}: job {job_name!r} reads {secret} from environment "
         f"{actual!r}, expected {expected!r}"
     )
+
+
+# --- Self-referencing version pins ------------------------------------------
+
+
+def _pin_patterns(workflow: str, step: str) -> list[str]:
+    """The ``re.compile`` sources in the named step's inline Python."""
+    for job in _load(workflow)["jobs"].values():
+        for s in job.get("steps", []):
+            if s.get("name") == step:
+                return re.findall(r're\.compile\(r"([^"]+)"\)', s["run"])
+    raise AssertionError(f"{workflow}: no step named {step!r}")
+
+
+def _bump_patterns() -> list[str]:
+    return _pin_patterns(
+        "release-prep.yml", "Bump self-referencing version pins in README and docs"
+    )
+
+
+def _check_patterns() -> list[str]:
+    return _pin_patterns("ci.yml", "Check self-referencing version pins in docs")
+
+
+def test_the_pin_bump_and_the_pin_check_use_the_same_patterns() -> None:
+    """release-prep rewrites what ci.yml checks; drift opens a red prep PR.
+
+    The bump captures the prefix as group 1 so it can substitute the version;
+    the check captures the version. Strip the bump's prefix group and they
+    must be the same expressions, in the same order.
+    """
+    bump, check = _bump_patterns(), _check_patterns()
+    assert len(bump) == 4, bump
+    as_check = [re.sub(r"^\(([^()]*)\)", r"\1", p) for p in bump]
+    assert as_check == check
+
+
+@pytest.mark.parametrize(
+    ("line", "moved"),
+    [
+        ("docker run composelint/compose-lint:1.1.0", True),
+        ("composelint/compose-lint:1.1.0 docker-compose.prod.yml", True),
+        ("`composelint/compose-lint:1.1.0`.", True),
+        # A digest names one build: moving the tag beside it would lie.
+        ("composelint/compose-lint:0.36.0@sha256:" + "b" * 64, False),
+        # Without the digit in the lookahead, 0.36.10 backtracks to 0.36.1.
+        ("composelint/compose-lint:0.36.10@sha256:" + "b" * 64, False),
+    ],
+)
+def test_a_digest_pinned_image_tag_is_not_a_version_pin(line: str, moved: bool) -> None:
+    image_bump = next(p for p in _bump_patterns() if "composelint/compose-lint" in p)
+    image_check = next(p for p in _check_patterns() if "composelint/compose-lint" in p)
+    bumped = re.sub(image_bump, r"\g<1>9.9.9", line)
+    assert (bumped != line) is moved
+    assert (re.search(image_check, line) is not None) is moved

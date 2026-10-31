@@ -849,10 +849,14 @@ jobs:
       # shipped with every doc pin stale despite RELEASING.md listing them —
       # so any new doc that pins our own artifacts is covered from its first
       # commit. Historical records (ADRs, CHANGELOG-adjacent reports) are
-      # excluded. The `tmatens/compose-lint@<sha>` action-pin form is also
-      # excluded: the new tag's SHA exists only after the release, so it is
-      # structurally a post-release follow-up (RELEASING.md pairs it with the
-      # marketplace-smoke bump, and the smoke test exercises it end-to-end).
+      # excluded. So is an image tag pinned by digest
+      # (`composelint/compose-lint:X.Y.Z@sha256:…`): it records the build a
+      # measurement ran on, and moving its tag alone would advertise a version
+      # the command does not run. The `tmatens/compose-lint@<sha>` action-pin
+      # form is also excluded: the new tag's SHA exists only after the
+      # release, so it is structurally a post-release follow-up (RELEASING.md
+      # pairs it with the marketplace-smoke bump, and the smoke test exercises
+      # it end-to-end).
       - name: Check self-referencing version pins in docs
         run: |
           python - <<'PY'
@@ -862,7 +866,7 @@ jobs:
 
           patterns = [
               re.compile(r"compose-lint==(\d+\.\d+\.\d+)"),
-              re.compile(r"composelint/compose-lint:(\d+\.\d+\.\d+)"),
+              re.compile(r"composelint/compose-lint:(\d+\.\d+\.\d+)(?!\d|@sha256:)"),
               re.compile(r"rev: v(\d+\.\d+\.\d+)"),
               re.compile(r"compose-lint/v(\d+\.\d+\.\d+)(?=/requirements\.lock)"),
           ]
