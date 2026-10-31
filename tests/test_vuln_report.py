@@ -486,3 +486,154 @@ def test_details_stand_in_for_a_missing_summary(tmp_path: Path) -> None:
     body = out.read_text("utf-8")
     assert "pip resolved the wrong index URL" in body
     assert "Longer text follows" not in body
+
+
+# --- GitHub Actions advisories (zizmor known-vulnerable-actions) -----------
+
+
+def _zizmor_finding(
+    advisory: str,
+    action: str,
+    pinned: str,
+    row: int,
+    *,
+    fix: str | None = "upgrade it",
+    ident: str = "known-vulnerable-actions",
+    ignored: bool = False,
+    path: str = ".github/workflows/publish.yml",
+) -> dict[str, object]:
+    """One finding in the shape `zizmor --format json` emits (1.30)."""
+    return {
+        "ident": ident,
+        "desc": "action has a known vulnerability",
+        "determinations": {"confidence": "High", "severity": "High"},
+        "ignored": ignored,
+        "fixes": [{"title": fix, "disposition": "unsafe"}] if fix else [],
+        "locations": [
+            {
+                "symbolic": {
+                    "key": {"Local": {"verbatim_path": path}},
+                    "annotation": advisory,
+                    "kind": "Primary",
+                },
+                "concrete": {
+                    "location": {"start_point": {"row": row, "column": 8}},
+                    "feature": f"uses: {action}@{'a' * 40}",
+                    "comments": [f"# {pinned}"],
+                },
+            }
+        ],
+    }
+
+
+def run_zizmor(
+    tmp_path: Path, findings: object | str
+) -> tuple[subprocess.CompletedProcess[str], Path]:
+    zf = tmp_path / "zizmor.json"
+    zf.write_text(
+        findings if isinstance(findings, str) else json.dumps(findings), "utf-8"
+    )
+    return run(tmp_path, CLEAN, extra=["--zizmor", str(zf)])
+
+
+PUBLISH_FIX = "upgrade pypa/gh-action-pypi-publish to v1.14.3"
+
+
+def test_an_action_advisory_with_a_fix_opens_the_issue(tmp_path: Path) -> None:
+    proc, out = run_zizmor(
+        tmp_path,
+        [
+            _zizmor_finding(
+                "GHSA-5xjx-3w67-w9x9",
+                "pypa/gh-action-pypi-publish",
+                "v1.14.2",
+                285,
+                fix=PUBLISH_FIX,
+            ),
+            _zizmor_finding(
+                "GHSA-5xjx-3w67-w9x9",
+                "pypa/gh-action-pypi-publish",
+                "v1.14.2",
+                624,
+                fix=PUBLISH_FIX,
+            ),
+        ],
+    )
+    assert proc.returncode == 0, proc.stderr
+    body = out.read_text("utf-8")
+    # Two uses of one action under one advisory are one row, not two.
+    assert "**1 fixable vulnerability**" in body
+    assert (
+        "| `GHSA-5xjx-3w67-w9x9` | `pypa/gh-action-pypi-publish` | v1.14.2 | "
+        f"{PUBLISH_FIX} | .github/workflows/publish.yml:286, "
+        ".github/workflows/publish.yml:625 |"
+    ) in body
+    assert "actions=1" in proc.stdout
+    outputs = _outputs(tmp_path)
+    assert outputs["has_findings"] == "true"
+    assert outputs["title"] == "Fixable vulnerabilities (1)"
+
+
+def test_an_action_advisory_without_a_fix_does_not_gate(tmp_path: Path) -> None:
+    proc, out = run_zizmor(
+        tmp_path,
+        [_zizmor_finding("GHSA-nofx-nofx-nofx", "acme/tool", "v2", 9, fix=None)],
+    )
+    assert proc.returncode == 0, proc.stderr
+    body = out.read_text("utf-8")
+    assert "**0 fixable vulnerabilities**" in body
+    assert "`GHSA-nofx-nofx-nofx` (`acme/tool`)" in body
+    assert "does not gate this issue" in body
+    assert _outputs(tmp_path)["has_findings"] == "false"
+
+
+def test_other_zizmor_audits_are_left_to_ci(tmp_path: Path) -> None:
+    proc, out = run_zizmor(
+        tmp_path,
+        [
+            _zizmor_finding(
+                "ignored-annotation", "acme/tool", "v1", 3, ident="unpinned-uses"
+            )
+        ],
+    )
+    assert proc.returncode == 0, proc.stderr
+    body = out.read_text("utf-8")
+    assert "## GitHub Actions" in body
+    assert "acme/tool" not in body
+    assert "**0 fixable vulnerabilities**" in body
+
+
+def test_an_action_advisory_the_config_ignores_is_still_reported(
+    tmp_path: Path,
+) -> None:
+    # Same anti-rot property as running pip-audit unsuppressed.
+    _, out = run_zizmor(
+        tmp_path,
+        [_zizmor_finding("GHSA-ign0-ign0-ign0", "acme/tool", "v1", 3, ignored=True)],
+    )
+    assert "`GHSA-ign0-ign0-ign0`" in out.read_text("utf-8")
+
+
+def test_without_a_zizmor_report_the_actions_section_is_omitted(
+    tmp_path: Path,
+) -> None:
+    _, out = run(tmp_path, CLEAN)
+    assert "## GitHub Actions" not in out.read_text("utf-8")
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ("", "is empty"),
+        ("not json", "not valid JSON"),
+        ('{"findings": []}', "not a list of findings"),
+        ('[{"desc": "no ident"}]', "without an 'ident'"),
+    ],
+)
+def test_a_malformed_zizmor_report_fails_loudly(
+    tmp_path: Path, payload: str, message: str
+) -> None:
+    proc, out = run_zizmor(tmp_path, payload)
+    assert proc.returncode == 1
+    assert message in proc.stderr
+    assert not out.exists(), "must not emit an all-clear body on scanner failure"

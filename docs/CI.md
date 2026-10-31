@@ -65,7 +65,7 @@ before merging, so `main`'s own run is what proves the merged result.
 | `coverage`                | Merges the shards' data (`coverage combine`) and applies `--fail-under=80` — fails below 80% statement coverage repo-wide; on a PR, `diff-cover` also fails below 90% coverage of the lines that PR adds or changes (see note) |
 | `security`                | `bandit -r src/ -ll` (blocking) + `pip-audit` for dep CVEs (informational on PRs — see note) |
 | `dependency-review`       | Blocks PRs adding deps with known high-severity CVEs or disallowed licenses               |
-| `actionlint`              | Lints every workflow under `.github/workflows/`: actionlint (embeds shellcheck for `run:` blocks) and zizmor (template injection, cache poisoning, kept tokens, unpinned uses; exceptions in `.github/zizmor.yml`) |
+| `actionlint`              | Lints every workflow under `.github/workflows/`: actionlint (embeds shellcheck for `run:` blocks) and zizmor (template injection, cache poisoning, kept tokens, unpinned uses; exceptions in `.github/zizmor.yml`), run with the job token so its online audits run too: published advisories against a pinned action, impostor commits, ref confusion |
 | `hadolint`                | Lints the Dockerfile with hadolint (when the Dockerfile or `ci.yml`, which carries the hadolint pin, changes) |
 | `dist-check`              | `python -m build` + `twine check --strict` + the wheel/sdist content guards from `publish.yml`, on PRs touching code or the locks — a packaging regression fails here, not after the tag |
 | `release-actions-smoke`   | Runs `publish.yml`'s three non-publishing release actions on the PR's own dists when a workflow changes: `gh-action-sigstore-python` signs them against Sigstore's staging instance, `sbom-action` writes an SPDX SBOM for `dist/`, `cosign-installer` installs the CLI. Same pins as `publish.yml`, so a bump of any of them has run before the tag (PRs from this repository only: keyless signing needs the job's OIDC token) |
@@ -286,6 +286,14 @@ Output is a single **rolling issue** labelled `fixable-vulns`:
   triage backlog to groom.
 - Advisories with **no** available fix are listed in a collapsed section
   and deliberately do not open or close the issue.
+
+It reads four sources: `pip-audit` over the dev lock, Docker Scout over the
+published `latest` image, pip's advisory list from OSV against the OpenVEX
+document, and zizmor's `known-vulnerable-actions` audit over `.github/` and
+`action.yml`. The last is here because the `actionlint` job audits the
+workflows only when one changes, and an advisory against a pinned action
+nobody touched arrives with time, not with a diff. The audit is online-only;
+the step fails if zizmor reports it ran offline, rather than list no actions.
 
 Two properties are worth preserving if you edit it:
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Build the rolling "fixable vulnerabilities" issue body.
 
-Consumes a pip-audit JSON report and (optionally) a Docker Scout SARIF
-report, and emits a Markdown body plus a has-findings flag.
+Consumes a pip-audit JSON report and, optionally, a Docker Scout SARIF
+report and a zizmor JSON report, and emits a Markdown body plus a
+has-findings flag.
 
 Design notes
 ------------
@@ -158,6 +159,82 @@ def parse_vex_ids(path: Path) -> set[str]:
     return ids
 
 
+ZIZMOR_AUDIT = "known-vulnerable-actions"
+
+
+def _zizmor_where(location: dict[str, Any]) -> tuple[str, str]:
+    """Return ``(where, version comment)`` for one zizmor finding location."""
+    symbolic = location.get("symbolic") or {}
+    concrete = location.get("concrete") or {}
+    key = symbolic.get("key") or {}
+    local = key.get("Local") if isinstance(key, dict) else None
+    path = str((local or {}).get("verbatim_path") or "?").removeprefix("./")
+    row = ((concrete.get("location") or {}).get("start_point") or {}).get("row")
+    where = f"{path}:{row + 1}" if isinstance(row, int) else path
+    comments = concrete.get("comments") or []
+    comment = str(comments[0]).lstrip("#").strip() if comments else ""
+    return where, comment
+
+
+def parse_zizmor_actions(
+    path: Path,
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """Return (fixable, unfixable) rows for actions with a known advisory.
+
+    Reads ``zizmor --format json`` output and keeps the
+    ``known-vulnerable-actions`` audit only: the rest of zizmor is ci.yml's
+    gate, which runs when a workflow changes. An advisory against an
+    unchanged pin arrives with time, not with a diff, so nothing else sees it.
+    A finding zizmor offers an upgrade for is fixable. Findings the config
+    ignores are kept, for the same anti-rot reason pip-audit runs
+    unsuppressed. One row per advisory and action, listing every use.
+    """
+    data = _load_json(path, "zizmor report")
+    if not isinstance(data, list):
+        raise ReportError("zizmor report is not a list of findings; shape changed?")
+
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    for finding in data:
+        if not isinstance(finding, dict) or "ident" not in finding:
+            raise ReportError("zizmor finding without an 'ident'; shape changed?")
+        if finding["ident"] != ZIZMOR_AUDIT:
+            continue
+        locations = finding.get("locations") or []
+        primary = next(
+            (
+                loc
+                for loc in locations
+                if (loc.get("symbolic") or {}).get("kind") == "Primary"
+            ),
+            locations[0] if locations else {},
+        )
+        advisory = str((primary.get("symbolic") or {}).get("annotation") or "?")
+        feature = str((primary.get("concrete") or {}).get("feature") or "")
+        action = feature.removeprefix("uses:").strip().split("@", 1)[0] or "?"
+        where, pinned = _zizmor_where(primary)
+        fixes = [str(f.get("title", "")) for f in finding.get("fixes") or []]
+        row = grouped.setdefault(
+            (advisory, action),
+            {
+                "id": advisory,
+                "action": action,
+                "pinned": pinned or "?",
+                "fix": "; ".join(f for f in fixes if f) or "—",
+                "where": [],
+            },
+        )
+        row["where"].append(where)
+
+    fixable: list[dict[str, str]] = []
+    unfixable: list[dict[str, str]] = []
+    for row in grouped.values():
+        out = {**row, "where": ", ".join(sorted(set(row["where"])))}
+        (unfixable if out["fix"] == "—" else fixable).append(out)
+    fixable.sort(key=lambda r: (r["action"], r["id"]))
+    unfixable.sort(key=lambda r: (r["action"], r["id"]))
+    return fixable, unfixable
+
+
 def _fixed_versions(vuln: dict[str, Any], package: str) -> list[str]:
     """Fix versions for ``package`` from its ECOSYSTEM (and SEMVER) ranges.
 
@@ -289,13 +366,17 @@ def build_body(
     image: str,
     run_url: str,
     vex: tuple[Path, str, list[dict[str, str]], int, str] | None = None,
+    actions: tuple[list[dict[str, str]], list[dict[str, str]]] | None = None,
 ) -> str:
     """Render the issue body.
 
     ``vex`` is ``(vex_path, package, gaps, considered, floor)`` when the
     OpenVEX completeness check ran, else ``None`` and the section is omitted.
+    ``actions`` is ``(fixable, unfixable)`` from the zizmor report, else
+    ``None`` and that section is omitted too.
     """
-    total = len(py_fixable) + len(img_fixable)
+    act_fixable, act_unfixable = actions if actions else ([], [])
+    total = len(py_fixable) + len(img_fixable) + len(act_fixable)
     gaps = vex[2] if vex else []
     noun = "vulnerability" if total == 1 else "vulnerabilities"
     tail = (
@@ -362,6 +443,43 @@ def build_body(
     else:
         parts.append("None. ✅")
     parts.append("")
+
+    if actions is not None:
+        parts.append("## GitHub Actions (`.github/`, `action.yml`)")
+        parts.append("")
+        if act_fixable:
+            parts.append(
+                _table(
+                    ["Advisory", "Action", "Pinned", "Fix", "Used at"],
+                    [
+                        [
+                            f"`{r['id']}`",
+                            f"`{r['action']}`",
+                            r["pinned"],
+                            r["fix"],
+                            r["where"],
+                        ]
+                        for r in act_fixable
+                    ],
+                )
+            )
+            parts.append("")
+            parts.append(
+                "Move every use to the fixed release's commit SHA, tag in the "
+                "trailing comment. Renovate proposes these, but it can hold one "
+                "for a schedule or a minimum release age; an advisory is a "
+                "reason not to wait for it."
+            )
+        else:
+            parts.append("None. ✅")
+        if act_unfixable:
+            parts.append("")
+            parts.append(
+                "Known, no fix available — does not gate this issue: "
+                + ", ".join(f"`{r['id']}` (`{r['action']}`)" for r in act_unfixable)
+                + "."
+            )
+        parts.append("")
 
     if vex is not None:
         vex_path, package, gaps, considered, floor = vex
@@ -447,6 +565,11 @@ def main() -> int:
     )
     ap.add_argument("--osv-package", default="pip")
     ap.add_argument(
+        "--zizmor",
+        type=Path,
+        help="zizmor --format json report, from an online run",
+    )
+    ap.add_argument(
         "--pip-floor",
         default="0",
         help="advisories whose every fix is at or below this version are out of scope",
@@ -456,6 +579,7 @@ def main() -> int:
         ap.error("--vex and --osv must be given together")
 
     vex: tuple[Path, str, list[dict[str, str]], int, str] | None = None
+    actions: tuple[list[dict[str, str]], list[dict[str, str]]] | None = None
     try:
         py_fixable, py_unfixable = parse_pip_audit(args.pip_audit)
         img_fixable = parse_scout_sarif(args.scout_sarif) if args.scout_sarif else []
@@ -464,19 +588,23 @@ def main() -> int:
                 args.osv, parse_vex_ids(args.vex), args.osv_package, args.pip_floor
             )
             vex = (args.vex, args.osv_package, gaps, considered, args.pip_floor)
+        if args.zizmor is not None:
+            actions = parse_zizmor_actions(args.zizmor)
     except ReportError as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1
 
     body = build_body(
-        py_fixable, py_unfixable, img_fixable, args.image, args.run_url, vex
+        py_fixable, py_unfixable, img_fixable, args.image, args.run_url, vex, actions
     )
     args.out.write_text(body, encoding="utf-8")
 
-    total = len(py_fixable) + len(img_fixable)
+    act_fixable = actions[0] if actions else []
+    total = len(py_fixable) + len(img_fixable) + len(act_fixable)
     gap_count = len(vex[2]) if vex else 0
     print(
         f"fixable: python={len(py_fixable)} image={len(img_fixable)} "
+        f"actions={len(act_fixable)} "
         f"total={total}; unfixable (informational): {len(py_unfixable)}; "
         f"vex_gaps={gap_count}"
     )

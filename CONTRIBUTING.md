@@ -76,7 +76,9 @@ until a maintainer has approved the run.
 
 The workflow gates skip themselves when the tool is not installed, so they
 never block a change that touches no workflow. `zizmor` comes with the dev
-lock; `actionlint` is a [release binary](https://github.com/rhysd/actionlint/releases)
+lock. CI runs it with a token, which turns on its online audits (known
+advisories against pinned actions among them); locally it runs them only if
+`GH_TOKEN` or `GITHUB_TOKEN` is set, and otherwise warns that it is offline. `actionlint` is a [release binary](https://github.com/rhysd/actionlint/releases)
 CI downloads per run. **If you install it, invoke it through
 `scripts/preflight.sh` rather than bare:** the pinned release predates
 GitHub's `$/` self-repository syntax and reports a failure for every workflow
