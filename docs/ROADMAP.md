@@ -1,6 +1,6 @@
 # Roadmap
 
-compose-lint today ships 27 security rules, PyPI distribution, a published GitHub Action and Docker image, SARIF/JSON/text output, pre-commit support, per-service rule overrides, and `--explain`. The foundation is solid, and the 1.0 stability commitment shipped as 1.0.0 on 2026-10-30. Remaining investments make the tool more useful to the users already running it, not chase speculative distribution channels.
+compose-lint today ships 28 security rules, PyPI distribution, a published GitHub Action and Docker image, SARIF/JSON/text output, pre-commit support, per-service rule overrides, and `--explain`. The foundation is solid, and the 1.0 stability commitment shipped as 1.0.0 on 2026-10-30. Remaining investments make the tool more useful to the users already running it, not chase speculative distribution channels.
 
 ## Strategic framing
 

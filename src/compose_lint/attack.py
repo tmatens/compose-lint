@@ -136,6 +136,7 @@ RULE_TECHNIQUES: dict[str, tuple[Technique, ...]] = {
     "CL-0028": (T1070, T1499, T1003),
     "CL-0029": (T1499, T1496),
     "CL-0030": (T1613,),
+    "CL-0031": (T1610, T1609, T1611, T1612, T1552_007, T1552_001, T1613),
 }
 
 #: Techniques a rule *enables* rather than mitigates, kept out of the mapping

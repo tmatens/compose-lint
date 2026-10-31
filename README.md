@@ -259,6 +259,7 @@ off (`--no-merge-overrides`, `--no-env`):
 | [CL-0028](https://tmatens.github.io/compose-lint/rules/CL-0028/) | HIGH | Host-reaching capability added | — | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3-limit-capabilities-grant-only-specific-capabilities-needed-by-a-container) | 5.4 |
 | [CL-0029](https://tmatens.github.io/compose-lint/rules/CL-0029/) | HIGH | Host-availability capability added | — | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3-limit-capabilities-grant-only-specific-capabilities-needed-by-a-container) | 5.4 |
 | [CL-0030](https://tmatens.github.io/compose-lint/rules/CL-0030/) | HIGH | Host-disclosure capability added | — | [Rule #3](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3-limit-capabilities-grant-only-specific-capabilities-needed-by-a-container) | 5.4 |
+| [CL-0031](https://tmatens.github.io/compose-lint/rules/CL-0031/) | CRITICAL | Engine API delegated with registry credentials | — | [Rule #1](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-1-do-not-expose-the-docker-daemon-socket-even-to-the-containers) | 5.32 |
 
 Rules marked ✅ have a mechanically unambiguous remediation that `compose-lint
 fix` applies for you, dry-run first — see [Fixing findings](#fixing-findings).

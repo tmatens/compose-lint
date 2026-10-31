@@ -113,7 +113,7 @@ following a policy it should not have (P6).
    It cannot tell you what a running container is *actually* doing —
    only what its declared configuration *would* let it do.
 
-5. **It is not exhaustive.** The 27 rules cover the misconfigurations
+5. **It is not exhaustive.** The 28 rules cover the misconfigurations
    that the OWASP Docker Security Cheat Sheet, CIS Docker Benchmark,
    and Docker official documentation ground (see
    [README.md](https://github.com/tmatens/compose-lint/blob/main/README.md#rules) for the full list). Misconfigurations

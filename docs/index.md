@@ -45,6 +45,7 @@ reading here) in the terminal.
 | [CL-0028](rules/CL-0028.md) | Host-reaching capability added | — |
 | [CL-0029](rules/CL-0029.md) | Host-availability capability added | — |
 | [CL-0030](rules/CL-0030.md) | Host-disclosure capability added | — |
+| [CL-0031](rules/CL-0031.md) | Engine API delegated with registry credentials | — |
 
 ## Where to start
 

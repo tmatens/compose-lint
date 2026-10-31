@@ -1041,6 +1041,72 @@ def _cl0001_ro_socket() -> tuple[bool, str]:
     return ("200 OK" in out), f"ro-mounted socket answered: {out!r}"
 
 
+def _cl0031_api_socket() -> tuple[bool | None, str]:
+    """``use_api_socket: true`` mounts the socket rw and places the user's logins.
+
+    Compose (not the daemon) implements the key, so this drives ``docker
+    compose`` like the secrets-route check above. Four observations, each the
+    grant CL-0031 describes: the socket is bind-mounted read-write, the daemon
+    answers through it, ``DOCKER_CONFIG`` points the client at the placed
+    config, and ``/run/secrets/docker/config.json`` exists. The probe prints
+    tokens only. It never reads that file, which holds whatever registry
+    logins the host user has, so this check must run before any ``docker
+    login`` in the job, and the file's size and contents stay out of the log.
+    Skipped, not failed, where the compose plugin is absent or predates the
+    key (2.37.1).
+    """
+    version = subprocess.run(
+        ["docker", "compose", "version"], capture_output=True, text=True, timeout=30
+    )
+    if version.returncode:
+        return None, "docker compose plugin not available"
+    # No double quotes in the probe: it is embedded through repr() into a
+    # YAML flow sequence, and a string holding both quote kinds comes out
+    # single-quoted with backslash escapes YAML does not read.
+    probe = (
+        "grep docker.sock /proc/self/mountinfo | grep -q ' rw,' && echo RW || echo RO; "
+        "docker version --format '{{.Server.Version}}' >/dev/null 2>&1 "
+        "&& echo LIVE || echo DEAD; "
+        # `$$`: Compose interpolates `$VAR` in the file against the host env at
+        # parse time; the doubled form reaches the container shell as `$VAR`.
+        "case $$DOCKER_CONFIG in /run/secrets/docker) echo CFG;; *) echo NOCFG;; esac; "
+        "[ -f /run/secrets/docker/config.json ] && echo FILE || echo NOFILE"
+    )
+    compose = (
+        "services:\n  probe:\n    image: docker:cli\n    use_api_socket: true\n"
+        f"    command: ['sh', '-c', {probe!r}]\n"
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        Path(tmp, "compose.yml").write_text(compose)
+        proc = subprocess.run(
+            ["docker", "compose", "-f", f"{tmp}/compose.yml", "run", "--rm", "probe"],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        subprocess.run(
+            [
+                "docker",
+                "compose",
+                "-f",
+                f"{tmp}/compose.yml",
+                "down",
+                "--remove-orphans",
+            ],
+            capture_output=True,
+            timeout=60,
+        )
+    if proc.returncode and "use_api_socket" in proc.stderr:
+        # The loader rejected the key: this Compose predates it.
+        return None, f"compose predates use_api_socket: {version.stdout.strip()}"
+    out = proc.stdout.split()
+    ok = out[-4:] == ["RW", "LIVE", "CFG", "FILE"]
+    return (
+        ok,
+        f"use_api_socket: {' '.join(out[-4:]) or proc.stderr.strip()[:120]!r}",
+    )
+
+
 def _host_block_device() -> str:
     """Name of a whole-disk block device on the *daemon's* host, or ""."""
     _, dev = _run(
@@ -1853,6 +1919,11 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool | None, str]]]] = [
         "CL-0001",
         "premise: a secrets: file: socket is a live read-only bind",
         _cl0001_secret_socket,
+    ),
+    (
+        "CL-0031",
+        "premise: use_api_socket mounts the socket rw and places the user's logins",
+        _cl0031_api_socket,
     ),
     ("CL-0026", "premise: memory and cpu are unbounded by default", _cl0026),
     ("CL-0027", "premise: SYS_PTRACE traces a different-uid process", _t_sys_ptrace),

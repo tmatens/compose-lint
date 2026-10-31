@@ -1,0 +1,14 @@
+services:
+  gateway:
+    image: docker/mcp-gateway:latest
+    use_api_socket: true
+  both:
+    image: docker:29-cli
+    use_api_socket: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+  opted_out:
+    image: docker:29-cli
+    use_api_socket: false
+  clean:
+    image: nginx:1.27
