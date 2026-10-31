@@ -119,7 +119,10 @@ HISTORICAL_COUNTS = (
 )
 
 # `(?<![\d.])` keeps "post-1.0 rules" in RELEASING.md from reading as "0 rules".
-COUNT_RE = re.compile(r"(?<![\d.])(\d+) (?:security )?rules\b")
+# The comparison tables say "27, each citing OWASP, CIS or Docker docs" in a
+# cell whose header carries the word "rules", so the count stands alone; the
+# first regex missed it and both tables shipped stale after CL-0031.
+COUNT_RE = re.compile(r"(?<![\d.])(\d+)(?: (?:security )?rules\b|, each citing)")
 
 
 def _live_docs() -> list[Path]:

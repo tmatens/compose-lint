@@ -341,7 +341,7 @@ interpolation is refused rather than guessed. The full contract is in the
 
 | Tool | Reads Compose files | Compose security rules | Auto-fix for Compose | Scope |
 |---|---|---|---|---|
-| **compose-lint** | Yes | 27, each citing OWASP, CIS or Docker docs | Six rules, dry-run diff first | Docker Compose only |
+| **compose-lint** | Yes | 28, each citing OWASP, CIS or Docker docs | Six rules, dry-run diff first | Docker Compose only |
 | **KICS** | Yes | 21 queries | Not documented for Compose | Broad IaC |
 | **OWASP DockSec** | Yes (`--compose`) | 17 | No (Dockerfiles only) | Dockerfiles, images, Compose |
 | **Semgrep `p/docker-compose`** | Yes | 6, all requiring the obsolete `version:` key | 1 of 6 | General-purpose code scanner |
