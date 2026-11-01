@@ -1,0 +1,85 @@
+name: Compose spec watch
+
+# Opens an issue when the Compose Specification adds, removes or moves a key,
+# or adds a place to put a container, that compose-lint has not triaged
+# (#1187). compose-lint's parser keeps unknown keys by design, so a new key is
+# silent rather than an error; `use_api_socket`, the lifecycle hooks and
+# `jobs:` each went ungraded for months that way.
+#
+# scripts/compose_spec_watch.py reads the spec's schema at upstream main,
+# reduces it to key names per place plus the container slots, and compares
+# that with scripts/compose_spec_keys.json. Three-valued like eol_watch.py:
+# 0 unchanged, 1 changed (report on stdout), 2 no trustworthy answer, which
+# fails the run and is reported below, because a watcher that silently stops
+# watching reads as "covered".
+#
+# One rolling issue: opened on the first change, commented on while the change
+# is untriaged, closed by the first run after a maintainer commits the new
+# record (`compose_spec_watch.py --write`). Nothing is vendored: upstream has
+# no tags or releases, only a rolling main, so the record keeps the commit the
+# shape was read at, and there is no pin for Renovate to move.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 5 * * 1"
+
+permissions: {}
+
+jobs:
+  watch:
+    name: Compare the Compose spec with the recorded shape
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compare
+        id: compare
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rc=0
+          python3 scripts/compose_spec_watch.py > report.md || rc=$?
+          if [ "${rc}" -gt 1 ]; then
+            echo "::error::compose_spec_watch.py exit ${rc}: no trustworthy answer"
+            exit "${rc}"
+          fi
+          echo "changed=${rc}" >> "${GITHUB_OUTPUT}"
+      - name: Open, update, or close the rolling issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CHANGED: ${{ steps.compare.outputs.changed }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="Compose spec changed: keys to triage"
+          existing=$(gh issue list --state open --search "\"${title}\" in:title" \
+            --json number --jq '.[0].number // empty')
+          if [ "${CHANGED}" = "1" ]; then
+            printf '\nRun: %s\n' "${RUN_URL}" >> report.md
+            if [ -n "${existing}" ]; then
+              echo "Updating #${existing}"
+              gh issue comment "${existing}" --body-file report.md
+            else
+              echo "Opening new issue"
+              gh issue create --title "${title}" --body-file report.md
+            fi
+          elif [ -n "${existing}" ]; then
+            echo "Recorded shape matches; closing #${existing}"
+            gh issue close "${existing}" --reason completed --comment \
+              "The committed record matches the spec again. Verified by ${RUN_URL}."
+          else
+            echo "No change and no open issue."
+          fi
+      - name: Report scheduled failure as issue
+        if: failure() && github.event_name == 'schedule'
+        uses: $/.github/actions/report-scheduled-failure
+        with:
+          note: The Compose spec watch did not complete, so a key the spec adds will go unnoticed until this is fixed.
