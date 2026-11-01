@@ -20,6 +20,7 @@ per-channel publish contract see [`DISTRIBUTION.md`](DISTRIBUTION.md).
 | `marketplace-smoke.yml`   | Push to `main` touching the file + manual + weekly cron | Verifies the published action, pre-commit hook, and the `uvx`/`pipx run` one-shot forms end-to-end; after a release, re-records the README demos if their output changed |
 | `forgejo-smoke.yml`       | PRs + pushes to `main` touching the harness + manual + weekly cron | Runs the Forgejo guide's snippet on a live containerized Forgejo |
 | `forgejo-smoke-bump.yml`  | Daily (05:17 UTC) + manual                 | Opens the PR that moves the harness to the newest Forgejo + runner, docs claim included |
+| `compose-spec-watch.yml`  | Weekly (Mon 05:41 UTC) + manual            | Opens an issue when the Compose spec adds a key or a container slot compose-lint has not triaged |
 | `digest-age-gate.yml`     | Hourly (:23) + manual (dry run by default) | Merges Renovate's gcr.io/ghcr.io digest PRs once they have aged 72h, the age gate Renovate cannot apply to them; flags ones that stall |
 | `os-smoke.yml`            | Called by `ci.yml` on PRs touching code + push to `main` + manual + weekly cron | pytest (3.11 and 3.13) + pre-commit hook on macOS and Windows — **gates via `ci-ok`** |
 | `sarif-ingestion.yml`     | Push to `main` touching SARIF inputs + manual + weekly cron | Uploads a probe SARIF to Code Scanning and asserts GitHub ingested it — then deletes its own alerts |
@@ -586,6 +587,32 @@ this run as its check — and manually. Deliberately not on docs-only PRs:
 the release-prep PR bumps the snippet's `compose-lint==X.Y.Z` pin before
 that version exists on PyPI, which would fail spuriously; the weekly run
 covers the new pin after release instead.
+
+### `compose-spec-watch.yml`
+
+Opens an issue when the [Compose Specification](https://github.com/compose-spec/compose-spec)
+changes in a way compose-lint has not triaged. The parser keeps keys it does
+not know, by design, so a key Compose adds is silent rather than an error:
+`use_api_socket`, the lifecycle hooks and `jobs:` each went ungraded for months
+that way (#1187).
+
+`scripts/compose_spec_watch.py` reads the schema at upstream `main` and reduces
+it to the key names allowed at the top level, on a service, on a job, on a
+`pre_start` hook and on an exec hook, plus the **container slots**: keys whose
+value holds a container or a command run inside one, found through every
+schema shape that can nest one. It compares that with
+`scripts/compose_spec_keys.json`, which records key names and the upstream
+commit they were read at, and nothing else of the spec. Three-valued like
+`eol_watch.py`: 0 unchanged, 1 changed, 2 no trustworthy answer (fails the run
+and is reported as an issue).
+
+One rolling issue, opened on the first change and closed by the first run
+after a maintainer triages it (a rule, a traversal, or a recorded decision not
+to grade) and commits `compose_spec_watch.py --write`.
+`tests/test_compose_spec_watch.py` holds the committed record to the engine:
+every recorded container slot is either traversed by `compose_lint._units` or
+listed with its reason as deliberately untraversed. Nothing is pinned, so
+there is nothing for Renovate: upstream has no tags or releases.
 
 ### `forgejo-smoke-bump.yml`
 
