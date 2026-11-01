@@ -56,7 +56,17 @@ jobs:
           dest=tests/data/compose-spec/compose-spec.json
           url="https://raw.githubusercontent.com/compose-spec/compose-spec/${sha}/schema/compose-spec.json"
           curl -fsSL --retry 3 -o /tmp/compose-spec.json "${url}"
-          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["title"]=="Compose Specification" and "container_spec" in d["$defs"]' /tmp/compose-spec.json
+          # Refuse anything that is not the Compose schema (an error page, a
+          # moved file) before it can replace the vendored copy.
+          python3 - /tmp/compose-spec.json <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as fh:
+              schema = json.load(fh)
+          assert schema["title"] == "Compose Specification", schema.get("title")
+          assert "container_spec" in schema["$defs"], "no container_spec definition"
+          PY
           if cmp -s /tmp/compose-spec.json "${dest}"; then
             echo "::notice::vendored schema matches upstream main ${sha:0:12}"
             echo "changed=0" >> "${GITHUB_OUTPUT}"
