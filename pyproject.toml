@@ -243,6 +243,7 @@ include = [
     "/MAINTAINERS.md",
     "/LICENSE",
     "/LICENSE-corpus.md",
+    "/LICENSE-compose-spec.md",
     "/requirements-build.lock",
     "/.pre-commit-hooks.yaml",
     "/.gitignore",

@@ -20,6 +20,7 @@ per-channel publish contract see [`DISTRIBUTION.md`](DISTRIBUTION.md).
 | `marketplace-smoke.yml`   | Push to `main` touching the file + manual + weekly cron | Verifies the published action, pre-commit hook, and the `uvx`/`pipx run` one-shot forms end-to-end; after a release, re-records the README demos if their output changed |
 | `forgejo-smoke.yml`       | PRs + pushes to `main` touching the harness + manual + weekly cron | Runs the Forgejo guide's snippet on a live containerized Forgejo |
 | `forgejo-smoke-bump.yml`  | Daily (05:17 UTC) + manual                 | Opens the PR that moves the harness to the newest Forgejo + runner, docs claim included |
+| `compose-spec-bump.yml`   | Weekly (Mon 05:41 UTC) + manual            | Opens the PR that refreshes the vendored Compose spec schema the key page is held to |
 | `digest-age-gate.yml`     | Hourly (:23) + manual (dry run by default) | Merges Renovate's gcr.io/ghcr.io digest PRs once they have aged 72h, the age gate Renovate cannot apply to them; flags ones that stall |
 | `os-smoke.yml`            | Called by `ci.yml` on PRs touching code + push to `main` + manual + weekly cron | pytest (3.11 and 3.13) + pre-commit hook on macOS and Windows — **gates via `ci-ok`** |
 | `sarif-ingestion.yml`     | Push to `main` touching SARIF inputs + manual + weekly cron | Uploads a probe SARIF to Code Scanning and asserts GitHub ingested it — then deletes its own alerts |
@@ -587,6 +588,24 @@ the release-prep PR bumps the snippet's `compose-lint==X.Y.Z` pin before
 that version exists on PyPI, which would fail spuriously; the weekly run
 covers the new pin after release instead.
 
+### `compose-spec-bump.yml`
+
+Opens the PR that refreshes `tests/data/compose-spec/compose-spec.json`, the
+vendored [Compose Specification](https://github.com/compose-spec/compose-spec)
+schema, and records the upstream commit in `SOURCE` beside it.
+`tests/test_spec_round_trip.py` holds [`docs/compose-keys.md`](compose-keys.md)
+to that file: every key the spec defines must have a row saying what
+compose-lint does with it, and every slot the schema shapes as a container
+must be traversed or tied to an issue. So a key Compose adds arrives as a red
+PR that names it, which is the point: the parser keeps unknown keys by design,
+and before this, three keys that carried a container or a grant went
+unnoticed for months.
+
+Not Renovate's: upstream has no tags or releases, only a rolling `main`, and a
+digest pin would move a hash without the content. Weekly, because the schema
+changes about four times a year. The PR is never auto-merged, green or red,
+since it changes what a public page is held to; it carries `manual-merge`.
+
 ### `forgejo-smoke-bump.yml`
 
 Opens the PR that moves the harness to the newest Forgejo and runner
@@ -845,6 +864,7 @@ actions because there the age is the only review there is.
 | `pyyaml` majors | `manual-merge` | `pyproject.toml` allows `>=6.0.2,<7` for every user of the wheel; a major crosses that ceiling and is a compose-lint MAJOR after 1.0, a release decision rather than a bump. Minors move only the locks and merge themselves |
 | The demo `compose-lint` pin (`scripts/demo/`) | Disabled | It records which release the committed GIF was rendered on; it moves only when the demos are re-recorded, by `marketplace-smoke.yml`'s `rerecord-demos` job after a release that changed their output, or by hand ([`RELEASING.md`](RELEASING.md)) |
 | Forgejo smoke stack pins | Disabled | Owned by [`forgejo-smoke-bump.yml`](#forgejo-smoke-bumpyml), which also moves the docs claim Renovate cannot |
+| The vendored Compose spec schema (`tests/data/compose-spec/`) | Disabled | Owned by [`compose-spec-bump.yml`](#compose-spec-bumpyml): upstream has no tags or releases, so there is no version to track. Its PRs are `manual-merge`, reviewed by the round-trip test |
 
 **Labels.** `manual-merge` means a person decides, and only a pyyaml major
 carries it from Renovate; the age gate adds it to a digest PR it refuses

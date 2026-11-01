@@ -20,14 +20,15 @@ The third column starts with one of five words:
 - **not graded**: the key has a security meaning but no rule, with the reason
   and the issue that records it for a recount.
 
-A key appearing on both a service and a job is graded the same way on each
-once jobs are traversed.
+A key appearing on both a service and a job is graded the same way on each.
+How hooks and jobs are graded is in
+[compatibility](compatibility.md#graded-units).
 
 | Key | Where | What compose-lint does |
 | --- | --- | --- |
 | `configs` | top-level | parse-only |
 | `include` | top-level | engine: followed when it stays inside the repository (ADR-036, ADR-038) |
-| `jobs` | top-level | not traversed (#1185) |
+| `jobs` | top-level | traversed: each job is graded as a service (ADR-040); a job using `extends:` is reported unread |
 | `models` | top-level | not graded: model runner declarations, parse-only today (#1189) |
 | `name` | top-level | parse-only |
 | `networks` | top-level | parse-only |
@@ -98,9 +99,9 @@ once jobs are traversed.
 | `pids_limit` | service, job | not graded: a near-universal absence finding, decision recorded in the roadmap (#1189) |
 | `platform` | service, job | parse-only |
 | `ports` | service, job | graded: CL-0005 |
-| `post_start` | service | not traversed (#1185) |
-| `pre_start` | service | not traversed (#1185) |
-| `pre_stop` | service | not traversed (#1185) |
+| `post_start` | service | traversed: each hook's `user` and `environment` are graded; `privileged` is not (ADR-040) |
+| `pre_start` | service | traversed: each hook is graded as the init container it deploys (ADR-040) |
+| `pre_stop` | service | traversed: each hook's `user` and `environment` are graded; `privileged` is not (ADR-040) |
 | `privileged` | service, job | graded: CL-0002 |
 | `profiles` | service, job | parse-only |
 | `provider` | service | engine: not a container, no rule runs on it (#1186) |

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Every Compose key, and what compose-lint does with it.** A new reference
+  page, [Compose keys](docs/compose-keys.md), lists each top-level, service
+  and job key the Compose Specification defines and says whether a rule
+  grades it, the engine acts on it, it holds containers the engine
+  traverses, or it is parsed and not graded, with the reason and an issue.
+  A test holds the page to a vendored copy of the spec's schema, refreshed
+  weekly, so a key Compose adds fails the build until the page says what
+  happens to it (#1187).
+
 ## [1.2.0] - 2026-10-31
 
 ### Added

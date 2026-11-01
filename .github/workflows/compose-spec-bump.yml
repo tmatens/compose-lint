@@ -1,0 +1,121 @@
+name: Compose spec schema bump
+
+# Opens the PR that refreshes tests/data/compose-spec/compose-spec.json, the
+# vendored Compose Specification schema that tests/test_spec_round_trip.py
+# holds docs/compose-keys.md to (#1187).
+#
+# Why not Renovate: compose-spec/compose-spec has no tags and no releases;
+# the schema is a rolling file on main. There is no version for Renovate to
+# track, and a digest pin would move a hash while the vendored content stays
+# stale. renovate.json records that with a disabled rule naming this file.
+#
+# The PR is the review. When the spec adds a key, the round-trip test on the
+# PR fails and names it, and a human adds the key's row to
+# docs/compose-keys.md on the same branch before it merges. The PR carries
+# `manual-merge` so it shows in the "what needs me" query either way, and is
+# never auto-merged: even a green refresh changes what the key page is held
+# to, and the page is a public statement. Weekly, because the schema changes
+# about four times a year.
+#
+# The PR is authored with MARKETPLACE_SMOKE_PAT so its checks run (a
+# GITHUB_TOKEN-authored PR triggers no workflows, #342); the same secret the
+# other bump jobs use, so no new credential.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 5 * * 1"
+
+permissions: {}
+
+jobs:
+  bump:
+    name: Refresh the vendored Compose spec schema
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: true
+          token: ${{ secrets.MARKETPLACE_SMOKE_PAT || github.token }}
+      - name: Fetch the schema at upstream main
+        id: fetch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha="$(gh api repos/compose-spec/compose-spec/commits/main --jq .sha)"
+          if ! [[ "${sha}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::upstream main did not resolve to a commit"
+            exit 2
+          fi
+          dest=tests/data/compose-spec/compose-spec.json
+          url="https://raw.githubusercontent.com/compose-spec/compose-spec/${sha}/schema/compose-spec.json"
+          curl -fsSL --retry 3 -o /tmp/compose-spec.json "${url}"
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["title"]=="Compose Specification" and "container_spec" in d["$defs"]' /tmp/compose-spec.json
+          if cmp -s /tmp/compose-spec.json "${dest}"; then
+            echo "::notice::vendored schema matches upstream main ${sha:0:12}"
+            echo "changed=0" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          cp /tmp/compose-spec.json "${dest}"
+          sed -i -E \
+            -e "s#^url: .*#url: ${url}#" \
+            -e "s#^commit: .*#commit: ${sha}#" \
+            -e "s#^fetched: .*#fetched: $(date -u +%F)#" \
+            tests/data/compose-spec/SOURCE
+          {
+            echo "changed=1"
+            echo "short=${sha:0:12}"
+          } >> "${GITHUB_OUTPUT}"
+      - name: Commit, push, open PR
+        if: steps.fetch.outputs.changed == '1'
+        env:
+          GH_TOKEN: ${{ secrets.MARKETPLACE_SMOKE_PAT || github.token }}
+          SHORT: ${{ steps.fetch.outputs.short }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          branch="compose-spec-bump/${SHORT}"
+          if [ "$(gh pr list --state all --head "${branch}" --json number --jq 'length')" != "0" ]; then
+            echo "::notice::a PR for ${branch} already exists; nothing to do"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "${branch}"
+          git add tests/data/compose-spec/compose-spec.json tests/data/compose-spec/SOURCE
+          git commit -m "Refresh the vendored Compose spec schema to ${SHORT}" -m "Opened by compose-spec-bump.yml (${RUN_URL})."
+          git push --force -u origin "${branch}"
+          cat > /tmp/pr-body.md <<EOF
+          **Automated schema refresh.** Opened by [compose-spec-bump.yml](${RUN_URL}); see \`docs/CI.md\`.
+
+          Moves \`tests/data/compose-spec/compose-spec.json\` to compose-spec \`main\` at \`${SHORT}\` and records the commit in \`SOURCE\`.
+
+          **The review is \`tests/test_spec_round_trip.py\` on this PR.** Red means the spec added, moved or removed a key, or a new slot that holds containers; the failure names it. Add or correct its row in \`docs/compose-keys.md\` on this branch, and if the key holds containers, file the traversal work before merging. Green means no key changed; the refresh still waits for a human because the key page is a public statement.
+          EOF
+          sed -i -E 's/^          //' /tmp/pr-body.md
+          gh pr create --base main --head "${branch}" \
+            --title "Refresh the vendored Compose spec schema to ${SHORT}" \
+            --body-file /tmp/pr-body.md
+          gh pr edit "${branch}" --add-label manual-merge \
+            || echo "::warning::could not apply the manual-merge label"
+
+  report-failure:
+    name: Report scheduled failure
+    needs:
+      - bump
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: $/.github/actions/report-scheduled-failure
+        with:
+          note: The Compose spec schema refresh did not complete, so a key the spec adds will not reach the round-trip test until this is fixed.

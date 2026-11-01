@@ -131,6 +131,7 @@ nav:
       - Running compose-lint hardened: running-hardened.md
       - Verifying releases: verifying.md
       - Compatibility: compatibility.md
+      - "Compose keys: what compose-lint does with each": compose-keys.md
       - "Compared with DCLint, KICS, Checkov, Trivy": compare.md
   - Project:
       - Roadmap: ROADMAP.md
