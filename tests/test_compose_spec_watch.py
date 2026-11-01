@@ -48,10 +48,12 @@ TRAVERSED = {
 # where a new one is first seen.
 UNTRAVERSED = {
     "service.develop": (
-        "develop.watch[].exec (Compose 2.32) is an exec hook run by "
-        "`docker compose watch` on file changes. 1 entry in the 11,111-file "
-        "corpus, setting only `command`; nothing gradable. Recount with the "
-        "corpus (#1189)."
+        "develop.watch[].exec (Compose 2.32) is an exec hook. Measured on "
+        "Compose 5.6.1: the same grant as a post_start exec (user and "
+        "environment apply, privileged widens only the bounding set), and it "
+        "runs only under `docker compose watch` or `up --watch`, never a plain "
+        "`up`. 1 entry in the 11,111-file corpus, setting only `command`; "
+        "nothing gradable. Recount with the corpus (#1189)."
     ),
 }
 
