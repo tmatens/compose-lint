@@ -190,23 +190,22 @@ def diff(recorded: dict[str, Any], current: dict[str, Any]) -> list[str]:
 
 
 def render(lines: list[str], commit: str, recorded_commit: str) -> str:
-    return "\n".join(
-        [
-            "The Compose Specification schema changed in a way compose-lint has "
-            "not triaged.",
-            "",
-            f"Upstream `main` at `{commit[:12]}` against the shape recorded at "
-            f"`{recorded_commit[:12]}` in `scripts/compose_spec_keys.json`:",
-            "",
-            *lines,
-            "",
-            "For each change, decide: a rule or an extension of one, traversal in "
-            "the engine for a container slot, or a recorded decision not to "
-            "grade (with its reason, in an issue). Then run "
-            "`python3 scripts/compose_spec_watch.py --write` and commit the "
-            "record; the next weekly run closes this issue.",
-        ]
+    heading = (
+        "The Compose Specification schema changed in a way compose-lint has "
+        "not triaged."
     )
+    compared = (
+        f"Upstream `main` at `{commit[:12]}` against the shape recorded at "
+        f"`{recorded_commit[:12]}` in `scripts/compose_spec_keys.json`:"
+    )
+    next_steps = (
+        "For each change, decide: a rule or an extension of one, traversal in "
+        "the engine for a container slot, or a recorded decision not to "
+        "grade (with its reason, in an issue). Then run "
+        "`python3 scripts/compose_spec_watch.py --write` and commit the "
+        "record; the next weekly run closes this issue."
+    )
+    return "\n".join([heading, "", compared, "", *lines, "", next_steps])
 
 
 def _get(url: str, *, accept: str) -> bytes:
