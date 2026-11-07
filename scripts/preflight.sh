@@ -118,6 +118,13 @@ patch_coverage() {
 # coverage than CI while the skips hid in `-rs` output (#880). Point pytest at a
 # directory that can execute instead, so a local run checks what CI checks. The
 # guard stays as the backstop for a bare `pytest`.
+#
+# The directory must also sit outside every git repository. The containment
+# root is the nearest directory holding a .git (ADR-038), so a tmp_path inside
+# this checkout makes every "outside the project" fixture land inside the
+# repository, and 44 containment and path-reporting tests fail as if the change
+# under test had broken them (#1211). The fallback used to be .pytest-tmp/ in
+# the checkout, which is exactly that.
 can_exec_in() {
   local probe rc
   probe="$(mktemp "$1/preflight-exec.XXXXXX" 2>/dev/null)" || return 1
@@ -129,22 +136,52 @@ can_exec_in() {
   return "${rc}"
 }
 
+# The walk containment_root() in src/compose_lint/_safe_read.py makes, over the
+# path pytest uses: tmp_path_factory resolves its base, so links are followed.
+in_repository() {
+  local dir
+  dir="$(cd "$1" 2>/dev/null && pwd -P)" || return 1
+  while :; do
+    [ -e "${dir}/.git" ] && return 0
+    [ "${dir}" = / ] && return 1
+    dir="$(dirname "${dir}")"
+  done
+}
+
+# Sets tmpdir_problem to why $1 cannot hold the tests' tmp_path.
+usable_tmpdir() {
+  tmpdir_problem=""
+  if [ ! -d "$1" ] || [ ! -w "$1" ]; then
+    tmpdir_problem="is not a writable directory"
+  elif ! can_exec_in "$1"; then
+    tmpdir_problem="cannot execute files (noexec)"
+  elif in_repository "$1"; then
+    tmpdir_problem="is inside a git repository, so containment tests would fail"
+  fi
+  [ -z "${tmpdir_problem}" ]
+}
+
 exec_tmpdir() {
-  local system="${TMPDIR:-/tmp}" local_dir="${PWD}/.pytest-tmp"
-  if can_exec_in "${system}"; then
+  local system="${TMPDIR:-/tmp}" system_problem
+  local fallback="${XDG_CACHE_HOME:-${HOME}/.cache}/compose-lint/pytest-tmp"
+  if usable_tmpdir "${system}"; then
     return 0
   fi
-  mkdir -p "${local_dir}"
-  if can_exec_in "${local_dir}"; then
-    export TMPDIR="${local_dir}"
-    printf 'note: %s cannot execute files (noexec); running tests with TMPDIR=%s\n' \
-      "${system}" "${local_dir}"
+  system_problem="${tmpdir_problem}"
+  mkdir -p "${fallback}" 2>/dev/null || true
+  if usable_tmpdir "${fallback}"; then
+    export TMPDIR="${fallback}"
+    printf 'note: %s %s; running tests with TMPDIR=%s\n' \
+      "${system}" "${system_problem}" "${fallback}"
     return 0
   fi
-  printf 'WARNING: neither %s nor %s can execute files; the tests that run a\n' \
-    "${system}" "${local_dir}"
-  printf '         script from their tmp_path will SKIP, so this run covers less\n'
-  printf '         than CI. Set TMPDIR to an exec-capable directory (CONTRIBUTING.md).\n'
+  printf 'WARNING: no usable TMPDIR for the tests, so this run is not what CI runs:\n'
+  printf '           %s %s\n' "${system}" "${system_problem}"
+  printf '           %s %s\n' "${fallback}" "${tmpdir_problem}"
+  printf '         Tests that run a script from their tmp_path SKIP on a noexec\n'
+  printf '         directory, and containment tests FAIL inside a repository. Set\n'
+  printf '         TMPDIR to an exec-capable directory outside any git repository\n'
+  printf '         (CONTRIBUTING.md).\n'
 }
 
 if [ "${quick}" -eq 0 ]; then

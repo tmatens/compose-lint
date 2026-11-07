@@ -127,13 +127,22 @@ measurable line and passes.
 On hosts where `/tmp` is mounted `noexec` (hardened containers), a few
 tests cannot run: they execute a script they wrote to their temp directory
 (the Action's `pip` shim, a fake `$PAGER`), and they skip rather than report
-a false result. `scripts/preflight.sh` detects this and points `TMPDIR` at a
-gitignored `.pytest-tmp/` in the checkout, so it runs them as CI does. Running
-`pytest` directly, point its temp directory somewhere executable yourself:
+a false result. `scripts/preflight.sh` detects this and points `TMPDIR` at
+`${XDG_CACHE_HOME:-$HOME/.cache}/compose-lint/pytest-tmp`, so it runs them as
+CI does. Running `pytest` directly, point its temp directory somewhere
+executable yourself:
 
 ```bash
-TMPDIR=$HOME/.pytest-tmp pytest --basetemp=$HOME/.pytest-tmp/bt
+d="${XDG_CACHE_HOME:-$HOME/.cache}/compose-lint/pytest-tmp"
+mkdir -p "$d" && TMPDIR="$d" pytest --basetemp="$d/bt"
 ```
+
+Whatever you pick must be outside every git repository, this checkout
+included. The containment tests build files "outside the project" under
+their temp directory, and a reference is contained to the nearest directory
+holding a `.git` (ADR-038), so inside a repository those files are not
+outside anything and the tests fail as if your change had broken them.
+Preflight refuses such a directory for the same reason.
 
 CI, os-smoke and the preflight script run the suite with `-n auto`
 (pytest-xdist, in the dev extra), one worker per core; a bare `pytest`
