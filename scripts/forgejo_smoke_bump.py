@@ -33,11 +33,13 @@ auto-merge when the smoke is green, and a red run stays open for a human.
 
 Exit codes: 0 = nothing to do, both pins current. 1 = files rewritten
 (summary on stdout, ready for a commit). 2 = the script could not produce
-a trustworthy answer (network, parse, stale anchor, a digest that is not a
-manifest list). The workflow turns 1 into a PR and 2 into a failure.
+a trustworthy answer (a registry still unreachable after three tries, parse,
+stale anchor, a digest that is not a manifest list). The workflow turns 1
+into a PR and 2 into a failure.
 
-Offline by design in tests: everything except ``fetch()`` and ``main()``
-takes its inputs as parameters; ``Registry`` accepts a fetch callable.
+Offline by design in tests: everything except ``_fetch_once()`` and
+``main()`` takes its inputs as parameters; ``Registry`` accepts a fetch
+callable, and ``retrying()`` a sleep.
 """
 
 from __future__ import annotations
@@ -48,6 +50,7 @@ import json
 import pathlib
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -83,6 +86,11 @@ USER_AGENT = (
     "compose-lint-forgejo-smoke-bump (+https://github.com/tmatens/compose-lint)"
 )
 MAX_TAG_PAGES = 50
+# Seconds to wait before the second and third attempt at one request. One
+# slow Codeberg response used to end the run (exit 2) and open a
+# scheduled-failure issue (#1209); a registry that is still unreachable after
+# three tries is an outage, and that stays exit 2.
+RETRY_DELAYS = (5.0, 15.0)
 
 Response = tuple[int, Mapping[str, str], bytes]
 Fetch = Callable[[str, str, Mapping[str, str]], Response]
@@ -182,7 +190,7 @@ def branch_name(targets: dict[str, Pin]) -> str:
 # --- Registry client (token dance, pagination, digest) -------------------
 
 
-def fetch(url: str, method: str, headers: Mapping[str, str]) -> Response:
+def _fetch_once(url: str, method: str, headers: Mapping[str, str]) -> Response:
     """One HTTP round trip. 4xx/5xx come back as a status, not an exception."""
     req = urllib.request.Request(url, method=method, headers=dict(headers))
     req.add_header("User-Agent", USER_AGENT)
@@ -193,6 +201,46 @@ def fetch(url: str, method: str, headers: Mapping[str, str]) -> Response:
         return exc.code, dict(exc.headers), exc.read()
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise CannotAnswer(f"{method} {url}: {exc}") from exc
+
+
+def _transient(status: int) -> bool:
+    return status == 429 or status >= 500
+
+
+def retrying(
+    fetch_once: Fetch,
+    sleep: Callable[[float], None] = time.sleep,
+    delays: tuple[float, ...] = RETRY_DELAYS,
+) -> Fetch:
+    """``fetch_once``, retried on a network error, a 429 or a 5xx.
+
+    Every request this script makes is a GET or HEAD, so repeating one is
+    safe. The last attempt's outcome stands: its exception propagates, and
+    its status goes back to the caller, which turns a non-200 into
+    CannotAnswer exactly as before. A 4xx other than 429 is an answer, not a
+    hiccup, and is returned at once.
+    """
+
+    def fetch(url: str, method: str, headers: Mapping[str, str]) -> Response:
+        for delay in delays:
+            try:
+                response = fetch_once(url, method, headers)
+            except CannotAnswer as exc:
+                print(f"retrying in {delay:g}s: {exc}", file=sys.stderr)
+            else:
+                if not _transient(response[0]):
+                    return response
+                print(
+                    f"retrying in {delay:g}s: {method} {url}: {response[0]}",
+                    file=sys.stderr,
+                )
+            sleep(delay)
+        return fetch_once(url, method, headers)
+
+    return fetch
+
+
+fetch = retrying(_fetch_once)
 
 
 _CHALLENGE_RE = re.compile(r'(\w+)="([^"]*)"')

@@ -235,6 +235,71 @@ class TestRegistry:
         assert bump._next_link("") is None
 
 
+class Flaky:
+    """A fetch that plays back a script of outcomes, one per attempt."""
+
+    def __init__(self, *outcomes: Exception | int) -> None:
+        self.outcomes = list(outcomes)
+        self.attempts = 0
+
+    def __call__(
+        self, url: str, method: str, headers: Mapping[str, str]
+    ) -> tuple[int, dict[str, str], bytes]:
+        self.attempts += 1
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome, {}, b""
+
+
+class TestRetrying:
+    """One slow registry response must not end the run (#1209)."""
+
+    URL = "https://reg.test/v2/forgejo/forgejo/tags/list?n=1000"
+
+    def _fetch(self, flaky: Flaky, slept: list[float]) -> Any:
+        return bump.retrying(flaky, sleep=slept.append, delays=(5.0, 15.0))
+
+    def test_a_timeout_then_success_is_success(self) -> None:
+        flaky = Flaky(bump.CannotAnswer("GET x: timed out"), 200)
+        slept: list[float] = []
+        assert self._fetch(flaky, slept)(self.URL, "GET", {})[0] == 200
+        assert (flaky.attempts, slept) == (2, [5.0])
+
+    @pytest.mark.parametrize("status", [429, 500, 502, 503])
+    def test_a_transient_status_is_retried(self, status: int) -> None:
+        flaky = Flaky(status, status, 200)
+        slept: list[float] = []
+        assert self._fetch(flaky, slept)(self.URL, "GET", {})[0] == 200
+        assert (flaky.attempts, slept) == (3, [5.0, 15.0])
+
+    @pytest.mark.parametrize("status", [200, 401, 404])
+    def test_an_answer_is_returned_at_once(self, status: int) -> None:
+        """A 401 is the token dance and a 404 a missing tag, not a hiccup."""
+        flaky = Flaky(status)
+        slept: list[float] = []
+        assert self._fetch(flaky, slept)(self.URL, "GET", {})[0] == status
+        assert (flaky.attempts, slept) == (1, [])
+
+    def test_still_unreachable_after_three_tries_cannot_answer(self) -> None:
+        flaky = Flaky(*(bump.CannotAnswer(f"GET x: timed out {n}") for n in range(3)))
+        slept: list[float] = []
+        with pytest.raises(bump.CannotAnswer, match="timed out 2"):
+            self._fetch(flaky, slept)(self.URL, "GET", {})
+        assert (flaky.attempts, slept) == (3, [5.0, 15.0])
+
+    def test_a_lasting_5xx_reaches_the_caller_as_cannot_answer(self) -> None:
+        flaky = Flaky(503, 503, 503)
+        reg = bump.Registry("reg.test", fetch_fn=self._fetch(flaky, []))
+        with pytest.raises(bump.CannotAnswer, match="503"):
+            reg.tags("forgejo/forgejo")
+        assert flaky.attempts == 3
+
+    def test_the_default_fetch_retries(self) -> None:
+        assert bump.Registry("reg.test")._fetch is bump.fetch
+        assert bump.fetch is not bump._fetch_once
+
+
 # --- Deciding the targets -------------------------------------------------
 
 
