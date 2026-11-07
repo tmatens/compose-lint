@@ -36,7 +36,8 @@ ENV/
 
 # Testing / coverage
 .pytest_cache/
-# scripts/preflight.sh's TMPDIR when the system temp dir is noexec (#880)
+# scripts/preflight.sh's noexec fallback until #1211 moved it out of the
+# checkout; kept so a leftover one from an older run stays untracked.
 .pytest-tmp/
 .coverage
 # `parallel = true` writes one data file per process; the patch-coverage
