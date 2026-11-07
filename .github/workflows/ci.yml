@@ -1088,6 +1088,29 @@ jobs:
             exit 1
           fi
           echo "No AI attribution trailers found in PR commits."
+      - name: Scan PR commit identities for AI authorship
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # A commit authored, committed or signed off as an AI agent credits it
+          # just as a trailer would, and a squash-merge turns any author other
+          # than the PR's into a Co-authored-by line on main. The message scan
+          # above cannot see an identity, so check those directly.
+          bad=0
+          while read -r sha; do
+            ids=$(git log -1 --format='%an <%ae>%n%cn <%ce>%n%(trailers:key=Signed-off-by,valueonly)' "${sha}")
+            if grep -qiE 'claude|anthropic' <<<"${ids}"; then
+              echo "::error::  ${sha:0:12}  $(git log -1 --format='%s' "${sha}"): the author, committer or a sign-off names an AI agent"
+              bad=1
+            fi
+          done < <(git rev-list "${BASE_SHA}..${HEAD_SHA}")
+          if [ "${bad}" -ne 0 ]; then
+            echo "::error::Commit under your own identity. Re-author with 'git rebase --exec \"git commit --amend --no-edit --reset-author --signoff\" ${BASE_SHA}' (and drop the agent's sign-off), then re-push with --force-with-lease."
+            exit 1
+          fi
+          echo "No PR commit is authored, committed or signed off as an AI agent."
 
   commit-subjects:
     name: Commit subjects
