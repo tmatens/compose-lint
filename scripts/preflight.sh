@@ -326,6 +326,17 @@ commits_without_ai_attribution() {
     printf '  CONTRIBUTING.md: no AI credit lines in commit messages; say it in the PR Origin section instead\n'
     return 1
   fi
+  # Mirrors the job's identity step: author, committer and sign-offs.
+  local sha ids ok=1
+  while read -r sha; do
+    [ -n "${sha}" ] || continue
+    ids="$(git log -1 --format='%an <%ae>%n%cn <%ce>%n%(trailers:key=Signed-off-by,valueonly)' "${sha}")"
+    if printf '%s\n' "${ids}" | grep -qiE 'claude|anthropic'; then
+      printf '  %s  %s: the author, committer or a sign-off names an AI agent\n' "${sha:0:7}" "$(git log -1 --format=%s "${sha}")"
+      ok=0
+    fi
+  done < <(git rev-list "${range}")
+  [ "${ok}" -eq 1 ] || { printf '  CONTRIBUTING.md: commit under your own identity\n'; return 1; }
 }
 
 commit_subjects() {
