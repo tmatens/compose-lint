@@ -21,6 +21,13 @@ ships — in the GitHub Release notes too.
 It also requires every ``### Security`` entry to record whether it got an
 advisory, so the decision in .github/SECURITY.md is made on the PR that
 fixes the defect rather than remembered at release time.
+
+With ``--base-image-since <ref>`` (release-prep only) it also requires an
+entry when the Dockerfile's runtime base digest differs from the one at
+``<ref>`` (#1234). Those repins merge through the digest age gate with no
+human PR, so nothing else prompts an entry; six of the nine releases that
+moved the base between 0.20.0 and 1.3.0 shipped without one. It runs at
+dispatch only, because a repin mid-cycle is not yet a release.
 """
 
 from __future__ import annotations
@@ -28,6 +35,7 @@ from __future__ import annotations
 import argparse
 import pathlib
 import re
+import subprocess
 import sys
 
 # Keep a Changelog's order, with this repo's "Upgrading" preamble first and
@@ -146,6 +154,64 @@ def _undecided_security_entries(section: list[str]) -> list[str]:
     return [e for e in entries if not _GHSA.search(e) and "No advisory:" not in e]
 
 
+_FROM_DIGEST = re.compile(r"^FROM\s+(\S+?)@sha256:([0-9a-f]{64})", re.IGNORECASE)
+
+
+def runtime_base(dockerfile: str) -> tuple[str, str] | None:
+    """``(image, digest)`` of the last ``FROM``: the stage that ships.
+
+    Earlier stages (the ``debian:13-slim`` build stage) never reach the
+    published image, so a repin there needs no entry.
+    """
+    found = None
+    for line in dockerfile.splitlines():
+        if m := _FROM_DIGEST.match(line.strip()):
+            found = (m.group(1), m.group(2))
+    return found
+
+
+def missing_base_repin_entry(text: str, dockerfile: str, previous: str) -> str | None:
+    """Error when the runtime base moved since ``previous`` with no entry.
+
+    The entry is matched on ``sha256:`` plus the new digest's first eight hex
+    digits, the form every existing entry uses (``sha256:1c32c372…``).
+    """
+    now, then = runtime_base(dockerfile), runtime_base(previous)
+    if now is None or then is None or now[1] == then[1]:
+        return None
+    lines = text.splitlines()
+    start = next(
+        (i for i, ln in enumerate(lines) if ln.startswith("## [Unreleased]")), None
+    )
+    if start is None:
+        return None  # validate() already reports this
+    end = next(
+        (i for i in range(start + 1, len(lines)) if lines[i].startswith("## [")),
+        len(lines),
+    )
+    short = f"sha256:{now[1][:8]}"
+    if any(short in ln for ln in lines[start + 1 : end]):
+        return None
+    return (
+        f"The runtime base {now[0]} moved from sha256:{then[1][:8]}… to "
+        f"{short}… since the last release, and [Unreleased] does not mention "
+        f"{short}. It changes the published image, so add the standard entry "
+        "under ### Changed in a PR and re-dispatch: '- **The published image "
+        f"moves to a newer distroless base.** `{now[0]}` is repinned from "
+        f"`sha256:{then[1][:8]}…` to `{short}…`, picking up the base image's "
+        "own updates.'"
+    )
+
+
+def _git_show(ref: str, path: str) -> str:
+    return subprocess.run(
+        ["git", "show", f"{ref}:{path}"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -159,10 +225,22 @@ def main() -> int:
         action="store_true",
         help="also fail when [Unreleased] is empty (release-prep only)",
     )
+    parser.add_argument(
+        "--base-image-since",
+        metavar="REF",
+        help="also fail when the Dockerfile's runtime base digest differs from "
+        "the one at REF and [Unreleased] has no entry for it (release-prep only)",
+    )
     args = parser.parse_args()
 
     text = args.file.read_text(encoding="utf-8")
     error = validate(text, require_content=args.require_content)
+    if error is None and args.base_image_since:
+        error = missing_base_repin_entry(
+            text,
+            pathlib.Path("Dockerfile").read_text(encoding="utf-8"),
+            _git_show(args.base_image_since, "Dockerfile"),
+        )
     if error is not None:
         print(f"::error::{error}")
         return 1

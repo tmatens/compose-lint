@@ -283,6 +283,18 @@ version number.
       Changelog — the three shapes that have reached a release candidate.
       **That checks shape, not completeness:** it cannot know a PR went
       undocumented, so the cross-check above is still yours to do.
+
+      One change is held to completeness: **a runtime base repin is
+      release-note material.** The digest age gate merges
+      `gcr.io/distroless/python3-debian13` repins with no human PR, and each
+      one changes the published image, so `release-prep.yml` refuses to run
+      when the Dockerfile's runtime-stage digest differs from the previous
+      tag's and `[Unreleased]` does not name the new one (its first eight
+      hex digits, `sha256:1c32c372`). The error prints the entry to add
+      under `### Changed`. One entry per release, naming the digest at the
+      previous tag and the digest that ships; two repins in one cycle
+      need one entry for the net change, not two. The `debian:13-slim`
+      build stage does not ship and needs no entry (#1234).
 - [ ] **Every entry authored by someone other than a maintainer credits
       them.** Append `Thanks [@handle](https://github.com/handle)
       ([#NNN](https://github.com/tmatens/compose-lint/pull/NNN)).` as its own

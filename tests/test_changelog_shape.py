@@ -132,3 +132,80 @@ def test_released_security_entries_are_not_re_judged() -> None:
         "## [0.19.0] - 2026-08-18\n\n### Security\n\n- An old entry, no decision.\n"
     )
     assert validate(text, require_content=False) is None
+
+
+# --- A runtime base repin since the last release has an entry (#1234) -----
+
+missing_base_repin_entry = _mod.missing_base_repin_entry
+runtime_base = _mod.runtime_base
+
+_OLD, _NEW, _BUILD = "64e54c4b" + "0" * 56, "1c32c372" + "0" * 56, "a" * 64
+_RUNTIME = "gcr.io/distroless/python3-debian13:nonroot"
+
+
+def _dockerfile(runtime: str, build: str = _BUILD) -> str:
+    return (
+        f"FROM debian:13-slim@sha256:{build} AS build\nRUN true\n\n"
+        f"FROM {_RUNTIME}@sha256:{runtime}\nCOPY --from=build /x /x\n"
+    )
+
+
+_ENTRY = (
+    "\n### Changed\n\n- **The published image moves to a newer distroless "
+    f"base.**\n  `{_RUNTIME}` is repinned from\n  `sha256:64e54c4b…` to "
+    "`sha256:1c32c372…`, picking up the base image's own\n  updates.\n"
+)
+
+
+def test_the_real_dockerfile_ships_the_distroless_stage() -> None:
+    text = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    base = runtime_base(text)
+    assert base is not None and base[0] == _RUNTIME
+
+
+def test_an_unmoved_runtime_base_needs_no_entry() -> None:
+    doc = _doc("\n### Fixed\n\n- a fix\n")
+    assert missing_base_repin_entry(doc, _dockerfile(_OLD), _dockerfile(_OLD)) is None
+
+
+def test_a_repin_with_no_entry_fails_and_names_both_digests() -> None:
+    doc = _doc("\n### Fixed\n\n- a fix\n")
+    error = missing_base_repin_entry(doc, _dockerfile(_NEW), _dockerfile(_OLD))
+    assert error is not None
+    assert "sha256:64e54c4b" in error and "sha256:1c32c372" in error
+
+
+def test_a_repin_with_the_standard_entry_passes() -> None:
+    doc = _doc(_ENTRY)
+    assert missing_base_repin_entry(doc, _dockerfile(_NEW), _dockerfile(_OLD)) is None
+
+
+def test_an_entry_for_an_older_digest_does_not_count() -> None:
+    # Two repins in one cycle: an entry written after the first is stale
+    # once the second lands, and the release ships the second.
+    newer = "727eccc0" + "0" * 56
+    doc = _doc(_ENTRY)
+    assert missing_base_repin_entry(doc, _dockerfile(newer), _dockerfile(_OLD))
+
+
+def test_an_entry_in_a_released_section_does_not_count() -> None:
+    text = (
+        "# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- a fix\n\n"
+        f"## [1.3.0] - 2026-11-10\n{_ENTRY}"
+    )
+    assert missing_base_repin_entry(text, _dockerfile(_NEW), _dockerfile(_OLD))
+
+
+def test_a_build_stage_repin_needs_no_entry() -> None:
+    doc = _doc("\n### Fixed\n\n- a fix\n")
+    moved = _dockerfile(_OLD, build="b" * 64)
+    assert missing_base_repin_entry(doc, moved, _dockerfile(_OLD)) is None
+
+
+def test_the_suggested_entry_satisfies_the_check() -> None:
+    doc = _doc("\n### Fixed\n\n- a fix\n")
+    error = missing_base_repin_entry(doc, _dockerfile(_NEW), _dockerfile(_OLD))
+    assert error is not None
+    suggested = error.split("'")[1]
+    fixed = _doc(f"\n### Changed\n\n{suggested}\n")
+    assert missing_base_repin_entry(fixed, _dockerfile(_NEW), _dockerfile(_OLD)) is None
