@@ -55,8 +55,8 @@ class Unit:
     finding with no line is about a key the hook did not write (an inherited
     scalar, or an absence) and belongs to the parent, which reports it.
     ``env_key`` is the key :func:`~compose_lint._service_env.resolve_env_files`
-    files this unit's ``env_file:`` targets under, or ``None`` for a hook,
-    whose ``env_file:`` Compose does not apply.
+    files this unit's ``env_file:`` targets under, or ``None`` for an exec hook,
+    which deploys no container of its own.
     """
 
     name: str
@@ -193,6 +193,27 @@ def container_specs(
                 yield f"jobs.{name}", config
 
 
+def graded_pre_start_hooks(
+    data: Mapping[Any, Any],
+) -> Iterator[tuple[str, str, dict[Any, Any]]]:
+    """``(unit name, service name, hook)`` for every ``pre_start`` hook graded.
+
+    The same hooks :func:`units` grades: none of a provider service, and none
+    in a document over :data:`MAX_SERVICES` units. Each hook is yielded as the
+    document writes it, with the name of the service it inherits from.
+    """
+    if count_units(data) > MAX_SERVICES:
+        return
+    services = data.get("services")
+    if not isinstance(services, dict):
+        return
+    for name, config in services.items():
+        if not isinstance(config, dict) or _is_provider_service(config):
+            continue
+        for i, hook in _hooks(config, PRE_START):
+            yield f"{name}.{PRE_START}[{i}]", str(name), hook
+
+
 def job_lines(lines: Mapping[str, int]) -> dict[str, int]:
     """``jobs.<name>.*`` re-keyed as ``services.jobs.<name>.*``, in one pass.
 
@@ -247,7 +268,7 @@ def _service_hooks(
         # rule cannot compare lines: hiding the path makes an absence finding
         # line-less instead, and a finding on the first key keeps its line.
         view = UnitLines(lines, hidden=frozenset({f"services.{unit_name}"}))
-        yield Unit(unit_name, {**inherited, **hook}, view, hook=True)
+        yield Unit(unit_name, {**inherited, **hook}, view, hook=True, env_key=unit_name)
     for kind in EXEC_HOOKS:
         for i, hook in _hooks(config, kind):
             unit_name = f"{name}.{kind}[{i}]"

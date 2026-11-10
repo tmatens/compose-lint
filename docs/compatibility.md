@@ -108,7 +108,10 @@ logical location and fingerprint use, and what `exclude_services` matches.
 
 A hook reports only what it wrote. A key it inherits from its service, or one
 that is absent from both, is the service's finding, and the service reports
-it once. `privileged: true` on an exec hook is not graded: measured on Compose
+it once. The same holds for env files: from Compose 5.7.0 a `pre_start` hook
+receives its service's `env_file:` values and then its own, so compose-lint
+reads a hook's own `env_file:` targets as it reads a service's and grades
+the keys whose value the hook deploys and its service does not. `privileged: true` on an exec hook is not graded: measured on Compose
 5.6.1, it widens the exec's capability set but leaves seccomp filtering and the
 device cgroup in place, which is not the grant CL-0002 describes. A file with
 `jobs:` and no `services:` is a Compose file and is linted.

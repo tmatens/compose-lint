@@ -1138,7 +1138,11 @@ _UNIT_PROBE = (
     "echo DEV$$(ls /dev | wc -l); "
     # `${VAR:+SET}` names presence without the value, and needs no quoting.
     "echo PARENTVAR$${PARENT_VAR:+SET} HOOKVAR$${HOOK_VAR:+SET} "
-    "FILEVAR$${HOOK_FILE_VAR:+SET}"
+    "FILEVAR$${HOOK_FILE_VAR:+SET} PFILEVAR$${PARENT_FILE_VAR:+SET}; "
+    # Which source won a key two of them set. The values are fixed markers the
+    # check writes itself, compared inside the container and never printed.
+    "test $${OVR:-x} = hook && echo OVRHOOK; "
+    "test $${ENVWIN:-x} = env && echo ENVWINS"
 )
 
 
@@ -1168,7 +1172,11 @@ def _hook_units() -> tuple[bool | None, str]:
     - a ``post_start`` exec with ``privileged: true`` widens the bounding set
       but leaves seccomp in filter mode (mode 2), which is why it is not the
       grant CL-0002 describes;
-    - a hook's ``env_file:`` is not applied (ADR-040 §7);
+    - below Compose 5.7, a hook's ``env_file:`` is not applied and its
+      service's is not inherited; from 5.7 (docker/compose#14293) the
+      service's env files apply, then the hook's own, the hook's value winning
+      a key both set, and the service's ``environment:`` wins over both
+      (ADR-040 §7);
 
     and a job with ``privileged: true`` run by ``docker compose run`` is a
     full container (ADR-040 §5). Hook containers are removed after they run,
@@ -1182,6 +1190,8 @@ def _hook_units() -> tuple[bool | None, str]:
         return None, "docker compose plugin not available"
     if not supported:
         return None, "compose predates jobs: (needs 5.6)"
+    env_files_apply = bool(_compose_at_least(5, 7))
+
     def probe(target: str = "") -> str:
         # Grouped, so the redirect takes every line and not only the last.
         return repr(f"({_UNIT_PROBE}) > /out/{target}" if target else _UNIT_PROBE)
@@ -1193,7 +1203,8 @@ def _hook_units() -> tuple[bool | None, str]:
         "    user: '65534'\n"
         "    read_only: true\n"
         "    cap_drop: [ALL]\n"
-        "    environment: {PARENT_VAR: p}\n"
+        "    env_file: parent.env\n"
+        "    environment: {PARENT_VAR: p, ENVWIN: env}\n"
         "    volumes: ['out:/out']\n"
         "    command: ['sleep', '60']\n"
         "    pre_start:\n"
@@ -1226,7 +1237,10 @@ def _hook_units() -> tuple[bool | None, str]:
     )
     with tempfile.TemporaryDirectory() as tmp:
         Path(tmp, "compose.yml").write_text(compose)
-        Path(tmp, "hook.env").write_text("HOOK_FILE_VAR=f\n")
+        Path(tmp, "parent.env").write_text(
+            "PARENT_FILE_VAR=p\nOVR=parent\nENVWIN=file\n"
+        )
+        Path(tmp, "hook.env").write_text("HOOK_FILE_VAR=f\nOVR=hook\nENVWIN=file\n")
         base = ["docker", "compose", "-f", f"{tmp}/compose.yml", "-p", "clhookunits"]
         try:
             up = subprocess.run(
@@ -1272,7 +1286,14 @@ def _hook_units() -> tuple[bool | None, str]:
         and int(inherit.get("EFF", "1"), 16) == 0
         and "PARENTVARSET" in inherit
         and "HOOKVARSET" in inherit,
-        "env_file-inert": "FILEVAR" in inherit,
+        # The engine grades a hook's env files as 5.7 applies them; an older
+        # Compose must still apply none, or the hook deploys values no rule saw.
+        "env_file-applied" if env_files_apply else "env_file-inert": (
+            all(tok in inherit for tok in ("FILEVARSET", "PFILEVARSET", "OVRHOOK"))
+            and "ENVWINS" in inherit
+            if env_files_apply
+            else "FILEVAR" in inherit and "PFILEVAR" in inherit
+        ),
         "privileged-hook": privileged.get("U") == "0"
         and full(privileged)
         and int(privileged.get("DEV", "0")) > 20,

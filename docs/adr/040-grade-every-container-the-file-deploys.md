@@ -127,7 +127,7 @@ so identity alone cannot tell a hook's finding from its parent's.
 7. **`env_file:` on a hook is not read.** Compose 5.6.1 accepts the key and
    does not apply it, so there is nothing a rule could grade. If a later
    Compose applies it, the premise check below fails and the decision is
-   revisited.
+   revisited. (Revisited for Compose 5.7.0: see the amendment at the end.)
 
 8. **The measurements become a premise check.** `scripts/validate_rule_premises.py`
    gains a check that proves, on the CI daemon, the hook inheritance, the
@@ -184,3 +184,41 @@ so identity alone cannot tell a hook's finding from its parent's.
   The grant is real (every capability in the bounding set) but bounded by
   seccomp and the device cgroup, which no current rule's derivation covers;
   the corpus has zero instances. Recorded for a recount.
+
+**Amendment (2026-11-09, issue #1220): a `pre_start` hook's env files are
+read.**
+
+Compose 5.7.0 (docker/compose#14293) applies env files to `pre_start` hooks,
+and the premise check from §8 failed on the bump, as §7 said it would.
+Measured on 5.7.0, with 5.6.1 beside it:
+
+- a hook that names no `env_file:` gets its service's env file values (on
+  5.6.1 it got none);
+- a hook's own `env_file:` is applied after its service's, so a key both set
+  takes the hook's value;
+- the service's `environment:`, merged with the hook's, still wins over every
+  env file;
+- a relative path resolves from the project directory, and a missing
+  required target stops `up` (5.6.1 started it).
+
+So §7 is replaced: a `pre_start` hook's env files are read as a service's are
+([ADR-027](027-grade-env-file-where-the-document-routes-it.md)), with the same
+containment and `.env` scope, the service's targets first and the hook's own
+after them. Under §3 a hook reports only what it wrote, so the hook is graded
+on the keys whose value differs from what its service deploys: a key only its
+own files set, or one they override. A key that reaches the hook unchanged
+from its service is the service's finding, and a target the service also
+names is the service's note. A hook that names no `env_file:` adds nothing
+and is left out.
+
+compose-lint grades the configuration current Compose deploys. On Compose
+5.6 and earlier a hook's `env_file:` is still inert, so a finding there
+describes a value that release does not deploy; the value is still in the
+repository, and the next Compose upgrade deploys it. The premise check now
+expects the inert behaviour below 5.7 and the applied behaviour from 5.7, so
+either regressing fails it.
+
+Demand was low when this was decided: in the 11,111-file corpus, 7 files use
+`pre_start` and none of their services or hooks sets `env_file:`. It was done
+because §7 had already committed to revisiting, and because leaving it would
+have meant a premise check that passes over a known false negative.
