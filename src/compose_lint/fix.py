@@ -36,9 +36,11 @@ from compose_lint._yaml_edit import (
 from compose_lint.models import FixRefusal
 
 if TYPE_CHECKING:
+    import datetime
     from collections.abc import Callable, Iterable, Mapping
     from pathlib import Path
 
+    from compose_lint.config import Expiries
     from compose_lint.models import Finding, Severity, TextEdit
 
 
@@ -932,6 +934,8 @@ def verify_apply(
     disabled_rules: dict[str, str | None] | None = None,
     severity_overrides: dict[str, Severity] | None = None,
     excluded_services: dict[str, dict[str, str | None]] | None = None,
+    expiries: Expiries | None = None,
+    as_of: datetime.date | None = None,
     reparse: Callable[[str], tuple[dict[str, Any], dict[str, int]]] | None = None,
     fixable: Callable[[Finding], bool] | None = None,
     resets: Mapping[str, str] | None = None,
@@ -999,6 +1003,11 @@ def verify_apply(
             disabled_rules=disabled_rules,
             severity_overrides=severity_overrides,
             excluded_services=excluded_services,
+            # The same dates and day as the first pass: without them a lapsed
+            # entry would suppress again here, and the finding it releases
+            # would read as fixed.
+            expiries=expiries,
+            as_of=as_of,
             # The same quoting as the findings compared against below, or a
             # finding that quotes a `.env` value would read as new.
             env_values=env_values,

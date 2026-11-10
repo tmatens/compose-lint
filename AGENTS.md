@@ -27,7 +27,7 @@ Stdout carries data (findings in `check`; future artifacts in operations like `f
 
 ## Config file (`.compose-lint.yml`)
 
-Disables still produce suppressed findings. `reason` flows to `suppression_reason` (JSON), `justification` (SARIF), or after `SUPPRESSED` (text). No inline suppression comments.
+Disables still produce suppressed findings. `reason` flows to `suppression_reason` (JSON), `justification` (SARIF), or after `SUPPRESSED` (text). No inline suppression comments. An entry can carry an `expires:` date, after which it is not in force; that is the only way a run's result depends on the date, and every read of the clock goes through `_clock.utc_today` so `--as-of` can pin it (ADR-041).
 
 ## Quality checks
 

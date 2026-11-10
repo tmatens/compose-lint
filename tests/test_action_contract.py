@@ -16,6 +16,7 @@ PATH where the point is *what was invoked* rather than what it did.
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import re
@@ -624,8 +625,12 @@ def _argv_logging_shim(ws: Path) -> tuple[Path, Path]:
     if real is None:
         pytest.skip("compose-lint is not installed on PATH")
     shim = shim_dir / "compose-lint"
+    # A `--help` call is the step probing for a flag, not a lint run, so it
+    # is not recorded: the tests below count the runs.
     shim.write_text(
-        f'#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> {log}\nexec {real} "$@"\n',
+        "#!/usr/bin/env bash\n"
+        f'case " $* " in *" --help "*) ;; *) printf "%s\\n" "$*" >> {log};; esac\n'
+        f'exec {real} "$@"\n',
         encoding="utf-8",
     )
     shim.chmod(0o755)
@@ -693,6 +698,60 @@ def test_flag_inputs_reach_both_invocations(
     assert rc == 1
     assert len(calls) == 2, calls
     assert not any(flag in call.split() for call in calls), calls
+
+
+def test_both_runs_judge_expiry_on_the_same_day(ws: Path, outputs: Path) -> None:
+    """ADR-041: the text verdict and the SARIF file must not straddle midnight.
+
+    The step fixes the UTC date once and passes it to both runs, so a
+    suppression whose `expires:` date ends between them cannot be in force in
+    one and lapsed in the other.
+    """
+    (ws / "docker-compose.yml").write_text(_INSECURE, encoding="utf-8")
+    _discover(ws, outputs)
+    listed = _outputs(outputs)["list-file"]
+    _rc, _out, _err, calls = _lint_with_shim(
+        ws, outputs, listed, CL_SARIF_FILE="results.sarif"
+    )
+    assert len(calls) == 2, calls
+    days = {call.split("--as-of ", 1)[1].split()[0] for call in calls}
+    assert len(days) == 1, calls
+    [day] = days
+    datetime.date.fromisoformat(day)
+
+
+def test_as_of_is_not_passed_to_a_release_without_it(ws: Path, outputs: Path) -> None:
+    """The `version` input can install a release that predates the flag."""
+    shim_dir = ws / "oldshim"
+    shim_dir.mkdir()
+    log = ws / "old.log"
+    shim = shim_dir / "compose-lint"
+    shim.write_text(
+        "#!/usr/bin/env bash\n"
+        f'case " $* " in *" --help "*) echo "usage: compose-lint"; exit 0;; esac\n'
+        f'printf "%s\\n" "$*" >> {log}\nexit 0\n',
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    (ws / "docker-compose.yml").write_text(_INSECURE, encoding="utf-8")
+    _discover(ws, outputs)
+    base = {
+        "CL_CONFIG": "",
+        "CL_FAIL_ON": "high",
+        "CL_SKIP_SUPPRESSED": "false",
+        "CL_ALLOW_PARTIAL_COVERAGE": "false",
+        "CL_STRICT_CONFIG": "false",
+        "CL_QUIET": "false",
+        "CL_VERBOSE": "false",
+        "CL_SARIF_FILE": "",
+        "CL_ALLOW_NO_FILES": "false",
+        "CL_COUNT": "1",
+        "CL_LIST_FILE": _outputs(outputs)["list-file"],
+    }
+    rc, out, err = _run_step("Run compose-lint", base, ws, outputs, extra_path=shim_dir)
+    assert rc == 0, out + err
+    [call] = log.read_text(encoding="utf-8").splitlines()
+    assert "--as-of" not in call
 
 
 # --- quiet and verbose are mutually exclusive -----------------------------

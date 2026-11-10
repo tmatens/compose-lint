@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import datetime
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -29,7 +32,21 @@ KNOWN_TOP_LEVEL_KEYS = frozenset({"rules"})
 # `severty:`) is silently inert; warn so the user learns their override never
 # took effect (issue #279 G1). A `reason:` without `enabled: false` is a
 # separate diagnostic in `_parse_rules` (issue #723).
-_KNOWN_RULE_KEYS = frozenset({"enabled", "reason", "severity", "exclude_services"})
+_KNOWN_RULE_KEYS = frozenset(
+    {"enabled", "reason", "severity", "exclude_services", "expires"}
+)
+
+# Recognized keys inside a mapping-form `exclude_services` entry (ADR-041).
+# The entry is a mapping so that a later key has somewhere to go; until one
+# is defined, anything else is a typo and warns like an unknown rule key.
+_KNOWN_ENTRY_KEYS = frozenset({"reason", "expires"})
+
+# `expires:` is a calendar date and nothing else (ADR-041 §3). PyYAML resolves
+# an unquoted `2027-03-31` to a `date` and a quoted one stays a string; the
+# pattern is applied to the string form because `date.fromisoformat` also
+# accepts `20270331` and week dates, which a reader of the policy file would
+# not recognise as the same day.
+_ISO_DATE = re.compile(r"\A\d{4}-\d{2}-\d{2}\Z")
 
 # The file names an implicit run (no `--config`) looks for, in precedence
 # order, in the directories `config_search_dirs` names. `.yml` has been the
@@ -122,6 +139,33 @@ def _parse_severity(value: str) -> Severity:
 
 
 ExcludedServices = dict[str, dict[str, str | None]]
+
+
+@dataclass(frozen=True)
+class Expiries:
+    """The expiry dates a config gave its suppressions (ADR-041).
+
+    Kept beside the reason maps rather than inside them, so a config with no
+    ``expires:`` loads to exactly the structures it always did. ``rules``
+    holds the date beside a rule-level ``enabled: false``; ``services`` holds
+    the date on each ``exclude_services`` entry, by rule id then service.
+    """
+
+    rules: dict[str, datetime.date] = field(default_factory=dict)
+    services: dict[str, dict[str, datetime.date]] = field(default_factory=dict)
+
+    def __bool__(self) -> bool:
+        return bool(self.rules or self.services)
+
+
+@dataclass(frozen=True)
+class Policy:
+    """Everything a ``.compose-lint.yml`` tells the engine."""
+
+    disabled: dict[str, str | None] = field(default_factory=dict)
+    overrides: dict[str, Severity] = field(default_factory=dict)
+    excluded: ExcludedServices = field(default_factory=dict)
+    expiries: Expiries = field(default_factory=Expiries)
 
 
 class _StrictLoader(yaml.SafeLoader):
@@ -228,6 +272,20 @@ def load_config(
     strict: bool = False,
     start: Path | None = None,
 ) -> tuple[dict[str, str | None], dict[str, Severity], ExcludedServices]:
+    """Load a config file as the three maps the engine has always taken.
+
+    The ``expires:`` dates are dropped here; :func:`load_policy` returns them.
+    Kept for the callers that grade without a clock.
+    """
+    policy = load_policy(path, strict, start)
+    return policy.disabled, policy.overrides, policy.excluded
+
+
+def load_policy(
+    path: str | Path | None = None,
+    strict: bool = False,
+    start: Path | None = None,
+) -> Policy:
     """Load a .compose-lint.yml (or .compose-lint.yaml) config file.
 
     Returns a tuple of (disabled_rules, severity_overrides, excluded_services).
@@ -246,7 +304,7 @@ def load_config(
     """
     data = _read_raw_config(path, strict, start)
     if data is None:
-        return {}, {}, {}
+        return Policy()
 
     for key in data:
         name = str(key)
@@ -402,10 +460,35 @@ def _scalar_field(value: Any, rule_id: str, field: str) -> str | None:
     return text
 
 
+def _parse_expires(value: Any, where: str) -> datetime.date:
+    """Read an ``expires:`` value as a calendar date (ADR-041 §3).
+
+    An unquoted ``2027-03-31`` arrives as a ``date``; a quoted one as a
+    string. A time of day is refused rather than truncated: the comparison is
+    by UTC date, and a value that names an hour promises a precision the
+    check does not keep.
+    """
+    if isinstance(value, datetime.datetime):
+        raise ConfigError(
+            f"Config {where}: 'expires' must be a date (YYYY-MM-DD) with no "
+            f"time of day, not {value.isoformat()!r}"
+        )
+    if isinstance(value, datetime.date):
+        return value
+    if isinstance(value, str) and _ISO_DATE.match(value):
+        try:
+            return datetime.date.fromisoformat(value)
+        except ValueError:
+            pass
+    raise ConfigError(
+        f"Config {where}: 'expires' must be a date written YYYY-MM-DD, not {value!r}"
+    )
+
+
 def _parse_rules(
     rules: Any,
     strict: bool = False,
-) -> tuple[dict[str, str | None], dict[str, Severity], ExcludedServices]:
+) -> Policy:
     """Parse the rules section of a config file."""
     if rules is None:
         rules = {}
@@ -415,6 +498,7 @@ def _parse_rules(
     disabled: dict[str, str | None] = {}
     overrides: dict[str, Severity] = {}
     excluded: ExcludedServices = {}
+    expiries = Expiries()
     known_ids = _known_rule_ids()
 
     for rule_id, rule_config in rules.items():
@@ -463,6 +547,26 @@ def _parse_rules(
                 strict,
             )
 
+        if "expires" in rule_config:
+            # Validated whether or not it is in force, so a malformed date is
+            # reported where it is written rather than when the rule is
+            # later disabled.
+            expires = _parse_expires(rule_config["expires"], f"for rule '{rule_id}'")
+            if rule_id in disabled:
+                if not disabled[rule_id]:
+                    raise ConfigError(
+                        f"Config for rule '{rule_id}': an 'expires' date needs a "
+                        "'reason' beside it (ADR-041)"
+                    )
+                expiries.rules[rule_id] = expires
+            else:
+                # diag: expires-without-enabled-false
+                _warn(
+                    f"config: rule '{rule_id}' has an 'expires' without "
+                    f"'enabled: false'; it has no effect",
+                    strict,
+                )
+
         if "severity" in rule_config:
             severity_text = _scalar_field(rule_config["severity"], rule_id, "severity")
             if severity_text is None:
@@ -484,11 +588,14 @@ def _parse_rules(
                 )
 
         if "exclude_services" in rule_config:
-            excluded[rule_id] = _parse_exclude_services(
-                rule_id, rule_config["exclude_services"]
+            reasons, dates = _parse_exclude_services(
+                rule_id, rule_config["exclude_services"], strict
             )
+            excluded[rule_id] = reasons
+            if dates:
+                expiries.services[rule_id] = dates
 
-    return disabled, overrides, excluded
+    return Policy(disabled, overrides, excluded, expiries)
 
 
 def warn_unknown_excluded_services(
@@ -518,14 +625,50 @@ def warn_unknown_excluded_services(
                 )
 
 
-def _parse_exclude_services(rule_id: str, value: Any) -> dict[str, str | None]:
-    """Parse an exclude_services entry into a service-name → reason mapping.
+def _parse_exclusion_entry(
+    rule_id: str, service_name: str, entry: dict[Any, Any], strict: bool
+) -> tuple[str | None, datetime.date | None]:
+    """Read a mapping-form entry, ``{reason, expires}`` (ADR-041 §1)."""
+    for key in entry:
+        if str(key) not in _KNOWN_ENTRY_KEYS:
+            # diag: unknown-exclusion-entry-key
+            _warn(
+                f"config: exclude_services for {rule_id} entry '{service_name}' "
+                f"has unknown key '{key}' (recognized: "
+                f"{', '.join(sorted(_KNOWN_ENTRY_KEYS))}); it has no effect",
+                strict,
+            )
+    field_name = f"exclude_services[{service_name}].reason"
+    reason = _scalar_field(entry.get("reason"), rule_id, field_name)
+    if "expires" not in entry:
+        return reason, None
+    expires = _parse_expires(
+        entry["expires"],
+        f"for rule '{rule_id}', exclude_services entry '{service_name}'",
+    )
+    if not reason:
+        raise ConfigError(
+            f"Config for rule '{rule_id}': exclude_services entry "
+            f"'{service_name}' has an 'expires' date and needs a 'reason' "
+            "beside it (ADR-041)"
+        )
+    return reason, expires
+
+
+def _parse_exclude_services(
+    rule_id: str, value: Any, strict: bool = False
+) -> tuple[dict[str, str | None], dict[str, datetime.date]]:
+    """Parse an exclude_services value into reasons and expiry dates.
 
     Accepts None (empty mapping), a list of service names (no reasons), or a
-    mapping of service name to reason string.
+    mapping of service name to an entry. An entry is a reason string, null,
+    or a mapping ``{reason, expires}`` (ADR-041). Returns the service-name to
+    reason mapping the engine has always taken, and the dates of the entries
+    that gave one.
     """
+    dates: dict[str, datetime.date] = {}
     if value is None:
-        return {}
+        return {}, dates
     if isinstance(value, list):
         result: dict[str, str | None] = {}
         for item in value:
@@ -535,7 +678,7 @@ def _parse_exclude_services(rule_id: str, value: Any) -> dict[str, str | None]:
                     "service name strings"
                 )
             result[item] = None
-        return result
+        return result, dates
 
     if isinstance(value, dict):
         result = {}
@@ -545,9 +688,16 @@ def _parse_exclude_services(rule_id: str, value: Any) -> dict[str, str | None]:
                     f"exclude_services for '{rule_id}' keys must be "
                     "service name strings"
                 )
+            if isinstance(reason, dict):
+                result[service_name], expires = _parse_exclusion_entry(
+                    rule_id, service_name, reason, strict
+                )
+                if expires is not None:
+                    dates[service_name] = expires
+                continue
             result[service_name] = _scalar_field(
                 reason, rule_id, f"exclude_services[{service_name}]"
             )
-        return result
+        return result, dates
 
     raise ConfigError(f"exclude_services for '{rule_id}' must be a list or mapping")

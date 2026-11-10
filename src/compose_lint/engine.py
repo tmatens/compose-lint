@@ -6,6 +6,7 @@ import re
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
 
+from compose_lint._clock import utc_today
 from compose_lint._limits import MAX_FINDINGS
 from compose_lint._output import emit
 from compose_lint._units import Unit, units
@@ -13,9 +14,11 @@ from compose_lint.models import Finding, Severity
 from compose_lint.rules import get_registered_rules
 
 if TYPE_CHECKING:
+    import datetime
     from collections.abc import Callable, Mapping
 
     from compose_lint._service_env import ServiceEnvFiles
+    from compose_lint.config import Expiries
 
 
 class FindingLimitError(Exception):
@@ -37,6 +40,15 @@ class FindingLimitError(Exception):
         self.findings = findings
 
 
+def _lapsed(expires: datetime.date | None, today: datetime.date | None) -> bool:
+    """Whether an entry dated ``expires`` has stopped suppressing.
+
+    The entry suppresses through the named day (ADR-041 §3), so it lapses
+    only once ``today`` is after it.
+    """
+    return expires is not None and today is not None and today > expires
+
+
 def _default_rule_error(rule_id: str, service_name: str, exc: Exception) -> None:
     """Report a crashed rule to stderr without aborting the run."""
     emit(
@@ -55,6 +67,8 @@ def run_rules(
     env_files: Mapping[str, ServiceEnvFiles] | None = None,
     config_path: str | None = None,
     env_values: Mapping[str, Mapping[str, str]] | None = None,
+    expiries: Expiries | None = None,
+    as_of: datetime.date | None = None,
 ) -> list[Finding]:
     """Run all registered rules against the parsed Compose data.
 
@@ -75,6 +89,14 @@ def run_rules(
     reader at the file that was actually read rather than at the conventional
     ``.compose-lint.yml``, which is what it defaults to. ``suppression_reason``
     carries only a reason the config wrote (ADR-015).
+
+    ``expiries`` holds the ``expires:`` dates the config gave its
+    suppressions (ADR-041). An entry suppresses through its date and stops
+    the day after, judged against ``as_of`` (the UTC date when not given).
+    A lapsed entry is treated as if it were not written, so a finding it
+    would have suppressed is graded normally, and carries the date as
+    ``suppression_expired`` so the report can say why it is back. A lapsed
+    rule-level disable falls through to the rule's ``exclude_services``.
 
     A rule that raises is isolated rather than allowed to abort the whole
     run: the failure is reported via ``on_error`` (defaulting to a stderr
@@ -100,6 +122,9 @@ def run_rules(
     excluded = excluded_services or {}
     report_error = on_error if on_error is not None else _default_rule_error
     config_name = config_path or ".compose-lint.yml"
+    rule_dates = expiries.rules if expiries else {}
+    service_dates = expiries.services if expiries else {}
+    today = (as_of or utc_today()) if expiries else None
     findings: list[Finding] = []
 
     rule_classes = get_registered_rules()
@@ -122,8 +147,11 @@ def run_rules(
         rule_id = rule.metadata.id
         # One rule's findings on each shared `env_file:` key set, graded once.
         graded: dict[int, tuple[tuple[Any, ...], list[Finding]]] = {}
-        is_suppressed = rule_id in disabled
+        rule_expires = rule_dates.get(rule_id)
+        rule_lapsed = _lapsed(rule_expires, today)
+        is_suppressed = rule_id in disabled and not rule_lapsed
         rule_excluded = excluded.get(rule_id, {})
+        rule_service_dates = service_dates.get(rule_id, {})
 
         for unit in graded_units:
             service_name = unit.name
@@ -152,6 +180,15 @@ def run_rules(
                 # hidden from the rules). The parent reports it (ADR-040 §3).
                 rule_findings = [f for f in rule_findings if f.line is not None]
             excluded_as = _excluded_as(unit, rule_excluded)
+            service_expires = (
+                rule_service_dates.get(excluded_as) if excluded_as is not None else None
+            )
+            service_lapsed = _lapsed(service_expires, today)
+            # The entry that would have applied had it not lapsed, in the same
+            # precedence order as below: the rule-level disable first.
+            lapsed_on = rule_expires if rule_lapsed else None
+            if lapsed_on is None and service_lapsed:
+                lapsed_on = service_expires
             for finding in rule_findings:
                 # A severity override only makes sense on a finding that will be
                 # reported: if the rule is globally suppressed the finding is
@@ -177,8 +214,9 @@ def run_rules(
                         suppressed=True,
                         suppression_reason=disabled[rule_id] or None,
                         suppressed_by=f"disabled in {config_name}",
+                        suppression_expires=rule_expires,
                     )
-                elif excluded_as is not None:
+                elif excluded_as is not None and not service_lapsed:
                     finding = replace(
                         finding,
                         suppressed=True,
@@ -186,7 +224,10 @@ def run_rules(
                         suppressed_by=(
                             f"excluded for service '{excluded_as}' in {config_name}"
                         ),
+                        suppression_expires=service_expires,
                     )
+                elif lapsed_on is not None:
+                    finding = replace(finding, suppression_expired=lapsed_on)
                 findings.append(finding)
             if len(findings) > MAX_FINDINGS:
                 # Quote before raising: the caller reports these findings, so

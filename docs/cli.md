@@ -35,6 +35,8 @@ check options:
   --strict-config              Treat config diagnostics (unknown rule id or key, inert reason
                                or severity, stale exclude_services name, both config
                                spellings present) as errors, not warnings
+  --as-of DATE                 Judge each suppression's `expires:` date as of DATE
+                               (YYYY-MM-DD) instead of today's UTC date
   --explain CL-XXXX            Print the full documentation for a single rule
                                (through a pager on an interactive terminal)
   --no-pager                   Print --explain output directly, bypassing the pager
@@ -51,6 +53,7 @@ fix options:
   --strict-config              Treat config diagnostics (unknown rule id or key, inert reason
                                or severity, both config spellings present) and an
                                `--only` id that names no rule as errors, not warnings
+  --as-of DATE                 Judge each suppression's `expires:` date as of DATE
 
 init options:
   -o, --output PATH            Where to write the config (default: .compose-lint.yml

@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import datetime
 
 
 class Severity(enum.Enum):
@@ -125,6 +129,14 @@ class Finding:
     # in <config>" or "excluded for service 'x' in <config>". Never serialized
     # as a reason; it used to be substituted for a missing one.
     suppressed_by: str | None = None
+    # The `expires:` date on the config entry that suppresses this finding,
+    # when it gave one (ADR-041). Present only on a suppressed finding.
+    suppression_expires: datetime.date | None = None
+    # The `expires:` date of a config entry that would have suppressed this
+    # finding and has passed (ADR-041). Present only on a finding that is not
+    # suppressed, which is the point: it counts toward `--fail-on` again, and
+    # the date says why a finding that passed yesterday fails today.
+    suppression_expired: datetime.date | None = None
     # The rule's own severity, recorded when `.compose-lint.yml` re-graded this
     # finding. `enabled: false` and `exclude_services` both leave a visible
     # record (a SUPPRESSED marker and a reason); `severity:` left none, so a

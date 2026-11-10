@@ -76,6 +76,13 @@ Three escape hatches keep a pipeline deterministic:
   reach: a *coverage gap*, which exits 2 rather than reporting a finding. See
   below.
 
+One input is not in the files or the version: a suppression with an
+[`expires:` date](configuration.md#expiring-a-suppression) stops suppressing
+the day after it, so the same commit can pass one day and fail the next.
+That is the purpose of the date, and a config with none is unaffected. Pass
+`--as-of YYYY-MM-DD` to reproduce a past run or pin the day
+([ADR-041](adr/041-suppressions-can-expire.md)).
+
 A rule's **severity** is part of the contract: post-1.0, *downgrading* a
 severity is a MINOR, and *upgrading* one is a **MINOR with a one-release
 runway** ([ADR-031](adr/031-severity-upgrades-are-minor-with-runway.md)): the

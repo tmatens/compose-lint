@@ -237,8 +237,12 @@ already found stale. A consumer may rely on:
   announced as a MINOR;
 - `suppressions[]` on every result: empty when the finding is not
   suppressed, otherwise one entry with `kind` and, when the config gave a
-  reason, `justification`. Test whether the array is empty, not whether it
-  is present (SARIF §3.27.23; present on every result since #1207);
+  reason, `justification`, and when its entry has a date,
+  `properties.expires` ([ADR-041](041-suppressions-can-expire.md)). Test
+  whether the array is empty, not whether it is present (SARIF §3.27.23;
+  present on every result since #1207);
+- `properties.suppressionExpired` on a result reported because its
+  suppression's date passed (ADR-041);
 - `invocations[0].executionSuccessful`, and each notification's `level` and
   `descriptor.id`;
 - `fixes[]`, which may be absent, and when present applies to the result's own
