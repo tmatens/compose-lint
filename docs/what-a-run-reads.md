@@ -160,9 +160,17 @@ reporting clean over a partial view is the one failure mode a merge gate
 cannot have. The complete list of conditions is in [coverage gaps are not
 findings](compatibility.md#coverage-gaps-are-not-findings). A gap means exit 2,
 a JSON `errors[]` entry, and a SARIF `toolExecutionNotifications` record, and
-the message says which condition it hit. Lint the merged output (`docker
-compose config`) to cover everything, or pass `--allow-partial-coverage` to
-accept the gap and grade what is visible.
+the message says which condition it hit, and what to do about it:
+
+- When compose-lint could not follow a reference that Compose can, such as a
+  base outside the repository or a chain past the depth bound, lint the
+  merged output (`docker compose config`) to cover everything.
+- When Compose refuses the reference too, as it does an `extends:` or
+  `include:` whose target is missing or that loops, there is no merged output
+  to lint. The message says so: correct the reference.
+
+Either way, `--allow-partial-coverage` accepts the gap and grades what is
+visible.
 
 A gap is not a finding, so `--fail-on` does not gate it; the stability rules
 for adding or retiring a gap condition are in

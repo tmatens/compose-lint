@@ -253,8 +253,67 @@ def test_an_accepted_gap_does_not_offer_the_flag_again(
     assert exc.value.code == 0
     err = capsys.readouterr().err
     warning = next(line for line in err.splitlines() if line.startswith("Warning:"))
-    assert "docker compose config" in warning
+    assert "correct the reference" in warning
     assert "--allow-partial-coverage" not in warning
+
+
+# Outside the repository, compose-lint does not read the base, but Compose does:
+# merged output is the way to grade it. A missing file is one Compose refuses
+# as well, so there the only remedy is the reference (`ComposeRefusesGap`).
+_REACHABLE = (
+    "services:\n  web:\n    image: nginx:1.27\n"
+    "    extends:\n      file: /etc/compose/base.yml\n      service: app\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("body", "says", "not_says"),
+    [
+        (_REACHABLE, "docker compose config", "correct the reference"),
+        (_gap_body("extends"), "correct the reference", "docker compose config"),
+        (_gap_body("include"), "correct the reference", "docker compose config"),
+        (
+            "services:\n  web: {image: nginx:1.27, extends: nope}\n",
+            "correct the reference",
+            "docker compose config",
+        ),
+    ],
+    ids=["outside-repo", "missing-extends-file", "missing-include", "in-file"],
+)
+@pytest.mark.parametrize(
+    "args", [["check"], ["check", "--allow-partial-coverage"], ["fix"]]
+)
+def test_the_remedy_fits_the_gap(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    body: str,
+    says: str,
+    not_says: str,
+    args: list[str],
+) -> None:
+    target = _write(tmp_path / "compose.yml", body)
+    with pytest.raises(SystemExit):
+        cli.main([*args, str(target)])
+    err = capsys.readouterr().err
+    gap = next(
+        line for line in err.splitlines() if "was not" in line and "because" in line
+    )
+    assert says in gap
+    assert not_says not in gap
+
+
+def test_init_names_the_same_remedy(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = _write(
+        tmp_path / "compose.yml",
+        "services:\n  web: {image: nginx:1.27, privileged: true, extends: nope}\n",
+    )
+    with pytest.raises(SystemExit):
+        cli.main(["init", str(target), "-o", str(tmp_path / "out.yml")])
+    err = capsys.readouterr().err
+    assert "check will refuse the same gap" in err
+    assert "correct the reference" in err
 
 
 def test_fix_reports_the_gap_without_failing(
@@ -293,7 +352,10 @@ def test_fix_never_names_a_flag_it_does_not_accept(
     err = capsys.readouterr().err
     assert "--allow-partial-coverage" not in err, kind
     assert "not fixed" in err, kind
-    assert "docker compose config" in err, kind
+    # Both legs name a missing file, which Compose refuses too, so the remedy
+    # is the reference rather than merged output (`ComposeRefusesGap`).
+    assert "correct the reference" in err, kind
+    assert "docker compose config" not in err, kind
 
     # The flag really is check-only; the test above is meaningless otherwise.
     with pytest.raises(SystemExit) as exc:
@@ -356,3 +418,34 @@ def test_a_remote_include_says_it_was_not_fetched(
     (gap,) = load_compose_full(compose).gaps
     assert "remote resource" in gap
     assert "not found" not in gap
+
+
+@pytest.mark.parametrize(
+    "files",
+    [
+        {
+            "inc/a.yml": "services:\n  w: {image: nginx:1.27, extends: nope}\n",
+            "compose.yml": "include: [inc/a.yml]\nservices:\n  top: {image: x:1}\n",
+        },
+        {
+            "mid.yml": "services:\n  m:\n    image: nginx:1.27\n"
+            "    extends: {file: missing.yml, service: z}\n",
+            "compose.yml": "services:\n  top:\n    image: nginx:1.27\n"
+            "    extends: {file: mid.yml, service: m}\n",
+        },
+    ],
+    ids=["inside-an-include", "inside-a-cross-file-base"],
+)
+def test_a_nested_refused_gap_keeps_its_remedy(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], files: dict[str, str]
+) -> None:
+    """The marker travels with the gap through every layer that carries it."""
+    for name, text in files.items():
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        _write(tmp_path / name, text)
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["check", str(tmp_path / "compose.yml")])
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "correct the reference" in err
+    assert "docker compose config" not in err

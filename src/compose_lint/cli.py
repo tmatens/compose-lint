@@ -16,7 +16,7 @@ import subprocess
 import sys
 import tempfile
 import traceback
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, cast
 
@@ -79,6 +79,7 @@ from compose_lint.parser import (
     ComposeError,
     ComposeFileError,
     ComposeNotApplicableError,
+    ComposeRefusesGap,
     load_compose_full,
     load_merged,
     merge_patched,
@@ -932,31 +933,49 @@ def main(argv: list[str] | None = None) -> NoReturn:
 # a gap, so there is nothing to accept — and telling it to pass one sent users
 # to an argument the subcommand rejects (#779). What ``fix`` needs to hear is
 # that the unseen part was not fixed either.
-_CHECK_GAP_REMEDY = (
-    "Lint the merged output (docker compose config) to cover the gap, or pass "
-    "--allow-partial-coverage to accept it."
+#
+# Each comes in two forms. Most gaps are a limit of compose-lint's reach, and
+# Compose's merged output covers them. A `ComposeRefusesGap` is one Compose
+# refuses too (an `extends:` whose base does not exist, or that loops), so
+# there is no merged output to lint, and the only remedy is the reference.
+@dataclass(frozen=True)
+class _Remedy:
+    reachable: str
+    refused: str
+
+    def for_gap(self, gap: str) -> str:
+        return self.refused if isinstance(gap, ComposeRefusesGap) else self.reachable
+
+
+_MERGED = "Lint the merged output (docker compose config) to cover the gap"
+_FIX_REFERENCE = "Compose refuses it as well, so correct the reference"
+
+_CHECK_GAP_REMEDY = _Remedy(
+    f"{_MERGED}, or pass --allow-partial-coverage to accept it.",
+    f"{_FIX_REFERENCE}, or pass --allow-partial-coverage to accept it.",
 )
 # Once the flag is passed the gap is accepted, and repeating the offer told
 # users to do what they had just done. The merged-output route still applies:
 # accepting a gap is not the same as closing it.
-_CHECK_GAP_ACCEPTED_REMEDY = (
-    "Lint the merged output (docker compose config) to cover the gap."
+_CHECK_GAP_ACCEPTED_REMEDY = _Remedy(f"{_MERGED}.", f"{_FIX_REFERENCE}.")
+_NOTHING_LEFT_REMEDY = _Remedy(
+    "Name the file it links to, rather than the link, to lint it as given.",
+    "Name the file it links to, rather than the link, to lint it as given.",
 )
-_NOTHING_LEFT_REMEDY = (
-    "Name the file it links to, rather than the link, to lint it as given."
+_FIX_GAP_REMEDY = _Remedy(
+    f"What was not seen was not fixed. {_MERGED}.",
+    f"What was not seen was not fixed. {_FIX_REFERENCE}.",
 )
-_FIX_GAP_REMEDY = (
-    "What was not seen was not fixed. Lint the merged output "
-    "(docker compose config) to cover the gap."
-)
-_INIT_GAP_REMEDY = (
+_INIT_GAP_REMEDY = _Remedy(
     "What was not seen got no suppression, and check will refuse the same gap. "
-    "Lint the merged output (docker compose config) to cover it."
+    "Lint the merged output (docker compose config) to cover it.",
+    "What was not seen got no suppression, and check will refuse the same gap. "
+    f"{_FIX_REFERENCE}.",
 )
 
 
 def _report_coverage_gaps(
-    filepath: str, gaps: tuple[str, ...], *, fatal: bool, remedy: str
+    filepath: str, gaps: tuple[str, ...], *, fatal: bool, remedy: _Remedy
 ) -> list[Diagnostic]:
     """Report parts of ``filepath`` that were not linted; return each as a diagnostic.
 
@@ -979,7 +998,8 @@ def _report_coverage_gaps(
     announcing a new gap condition one release before it is enforced.
 
     ``remedy`` is the caller's closing sentence, so the advice names only
-    what that command can actually do.
+    what that command can actually do; :meth:`_Remedy.for_gap` picks its form
+    for each gap.
 
     ``gaps`` comes from the parser rather than from the document, because
     since ADR-036 the document cannot answer the question: whether an
@@ -987,7 +1007,7 @@ def _report_coverage_gaps(
     resolved and whether the target was readable, and only the pass that tried
     to follow it knows.
     """
-    messages = [f"{gap} {remedy}" for gap in gaps]
+    messages = [f"{gap} {remedy.for_gap(gap)}" for gap in gaps]
     if not messages:
         return []
     label = "Error" if fatal else "Warning"
