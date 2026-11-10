@@ -161,7 +161,7 @@ class TestIntegration:
         )
         sarif = json.loads(result.stdout)
         results = sarif["runs"][0]["results"]
-        suppressed = [r for r in results if "suppressions" in r]
+        suppressed = [r for r in results if r["suppressions"]]
         assert len(suppressed) > 0
         assert suppressed[0]["suppressions"][0]["kind"] == "external"
 
