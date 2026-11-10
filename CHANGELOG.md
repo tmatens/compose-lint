@@ -38,6 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it is for a service. No file in the 11,111-file corpus declares `jobs:`,
   so none changes. See the amendment to
   [ADR-040](docs/adr/040-grade-every-container-the-file-deploys.md).
+- **A gap Compose refuses too says to fix the reference.** An `extends:`
+  or `include:` whose target is missing or that loops is a coverage gap
+  that Compose also refuses, so the old closing advice, "Lint the merged
+  output (docker compose config)", pointed at output that does not exist.
+  Those gaps now say "Compose refuses it as well, so correct the reference"
+  in `check`, `fix` and `init`. Measured on Compose 5.7.0 for each case
+  marked. Gaps Compose can resolve, such as a base outside the repository,
+  keep the merged-output advice. The message is not contract; the exit code
+  and `kind` are unchanged.
 - **Every SARIF result carries `suppressions`.** It is an empty array when
   the finding is not suppressed. SARIF 2.1.0 (§3.27.23) requires the
   property to be present on every result in a run or on none, and

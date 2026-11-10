@@ -71,6 +71,27 @@ class _LinesKey:
 _LINES = _LinesKey()
 
 
+class ComposeRefusesGap(str):
+    """A coverage gap that Compose also refuses, so the file cannot run as written.
+
+    Most gaps are a limit of compose-lint's reach: a base outside the
+    repository, a chain deeper than the bound. Compose resolves those, and
+    linting its merged output closes the gap. An ``extends:`` or ``include:``
+    whose target does not exist, or that loops, is different: Compose refuses
+    the project too,
+    so the only remedy is to fix the reference, and the CLI says so instead
+    of pointing at merged output there is none of. Measured on Compose 5.7.0
+    for every reason marked: a missing in-file target, an in-file cycle, a
+    cross-file reference with no ``service:``, a missing file, a file with no
+    such service, a cross-file cycle, a missing ``include:`` file, and an
+    include cycle.
+
+    A ``str`` so every place that carries, groups or prints gaps is unchanged.
+    """
+
+    __slots__ = ()
+
+
 class ComposeError(Exception):
     """Raised when a file is not a valid Docker Compose file."""
 
@@ -1085,13 +1106,17 @@ def _resolve_in_file_extends(
                 lines.pop(stale, None)
             lines.update(service_lines)
 
-    gaps = []
+    # Both reasons recorded above, a missing target and a cycle, are ones
+    # Compose refuses outright.
+    gaps: list[str] = []
     for (target, reason), children in refused.items():
         listed = ", ".join(repr(child) for child in sorted(set(children)))
         gaps.append(
-            f"'extends: {target}' was not merged because {reason}, so {listed} "
-            f"{'was' if len(set(children)) == 1 else 'were'} graded without the "
-            "inherited base."
+            ComposeRefusesGap(
+                f"'extends: {target}' was not merged because {reason}, so "
+                f"{listed} {'was' if len(set(children)) == 1 else 'were'} "
+                "graded without the inherited base."
+            )
         )
     return gaps
 
@@ -1426,11 +1451,14 @@ def _resolve_includes(  # noqa: PLR0913
         entry_dir, unplaced = _entry_directory(entry, project_dir, prefix)
         for reference in entry.references:
 
-            def _gap(reason: str, *, _ref: str = reference) -> None:
-                gaps.append(
+            def _gap(
+                reason: str, *, compose_refuses: bool = False, _ref: str = reference
+            ) -> None:
+                message = (
                     f"'include: {_ref}' was not resolved because {reason}, so "
                     "services from it were not linted."
                 )
+                gaps.append(ComposeRefusesGap(message) if compose_refuses else message)
 
             if unplaced:
                 _gap(unplaced)
@@ -1453,7 +1481,10 @@ def _resolve_includes(  # noqa: PLR0913
                 continue
             step = str(target.absolute())
             if step in chain:
-                _gap("the include chain returns to a file it already pulled in")
+                _gap(
+                    "the include chain returns to a file it already pulled in",
+                    compose_refuses=True,
+                )
                 continue
             identity = (step, str(entry_dir))
             if identity in folded:
@@ -1469,7 +1500,7 @@ def _resolve_includes(  # noqa: PLR0913
                 _gap(f"it {OUT_OF_REACH}")
                 continue
             except FileNotFoundError:
-                _gap("the file was not found")
+                _gap("the file was not found", compose_refuses=True)
                 continue
             except UnicodeDecodeError as exc:
                 # A ValueError, not an OSError, so it walked past the clause
@@ -1656,6 +1687,8 @@ def _resolve_cross_file_extends(
     # better than one. Two services failing for *different* reasons still get a
     # line each, which is the distinction the grouping has to keep.
     refused: dict[tuple[str, str], list[str]] = {}
+    # The references Compose refuses as well (see `ComposeRefusesGap`).
+    refused_by_compose: set[tuple[str, str]] = set()
     # The child's `!reset` and `!override` paths go with it: without them the
     # merge kept hardening the child deleted, and concatenated a grant the
     # child replaced.
@@ -1675,11 +1708,19 @@ def _resolve_cross_file_extends(
             continue
         reference, base_service = ref
 
-        def _gap(reason: str, *, _name: str = name, _ref: str = reference) -> None:
+        def _gap(
+            reason: str,
+            *,
+            compose_refuses: bool = False,
+            _name: str = name,
+            _ref: str = reference,
+        ) -> None:
             refused.setdefault((_ref, reason), []).append(_name)
+            if compose_refuses:
+                refused_by_compose.add((_ref, reason))
 
         if not isinstance(base_service, str) or not base_service:
-            _gap("it names no 'service:' to inherit")
+            _gap("it names no 'service:' to inherit", compose_refuses=True)
             continue
         if depth >= MAX_REFERENCE_DEPTH:
             _gap(f"the chain is deeper than {MAX_REFERENCE_DEPTH} files")
@@ -1694,7 +1735,10 @@ def _resolve_cross_file_extends(
         # would refuse a legal document.
         step = (str(target.absolute()), base_service)
         if step in chain:
-            _gap("the chain returns to a base it already inherited")
+            _gap(
+                "the chain returns to a base it already inherited",
+                compose_refuses=True,
+            )
             continue
         if not budget.spend_file():
             _gap(f"the document opens more than {MAX_REFERENCE_FILES} files")
@@ -1706,7 +1750,7 @@ def _resolve_cross_file_extends(
             _gap(f"it {OUT_OF_REACH}")
             continue
         except FileNotFoundError:
-            _gap("the file was not found")
+            _gap("the file was not found", compose_refuses=True)
             continue
         except UnicodeDecodeError as exc:
             # See the same clause in `_resolve_includes`.
@@ -1738,7 +1782,7 @@ def _resolve_cross_file_extends(
 
         base_services = base_data.get("services")
         if not isinstance(base_services, dict) or base_service not in base_services:
-            _gap(f"it declares no service '{base_service}'")
+            _gap(f"it declares no service '{base_service}'", compose_refuses=True)
             continue
 
         gaps.extend(base_gaps)
@@ -1764,11 +1808,16 @@ def _resolve_cross_file_extends(
 
     for (reference, reason), names in refused.items():
         listed = ", ".join(repr(name) for name in sorted(names))
-        gaps.append(
+        message = (
             f"cross-file 'extends: {{file: {reference}}}' was not merged "
             f"because {reason}, so {listed} "
             f"{'was' if len(names) == 1 else 'were'} graded without the "
             "inherited base."
+        )
+        gaps.append(
+            ComposeRefusesGap(message)
+            if (reference, reason) in refused_by_compose
+            else message
         )
     return gaps
 
