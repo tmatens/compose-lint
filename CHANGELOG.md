@@ -74,6 +74,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and both colliding identities it held are gone. See the amendment to
   [ADR-024](docs/adr/024-finding-identity-is-not-prose.md) (#1208).
 
+### Removed
+
+- **A document past 4,096 services, hooks and jobs is refused, no longer
+  graded in part.** 1.2.0 graded only the services of a document that
+  crossed the bound once its hooks and jobs were counted, with an
+  `unread_input` warning that the next minor would refuse it. It is now a
+  `parse` error (exit 2), as a document with too many services always was,
+  and `--allow-partial-coverage` does not lift it. The bound counts each
+  hook list once per service that uses it, and is checked again once
+  `include:` files are folded in. No real file comes close: the most units
+  in one document across the 11,111-file corpus is 64. See the amendment to
+  [ADR-040](docs/adr/040-grade-every-container-the-file-deploys.md).
+
 ## [1.2.0] - 2026-10-31
 
 ### Added

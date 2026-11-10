@@ -177,12 +177,9 @@ accept it, because nothing in that document was graded:
 
 - a Compose file larger than 8 MiB (an included or extended file that large is
   a [coverage gap](compatibility.md#coverage-gaps-are-not-findings) instead);
-- a document declaring more than 4,096 services, counted again once its
-  `include:` files are merged in. Hooks and jobs count toward that bound
-  too, each hook list once per service that uses it. Until the next minor
-  release, a document past it only once its hooks and jobs are counted is
-  not refused: its services are graded, its hooks and jobs are not, and an
-  `unread_input` warning says so;
+- a document declaring more than 4,096 services, hooks and jobs, counted
+  again once its `include:` files are merged in. Each hook list counts once
+  per service that uses it;
 - a document whose `<<:` merge keys copy more than 65,536 key/value pairs into
   the mappings that use them.
 

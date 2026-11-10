@@ -75,10 +75,9 @@ class DiagnosticKind(enum.Enum):
     RUN = "run"
     # An `env_file:` target was refused or could not be read, so the keys it
     # supplies were not graded. Warning only. (The `.env` and `COMPOSE_FILE`
-    # cases were warnings too until they became coverage gaps.) Also the
-    # hooks and jobs of a document past the unit bound, which are not graded
-    # in 1.2 and become a refusal in the next MINOR (ADR-040). A job with
-    # `extends:` was the other such case until it was resolved.
+    # cases were warnings too until they became coverage gaps.) In 1.2 it
+    # also covered a job with `extends:`, since resolved, and the hooks and
+    # jobs of a document past the unit bound, since refused (ADR-040).
     UNREAD_INPUT = "unread_input"
 
 

@@ -28,8 +28,6 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from compose_lint._limits import MAX_SERVICES
-
 PRE_START = "pre_start"
 EXEC_HOOKS = ("post_start", "pre_stop")
 
@@ -198,12 +196,10 @@ def graded_pre_start_hooks(
 ) -> Iterator[tuple[str, str, dict[Any, Any]]]:
     """``(unit name, service name, hook)`` for every ``pre_start`` hook graded.
 
-    The same hooks :func:`units` grades: none of a provider service, and none
-    in a document over :data:`MAX_SERVICES` units. Each hook is yielded as the
-    document writes it, with the name of the service it inherits from.
+    The same hooks :func:`units` grades: none of a provider service. Each hook
+    is yielded as the document writes it, with the name of the service it
+    inherits from.
     """
-    if count_units(data) > MAX_SERVICES:
-        return
     services = data.get("services")
     if not isinstance(services, dict):
         return
@@ -228,22 +224,20 @@ def job_lines(lines: Mapping[str, int]) -> dict[str, int]:
 def units(data: Mapping[Any, Any], lines: Mapping[str, int]) -> list[Unit]:
     """The document's units, services first, each hook after its service.
 
-    A document declaring more units than :data:`MAX_SERVICES` yields its
-    services only, which is what 1.1.0 graded, so grading it costs no more
-    than it did; :func:`unit_notes` says so. The next MINOR refuses it.
+    A document past :data:`~compose_lint._limits.MAX_SERVICES` units never
+    reaches here: the parser refuses it (ADR-040 §10).
     """
     found: list[Unit] = []
-    within_bound = count_units(data) <= MAX_SERVICES
     services = data.get("services")
     if isinstance(services, dict):
         for name, config in services.items():
             if _is_provider_service(config):
                 continue
             found.append(Unit(name, config, lines, env_key=name))
-            if within_bound and isinstance(config, dict):
+            if isinstance(config, dict):
                 found.extend(_service_hooks(str(name), config, lines))
     jobs = data.get("jobs")
-    if within_bound and isinstance(jobs, dict) and jobs:
+    if isinstance(jobs, dict) and jobs:
         aliased = job_lines(lines)
         for name, config in jobs.items():
             if not isinstance(config, dict):
@@ -309,24 +303,6 @@ def count_units(document: Mapping[Any, Any]) -> int:
     if isinstance(jobs, dict):
         count += sum(1 for name in jobs if isinstance(name, str))
     return count
-
-
-def unit_notes(data: Mapping[Any, Any]) -> list[str]:
-    """What this document deploys that was not graded, and why.
-
-    A runway warning under ``compatibility.md``: a new refusal is announced as
-    a warning one MINOR before it exits 2, and names the next MINOR so a
-    threshold-gated pipeline has a release to act. (A job's ``extends:`` was
-    the other one; it is resolved since, so it is graded rather than refused.)
-    """
-    notes: list[str] = []
-    if count_units(data) > MAX_SERVICES:
-        notes.append(
-            f"this document declares more than {MAX_SERVICES} services, hooks "
-            "and jobs, so only its services were graded; from the next minor "
-            "release such a document is refused (exit 2)"
-        )
-    return notes
 
 
 def unit_names(data: Mapping[Any, Any]) -> set[str]:

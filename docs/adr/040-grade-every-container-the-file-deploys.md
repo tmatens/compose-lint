@@ -254,3 +254,13 @@ which CI's test job has. Compose 5.6 was not cross-checked.
 Demand is low: no file in the 11,111-file corpus declares `jobs:`. It was
 done because the alternative was a new exit-2 condition that this change
 removes instead.
+
+**Amendment (2026-11-10): the unit bound refuses.** As §10 announced, the
+release after the one that shipped this ADR refuses a document past
+`MAX_SERVICES` with its hooks and jobs counted, as one past it with services
+alone always was: a `parse` error, exit 2, checked on each document as parsed
+and again once its `include:` files are folded in. `--allow-partial-coverage`
+does not lift it, because it is a refusal and not a coverage gap. The
+services-only fallback and its `unread_input` warning are removed. The
+largest unit count in the 11,111-file corpus is 64, so no corpus file
+changes.

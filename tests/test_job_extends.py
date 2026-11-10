@@ -26,7 +26,6 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from compose_lint._units import unit_notes
 from compose_lint.engine import run_rules
 from compose_lint.parser import load_compose_full
 from tests.oracle_harness import compose_argv
@@ -302,7 +301,6 @@ class TestGrading:
             if f.rule_id == "CL-0002"
         }
         assert privileged == {"jobs.base", "jobs.child"}
-        assert unit_notes(loaded.data) == []
 
     def test_an_inherited_line_names_the_base(self, tmp_path: Path) -> None:
         loaded = load_compose_full(_write(tmp_path, {"compose.yml": IN_FILE}))
