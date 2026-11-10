@@ -232,7 +232,7 @@ jobs:
       - name: Install the pinned Docker Compose plugin
         env:
           # renovate: datasource=github-releases depName=docker/compose
-          COMPOSE_VERSION: v5.6.0
+          COMPOSE_VERSION: v5.7.0
         run: .github/scripts/install-compose-plugin.sh
       # -n auto: one pytest-xdist worker per core. The suite is ~6,000 small
       # tests with no single slow one, so it parallelises almost linearly
@@ -312,7 +312,7 @@ jobs:
       - name: Install the pinned Docker Compose plugin
         env:
           # renovate: datasource=github-releases depName=docker/compose
-          COMPOSE_VERSION: v5.6.0
+          COMPOSE_VERSION: v5.7.0
         run: .github/scripts/install-compose-plugin.sh
       - name: Run this shard's tests with coverage
         env:
@@ -1889,7 +1889,7 @@ jobs:
       - name: Install the pinned Docker Compose plugin
         env:
           # renovate: datasource=github-releases depName=docker/compose
-          COMPOSE_VERSION: v5.6.0
+          COMPOSE_VERSION: v5.7.0
         run: .github/scripts/install-compose-plugin.sh
       - name: Validate each runtime rule's premise against a live container
         env:
