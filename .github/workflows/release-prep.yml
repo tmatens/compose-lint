@@ -78,8 +78,17 @@ jobs:
       # this dispatch-time run is the last line of defence and the only
       # place emptiness is an error. Check here, before anything is
       # modified, so a bad changelog costs nothing but a re-dispatch.
+      #
+      # --base-image-since also requires an entry when the runtime base
+      # digest moved since the previous release (#1234): the digest age gate
+      # merges those repins with no human PR, so nothing else prompts one.
+      # The match pattern skips the floating major tag (v1), which moves
+      # with each release and is not the previous version.
       - name: Validate CHANGELOG [Unreleased] section
-        run: python scripts/check_changelog_unreleased.py --require-content
+        run: |
+          prev=$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' HEAD)
+          python scripts/check_changelog_unreleased.py --require-content \
+            --base-image-since "${prev}"
 
       # Delegate to the same script a maintainer runs by hand, so there is one
       # definition of "what a version bump is". This workflow used to
