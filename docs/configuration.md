@@ -87,12 +87,22 @@ rules:
 
 - **Text**: shown after the `SUPPRESSED` label.
 - **JSON**: `suppression_reason` field on each finding.
-- **SARIF**: `suppressions[].justification` (recognized by GitHub Code Scanning).
+- **SARIF**: `suppressions[].justification`.
 
 With no `reason`, JSON has no `suppression_reason` key and the SARIF
-suppression has no `justification`, so a present reason always means a person
-wrote one. The text report still says where the suppression came from
-(`disabled in .compose-lint.yml`).
+suppression has no `justification`, so a present reason is always text from
+the config file. The one reason compose-lint writes there itself is the
+`TODO: justify or fix` placeholder from [`init`](#generating-a-starter-config),
+which stands until someone replaces it. The text report still says where the
+suppression came from (`disabled in .compose-lint.yml`).
+
+**GitHub Code Scanning does not read `suppressions[]`.** A suppressed result
+in an uploaded SARIF file becomes an ordinary open alert, with no dismissal
+and no justification. To keep suppressed findings out of Code Scanning, leave
+them out of the upload with `--skip-suppressed` (the Action's
+`skip-suppressed: true`); their alerts then close as fixed. That flag also
+hides them from the job log, so `.compose-lint.yml` is the record of what was
+accepted and why. See [Suppressed findings in Code Scanning](github-action.md#suppressed-findings-in-code-scanning).
 
 `severity:` re-grades a rule's findings rather than suppressing them, and it
 leaves its own record so a reader can tell a re-graded finding from one the rule
@@ -222,4 +232,4 @@ JSON output is a versioned envelope (see [ADR-015](adr/015-machine-readable-outp
 
 ### SARIF
 
-`--format sarif` emits a SARIF 2.1.0 log for GitHub Code Scanning. Every `errors[]` and `warnings[]` condition appears as an `invocations[].toolExecutionNotifications` record whose `descriptor.id` is its `kind`, at `level` `error` or `warning`; suppressed findings use the native `suppressions[]` array with the reason in `justification`. A log holds at most 5,000 results, because GitHub Code Scanning rejects a larger file outright; past that, the most severe 5,000 are kept (critical first, suppressed findings last, file and line order within a severity) and the rest are dropped with a warning notification, and the exit code still reflects every finding. Use `--format json` for the complete set. Columns in a suggested fix count UTF-16 code units, as the run's `columnKind` declares ([SARIF suggested changes](fix.md#sarif-suggested-changes)).
+`--format sarif` emits a SARIF 2.1.0 log for GitHub Code Scanning. Every `errors[]` and `warnings[]` condition appears as an `invocations[].toolExecutionNotifications` record whose `descriptor.id` is its `kind`, at `level` `error` or `warning`; suppressed findings use the native `suppressions[]` array with the reason in `justification`, which Code Scanning does not read (see [above](#disabling-and-adjusting-rules)). A log holds at most 5,000 results, because GitHub Code Scanning rejects a larger file outright; past that, the most severe 5,000 are kept (critical first, suppressed findings last, file and line order within a severity) and the rest are dropped with a warning notification, and the exit code still reflects every finding. Use `--format json` for the complete set. Columns in a suggested fix count UTF-16 code units, as the run's `columnKind` declares ([SARIF suggested changes](fix.md#sarif-suggested-changes)).

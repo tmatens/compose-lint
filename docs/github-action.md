@@ -16,7 +16,7 @@ the reference behind it.
 | `pattern` | `""` | Glob matched against the file **name**, e.g. `'docker-compose*.yml'`, searched recursively under the checkout (`.git/` is skipped). It cannot contain `/` — the job fails before linting if it does — because a name glob never matches a path; use `files` for paths. |
 | `fail-on` | `high` | Minimum severity that fails the job: `low`, `medium`, `high`, `critical`. |
 | `config` | `""` | Path to a config file. Empty means the CLI's own discovery: `.compose-lint.yml`, then `.compose-lint.yaml`, in the checkout root. |
-| `skip-suppressed` | `false` | Hide suppressed findings from the output. |
+| `skip-suppressed` | `false` | Leave suppressed findings out of both the job log and the SARIF file, so their Code Scanning alerts close. See [Suppressed findings in Code Scanning](#suppressed-findings-in-code-scanning). |
 | `allow-partial-coverage` | `false` | Pass `--allow-partial-coverage`: a coverage gap (part of the stack the linter could not see, such as an `include:` it could not follow or a `.env` it could not read) becomes a warning instead of exit 2, as long as something is left to grade. The full list of gaps is in [coverage gaps are not findings](compatibility.md#coverage-gaps-are-not-findings). |
 | `strict-config` | `false` | Pass `--strict-config`: config-file warnings (unknown rule id, unknown key, an inert `reason:` or `severity:`, a stale `exclude_services` name, both config spellings present) become a hard error. See [`--strict-config`](configuration.md#validation). |
 | `quiet` | `false` | Text output: one line per finding. Mutually exclusive with `verbose`: setting both fails the job with `quiet and verbose are mutually exclusive` before anything is linted. |
@@ -76,6 +76,23 @@ registered, or remove the matcher in a step before it:
 ```
 
 The owner is the `owner` field of the matcher's JSON file.
+
+## Suppressed findings in Code Scanning
+
+A finding suppressed in `.compose-lint.yml` is written to the SARIF file with
+SARIF's `suppressions[]` property and its reason as the `justification`.
+GitHub Code Scanning does not read that property, so by default the finding
+is an **open** alert like any other, although it does not fail the job.
+
+To keep suppressed findings out of Code Scanning, set `skip-suppressed: true`.
+They are then left out of the upload, and GitHub closes their alerts as
+fixed. The same input also drops them from the job log. If a suppression is
+later removed, the finding returns with the same fingerprint.
+
+The default is off because a suppression that `compose-lint init` wrote is a
+placeholder, not a decision: turning the input on with an untriaged
+`init` config closes every alert it covers. Replace each
+`TODO: justify or fix` reason, or fix the finding, before turning it on.
 
 ## SARIF without the Code Scanning upload
 
