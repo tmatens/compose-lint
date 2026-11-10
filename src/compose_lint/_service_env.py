@@ -20,6 +20,7 @@ written                      Compose
 ``env_file: ../out.env``     read
 ``env_file: /etc/app.env``   read
 ``environment:``             wins over every ``env_file:`` key
+``pre_start`` ``env_file:``  the service's targets, then the hook's (5.7.0)
 ===========================  ==========================================
 
 Two of those rows are deliberately not followed. A path that leaves the project
@@ -52,7 +53,7 @@ from compose_lint._safe_read import (
     out_of_reach,
     read_text_bounded,
 )
-from compose_lint._units import container_specs
+from compose_lint._units import container_specs, graded_pre_start_hooks
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Mapping
@@ -300,11 +301,19 @@ def resolve_env_files(
     behaviour nobody asked for.
     """
     # Services and jobs, keyed by unit name (`jobs.<name>` for a job): a job is
-    # graded as a service is (ADR-040 §5). A `pre_start` hook's `env_file:` is
-    # not applied by Compose (measured on 5.6.1), so hooks are left out.
+    # graded as a service is (ADR-040 §5).
     services = dict(container_specs(data, hooks=False))
     if not services:
         return {}
+    # A `pre_start` hook that names its own `env_file:` (ADR-040 §7, Compose
+    # 5.7.0): its service's targets apply first and its own after them, so a
+    # key both set takes the hook's value. A hook naming none deploys exactly
+    # its service's values, which the service already reports.
+    hooks = {
+        unit: (parent, hook)
+        for unit, parent, hook in graded_pre_start_hooks(data)
+        if env_file_refs(hook.get("env_file"))
+    }
 
     # Paths are written relative to `base_dir`, the project directory, and
     # contained to the repository that holds it; the `.env` that supplies their
@@ -317,17 +326,26 @@ def resolve_env_files(
         prefix = ()
     plans: dict[str, list[tuple[EnvFileRef, Path | None, Unread | None]]] = {}
     texts: dict[Path, str | None] = {}
-    for name, config in services.items():
-        refs = env_file_refs(config.get("env_file"))
-        if not refs:
-            continue
+
+    def plan_for(
+        refs: list[EnvFileRef],
+    ) -> list[tuple[EnvFileRef, Path | None, Unread | None]]:
         plan = []
         for ref in refs:
             path, refusal = _classify(ref, root, prefix)
             if path is not None and path not in texts:
                 texts[path] = _read_text(path)
             plan.append((ref, path, refusal))
-        plans[name] = plan
+        return plan
+
+    for name, config in services.items():
+        refs = env_file_refs(config.get("env_file"))
+        if refs:
+            plans[name] = plan_for(refs)
+    for unit, (parent, hook) in hooks.items():
+        plans[unit] = plans.get(parent, []) + plan_for(
+            env_file_refs(hook.get("env_file"))
+        )
     if not plans:
         return {}
 
@@ -345,6 +363,8 @@ def resolve_env_files(
         if key not in shared:
             shared[key] = _resolve_one(plan, texts, supplied)
         result = shared[key]
+        if name in hooks:
+            continue
         own = _environment_keys(services[name].get("environment"))
         resolved[name] = ServiceEnvFiles(
             available=result.available,
@@ -352,7 +372,53 @@ def resolve_env_files(
             skipped=result.skipped,
             shadowed=frozenset(own & result.names),
         )
+    for unit, (parent, hook) in hooks.items():
+        plan = plans[unit]
+        result = shared[tuple(plan)]
+        resolved[unit] = _hook_env_files(
+            result,
+            resolved.get(parent),
+            # The hook inherits its service's `environment:` and adds its own,
+            # and the merged mapping wins over every env file (measured on
+            # Compose 5.7.0).
+            _environment_keys(services[parent].get("environment"))
+            | _environment_keys(hook.get("environment")),
+        )
     return resolved
+
+
+def _hook_env_files(
+    result: _Resolved,
+    parent: ServiceEnvFiles | None,
+    environment: set[str],
+) -> ServiceEnvFiles:
+    """A ``pre_start`` hook's env files, less what its service already reports.
+
+    A hook reports only what it wrote (ADR-040 §3). Its service's targets reach
+    it unchanged unless its own targets set the same key, so a key whose value
+    the service also deploys is the service's finding, and a target the service
+    also names is the service's note.
+    """
+    if parent is None:
+        available = result.available
+        unread = result.unread
+        skipped = result.skipped
+    else:
+        keys, notes, skips = (
+            set(parent.available),
+            set(parent.unread),
+            set(parent.skipped),
+        )
+        available = tuple(key for key in result.available if key not in keys)
+        unread = tuple(entry for entry in result.unread if entry not in notes)
+        skipped = tuple(skip for skip in result.skipped if skip not in skips)
+    names = frozenset(key.key for key in available)
+    return ServiceEnvFiles(
+        available=available,
+        unread=unread,
+        skipped=skipped,
+        shadowed=frozenset(environment & names),
+    )
 
 
 @dataclass(frozen=True)

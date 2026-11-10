@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A `pre_start` hook's `env_file:` is read.** Compose 5.7.0 applies env
+  files to `pre_start` hooks: a hook receives its service's `env_file:`
+  values and then its own, a key both set taking the hook's value, while
+  `environment:` still wins over every file. compose-lint now reads a hook's
+  own `env_file:` targets as it reads a service's, with the same containment,
+  and grades the keys whose value the hook deploys and its service does not.
+  A value that reaches the hook unchanged stays the service's finding. On
+  Compose 5.6 and earlier a hook's `env_file:` is ignored, so a finding there
+  describes a value those releases do not deploy. No file in the 11,111-file
+  corpus changes: none sets `env_file:` on a hook or on a service that has
+  one. See the amendment to
+  [ADR-040](docs/adr/040-grade-every-container-the-file-deploys.md) (#1220).
+
 ## [1.2.0] - 2026-10-31
 
 ### Added

@@ -22,7 +22,7 @@ import yaml
 
 from compose_lint import cli
 from compose_lint._limits import MAX_SERVICES
-from compose_lint._service_env import resolve_env_files
+from compose_lint._service_env import describe_unread, resolve_env_files
 from compose_lint._units import (
     UnitLines,
     count_units,
@@ -328,16 +328,103 @@ class TestJobs:
         findings = run_rules(data, lines, env_files=env)
         assert "CL-0020" in _on(findings, "jobs.m")
 
-    def test_a_hooks_env_file_is_not_read(self, tmp_path: Path) -> None:
-        (tmp_path / "hook.env").write_text("POSTGRES_PASSWORD=hunter2\n", "utf-8")
-        compose = tmp_path / "compose.yml"
-        compose.write_text(
+
+class TestHookEnvFile:
+    """A ``pre_start`` hook's env files, as Compose 5.7.0 applies them (ADR-040 §7).
+
+    Measured: the service's targets apply first and the hook's own after them,
+    a later file winning, and the merged ``environment:`` (the service's plus
+    the hook's) wins over every file. A hook reports only what it wrote.
+    """
+
+    @staticmethod
+    def _project(tmp_path: Path, compose: str, **files: str) -> tuple[Any, Any, Any]:
+        for name, text in files.items():
+            (tmp_path / name).write_text(text, "utf-8")
+        path = tmp_path / "compose.yml"
+        path.write_text(compose, encoding="utf-8")
+        data, lines = load_compose(path)
+        env = resolve_env_files(data, tmp_path)
+        return env, run_rules(data, lines, env_files=env), data
+
+    def test_a_hooks_own_env_file_is_graded_on_the_hook(self, tmp_path: Path) -> None:
+        env, findings, _ = self._project(
+            tmp_path,
             "services:\n  a:\n    image: x:1\n    pre_start:\n"
             "      - image: y:1\n        env_file: hook.env\n",
-            encoding="utf-8",
+            **{"hook.env": "POSTGRES_PASSWORD=hunter2\n"},
         )
-        data, _ = load_compose(compose)
-        assert resolve_env_files(data, tmp_path) == {}
+        assert set(env) == {"a.pre_start[0]"}
+        assert "CL-0020" in _on(findings, "a.pre_start[0]")
+        assert "CL-0020" not in _on(findings, "a")
+
+    def test_an_inherited_env_file_is_reported_once_by_the_service(
+        self, tmp_path: Path
+    ) -> None:
+        env, findings, _ = self._project(
+            tmp_path,
+            "services:\n  a:\n    image: x:1\n    env_file: app.env\n"
+            "    pre_start:\n      - image: y:1\n",
+            **{"app.env": "POSTGRES_PASSWORD=hunter2\n"},
+        )
+        assert set(env) == {"a"}
+        assert "CL-0020" in _on(findings, "a")
+        assert "CL-0020" not in _on(findings, "a.pre_start[0]")
+
+    def test_precedence_follows_compose(self, tmp_path: Path) -> None:
+        env, _, _ = self._project(
+            tmp_path,
+            "services:\n  a:\n    image: x:1\n    env_file: app.env\n"
+            "    environment: {FROM_SERVICE: s}\n"
+            "    pre_start:\n      - image: y:1\n        env_file: hook.env\n"
+            "        environment: {FROM_HOOK: h}\n",
+            **{
+                "app.env": "OVERRIDDEN=parent\nKEPT=parent\n",
+                "hook.env": (
+                    "OVERRIDDEN=hook\nNEW=hook\nFROM_SERVICE=file\nFROM_HOOK=file\n"
+                ),
+            },
+        )
+        hook = env["a.pre_start[0]"]
+        # The service's KEPT reaches the hook unchanged: the service reports it.
+        # OVERRIDDEN takes the hook's value, so it is the hook's. Both
+        # `environment:` mappings shadow a file key.
+        assert {(k.key, k.value) for k in hook.keys} == {
+            ("OVERRIDDEN", "hook"),
+            ("NEW", "hook"),
+        }
+
+    def test_a_file_the_service_also_names_adds_nothing(self, tmp_path: Path) -> None:
+        env, findings, _ = self._project(
+            tmp_path,
+            "services:\n  a:\n    image: x:1\n    env_file: app.env\n"
+            "    pre_start:\n      - image: y:1\n        env_file: app.env\n",
+            **{"app.env": "POSTGRES_PASSWORD=hunter2\n"},
+        )
+        assert not env["a.pre_start[0]"]
+        assert "CL-0020" not in _on(findings, "a.pre_start[0]")
+
+    def test_a_missing_target_is_noted_once_under_the_unit_naming_it(
+        self, tmp_path: Path
+    ) -> None:
+        env, _, _ = self._project(
+            tmp_path,
+            "services:\n  a:\n    image: x:1\n    env_file: gone.env\n"
+            "    pre_start:\n      - image: y:1\n        env_file: also-gone.env\n",
+        )
+        notes = describe_unread(env)
+        assert len(notes) == 2
+        assert any("'a' reads 'gone.env'" in note for note in notes)
+        assert any("'a.pre_start[0]' reads 'also-gone.env'" in note for note in notes)
+
+    def test_a_provider_services_hooks_are_not_read(self, tmp_path: Path) -> None:
+        env, _, _ = self._project(
+            tmp_path,
+            "services:\n  a:\n    provider: {type: x}\n    pre_start:\n"
+            "      - image: y:1\n        env_file: hook.env\n",
+            **{"hook.env": "POSTGRES_PASSWORD=hunter2\n"},
+        )
+        assert env == {}
 
 
 # Service bodies for the rules no `insecure_*` fixture reaches.
