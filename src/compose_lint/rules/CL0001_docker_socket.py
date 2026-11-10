@@ -196,6 +196,7 @@ class DockerSocketRule(BaseRule):
                 severity=Severity.CRITICAL,
                 service=service_name,
                 evidence=host_path,
+                target=mount.target,
                 message=message,
                 line=mount.line,
                 fix=(

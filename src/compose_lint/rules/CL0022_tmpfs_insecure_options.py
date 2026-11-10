@@ -14,6 +14,7 @@ from compose_lint._yaml_edit import (
 )
 from compose_lint.models import Finding, RuleMetadata, Severity, TextEdit
 from compose_lint.rules import BaseRule, register_rule
+from compose_lint.rules._mounts import normalize_container_path
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -131,7 +132,7 @@ class TmpfsInsecureOptionsRule(BaseRule):
                 rule_id="CL-0022",
                 severity=Severity.LOW,
                 service=service_name,
-                evidence=path,
+                evidence=normalize_container_path(path),
                 message=(
                     f"tmpfs mount '{path}' re-enables {opts}. Docker mounts tmpfs "
                     "noexec,nosuid by default; this turns that off, making a "

@@ -104,3 +104,47 @@ the service, complementing the logical location. The loader records start
 lines only (`parser.py`), and extending it touches the line map that `fix`
 depends on for its edits — a larger and riskier change than this one, and
 independent of identity. It stays available as later work.
+
+**Amendment (2026-11-09, issue #1208): a mount's identity includes its
+target.**
+
+The four rules whose evidence is the host side of a mount (CL-0001, CL-0013,
+CL-0016 for devices, CL-0025) gave two mounts of one host source the same
+identity: the Docker socket mounted once read-only and once read-write was one
+alert, and dismissing it hid the other. §2's obligation was met (evidence was
+set) but the evidence did not identify the construct.
+
+1. `Finding` gains an internal `target`, the container path the mount lands
+   at. Compose itself identifies a mount by its target: it refuses two mounts
+   at one target, and an override file matches a mount by target. The four
+   rules set it; for a `secrets:`/`configs:` entry it is the channel's target
+   (`/run/secrets/<name>` by default), and for a device written with no
+   target it is the host path, as Compose renders it.
+2. The fingerprint appends `target` to the hashed parts only when it is set,
+   so every other rule's fingerprint is byte-identical. `evidence` stays the
+   host side, so it keeps meaning what an evidence-scoped exclusion (#1206)
+   would match on; a revisit of those should match on `(evidence, target)`.
+3. The target is always part of identity for these rules, not only when two
+   mounts collide, so adding, removing or reordering other mounts never moves
+   an alert.
+4. §1 applies to the target too. It is cleaned the way Compose cleans a
+   volume target (measured on 5.5.0: trailing and doubled slashes removed, `..`
+   folded), so a respelling keeps the alert. The same change applies §1 where
+   two rules had missed it: CL-0005 kept a short-syntax protocol as written
+   (`8080:80/tcp`, `/TCP`) while its long syntax left `tcp` implied, and
+   CL-0022 kept a tmpfs path's trailing slash.
+
+The same construct written twice in one service (one capability spelled
+`NET_ADMIN` and `CAP_NET_ADMIN`, say) still shares a fingerprint, which is
+correct: it is one construct. That such a construct is reported more than once
+in text and JSON is recorded in #1022.
+
+A target or port built from a variable depends on whether `.env` is present,
+as a host path already did; about 1% of volume targets in the 11,111-file
+corpus contain one.
+
+Measured on that corpus: no finding changes rule, severity, message or line;
+fingerprints change for CL-0001 (909), CL-0013 (502), CL-0025 (109), CL-0016
+(25) and CL-0005 (297, the `/tcp` and `/UDP` spellings); the two colliding
+identities the corpus held are gone. Under `compatibility.md` this is a
+change to how those rules derive identity, a MINOR announced under `Changed`.

@@ -337,3 +337,220 @@ def test_evidence_is_normalized_not_as_written() -> None:
             if f.rule_id == "CL-0024" and f.evidence is not None
         )
     assert len(seen) == 1, f"the same capability derived {len(seen)} evidences: {seen}"
+
+
+# --- The mount target completes a mount's identity (#1208) ---
+
+# Each mount rule's derived target on `_CONTRACT_DOC`, pinned the way
+# EVIDENCE_CONTRACT pins evidence: changing a derivation re-keys that rule's
+# alerts, so it has to be a deliberate act. `(evidence, target)` pairs.
+TARGET_CONTRACT = {
+    "CL-0001": {
+        ("/var/run/docker.sock", "/var/run/docker.sock"),
+        ("/run/containerd/containerd.sock", "/s2"),
+    },
+    "CL-0013": {("/etc", "/host-etc")},
+    # The device only; a cgroup rule places no node and carries no target.
+    "CL-0016": {("/dev/sda", "/dev/sda")},
+    "CL-0025": {("/etc", "/host-etc-rw")},
+}
+
+
+@pytest.mark.parametrize("rule_id", sorted(TARGET_CONTRACT))
+def test_target_derivation_is_pinned(rule_id: str) -> None:
+    data, lines = loads(_CONTRACT_DOC)
+    got = {
+        (f.evidence, f.target)
+        for f in run_rules(data, lines)
+        if f.rule_id == rule_id and f.target is not None
+    }
+    assert got == TARGET_CONTRACT[rule_id], (
+        f"{rule_id} target changed: {sorted(got)}. If deliberate, it re-keys "
+        "that rule's Code Scanning alerts; announce it under Changed."
+    )
+
+
+def test_only_the_mount_rules_set_a_target() -> None:
+    """Any other rule setting one would re-key its alerts unannounced."""
+    setters = {f.rule_id for _, findings in _documents() for f in findings if f.target}
+    data, lines = loads(_CONTRACT_DOC)
+    setters |= {f.rule_id for f in run_rules(data, lines) if f.target}
+    assert setters == set(TARGET_CONTRACT), setters
+
+
+def test_a_finding_without_a_target_keeps_the_v2_digest() -> None:
+    """Every rule that sets no target hashes exactly what it hashed before.
+
+    The literal is the digest `main` produced for the #1208 reproduction
+    before the target existed, for a finding identified by its host path
+    alone. A target is appended to the hashed parts only when set.
+    """
+    data, lines = loads(
+        "services:\n  a:\n    image: x:1\n    volumes:\n"
+        "      - /var/run/docker.sock:/tmp/docker.sock:ro\n"
+    )
+    (finding,) = [f for f in run_rules(data, lines) if f.rule_id == "CL-0001"]
+    untargeted = type(finding)(
+        **{
+            **{f: getattr(finding, f) for f in finding.__dataclass_fields__},
+            "target": None,
+        }
+    )
+    digest = _partial_fingerprints("compose.yml", untargeted)["composeLintFinding/v2"]
+    assert digest == "2ab0fad5a32ca7abda2f339b27567b4306176b9d42e9b99022f5debec8d7d52d"
+    targeted = _partial_fingerprints("compose.yml", finding)["composeLintFinding/v2"]
+    assert targeted == (
+        "181759c8d85c3d84f38276cedfc5c55be9c1c6bfa91e044a4ff3d724ca4436fa"
+    )
+
+
+# Two different constructs on one service, which must stay two alerts. Each
+# case once shared one fingerprint (#1208).
+_DISTINCT = {
+    "socket twice": (
+        "CL-0001",
+        "    volumes:\n"
+        "      - /var/run/docker.sock:/tmp/docker.sock:ro\n"
+        "      - /var/run/docker.sock:/var/run/docker.sock\n",
+    ),
+    "socket as a volume and as a secret": (
+        "CL-0001",
+        "    volumes: ['/var/run/docker.sock:/var/run/docker.sock']\n"
+        "    secrets: [sock]\n"
+        "secrets:\n  sock:\n    file: /var/run/docker.sock\n",
+    ),
+    "/etc short and long at two targets": (
+        "CL-0013",
+        "    volumes:\n"
+        "      - /etc:/host-etc:ro\n"
+        "      - {type: bind, source: /etc, target: /other-etc, read_only: true}\n",
+    ),
+    "/etc writable at two targets": (
+        "CL-0025",
+        "    volumes: ['/etc/app:/data', '/etc/app:/config']\n",
+    ),
+    "one device at two targets": (
+        "CL-0016",
+        "    devices: ['/dev/sda:/dev/sda', '/dev/sda:/dev/xvda']\n",
+    ),
+}
+
+
+def _service(body: str) -> tuple[dict, dict]:
+    head, sep, tail = body.partition("secrets:\n  sock")
+    doc = "services:\n  a:\n    image: x:1\n" + head
+    if sep:
+        doc += sep + tail
+    return loads(doc)
+
+
+@pytest.mark.parametrize("case", sorted(_DISTINCT))
+def test_one_host_source_at_two_targets_is_two_alerts(case: str) -> None:
+    rule_id, body = _DISTINCT[case]
+    data, lines = _service(body)
+    digests = [
+        _partial_fingerprints("compose.yml", f)["composeLintFinding/v2"]
+        for f in run_rules(data, lines)
+        if f.rule_id == rule_id
+    ]
+    assert len(digests) == 2, digests
+    assert len(set(digests)) == 2, f"{case}: both findings share one fingerprint"
+
+
+# One construct spelled two ways, which must stay one alert (ADR-024 §1).
+_SAME = {
+    "target trailing slash": (
+        "CL-0013",
+        "    volumes: ['/etc:/host-etc:ro']\n",
+        "    volumes: ['/etc:/host-etc/:ro']\n",
+    ),
+    "target doubled slash and ..": (
+        "CL-0013",
+        "    volumes: ['/etc:/a/b:ro']\n",
+        "    volumes: ['/etc:/a//c/../b:ro']\n",
+    ),
+    "short versus long syntax": (
+        "CL-0025",
+        "    volumes: ['/etc:/data']\n",
+        "    volumes: [{type: bind, source: /etc, target: /data}]\n",
+    ),
+    "device without and with its target": (
+        "CL-0016",
+        "    devices: ['/dev/sda']\n",
+        "    devices: ['/dev/sda:/dev/sda']\n",
+    ),
+    "secret without and with its default target": (
+        "CL-0001",
+        "    secrets: [sock]\nsecrets:\n  sock:\n    file: /var/run/docker.sock\n",
+        "    secrets: [{source: sock, target: sock}]\n"
+        "secrets:\n  sock:\n    file: /var/run/docker.sock\n",
+    ),
+    "port tcp left implied": (
+        "CL-0005",
+        "    ports: ['8080:80']\n",
+        "    ports: ['8080:80/tcp']\n",
+    ),
+    "port protocol case": (
+        "CL-0005",
+        "    ports: ['53:53/udp']\n",
+        "    ports: ['53:53/UDP']\n",
+    ),
+    "port short versus long with protocol tcp": (
+        "CL-0005",
+        "    ports: ['8080:80/TCP']\n",
+        "    ports: [{target: 80, published: '8080', protocol: tcp}]\n",
+    ),
+    "tmpfs trailing slash": (
+        "CL-0022",
+        "    tmpfs: ['/c1:exec']\n",
+        "    tmpfs: ['/c1/:exec']\n",
+    ),
+}
+
+
+@pytest.mark.parametrize("case", sorted(_SAME))
+def test_respelling_a_construct_keeps_its_alert(case: str) -> None:
+    rule_id, first, second = _SAME[case]
+    digests = []
+    for body in (first, second):
+        data, lines = _service(body)
+        (finding,) = [f for f in run_rules(data, lines) if f.rule_id == rule_id]
+        digests.append(
+            _partial_fingerprints("compose.yml", finding)["composeLintFinding/v2"]
+        )
+    assert digests[0] == digests[1], f"{case}: the spelling changed the alert"
+
+
+# The same construct written twice. Sharing one fingerprint is right (one
+# capability, one alert); the defect is that text and JSON report it more than
+# once. Recorded in #1022 rather than fixed here, so each is a strict xfail: it
+# fails the day a rule starts reporting the construct once.
+_WRITTEN_TWICE = {
+    "capability spellings": ("CL-0011", "    cap_add: [NET_ADMIN, CAP_NET_ADMIN]\n"),
+    "seccomp separators": (
+        "CL-0009",
+        "    security_opt: ['seccomp:unconfined', 'seccomp=unconfined']\n",
+    ),
+    "cgroup rule twice": (
+        "CL-0016",
+        "    device_cgroup_rules: ['b 8:* rwm', 'b 8:* rwm']\n",
+    ),
+    "environment key twice": (
+        "CL-0020",
+        "    environment:\n"
+        "      - POSTGRES_PASSWORD=Synth3ticA\n"
+        "      - POSTGRES_PASSWORD=Synth3ticB\n",
+    ),
+    "port short and long": (
+        "CL-0005",
+        "    ports: ['8080:80', {target: 80, published: '8080'}]\n",
+    ),
+}
+
+
+@pytest.mark.parametrize("case", sorted(_WRITTEN_TWICE))
+@pytest.mark.xfail(strict=True, reason="reported once per spelling; see #1022")
+def test_a_construct_written_twice_is_reported_once(case: str) -> None:
+    rule_id, body = _WRITTEN_TWICE[case]
+    data, lines = _service(body)
+    assert len([f for f in run_rules(data, lines) if f.rule_id == rule_id]) == 1

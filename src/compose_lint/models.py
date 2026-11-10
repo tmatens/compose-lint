@@ -141,6 +141,14 @@ class Finding:
     # those. tests/test_finding_identity.py fails if a rule needs one and
     # does not set it.
     evidence: str | None = None
+    # Where a mount lands in the container, for a rule whose evidence is the
+    # host side of a mount (CL-0001, CL-0013, CL-0016, CL-0025): the target
+    # Compose itself identifies a mount by, cleaned the way Compose cleans a
+    # volume target. It completes the identity, because one host source can be
+    # mounted at two targets and `evidence` alone made those one alert (#1208).
+    # Never serialized; only the SARIF fingerprint reads it, and only when set,
+    # so every other rule's fingerprint is unchanged (ADR-024 amendment).
+    target: str | None = None
     # The file this finding's evidence was written in, when a run merged more
     # than one document (a base file plus its `compose.override.yml`) and that
     # file is not the one named in the report. None on a single-file run, which

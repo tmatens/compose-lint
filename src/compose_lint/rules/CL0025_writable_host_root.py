@@ -251,6 +251,7 @@ class WritableHostRootMountRule(BaseRule):
                 severity=Severity.CRITICAL,
                 service=service_name,
                 evidence=mount.host_path,
+                target=mount.target,
                 message=(
                     f"Service mounts host path '{mount.host_path}' writable "
                     f"(under {matched}). Writing there is host root: "
