@@ -106,3 +106,52 @@ def test_the_probe_sarif_stays_worth_uploading() -> None:
         f"duplicate ruleId in the probe document: {sorted(rule_ids)} — GitHub "
         "rejects these, and it would be found in the consumer's job"
     )
+
+
+# --- What Code Scanning makes of a suppressed result (#1207 review) ---
+
+
+def _probe_script() -> Any:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "verify_sarif_ingestion",
+        REPO_ROOT / "scripts" / "verify_sarif_ingestion.py",
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_suppression_report_names_all_three_outcomes() -> None:
+    classify = _probe_script().classify_suppressed
+    other = {"rule": {"id": "CL-0001"}, "state": "open"}
+    assert classify([other], "CL-0002").startswith("absent:")
+    dismissed = {
+        "rule": {"id": "CL-0002"},
+        "state": "dismissed",
+        "dismissed_reason": "won't fix",
+    }
+    assert classify([other, dismissed], "CL-0002").startswith("dismissed:")
+    opened = {"rule": {"id": "CL-0002"}, "state": "open"}
+    assert classify([opened, dismissed], "CL-0002").startswith("dismissed/open:")
+    assert classify([opened], "CL-0002").startswith("open:")
+
+
+def test_the_reported_rule_is_one_the_probe_suppresses() -> None:
+    """The report means something only if every result of that rule is suppressed."""
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    runs = [step.get("run", "") for step in workflow["jobs"]["ingest"]["steps"]]
+    reported = [
+        run.split("--report-suppressed", 1)[1].split()[0]
+        for run in runs
+        if "--report-suppressed" in run
+    ]
+    assert reported, "no verify step reports on a suppressed rule"
+    _files, config, _fail_on = _probe_args()
+    rules = yaml.safe_load((REPO_ROOT / config).read_text(encoding="utf-8"))["rules"]
+    for rule in reported:
+        assert rules.get(rule, {}).get("enabled") is False, (
+            f"{rule} is not disabled in {config}, so its results are not all suppressed"
+        )

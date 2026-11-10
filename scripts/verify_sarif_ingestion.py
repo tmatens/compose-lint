@@ -31,8 +31,18 @@ resolve? If it discards it, pointing SARIF at the contributing file is worse
 in practice than naming the base and attaching the overlay as a related
 location, and only GitHub can settle which.
 
+``verify`` also optionally takes ``--report-suppressed RULE``, which reports
+what Code Scanning made of that rule's results when every one of them is
+suppressed in the SARIF (``suppressions[]`` with a ``justification``): an open
+alert, a dismissed one, or none. GitHub's SARIF documentation does not list
+``suppressions`` among the properties it uses, and the answer decides whether a
+``.compose-lint.yml`` exclusion hides anything in Code Scanning. It is a
+measurement, not an assertion: any outcome passes, and the answer is printed
+and written to the job summary.
+
 Usage:
     python scripts/verify_sarif_ingestion.py verify [--expect-path SUBSTRING]
+        [--report-suppressed RULE]
     python scripts/verify_sarif_ingestion.py cleanup
 
 Reads GITHUB_TOKEN, GITHUB_REPOSITORY, GITHUB_REF, GITHUB_SHA.
@@ -51,10 +61,45 @@ import urllib.request
 API = "https://api.github.com"
 TOOL = "compose-lint"
 
-TOKEN = os.environ["GITHUB_TOKEN"]
-REPO = os.environ["GITHUB_REPOSITORY"]
-REF = os.environ["GITHUB_REF"]
-SHA = os.environ["GITHUB_SHA"]
+TOKEN = os.environ.get("GITHUB_TOKEN", "")
+REPO = os.environ.get("GITHUB_REPOSITORY", "")
+REF = os.environ.get("GITHUB_REF", "")
+SHA = os.environ.get("GITHUB_SHA", "")
+
+# The alert states the REST API filters on. Listing each one, rather than
+# relying on what an unfiltered query returns, makes a dismissed alert as
+# visible to the report below as an open one.
+ALERT_STATES = ("open", "dismissed", "fixed", "closed")
+
+
+def classify_suppressed(alerts: list[dict[str, object]], rule: str) -> str:
+    """One line saying what Code Scanning made of ``rule``'s suppressed results.
+
+    ``alerts`` is every alert the run produced, in any state. Pure, so the
+    three outcomes are testable without the network.
+    """
+
+    def rule_id(alert: dict[str, object]) -> str:
+        meta = alert.get("rule")
+        return str(meta.get("id")) if isinstance(meta, dict) else ""
+
+    mine = [a for a in alerts if rule_id(a) == rule]
+    if not mine:
+        return (
+            f"absent: no alert for {rule}. Code Scanning dropped the suppressed "
+            "results, so an exclusion hides the finding there."
+        )
+    states = sorted({str(a.get("state")) for a in mine})
+    if states == ["dismissed"]:
+        reasons = sorted({str(a.get("dismissed_reason")) for a in mine})
+        return (
+            f"dismissed: {len(mine)} alert(s) for {rule}, dismissed_reason="
+            f"{', '.join(reasons)}. Code Scanning honours SARIF suppressions."
+        )
+    return (
+        f"{'/'.join(states)}: {len(mine)} alert(s) for {rule}. Code Scanning "
+        "ignores SARIF suppressions, so an exclusion does not hide the alert."
+    )
 
 
 def call(method: str, path: str, *, params: dict[str, str] | None = None) -> object:
@@ -86,7 +131,41 @@ def our_analyses() -> list[dict[str, object]]:
     return [a for a in found if a.get("commit_sha") == SHA]
 
 
-def verify(expect_path: str | None = None) -> int:
+def report_suppressed(rule: str) -> None:
+    """Print, and add to the job summary, how ``rule``'s suppressed results landed."""
+    # A measurement, so nothing here may fail the ingestion job: a state the
+    # API rejects is skipped with a warning rather than raised.
+    alerts: dict[int, dict[str, object]] = {}
+    for state in ALERT_STATES:
+        try:
+            found = call(
+                "GET",
+                f"/repos/{REPO}/code-scanning/alerts",
+                params={
+                    "tool_name": TOOL,
+                    "ref": REF,
+                    "state": state,
+                    "per_page": "100",
+                },
+            )
+        except urllib.error.HTTPError as exc:
+            print(f"::warning::alerts query for state={state} failed (HTTP {exc.code})")
+            continue
+        if not isinstance(found, list):
+            continue
+        for alert in found:
+            alerts[int(alert["number"])] = alert
+    line = (
+        f"Suppressed {rule} results: {classify_suppressed(list(alerts.values()), rule)}"
+    )
+    print(f"::notice::{line}")
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a", encoding="utf-8") as fh:
+            fh.write(f"{line}\n")
+
+
+def verify(expect_path: str | None = None, report_rule: str | None = None) -> int:
     # `upload-sarif` waits for processing, so an analysis should already
     # exist; alert indexing can still trail it by a few seconds.
     analyses: list[dict[str, object]] = []
@@ -158,6 +237,8 @@ def verify(expect_path: str | None = None) -> int:
             )
             return 1
         print(f"Results located in {expect_path!r} survived ingestion.")
+    if report_rule is not None:
+        report_suppressed(report_rule)
     return 0
 
 
@@ -197,12 +278,30 @@ def cleanup() -> int:
 
 
 if __name__ == "__main__":
+    # Read with .get() above so the pure helpers import without them (the
+    # tests do); a run still refuses to start with any of them missing.
+    missing = [
+        name
+        for name, value in (
+            ("GITHUB_TOKEN", TOKEN),
+            ("GITHUB_REPOSITORY", REPO),
+            ("GITHUB_REF", REF),
+            ("GITHUB_SHA", SHA),
+        )
+        if not value
+    ]
+    if missing:
+        print(f"missing environment: {', '.join(missing)}", file=sys.stderr)
+        sys.exit(2)
     mode = sys.argv[1] if len(sys.argv) > 1 else ""
     if mode == "verify":
         expect = None
         if "--expect-path" in sys.argv:
             expect = sys.argv[sys.argv.index("--expect-path") + 1]
-        sys.exit(verify(expect))
+        report = None
+        if "--report-suppressed" in sys.argv:
+            report = sys.argv[sys.argv.index("--report-suppressed") + 1]
+        sys.exit(verify(expect, report))
     if mode == "cleanup":
         sys.exit(cleanup())
     print(f"usage: {sys.argv[0]} verify|cleanup", file=sys.stderr)
