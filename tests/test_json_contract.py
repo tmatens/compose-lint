@@ -333,6 +333,9 @@ SARIF_RESULT_KEYS = {
     "locations",
     "partialFingerprints",
     "properties",
+    # On every result since #1207, empty when the finding is not suppressed
+    # (SARIF §3.27.23: null on every result or on none).
+    "suppressions",
 }
 # Emitted only when a finding has a machine-applicable edit (ADR-014).
 SARIF_CONDITIONAL_RESULT_KEYS = {"fixes"}

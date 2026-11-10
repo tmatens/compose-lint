@@ -290,6 +290,34 @@ def test_truncation_keeps_the_most_severe_results(
     _validate_sarif(doc)
 
 
+def test_truncation_drops_a_suppressed_result_before_an_unsuppressed_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Suppressed results go first, whatever their severity.
+
+    The ranking used to test whether `suppressions` was present. Once every
+    result carries the array (#1207), presence says nothing, so it has to
+    test whether the array is empty.
+    """
+    monkeypatch.setattr(sarif_formatter, "MAX_SARIF_RESULTS", 1)
+    (tmp_path / "compose.yml").write_text(
+        "services:\n"
+        "  a:\n    image: nginx:1.27\n    privileged: true\n"
+        "  b:\n    image: nginx:1.27\n    read_only: true\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".compose-lint.yml").write_text(
+        "rules:\n  CL-0002:\n    exclude_services:\n      a: accepted\n",
+        encoding="utf-8",
+    )
+    _, doc = _run(
+        ["check", "--format", "sarif", "compose.yml"], tmp_path, monkeypatch, capsys
+    )
+    [kept] = doc["runs"][0]["results"]
+    assert kept["suppressions"] == []
+    _validate_sarif(doc)
+
+
 def test_a_strict_config_error_found_after_the_scan_is_kind_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

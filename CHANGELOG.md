@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Every SARIF result carries `suppressions`.** It is an empty array when
+  the finding is not suppressed. SARIF 2.1.0 (§3.27.23) requires the
+  property to be present on every result in a run or on none, and
+  compose-lint wrote it only on suppressed results. **A consumer that
+  decides whether a result is suppressed by checking whether `suppressions`
+  is present must check whether it is empty instead**; otherwise every
+  result reads as suppressed. GitHub Code Scanning does not read the
+  property, so alerts are unaffected (#1207).
 - **A `pre_start` hook's `env_file:` is read.** Compose 5.7.0 applies env
   files to `pre_start` hooks: a hook receives its service's `env_file:`
   values and then its own, a key both set taking the hook's value, while

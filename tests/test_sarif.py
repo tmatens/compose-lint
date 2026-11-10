@@ -719,6 +719,41 @@ class TestSuppressionJustification:
         assert self._result(None)["suppressions"] == [{"kind": "external"}]
 
 
+class TestSuppressionsOnEveryResult:
+    """SARIF §3.27.23: `suppressions` is null on every result or on none.
+
+    compose-lint evaluates every finding for suppression, so every result
+    carries the array, empty when the finding is not suppressed (#1207).
+    """
+
+    def test_an_unsuppressed_result_has_an_empty_array(self) -> None:
+        [result] = format_findings([_sample_finding()], "compose.yml")
+        assert result["suppressions"] == []
+
+    def test_a_mixed_run_carries_the_property_on_every_result(self) -> None:
+        kept = Finding(
+            rule_id="CL-0002",
+            severity=Severity.CRITICAL,
+            service="web",
+            message="m",
+            line=3,
+        )
+        suppressed = Finding(
+            rule_id="CL-0002",
+            severity=Severity.CRITICAL,
+            service="db",
+            message="m",
+            line=7,
+            suppressed=True,
+            suppression_reason="accepted",
+        )
+        results = format_findings([kept, suppressed], "compose.yml")
+        assert [r["suppressions"] for r in results] == [
+            [],
+            [{"kind": "external", "justification": "accepted"}],
+        ]
+
+
 # --- Fix regions count UTF-16 code units, and say so ----------------------
 
 

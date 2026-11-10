@@ -614,13 +614,23 @@ def format_findings(
             props = result.setdefault("properties", {})
             props["severityOverriddenFrom"] = f.severity_overridden_from.value
 
+        # Every result carries `suppressions`, empty when the finding is not
+        # suppressed. SARIF §3.27.23 requires the property to be null on every
+        # result in a run or non-null on every one, so that a consumer can
+        # tell "not suppressed" from "no suppression information" by reading
+        # any single result. compose-lint evaluates every finding against the
+        # config, so the answer is always available. Emitting the array only
+        # on suppressed results broke that rule in any run that suppressed
+        # something (#1207).
+        suppressions: list[dict[str, str]] = []
         if f.suppressed:
             suppression: dict[str, str] = {"kind": "external"}
             # SARIF's `justification` is optional; one the tool wrote itself
             # is indistinguishable from a person's (ADR-015, #888).
             if f.suppression_reason is not None:
                 suppression["justification"] = f.suppression_reason
-            result["suppressions"] = [suppression]
+            suppressions.append(suppression)
+        result["suppressions"] = suppressions
 
         results.append(result)
 
@@ -651,7 +661,7 @@ def _most_severe(
     order = sorted(
         range(len(results)),
         key=lambda i: (
-            "suppressions" in results[i],
+            bool(results[i].get("suppressions")),
             _TRUNCATION_RANK.get(severities[i], len(_TRUNCATION_RANK)),
             i,
         ),

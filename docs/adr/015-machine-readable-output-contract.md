@@ -235,8 +235,10 @@ already found stale. A consumer may rely on:
 - the `partialFingerprints` key name and its
   [ADR-024](024-finding-identity-is-not-prose.md) derivation, whose changes are
   announced as a MINOR;
-- `suppressions[]`, with `kind` and, when the config gave a reason,
-  `justification`;
+- `suppressions[]` on every result: empty when the finding is not
+  suppressed, otherwise one entry with `kind` and, when the config gave a
+  reason, `justification`. Test whether the array is empty, not whether it
+  is present (SARIF §3.27.23; present on every result since #1207);
 - `invocations[0].executionSuccessful`, and each notification's `level` and
   `descriptor.id`;
 - `fixes[]`, which may be absent, and when present applies to the result's own
