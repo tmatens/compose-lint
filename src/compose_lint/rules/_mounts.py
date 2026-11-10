@@ -51,6 +51,10 @@ class BindMount(NamedTuple):
     ``configs`` for a host file handed over through those channels (see
     :func:`file_backed_entries`). A caller that reads the entry back for a
     message must index the list ``origin`` names, not ``volumes:``.
+
+    ``target`` is where the mount lands in the container, cleaned by
+    :func:`normalize_container_path`: the part of a mount's identity the host
+    path alone does not carry (#1208). ``None`` when the entry names none.
     """
 
     position: int
@@ -58,20 +62,64 @@ class BindMount(NamedTuple):
     read_only: bool
     line: int | None
     origin: str = "volumes"
+    target: str | None = None
 
 
 # The two Compose channels that bind a host *file* into a container without
 # going through ``volumes:``.
 FILE_CHANNELS: tuple[str, ...] = ("secrets", "configs")
 
+# Where each channel puts an entry that names no target (Compose's defaults:
+# `/run/secrets/<name>`, measured on 5.5.0; `/<name>` for a config).
+_CHANNEL_DIRS = {"secrets": "/run/secrets", "configs": "/"}
 
-def _extract_short(volume: str) -> tuple[str, bool] | None:
+
+def normalize_container_path(path: str) -> str:
+    """A container-side path cleaned lexically, as Compose cleans a volume target.
+
+    Measured on Compose 5.5.0: ``/host-etc/``, ``/a//b`` and ``/c/../d`` in a
+    volume target, short or long syntax, become ``/host-etc``, ``/a/b`` and
+    ``/d``. Applied to every target a finding is identified by, so rewriting a
+    target's spelling never re-keys an alert (ADR-024 §1). A relative path stays
+    relative; the empty string stays empty.
+    """
+    if not path:
+        return ""
+    normalized = posixpath.normpath(path)
+    # normpath keeps exactly two leading slashes; Compose collapses them.
+    if normalized.startswith("//"):
+        normalized = "/" + normalized.lstrip("/")
+    return normalized
+
+
+def _written_target(value: Any) -> str:
+    """A ``target:`` value as text, or ``""`` when absent or not a scalar.
+
+    Not :func:`as_scalar_text` alone: it renders a YAML ``null`` as ``"None"``,
+    which would become a target named ``None``.
+    """
+    if value is None:
+        return ""
+    return as_scalar_text(value) or ""
+
+
+def _channel_target(channel: str, name: str, written: Any) -> str:
+    """Where a ``secrets:``/``configs:`` entry lands in the container."""
+    if isinstance(written, str) and written:
+        if channel == "secrets" and not written.startswith("/"):
+            # A relative secret target is a file name under /run/secrets.
+            written = posixpath.join(_CHANNEL_DIRS[channel], written)
+        return normalize_container_path(written)
+    return normalize_container_path(posixpath.join(_CHANNEL_DIRS[channel], name))
+
+
+def _extract_short(volume: str) -> tuple[str, bool, str] | None:
     m = _SHORT_VOLUME_RE.match(volume)
     if not m:
         return None
     mode = m.group("mode")
     read_only = bool(mode) and "ro" in (part.strip() for part in mode.split(","))
-    return m.group("host"), read_only
+    return m.group("host"), read_only, m.group("container")
 
 
 def _opt_flags(driver_opts: dict[str, Any]) -> set[str]:
@@ -203,12 +251,12 @@ def iter_bind_mounts(
                 if not sep or name not in named_binds:
                     continue
                 host_path, volume_read_only = named_binds[name]
-                _, _, mode = rest.partition(":")
+                written_target, _, mode = rest.partition(":")
                 read_only = volume_read_only or "ro" in (
                     part.strip() for part in mode.split(",")
                 )
             else:
-                host_path, read_only = short
+                host_path, read_only, written_target = short
         elif isinstance(volume, dict):
             # Long syntax. Treat as a bind when type == "bind" OR when source
             # is an absolute path — Compose infers bind from an absolute source
@@ -217,6 +265,7 @@ def iter_bind_mounts(
             vtype = volume.get("type")
             if not isinstance(source, str):
                 continue
+            written_target = _written_target(volume.get("target"))
             if vtype == "bind" or source.startswith(("/", "~")):
                 host_path = source
                 read_only = as_bool(volume.get("read_only")) is True
@@ -231,7 +280,8 @@ def iter_bind_mounts(
         line = lines.get(f"services.{service_name}.volumes[{i}]") or lines.get(
             f"services.{service_name}.volumes"
         )
-        yield BindMount(i, host_path, read_only, line)
+        target = normalize_container_path(written_target)
+        yield BindMount(i, host_path, read_only, line, target=target or None)
 
     # A host file handed over through secrets:/configs: is a read-only bind of
     # that file, whatever mode: says -- see file_backed_entries.
@@ -243,10 +293,12 @@ def iter_bind_mounts(
         if not entries:
             continue
         for i, ref in enumerate(refs):
+            written: Any = None
             if isinstance(ref, str):
                 name = ref
             elif isinstance(ref, dict) and isinstance(ref.get("source"), str):
                 name = ref["source"]
+                written = _written_target(ref.get("target"))
             else:
                 continue
             if name not in entries:
@@ -254,7 +306,8 @@ def iter_bind_mounts(
             line = lines.get(f"services.{service_name}.{channel}[{i}]") or lines.get(
                 f"services.{service_name}.{channel}"
             )
-            yield BindMount(i, entries[name], True, line, channel)
+            target = _channel_target(channel, name, written)
+            yield BindMount(i, entries[name], True, line, channel, target)
 
 
 def normalize_host_path(host_path: str) -> str:

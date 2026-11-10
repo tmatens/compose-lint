@@ -21,6 +21,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   corpus changes: none sets `env_file:` on a hook or on a service that has
   one. See the amendment to
   [ADR-040](docs/adr/040-grade-every-container-the-file-deploys.md) (#1220).
+- **One host path mounted at two targets is two Code Scanning alerts.** The
+  SARIF fingerprint of a CL-0001, CL-0013, CL-0016 (device) or CL-0025
+  finding identified a mount by its host side only, so the Docker socket
+  mounted once read-only and once read-write was one alert, and dismissing
+  it hid the other. Those findings now include the container target in their
+  identity, cleaned as Compose cleans it. In the same change, CL-0005 no
+  longer keys a port on how its protocol is spelled (`8080:80`, `8080:80/tcp`
+  and `8080:80/TCP` are one alert), and CL-0022 no longer keys a tmpfs path
+  on a trailing slash. **This re-keys existing alerts for these rules once:**
+  on upgrade, GitHub closes them and opens the same findings as new, so
+  dismissals on them are lost. No finding fires differently, no other rule's
+  fingerprint changes, and the JSON and text output are unchanged. Measured
+  on the 11,111-file corpus: 1,842 fingerprints change across these rules,
+  and both colliding identities it held are gone. See the amendment to
+  [ADR-024](docs/adr/024-finding-identity-is-not-prose.md) (#1208).
 
 ## [1.2.0] - 2026-10-31
 

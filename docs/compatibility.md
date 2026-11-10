@@ -321,6 +321,13 @@ announced, knows why. `tests/test_finding_identity.py` pins each rule's
 derivation so the change has to be deliberate rather than a side effect of
 tidying a predicate.
 
+For the rules about a mount (CL-0001, CL-0013, CL-0016's devices, CL-0025),
+the identity also includes where the mount lands in the container, so one host
+path mounted at two targets is two alerts. Equivalent spellings of a target or
+a port share one identity: a trailing slash, `/tcp` or its case, and short
+versus long syntax do not re-key an alert
+([ADR-024 amendment](adr/024-finding-identity-is-not-prose.md)).
+
 ## Deprecation lifecycle
 
 Nothing stable is removed without warning. When a flag, config key, output

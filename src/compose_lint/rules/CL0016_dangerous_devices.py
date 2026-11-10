@@ -10,7 +10,11 @@ from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 from compose_lint.rules._caps import normalize_cap
-from compose_lint.rules._mounts import iter_bind_mounts, normalize_host_path
+from compose_lint.rules._mounts import (
+    iter_bind_mounts,
+    normalize_container_path,
+    normalize_host_path,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -141,6 +145,25 @@ def _extract_host_device(device: Any) -> str | None:
     else:
         return None
     return normalize_host_path(host) if host else host
+
+
+def _device_target(device: Any, host: str) -> str:
+    """Where a ``devices:`` entry puts the node in the container.
+
+    The second short-syntax field, or the long-syntax ``target``; with neither,
+    the node lands at the host path (measured on Compose 5.5.0: ``/dev/sda``
+    renders as ``target: /dev/sda``). Part of the finding's identity, because
+    one host device can be mapped to two targets (#1208).
+    """
+    written: Any = None
+    if isinstance(device, dict):
+        written = device.get("target")
+    elif isinstance(device, str):
+        parts = device.split(":")
+        written = parts[1] if len(parts) > 1 else None
+    if isinstance(written, str) and written:
+        return normalize_container_path(written)
+    return normalize_container_path(host)
 
 
 def _grants_no_access(device: Any) -> bool:
@@ -313,6 +336,7 @@ class DangerousDevicesRule(BaseRule):
                         severity=Severity.CRITICAL,
                         service=service_name,
                         evidence=host_device,
+                        target=_device_target(device, host_device),
                         message=(
                             f"Service exposes dangerous host device "
                             f"'{host_device}' ({description})."

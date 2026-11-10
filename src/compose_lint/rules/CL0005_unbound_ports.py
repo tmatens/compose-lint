@@ -321,7 +321,7 @@ class UnboundPortsRule(BaseRule):
             rule_id="CL-0005",
             severity=Severity.MEDIUM,
             service=service_name,
-            evidence=port_str,
+            evidence=_port_evidence(port_str),
             message=message,
             line=lines.get(f"services.{service_name}.ports[{index}]")
             or lines.get(f"services.{service_name}.ports"),
@@ -391,6 +391,22 @@ class UnboundPortsRule(BaseRule):
             return _fix_long_syntax(port_config, source_lines, item_line)
 
         return _fix_short_syntax(source_lines, item_line)
+
+
+def _port_evidence(port_str: str) -> str:
+    """The port as its identity: the protocol case-folded, ``tcp`` left implied.
+
+    Compose renders ``8080:80``, ``8080:80/tcp``, ``8080:80/TCP`` and a long
+    entry with ``protocol: tcp`` as the same publishing (measured on 5.5.0),
+    and the long syntax already left ``tcp`` unspelled. The short syntax kept
+    whatever was written, so rewriting a port's protocol spelling re-keyed its
+    alert (ADR-024 §1, #1208). The message still quotes the port as written.
+    """
+    base, sep, protocol = port_str.rpartition("/")
+    if not sep:
+        return port_str
+    protocol = protocol.strip().lower()
+    return base if protocol == "tcp" else f"{base}/{protocol}"
 
 
 def _port_at_line(

@@ -197,11 +197,18 @@ def _partial_fingerprints(uri: str, finding: Finding) -> dict[str, str]:
     or its findings collide into one alert and the rest are never shown.
     Optional in base SARIF; emitting it is additive to the contract
     (ADR-015).
+
+    A mount rule's ``evidence`` is the host side, and one host source can be
+    mounted at two targets, so those rules also set ``target`` and it joins
+    the digest (#1208). It is appended only when set: for every other finding
+    the hashed input, and so the fingerprint, is exactly what it was.
     """
     # repr() of the component list is an unambiguous, collision-safe
     # serialization (it escapes embedded quotes), so distinct findings
     # cannot alias by component-boundary coincidence.
     parts = [uri, finding.rule_id, str(finding.service), finding.evidence or ""]
+    if finding.target is not None:
+        parts.append(finding.target)
     digest = hashlib.sha256(repr(parts).encode("utf-8")).hexdigest()
     return {_FINGERPRINT_KEY: digest}
 
