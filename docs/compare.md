@@ -421,7 +421,9 @@ because its port rule only covers sensitive ports, the missing `cap_drop`,
 listed as "needs review".
 
 compose-lint is deterministic. The same file produces the same findings,
-severities and diff on every run, with no model and no network access, and
+severities and diff on every run, with no model and no network access (a
+suppression given an `expires:` date is the one input that reads the date,
+and `--as-of` pins it), and
 its auto-fix works on the Compose file. Which matters more depends on
 whether the linter is a CI gate or an advisor. The explicit `user: root` gap
 was not on DockSec's tracker as of 2026-10-09.

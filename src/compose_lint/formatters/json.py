@@ -66,6 +66,12 @@ def format_findings(findings: list[Finding], filepath: str) -> list[dict[str, ob
         }
         if f.suppressed and f.suppression_reason is not None:
             entry["suppression_reason"] = f.suppression_reason
+        # ADR-041: the date on the entry suppressing this finding, or on the
+        # entry that would have and has passed. Each only on its own branch.
+        if f.suppressed and f.suppression_expires is not None:
+            entry["suppression_expires"] = f.suppression_expires.isoformat()
+        if not f.suppressed and f.suppression_expired is not None:
+            entry["suppression_expired"] = f.suppression_expired.isoformat()
         if f.severity_overridden_from is not None:
             entry["severity_overridden_from"] = f.severity_overridden_from.value
         if evidence_file != graded_file:

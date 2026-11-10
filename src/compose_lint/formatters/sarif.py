@@ -614,6 +614,10 @@ def format_findings(
             props = result.setdefault("properties", {})
             props["severityOverriddenFrom"] = f.severity_overridden_from.value
 
+        if not f.suppressed and f.suppression_expired is not None:
+            props = result.setdefault("properties", {})
+            props["suppressionExpired"] = f.suppression_expired.isoformat()
+
         # Every result carries `suppressions`, empty when the finding is not
         # suppressed. SARIF §3.27.23 requires the property to be null on every
         # result in a run or non-null on every one, so that a consumer can
@@ -622,13 +626,19 @@ def format_findings(
         # config, so the answer is always available. Emitting the array only
         # on suppressed results broke that rule in any run that suppressed
         # something (#1207).
-        suppressions: list[dict[str, str]] = []
+        suppressions: list[dict[str, Any]] = []
         if f.suppressed:
-            suppression: dict[str, str] = {"kind": "external"}
+            suppression: dict[str, Any] = {"kind": "external"}
             # SARIF's `justification` is optional; one the tool wrote itself
             # is indistinguishable from a person's (ADR-015, #888).
             if f.suppression_reason is not None:
                 suppression["justification"] = f.suppression_reason
+            # SARIF's suppression object has no expiry field, so the date
+            # goes in its property bag (ADR-041 §6).
+            if f.suppression_expires is not None:
+                suppression["properties"] = {
+                    "expires": f.suppression_expires.isoformat()
+                }
             suppressions.append(suppression)
         result["suppressions"] = suppressions
 

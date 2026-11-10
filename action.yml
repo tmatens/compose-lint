@@ -289,6 +289,15 @@ runs:
         if [ "$CL_VERBOSE" = "true" ]; then
           ARGS+=(--verbose)
         fi
+        # A suppression's `expires:` date is judged against the UTC date
+        # (ADR-041), and this step runs compose-lint twice. Fixing the day
+        # once keeps the two runs on the same side of midnight, so the SARIF
+        # file never disagrees with the verdict. Probed rather than assumed:
+        # the `version` input can install a release that predates the flag,
+        # and passing it there would fail the job with a usage error.
+        if compose-lint check --help 2>/dev/null | grep -q -e '--as-of'; then
+          ARGS+=(--as-of "$(date -u +%Y-%m-%d)")
+        fi
 
         # compose-lint prints text taken from the Compose files it grades
         # (service names, env keys, source lines), and the runner treats text

@@ -543,7 +543,7 @@ def test_the_top_level_key_set_is_exact() -> None:
 
 def test_the_per_rule_key_set_is_exact() -> None:
     assert (
-        frozenset({"enabled", "reason", "severity", "exclude_services"})
+        frozenset({"enabled", "reason", "severity", "exclude_services", "expires"})
         == _KNOWN_RULE_KEYS
     ), (
         "the per-rule key set changed. Dropping one makes a valid config warn "
@@ -551,7 +551,9 @@ def test_the_per_rule_key_set_is_exact() -> None:
     )
 
 
-@pytest.mark.parametrize("key", ["enabled", "reason", "severity", "exclude_services"])
+@pytest.mark.parametrize(
+    "key", ["enabled", "reason", "severity", "exclude_services", "expires"]
+)
 def test_every_documented_per_rule_key_is_accepted(key: str, tmp_path: Path) -> None:
     """Guard the guard: the set above must match what the loader really takes.
 
@@ -563,6 +565,7 @@ def test_every_documented_per_rule_key_is_accepted(key: str, tmp_path: Path) -> 
         "reason": "'because'",
         "severity": "low",
         "exclude_services": "{web: 'because'}",
+        "expires": "2027-01-15",
     }
     config = tmp_path / ".compose-lint.yml"
     config.write_text(f"rules:\n  CL-0003:\n    {key}: {values[key]}\n")

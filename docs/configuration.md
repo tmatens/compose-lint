@@ -78,7 +78,8 @@ rules:
     enabled: false
   CL-0003:
     enabled: false
-    reason: "SEC-1234 — Approved by J. Smith, expires 2026-07-01"
+    reason: "SEC-1234, approved by J. Smith"
+    expires: 2027-07-01
   CL-0005:
     severity: medium
 ```
@@ -163,6 +164,58 @@ rules:
 
 Prefer the kind name for hooks. The index is the hook's position in the list, so inserting a hook above another renumbers every hook after it, and an exclusion written as `app.pre_start[1]` would then cover a different hook. An exclusion for a service does **not** cover its hooks: a hook is a container of its own, and excluding `app` says nothing about what its init container runs.
 
+### Expiring a suppression
+
+An accepted risk can carry a deadline, so the finding comes back for review
+instead of staying accepted for good. Give the entry a mapping with a
+`reason` and an `expires` date:
+
+```yaml
+rules:
+  CL-0001:
+    exclude_services:
+      portainer:
+        reason: "Manages containers; moving behind a GET-only socket proxy"
+        expires: 2027-03-31
+  CL-0007:
+    enabled: false
+    reason: "Re-evaluate after the base image moves to distroless"
+    expires: 2027-01-15
+```
+
+- **The entry suppresses through the named day**, judged against the UTC
+  date, and stops the day after. From then on the finding is reported and
+  counts toward `--fail-on` as if the entry were not there, with a note
+  naming the date it expired: `(suppression expired 2027-03-31)` in text,
+  `suppression_expired` in JSON, `properties.suppressionExpired` in SARIF.
+  The entry stays in the file until someone fixes the finding, deletes the
+  entry, or sets a new date in a reviewed change.
+- **For the last 14 days** the text report adds `(expires in N days)` to the
+  suppressed finding, on the finding's own line so `--quiet` shows it too.
+  JSON carries `suppression_expires` and SARIF `properties.expires` on the
+  suppression for every dated entry, so a pipeline can build its own notice.
+  The countdown never changes the exit code, and `--strict-config` does not
+  promote it.
+- **A dated entry needs a reason.** An `expires` with no `reason` beside it,
+  or an empty one, is a config error (exit 2).
+- **The date is `YYYY-MM-DD`**, quoted or not. A time of day, or any other
+  spelling, is a config error.
+- **The result depends on the date.** The same commit and config can pass one
+  day and fail the next. That is the point of a deadline, but it means a run
+  is reproducible only for a given day: `--as-of YYYY-MM-DD` on `check` or
+  `fix` judges every date as of that day, to reproduce a past run or pin the
+  day in a test. A config with no `expires:` is unaffected.
+- **A rule-level date covers `enabled: false`.** When it passes, the rule's
+  findings fall through to its `exclude_services`, which apply as usual. A
+  per-service entry's date covers that entry only.
+- **The string and list forms are unchanged** and never expire. `init` does
+  not write dates; add them when you triage its entries.
+
+In GitHub Code Scanning a suppressed finding is an open alert unless you set
+`skip-suppressed`; with it, an expired entry's finding reappears in the
+upload under the same fingerprint. See
+[Suppressed findings in Code Scanning](github-action.md#suppressed-findings-in-code-scanning).
+
 ### Behaviour
 
 - **Exact-match** service names, unit names and hook kind names. A kind name counts as defined when the service has at least one hook of that kind. A name that no linted file defines warns on stderr and is an error under `--strict-config`; by default it does not change the exit code, since Compose files and config evolve independently and a rename must not break the linter. The check runs after the scan, because only then is the set of services known.
@@ -175,8 +228,11 @@ A `.compose-lint.yml` that silently fails to take effect is a security risk — 
 
 - **Unknown rule IDs warn.** `rules:` keys are checked against the registered rule set. A typo (`CL-001`) or a retired ID (`CL-9999`) prints a stderr warning so the override isn't silently dropped. <!-- diag: unknown-rule-id -->
 - **Unknown top-level keys warn.** Only `rules` is recognized at the top level, plus two escape hatches that are accepted silently: any key starting with `x-`, which holds YAML anchors for reuse the way Compose's own extension fields do, and a `<<:` merge key inside a mapping that pulls one in. A misplaced CLI flag (e.g. a top-level `fail_on:`) or any other key warns instead of being ignored. This is also the path a leftover `profiles:` block now takes — the profile-enrichment preview was withdrawn in 0.15.0 ([ADR-019](adr/019-withdraw-security-profile-catalog.md)), so the key is simply unrecognized and warns like any other. <!-- diag: unknown-top-level-key -->
-- **Unknown per-rule keys warn.** Inside a rule block, only `enabled`, `reason`, `severity`, and `exclude_services` are recognized. A typo'd `severty:` warns. <!-- diag: unknown-per-rule-key -->
+- **Unknown per-rule keys warn.** Inside a rule block, only `enabled`, `reason`, `severity`, `exclude_services`, and `expires` are recognized. A typo'd `severty:` warns. <!-- diag: unknown-per-rule-key -->
 - **A `reason` without `enabled: false` warns.** Inside a rule block, `reason` is the justification that goes with a suppression. On its own it suppresses nothing — the rule stays on and still fails the build — so a lone `reason:` warns and names the rule id. <!-- diag: reason-without-enabled-false -->
+- **An `expires` without `enabled: false` warns.** A rule-level `expires` dates the disable beside it. With no disable it has nothing to end, so it warns and names the rule id. The date is still validated. <!-- diag: expires-without-enabled-false -->
+- **Unknown keys in an `exclude_services` entry warn.** A mapping-form entry recognizes `reason` and `expires`. A typo'd `expire:` warns, because the entry would otherwise suppress with no deadline. <!-- diag: unknown-exclusion-entry-key -->
+- **A dated entry needs a reason, and the date must be `YYYY-MM-DD`.** Both are **hard errors** (exit 2), because an entry that cannot say when or why it ends is the one this key exists to prevent.
 - **A `severity` on a disabled rule warns.** `enabled: false` suppresses every finding the rule produces, and a suppressed finding is never re-graded, so the `severity:` beside it has no effect. The warning names the rule id; the value is still validated. <!-- diag: severity-on-disabled-rule -->
 - **An `exclude_services` name no linted file defines warns.** Checked once every file has been read, so a service that was renamed, or never existed under that spelling, is not silently left uncovered by an exclusion the config appears to grant. <!-- diag: unknown-excluded-service -->
 - **Both config spellings present warns.** When `.compose-lint.yml` and `.compose-lint.yaml` both exist in the directory the config is read from, `.compose-lint.yml` is used and the other is ignored; the warning says which one was read. <!-- diag: both-config-spellings -->
@@ -185,7 +241,7 @@ A `.compose-lint.yml` that silently fails to take effect is a security risk — 
 
 Warnings never change the exit code; only the hard errors above do.
 
-Pass **`--strict-config`** to `check` or `fix` to promote every warning above (unknown rule id, unknown top-level or per-rule key, an inert `reason:` or `severity:`, both config spellings present, and — in `check` — an `exclude_services` name no linted file defines) to a hard error (exit 2). Use it in CI, or wherever stderr is redirected, so a typo can't silently disable the wrong rule. The unknown-service error is raised after the scan, so `--format json` and `--format sarif` still carry the findings, with the error in `errors[]` / `toolExecutionNotifications`.
+Pass **`--strict-config`** to `check` or `fix` to promote every warning above (unknown rule id, unknown top-level or per-rule key, an unknown key in an `exclude_services` entry, an inert `reason:`, `severity:` or `expires:`, both config spellings present, and — in `check` — an `exclude_services` name no linted file defines) to a hard error (exit 2). Use it in CI, or wherever stderr is redirected, so a typo can't silently disable the wrong rule. The unknown-service error is raised after the scan, so `--format json` and `--format sarif` still carry the findings, with the error in `errors[]` / `toolExecutionNotifications`.
 
 ## Output formats
 
@@ -221,7 +277,7 @@ JSON output is a versioned envelope (see [ADR-015](adr/015-machine-readable-outp
 
 - `version` is the envelope schema version. New top-level fields are added without bumping it; a bump signals a breaking change.
 - `findings[]` carries one object per finding. `file` names the document the evidence is written in and `line` is a line **within that document** — the two always agree. Every path in the envelope is relative to the working directory, with `/` separators, and absolute only for a file outside it; SARIF's artifact `uri` carries the same value. `severity` is one of `critical`, `high`, `medium`, `low`. `rule_id` is an **opaque string**: match exact values, never the `CL-XXXX` pattern ([compatibility.md](compatibility.md)).
-- Four keys are conditional, present only on the branch that produces them: `suppression_reason` (a suppressed finding whose config gave a reason), `severity_overridden_from` (the config regraded it), `graded_file` (the evidence is written in a document other than the one graded: an overlay, an included or extended file, or an `env_file:`), and `source_file` (a deprecated alias of `file`, kept for consumers written against schema 1; removing an output field is a MAJOR, so it stays until 2.0, [ADR-037](adr/037-environment-variables-are-cli-surface.md)).
+- Six keys are conditional, present only on the branch that produces them: `suppression_reason` (a suppressed finding whose config gave a reason), `suppression_expires` (a suppressed finding whose config entry has an [`expires` date](#expiring-a-suppression)), `suppression_expired` (a finding that is reported because that date has passed), `severity_overridden_from` (the config regraded it), `graded_file` (the evidence is written in a document other than the one graded: an overlay, an included or extended file, or an `env_file:`), and `source_file` (a deprecated alias of `file`, kept for consumers written against schema 1; removing an output field is a MAJOR, so it stays until 2.0, [ADR-037](adr/037-environment-variables-are-cli-surface.md)).
 - `line` is `null` when compose-lint has no line in `file` for the offending key. A key a service inherits, through `extends:` or an overlay, names the line that wrote it, so this is rare, but a consumer must handle it. `fix` is `null` when a rule has no guidance to give. Both keys are always present.
 - `errors[]` lists the conditions that made the run exit 2, and `warnings[]` the ones reported without failing it. Both are always present, and each entry is `{file, message, kind}`. `kind` is a closed set you can filter on instead of parsing `message`: `parse` (a file could not be read or parsed), `coverage_gap` (part of the stack was not graded; the conditions are listed in [coverage gaps are not findings](compatibility.md#coverage-gaps-are-not-findings)), `rule_crash` (a rule raised; as a SARIF warning, a rule's fixer raised and that finding is reported without a suggested change), `unread_input` (an `env_file:` target Compose would deploy was not read, because it resolves outside the project or exists but could not be read, so the keys it supplies were not graded; always a warning. A missing target is a stderr note only, because Compose refuses a required one and deploys without an optional one), and `run` (not about one file: no Compose files found, a configuration error). A `run` entry has `file: ""`. `warnings[]` carries coverage gaps accepted with `--allow-partial-coverage`, which used to leave no machine-readable trace, `unread_input` entries, and, in SARIF only, a `rule_crash` for each fixer that failed. Files skipped as not-applicable (Compose v1 / fragments / a compose-lint config, [ADR-013](adr/013-missing-services-key.md)) are neither and do not appear.
 - Every exit-2 path writes the envelope, except the two that fail before a format is known: an argument the parser rejects, and an `--explain` error.
@@ -232,4 +288,4 @@ JSON output is a versioned envelope (see [ADR-015](adr/015-machine-readable-outp
 
 ### SARIF
 
-`--format sarif` emits a SARIF 2.1.0 log for GitHub Code Scanning. Every `errors[]` and `warnings[]` condition appears as an `invocations[].toolExecutionNotifications` record whose `descriptor.id` is its `kind`, at `level` `error` or `warning`; suppressed findings use the native `suppressions[]` array with the reason in `justification`, which Code Scanning does not read (see [above](#disabling-and-adjusting-rules)). A log holds at most 5,000 results, because GitHub Code Scanning rejects a larger file outright; past that, the most severe 5,000 are kept (critical first, suppressed findings last, file and line order within a severity) and the rest are dropped with a warning notification, and the exit code still reflects every finding. Use `--format json` for the complete set. Columns in a suggested fix count UTF-16 code units, as the run's `columnKind` declares ([SARIF suggested changes](fix.md#sarif-suggested-changes)).
+`--format sarif` emits a SARIF 2.1.0 log for GitHub Code Scanning. Every `errors[]` and `warnings[]` condition appears as an `invocations[].toolExecutionNotifications` record whose `descriptor.id` is its `kind`, at `level` `error` or `warning`; suppressed findings use the native `suppressions[]` array with the reason in `justification` and an [`expires` date](#expiring-a-suppression) in the suppression's `properties.expires`, which Code Scanning does not read (see [above](#disabling-and-adjusting-rules)); a finding reported because that date passed carries `properties.suppressionExpired`. A log holds at most 5,000 results, because GitHub Code Scanning rejects a larger file outright; past that, the most severe 5,000 are kept (critical first, suppressed findings last, file and line order within a severity) and the rest are dropped with a warning notification, and the exit code still reflects every finding. Use `--format json` for the complete set. Columns in a suggested fix count UTF-16 code units, as the run's `columnKind` declares ([SARIF suggested changes](fix.md#sarif-suggested-changes)).

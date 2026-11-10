@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import datetime
 import io
 import json
 import os
@@ -20,6 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 from compose_lint import __version__
+from compose_lint._clock import utc_today
 from compose_lint._env_file import ENV_FILENAME
 from compose_lint._output import (
     STYLE_BOLD,
@@ -44,7 +46,7 @@ from compose_lint.config import (
     CONFIG_FILENAMES,
     ConfigError,
     discover_config_path,
-    load_config,
+    load_policy,
     warn_unknown_excluded_services,
 )
 from compose_lint.config_emit import render_config
@@ -378,6 +380,13 @@ def _add_check_subparser(
         ),
     )
     check.add_argument(
+        "--as-of",
+        metavar="DATE",
+        type=_as_of_date,
+        default=None,
+        help=_AS_OF_HELP,
+    )
+    check.add_argument(
         "--skip-suppressed",
         action="store_true",
         default=False,
@@ -441,6 +450,28 @@ def _add_check_subparser(
     )
 
 
+_AS_OF_HELP = (
+    "judge each suppression's 'expires:' date as of DATE (YYYY-MM-DD) instead "
+    "of today's UTC date, to reproduce a past run or to pin the day in a test"
+)
+
+
+def _as_of_date(value: str) -> datetime.date:
+    """Parse ``--as-of`` with the same rule the config applies to ``expires:``.
+
+    ``date.fromisoformat`` alone also takes ``20270331`` and week dates, which
+    would let the flag accept a spelling the config refuses.
+    """
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        try:
+            return datetime.date.fromisoformat(value)
+        except ValueError:
+            pass
+    raise argparse.ArgumentTypeError(
+        f"expected a date written YYYY-MM-DD, not {value!r}"
+    )
+
+
 def _add_fix_subparser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
@@ -493,6 +524,13 @@ def _add_fix_subparser(
             "inert reason or severity, both config spellings present) as errors "
             "instead of stderr warnings"
         ),
+    )
+    fix.add_argument(
+        "--as-of",
+        metavar="DATE",
+        type=_as_of_date,
+        default=None,
+        help=_AS_OF_HELP,
     )
 
 
@@ -1059,11 +1097,13 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     config_path = _effective_config_path(args.config, config_start)
 
     try:
-        disabled_rules, severity_overrides, excluded_services = load_config(
-            args.config, strict=args.strict_config, start=config_start
-        )
+        policy = load_policy(args.config, strict=args.strict_config, start=config_start)
     except ConfigError as e:
         _exit_2_with_envelope(args, str(e))
+    disabled_rules = policy.disabled
+    severity_overrides = policy.overrides
+    excluded_services = policy.excluded
+    as_of = args.as_of or utc_today()
 
     args.files = [group.primary for group in selection.groups]
     overlay_of = {
@@ -1216,6 +1256,8 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
                 disabled_rules=disabled_rules,
                 severity_overrides=severity_overrides,
                 excluded_services=excluded_services,
+                expiries=policy.expiries,
+                as_of=as_of,
                 on_error=_record_rule_error,
                 env_values=env_values,
                 env_files=service_env_files,
@@ -1240,7 +1282,11 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
 
         if args.output_format == "text":
             output = format_text(
-                findings, filepath, verbose=args.verbose, quiet=args.quiet
+                findings,
+                filepath,
+                verbose=args.verbose,
+                quiet=args.quiet,
+                as_of=as_of,
             )
             if output:
                 _stdout_print(output, flush=True)
@@ -1643,11 +1689,13 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
 
     config_start = _config_start(selection)
     try:
-        disabled_rules, severity_overrides, excluded_services = load_config(
-            args.config, strict=args.strict_config, start=config_start
-        )
+        policy = load_policy(args.config, strict=args.strict_config, start=config_start)
     except ConfigError as e:
         _exit_2_with_envelope(args, str(e))
+    disabled_rules = policy.disabled
+    severity_overrides = policy.overrides
+    excluded_services = policy.excluded
+    as_of = args.as_of or utc_today()
 
     for env_path, message in selection.gaps:
         _report_coverage_gaps(env_path, (message,), fatal=False, remedy=_FIX_GAP_REMEDY)
@@ -1722,6 +1770,8 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
                 disabled_rules=disabled_rules,
                 severity_overrides=severity_overrides,
                 excluded_services=excluded_services,
+                expiries=policy.expiries,
+                as_of=as_of,
                 config_path=fix_config_name,
                 on_error=crashed,
                 env_values=env_values,
@@ -1835,6 +1885,8 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             disabled_rules=disabled_rules,
             severity_overrides=severity_overrides,
             excluded_services=excluded_services,
+            expiries=policy.expiries,
+            as_of=as_of,
             # The properties being verified — structure preserved, converges,
             # no new finding — are properties of the document Compose runs, so
             # the candidate is re-merged with the overlay before they are

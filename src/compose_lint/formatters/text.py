@@ -7,14 +7,18 @@ import re
 import sys
 import unicodedata
 from pathlib import Path
-from typing import TextIO
+from typing import TYPE_CHECKING, TextIO
 
+from compose_lint._clock import utc_today
 from compose_lint._lines import BREAK_CHARS, split_lines
 from compose_lint._output import sanitize as _sanitize
 from compose_lint._output import sanitize_line as _sanitize_line
 from compose_lint._report_path import report_path
 from compose_lint._windows_console import interprets_ansi
 from compose_lint.models import Finding, Severity
+
+if TYPE_CHECKING:
+    import datetime
 
 _COLORS = {
     Severity.CRITICAL: "\033[1;31m",  # Bold red
@@ -269,12 +273,36 @@ def _service_sort_line(group: list[Finding]) -> int:
     return min((f.line for f in group if f.line is not None), default=10**9)
 
 
+# How many days before a suppression's `expires:` date the report starts
+# counting down (ADR-041 §5). Display only: it never changes the exit code.
+EXPIRY_NOTICE_DAYS = 14
+
+
+def _expiry_suffix(f: Finding, as_of: datetime.date | None) -> str:
+    """The countdown or lapse note on a finding's line, or ``""``.
+
+    On the finding line rather than the reason line so that ``--quiet``,
+    which drops the reason, still shows it: the notice exists for the CI log.
+    """
+    if f.suppression_expired is not None:
+        note = f"(suppression expired {f.suppression_expired.isoformat()})"
+        return f"   {_colorize(note, _DIM)}"
+    if f.suppression_expires is None:
+        return ""
+    days = (f.suppression_expires - (as_of or utc_today())).days
+    if days > EXPIRY_NOTICE_DAYS:
+        return ""
+    when = "today" if days <= 0 else "tomorrow" if days == 1 else f"in {days} days"
+    return f"   {_colorize(f'(expires {when})', _DIM)}"
+
+
 def format_findings(
     findings: list[Finding],
     filepath: str,
     *,
     verbose: bool = False,
     quiet: bool = False,
+    as_of: datetime.date | None = None,
 ) -> str:
     """Format findings as human-readable colored text grouped by file and service.
 
@@ -290,6 +318,9 @@ def format_findings(
     does the opposite — one line per finding, dropping the fix block,
     reference URL, source excerpt, and suppression reason — for CI and repeat
     users. The two are mutually exclusive at the CLI layer.
+
+    ``as_of`` is the day a suppression's countdown is measured from, the same
+    day the engine judged ``expires:`` against (today's UTC date by default).
     """
     if not findings:
         return ""
@@ -364,6 +395,7 @@ def format_findings(
                     f"{marker}  "
                     f"{_colorize(f.rule_id, _DIM)}  "
                     f"{_colorize(_sanitize_line(f.message), _SUPPRESSED_COLOR)}"
+                    f"{_expiry_suffix(f, as_of)}"
                 )
                 if not quiet:
                     out.append(
@@ -387,6 +419,7 @@ def format_findings(
                 # rule declared at this severity.
                 was = f.severity_overridden_from.value
                 suffix += f"   {_colorize(f'(severity overridden from {was})', _DIM)}"
+            suffix += _expiry_suffix(f, as_of)
             if not quiet and already_shown and not verbose and (f.fix or f.references):
                 suffix += f"   {_colorize('(see fix above)', _DIM)}"
 

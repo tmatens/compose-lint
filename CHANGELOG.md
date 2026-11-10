@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Suppressions can expire.** An `exclude_services` entry can be a mapping
+  with a `reason` and an `expires` date, and a rule block can carry `expires`
+  beside `enabled: false`. The entry suppresses through the named UTC day.
+  From the day after, the finding is reported and counts toward `--fail-on`
+  again, marked with the date it expired. In the last 14 days the text report
+  shows `(expires in N days)`, which never changes the exit code. A dated
+  entry needs a reason, and the date must be `YYYY-MM-DD`; both are config
+  errors otherwise. JSON gains `suppression_expires` and
+  `suppression_expired`, SARIF the suppression's `properties.expires` and the
+  result's `properties.suppressionExpired`, all additive. `check` and `fix`
+  take `--as-of YYYY-MM-DD` to judge dates as of another day, for tests and
+  for reproducing a past run, and the Action passes both of its runs the
+  same day. String and list entries, `init` and the Action's upload are
+  unchanged. A config with no `expires:` behaves exactly as before. See
+  [ADR-041](docs/adr/041-suppressions-can-expire.md) (#1207).
+
 ### Changed
 
 - **Every SARIF result carries `suppressions`.** It is an empty array when

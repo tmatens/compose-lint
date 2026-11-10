@@ -56,3 +56,9 @@ This is accepted for v0.4. Issue #5's motivating cases are architectural ("this 
 - `engine.py`: after a rule produces a finding, if `finding.service in excluded[rule_id]`, mark the finding suppressed and attach the reason. Follows the same code path as global suppression.
 - Rules receive plain Python types (per ADR-004) and remain unaware of the config layer — all suppression happens in the engine.
 - Test matrix must cover: mapping form, list form, mixed global-disable + per-service (global wins), unknown service warning, and the three output formatters.
+
+**Amendment (2026-11, issue #1207): an entry can expire.** A mapping-form
+entry, `{reason, expires}`, and an `expires` beside `enabled: false` give a
+suppression an end date; after it the entry is not in force. An entry with a
+date must have a reason. The string and list forms above are unchanged and
+never expire. See [ADR-041](041-suppressions-can-expire.md).
