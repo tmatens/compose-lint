@@ -38,7 +38,7 @@ from compose_lint._safe_read import (
     read_text_bounded,
 )
 from compose_lint._service_env import project_relative
-from compose_lint._units import container_specs
+from compose_lint._units import container_specs, count_units
 from compose_lint._yaml_error import describe_yaml_error
 from compose_lint.config import KNOWN_TOP_LEVEL_KEYS
 from compose_lint.rules._interpolation import (
@@ -2273,25 +2273,20 @@ def load_compose_full(path: str | Path, *, use_env: bool = True) -> Loaded:
 
 
 def _check_service_count(document: dict[Any, Any], *, folded: bool = False) -> None:
-    """Refuse a document declaring more than ``MAX_SERVICES`` services.
+    """Refuse a document declaring more than ``MAX_SERVICES`` units.
 
     Run on each document as parsed, and again on one whose ``include:`` files
     have been folded in, so a stack cannot pass by spreading them across files.
-    Hooks and jobs share the bound (ADR-040 §10), but on a runway: for now a
-    document past it with its hooks and jobs counted grades its services only
-    and says so (:func:`compose_lint._units.unit_notes`), and the next MINOR
-    refuses it here.
+    Hooks and jobs share the bound with services (ADR-040 §10): each is graded
+    by every rule. 1.2.0 graded such a document's services only and warned;
+    as that release announced, it is refused here now.
     """
-    services = document.get("services")
-    if not isinstance(services, dict):
-        return
-    count = sum(1 for name in services if isinstance(name, str))
-    if count > MAX_SERVICES:
+    if count_units(document) > MAX_SERVICES:
         where = " once its 'include:' files are folded in" if folded else ""
         raise ComposeError(
             f"Not linted: this document declares more than {MAX_SERVICES} "
-            f"services{where}, so it was not graded. The limit is far above any "
-            "real Compose file."
+            f"services, hooks and jobs{where}, so it was not graded. The limit "
+            "is far above any real Compose file."
         )
 
 

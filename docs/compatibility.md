@@ -131,10 +131,11 @@ apply to a job's `extends:` merge
 1.2.0 did not grade such a job and warned that it would exit 2; it is graded
 instead.
 
-One part of a file is not graded in 1.2.0, and says so with an
-`unread_input` warning. Under the runway below, it exits 2 from the next
-minor release: the hooks and jobs of a document that has more than 4,096
-units once they are counted (its services are graded, as in 1.1.0).
+Hooks and jobs count toward the 4,096 bound on services, each hook list once
+per service that uses it. 1.2.0 graded only the services of a document past
+it once hooks and jobs were counted, with an `unread_input` warning; as that
+release announced, such a document is now refused (exit 2, `parse`), as one
+with too many services always was.
 
 ### Coverage gaps are not findings
 
@@ -295,8 +296,7 @@ carry findings. Today's values, and what reaching each does:
 | Limit | Value | Reaching it |
 | --- | --- | --- |
 | Compose file size | 8 MiB | exit 2, `parse` (an included or extended file: a coverage gap) |
-| Services in one document, after `include:` | 4,096 | exit 2, `parse` |
-| Services, hooks and jobs in one document | 4,096 | 1.2.0: hooks and jobs not graded, `unread_input` warning; from the next minor, exit 2, `parse` |
+| Services, hooks and jobs in one document, after `include:` | 4,096 | exit 2, `parse` (1.2.0 graded the services of a document past it only with hooks and jobs counted, and warned) |
 | Key/value pairs `<<:` merge keys copy | 65,536 | exit 2, `parse` |
 | `include:` / `extends: {file:}` depth, and files one document opens | 8 deep, 64 files | coverage gap |
 | `.env` size | 256 KiB | coverage gap |

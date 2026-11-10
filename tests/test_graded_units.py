@@ -27,7 +27,6 @@ from compose_lint._units import (
     UnitLines,
     count_units,
     unit_names,
-    unit_notes,
     units,
 )
 from compose_lint.engine import run_rules
@@ -696,17 +695,36 @@ class TestCli:
 
 
 class TestBounds:
-    def _over(self) -> str:
-        hooks = "".join("      - {}\n" for _ in range(MAX_SERVICES))
+    """Hooks and jobs share the service bound, and past it the file is refused.
+
+    1.2.0 graded such a document's services only and warned that the next
+    minor would refuse it (ADR-040 §10). This is that refusal.
+    """
+
+    @staticmethod
+    def _hooks(n: int) -> str:
+        hooks = "".join("      - {}\n" for _ in range(n))
         return f"services:\n  a:\n    image: x:1\n    pre_start:\n{hooks}"
 
-    def test_past_the_bound_only_services_are_graded(self) -> None:
-        data, lines = loads(self._over())
-        assert [u.name for u in units(data, lines)] == ["a"]
-        notes = unit_notes(data)
-        assert len(notes) == 1
-        assert "only its services were graded" in notes[0]
-        assert "next minor release" in notes[0]
+    def test_past_the_bound_the_document_is_refused(self) -> None:
+        # One service plus MAX_SERVICES hooks is one unit too many.
+        with pytest.raises(
+            ComposeError, match=f"more than {MAX_SERVICES} services, hooks and jobs"
+        ):
+            loads(self._hooks(MAX_SERVICES))
+
+    def test_at_the_bound_every_unit_is_graded(self) -> None:
+        data, lines = loads(self._hooks(MAX_SERVICES - 1))
+        assert count_units(data) == MAX_SERVICES
+        assert len(units(data, lines)) == MAX_SERVICES
+
+    def test_jobs_count_too(self) -> None:
+        jobs = "".join(
+            f"  j{i}: {{image: 'x:1', triggers: {{manual: true}}}}\n"
+            for i in range(MAX_SERVICES)
+        )
+        with pytest.raises(ComposeError, match="services, hooks and jobs"):
+            loads(f"services:\n  a: {{image: 'x:1'}}\njobs:\n{jobs}")
 
     def test_an_aliased_hook_list_counts_per_service(self) -> None:
         per = 64
@@ -717,9 +735,24 @@ class TestBounds:
             + "services:\n"
             + "".join(f"  s{i}:\n    pre_start: *hooks\n" for i in range(services))
         )
-        data, lines = loads(text)
-        assert count_units(data) > MAX_SERVICES
-        assert all(not u.hook for u in units(data, lines))
+        with pytest.raises(ComposeError, match="services, hooks and jobs"):
+            loads(text)
+
+    def test_units_spread_across_includes_are_refused_once_folded(
+        self, tmp_path: Path
+    ) -> None:
+        """Each file is within the bound on its own; the stack is not."""
+        half = MAX_SERVICES // 2
+        for part in ("a", "b"):
+            hooks = "".join("      - {}\n" for _ in range(half))
+            (tmp_path / f"{part}.yml").write_text(
+                f"services:\n  {part}:\n    image: x:1\n    pre_start:\n{hooks}",
+                encoding="utf-8",
+            )
+        compose = tmp_path / "compose.yml"
+        compose.write_text("include: [a.yml, b.yml]\n", encoding="utf-8")
+        with pytest.raises(ComposeError, match="once its 'include:' files are folded"):
+            load_compose(compose)
 
     def test_units_count_services_hooks_and_jobs(self) -> None:
         doc = {
@@ -728,16 +761,19 @@ class TestBounds:
         }
         assert count_units(doc) == 6
 
-    def test_the_cli_warns_and_keeps_the_exit_code(
-        self,
-        tmp_path: Path,
+    @pytest.mark.parametrize("flags", [[], ["--allow-partial-coverage"]])
+    def test_the_cli_exits_2_as_a_parse_error(
+        self, tmp_path: Path, flags: list[str]
     ) -> None:
+        """A refusal, not a coverage gap, so accepting gaps does not lift it."""
         compose = tmp_path / "compose.yml"
-        compose.write_text(self._over(), encoding="utf-8")
-        proc = _cli(["--format", "json", "--fail-on", "critical", str(compose)])
-        assert proc.returncode == 0
-        warnings = json.loads(proc.stdout)["warnings"]
-        assert [w["kind"] for w in warnings] == ["unread_input"]
+        compose.write_text(self._hooks(MAX_SERVICES), encoding="utf-8")
+        proc = _cli(["--format", "json", *flags, str(compose)])
+        assert proc.returncode == 2
+        doc = json.loads(proc.stdout)
+        assert [e["kind"] for e in doc["errors"]] == ["parse"]
+        assert doc["warnings"] == []
+        assert doc["findings"] == []
 
 
 # A job's `extends:` is resolved and graded since the minor after 1.2.0; its
