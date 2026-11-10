@@ -1,1 +1,11 @@
 blank_issues_enabled: false
+contact_links:
+  - name: Question or usage help
+    url: https://github.com/tmatens/compose-lint/discussions/categories/q-a
+    about: Ask how to run compose-lint or how to read its output.
+  - name: Idea or feedback
+    url: https://github.com/tmatens/compose-lint/discussions/categories/ideas
+    about: Share how you use compose-lint or what you wish it did.
+  - name: Report a vulnerability
+    url: https://github.com/tmatens/compose-lint/security/advisories/new
+    about: Report privately. Please don't post security problems in issues or discussions.

@@ -487,6 +487,10 @@ compose-lint is built to be safe to depend on:
 - **External audit**: tracked on [OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/tmatens/compose-lint) and [OpenSSF Best Practices Baseline 2](https://www.bestpractices.dev/projects/12472); CodeQL runs on every PR, ClusterFuzzLite fuzzes code-touching PRs, and Docker Scout scans the published image daily.
 - **Reporting vulnerabilities**: see [SECURITY.md](https://github.com/tmatens/compose-lint/blob/main/.github/SECURITY.md).
 
+## Questions and feedback
+
+Ask questions and share how you use compose-lint in [Discussions](https://github.com/tmatens/compose-lint/discussions). Bugs go in [issues](https://github.com/tmatens/compose-lint/issues), and vulnerabilities are reported privately (see [SECURITY.md](https://github.com/tmatens/compose-lint/blob/main/.github/SECURITY.md)).
+
 ## Contributing
 
 See [CONTRIBUTING.md](https://github.com/tmatens/compose-lint/blob/main/CONTRIBUTING.md) for development setup and how to add rules.
