@@ -82,6 +82,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on the 11,111-file corpus: 1,842 fingerprints change across these rules,
   and both colliding identities it held are gone. See the amendment to
   [ADR-024](docs/adr/024-finding-identity-is-not-prose.md) (#1208).
+- **The published image moves to a newer distroless base.**
+  `gcr.io/distroless/python3-debian13:nonroot` is repinned from
+  `sha256:64e54c4b…` to `sha256:1c32c372…`, picking up the base image's own
+  updates.
 
 ### Removed
 
