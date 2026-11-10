@@ -778,7 +778,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the Action names the `sarif-file:` input as written. As hardening,
   the Action's `pattern:` discovery, whose `find` errors name directories,
   now runs inside a `stop-commands` window of its own. See
-  GHSA-r7j4-crjv-h467.
+  GHSA-r7j4-crjv-h467 (Unicode white space), GHSA-hr4h-4c45-v4q4 (JSON
+  and SARIF), GHSA-8v59-qmwv-4p6q (argparse), GHSA-m4xg-839g-24cv (Azure
+  Pipelines) and GHSA-xcf7-88g6-7xr8 (the Action's `sarif-file:` message).
 
 ## [0.31.0] - 2026-09-27
 
