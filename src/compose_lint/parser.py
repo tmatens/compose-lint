@@ -825,7 +825,10 @@ def _validate_bodies(block: Any, key: str, noun: str, *, merging: bool) -> None:
 
 
 def _lines_by_service(
-    lines: Mapping[str, int], services: Mapping[Any, Any], wanted: Iterable[str]
+    lines: Mapping[str, int],
+    services: Mapping[Any, Any],
+    wanted: Iterable[str],
+    section: str = "services",
 ) -> dict[str, dict[str, int]]:
     """Each ``wanted`` service's own entries of the line map.
 
@@ -843,13 +846,13 @@ def _lines_by_service(
     """
     names = {name for name in services if isinstance(name, str)}
     lengths = {len(name) for name in names}
-    keys = sorted(path for path in lines if path.startswith("services."))
+    keys = sorted(path for path in lines if path.startswith(f"{section}."))
     grouped: dict[str, dict[str, int]] = {}
     for name in wanted:
         if name not in names or _shadowed(name, names, lengths):
             continue
         own: dict[str, int] = {}
-        base = f"services.{name}"
+        base = f"{section}.{name}"
         if base in lines:
             own[base] = lines[base]
         for start in (f"{base}.", f"{base}["):
@@ -930,6 +933,7 @@ def _resolve_in_file_extends(
     overrides: frozenset[str] = frozenset(),
     skip: frozenset[str] = frozenset(),
     repeats: _RepeatBudget | None = None,
+    section: str = "services",
 ) -> list[str]:
     """Merge in-file ``extends`` targets into each service, in place.
 
@@ -971,10 +975,16 @@ def _resolve_in_file_extends(
     Every child records its base's lines again under its own name, which is
     the base's size times the children: ``repeats`` bounds it. A child past
     the budget keeps its own lines, and what it inherits has none.
+
+    ``section`` is ``"jobs"`` for the job pass. Measured on Compose 5.7.0, a
+    job's in-file ``extends:`` names another *job*, never a service ("service
+    'web' not found" for a job extending a service), and merges exactly as a
+    service's does, chains and cycle refusal included.
     """
-    services = data.get("services")
+    services = data.get(section)
     if not isinstance(services, dict):
         return []
+    noun = "job" if section == "jobs" else "service"
     repeats = repeats if repeats is not None else _RepeatBudget()
     related = {
         name
@@ -985,7 +995,9 @@ def _resolve_in_file_extends(
     if not related:
         return []
     by_service = (
-        _lines_by_service(lines, services, related) if lines is not None else {}
+        _lines_by_service(lines, services, related, section)
+        if lines is not None
+        else {}
     )
     resolved_lines: dict[str, dict[str, int]] = {}
     resolved: dict[str, Any] = {}
@@ -1013,13 +1025,13 @@ def _resolve_in_file_extends(
             return cfg
         if target not in services:
             refused.setdefault(
-                (target, f"this file declares no service '{target}'"), []
+                (target, f"this file declares no {noun} '{target}'"), []
             ).append(name)
             resolved[name] = cfg
             return cfg
         if target == name or target in stack:
             refused.setdefault(
-                (target, "the chain returns to a service it already inherited"), []
+                (target, f"the chain returns to a {noun} it already inherited"), []
             ).append(name)
             resolved[name] = cfg
             return cfg
@@ -1027,7 +1039,7 @@ def _resolve_in_file_extends(
             resolved[name] = cfg
             return cfg
         parent = _resolve(target, (*stack, name))
-        child_path = f"services.{name}"
+        child_path = f"{section}.{name}"
         key = (id(parent), id(cfg))
         cached = memo.get(key)
         if cached is not None and not repeats.take(len(cached[1])):
@@ -1040,7 +1052,7 @@ def _resolve_in_file_extends(
                 parent,
                 cfg,
                 child_path=child_path,
-                base_path=f"services.{target}",
+                base_path=f"{section}.{target}",
                 base_lines=base_lines,
                 child_lines=by_service.get(name, {}),
                 resets=resets,
@@ -1358,12 +1370,12 @@ def _resolve_includes(  # noqa: PLR0913
     depth: int,
     chain: tuple[str, ...],
     prefix: tuple[str, ...],
-) -> tuple[dict[str, Any], dict[str, int], list[str], frozenset[str]]:
+) -> tuple[dict[str, Any], dict[str, int], list[str], dict[str, frozenset[str]]]:
     """Fold every resolvable ``include:`` into this document.
 
     Returns the merged document, its line map, one message per reference
-    that stayed a coverage gap, and the services whose ``extends:`` an
-    included document already resolved.
+    that stayed a coverage gap, and, by section (``services``, ``jobs``), the
+    names whose ``extends:`` an included document already resolved.
 
     **The fold runs backwards, and that is not a mistake.** Measured against
     Compose 5.5.0 with two included files declaring the same service:
@@ -1395,7 +1407,7 @@ def _resolve_includes(  # noqa: PLR0913
     """
     entries = _include_entries(data)
     if not entries:
-        return data, lines, [], frozenset()
+        return data, lines, [], {}
 
     gaps: list[str] = []
     resolved: list[Document] = []
@@ -1520,7 +1532,7 @@ def _resolve_includes(  # noqa: PLR0913
             resolved.append(_folded(documents))
 
     if not resolved:
-        return data, lines, gaps, frozenset()
+        return data, lines, gaps, {}
 
     # A service an included document declares with `extends:` arrived already
     # merged, against that document's own directory and `!reset` paths. The
@@ -1528,25 +1540,30 @@ def _resolve_includes(  # noqa: PLR0913
     # — against *this* directory, where the base file is missing (a false gap)
     # or is a different file (a merge Compose never makes). Unless the
     # including document names its own `extends:` for it, which then wins.
-    own = data.get("services")
-    own_services = own if isinstance(own, dict) else {}
-    already: set[str] = set()
-    for document in resolved:
-        included = document.data.get("services")
-        if not isinstance(included, dict):
-            continue
-        for name, config in included.items():
-            mine = own_services.get(name)
-            if (
-                isinstance(config, dict)
-                and "extends" in config
-                and not (isinstance(mine, dict) and "extends" in mine)
-            ):
-                already.add(str(name))
+    # The same holds for a job, which an included document resolves in its own
+    # job pass.
+    already: dict[str, frozenset[str]] = {}
+    for section in ("services", "jobs"):
+        own = data.get(section)
+        own_section = own if isinstance(own, dict) else {}
+        names: set[str] = set()
+        for document in resolved:
+            included = document.data.get(section)
+            if not isinstance(included, dict):
+                continue
+            for name, config in included.items():
+                mine = own_section.get(name)
+                if (
+                    isinstance(config, dict)
+                    and "extends" in config
+                    and not (isinstance(mine, dict) and "extends" in mine)
+                ):
+                    names.add(str(name))
+        already[section] = frozenset(names)
 
     primary = Document(path=str(document_path), data=data, lines=lines)
     merged = merge_documents([*reversed(resolved), primary])
-    return merged.data, merged.lines, gaps, frozenset(already)
+    return merged.data, merged.lines, gaps, already
 
 
 def _carried_sources(lines: dict[str, int]) -> dict[str, str] | None:
@@ -1594,6 +1611,7 @@ def _resolve_cross_file_extends(
     resets: frozenset[str] = frozenset(),
     overrides: frozenset[str] = frozenset(),
     skip: frozenset[str] = frozenset(),
+    section: str = "services",
 ) -> list[str]:
     """Merge every resolvable cross-file ``extends:`` base into ``data``.
 
@@ -1620,8 +1638,15 @@ def _resolve_cross_file_extends(
     Containment is always measured against ``project_dir``, the containment
     root of the file the run was pointed at — never against the base's own
     directory, which a chain could otherwise walk outwards one hop at a time.
+
+    ``section`` is ``"jobs"`` for the job pass. The base is looked up among the
+    other file's *services* either way: measured on Compose 5.7.0, a job's
+    ``extends: {file: base.yml, service: x}`` takes ``services.x`` from
+    ``base.yml`` even when that file also declares a job ``x``, and fails with
+    "no services section" when the file declares only jobs. The spec describes
+    the key as naming a job; the implementation is what deploys.
     """
-    services = data.get("services")
+    services = data.get(section)
     if not isinstance(services, dict):
         return []
     gaps: list[str] = []
@@ -1732,7 +1757,7 @@ def _resolve_cross_file_extends(
             sources=inherited or None,
         )
         merged, merged_lines, _ = merge_service_from(
-            base_doc, base_service, child_doc, name
+            base_doc, base_service, child_doc, name, child_section=section
         )
         services[name] = merged
         lines.update(merged_lines)
@@ -2496,8 +2521,9 @@ def _loads_full(  # noqa: PLR0913
         # document was fully resolved in its own recursive load, so the fold
         # itself is a plain document merge with nothing left to re-resolve.
         already_resolved: frozenset[str] = frozenset()
+        jobs_resolved: frozenset[str] = frozenset()
         if resolving_includes and project_dir is not None and base_dir is not None:
-            data, lines, include_gaps, already_resolved = _resolve_includes(
+            data, lines, include_gaps, from_includes = _resolve_includes(
                 data,
                 lines,
                 document_path=document_path or base_dir,
@@ -2512,6 +2538,8 @@ def _loads_full(  # noqa: PLR0913
                 chain=include_chain,
                 prefix=prefix,
             )
+            already_resolved = from_includes.get("services", frozenset())
+            jobs_resolved = from_includes.get("jobs", frozenset())
             gaps.extend(include_gaps)
             _check_service_count(data, folded=True)
         # A document opened as an `extends:` base resolves only the service it
@@ -2523,6 +2551,9 @@ def _loads_full(  # noqa: PLR0913
             already_resolved = already_resolved | _unwanted_services(
                 data, extends_service
             )
+        # One allowance for every cross-file base this document opens, jobs'
+        # and services' alike, as `_ExtendsBudget` intends.
+        extends_budget = budget if budget is not None else _ExtendsBudget()
         # Cross-file bases merge before the in-file pass, so a service that
         # inherits from another service in this document inherits what that
         # service itself pulled in from elsewhere — the order Compose resolves
@@ -2536,7 +2567,7 @@ def _loads_full(  # noqa: PLR0913
                     project_dir=project_dir,
                     env_dirs=env_dirs or (base_dir,),
                     use_env=use_env,
-                    budget=budget if budget is not None else _ExtendsBudget(),
+                    budget=extends_budget,
                     repeats=repeats,
                     env_seen=env_seen,
                     depth=depth,
@@ -2557,6 +2588,49 @@ def _loads_full(  # noqa: PLR0913
                 repeats=repeats,
             )
         )
+        # Jobs (Compose 5.6) extend jobs in the file, and services in another
+        # file (ADR-040 §5, amended). In the same order as services: the
+        # cross-file bases first, so a job inheriting another job inherits
+        # what that one pulled in. A document opened as a service's
+        # `extends:` base resolves none of its jobs, as it resolves none of
+        # the services the wanted one does not inherit from.
+        #
+        # No `resets` or `overrides`: measured on Compose 5.7.0, a job's
+        # `extends:` merge ignores `!reset` and `!override` in either form.
+        # `cap_drop: !reset []` on a job extending one with `cap_drop: [ALL]`
+        # deploys `[ALL]`, and `cap_add: !override [CHOWN]` appends to the
+        # base's list, where a service gets `CHOWN` alone and no `cap_drop`.
+        # Applying the tags here would grade hardening the job does not have
+        # as removed, and a grant it does have as replaced.
+        if extends_service is None:
+            if base_dir is not None and project_dir is not None:
+                gaps.extend(
+                    _resolve_cross_file_extends(
+                        data,
+                        lines,
+                        document_path=document_path or base_dir,
+                        project_dir=project_dir,
+                        env_dirs=env_dirs or (base_dir,),
+                        use_env=use_env,
+                        budget=extends_budget,
+                        repeats=repeats,
+                        env_seen=env_seen,
+                        depth=depth,
+                        chain=chain,
+                        prefix=prefix,
+                        skip=jobs_resolved,
+                        section="jobs",
+                    )
+                )
+            gaps.extend(
+                _resolve_in_file_extends(
+                    data,
+                    lines,
+                    skip=jobs_resolved,
+                    repeats=repeats,
+                    section="jobs",
+                )
+            )
         if "include" in data and "services" not in data and "jobs" not in data:
             # Deferred from `_validate_compose`, and only for the document that
             # deferral applied to: an include-only file whose references could

@@ -27,6 +27,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A job that uses `extends:` is graded.** 1.2.0 skipped it with an
+  `unread_input` warning and announced that the next minor would exit 2.
+  It is resolved instead, as a service's `extends:` is, and the warning is
+  gone. Three Compose behaviours, measured on 5.7.0, are followed: an in-file
+  `extends:` names another job; a cross-file `extends: {file:}` inherits the
+  other file's *service*; and `!reset` and `!override` do not apply to a
+  job's `extends:` merge, so `cap_drop: !reset []` keeps the base's
+  `cap_drop`. A base that cannot be followed is a coverage gap (exit 2), as
+  it is for a service. No file in the 11,111-file corpus declares `jobs:`,
+  so none changes. See the amendment to
+  [ADR-040](docs/adr/040-grade-every-container-the-file-deploys.md).
 - **Every SARIF result carries `suppressions`.** It is an empty array when
   the finding is not suppressed. SARIF 2.1.0 (§3.27.23) requires the
   property to be present on every result in a run or on none, and

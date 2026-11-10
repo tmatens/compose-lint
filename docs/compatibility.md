@@ -123,14 +123,18 @@ the keys whose value the hook deploys and its service does not. `privileged: tru
 device cgroup in place, which is not the grant CL-0002 describes. A file with
 `jobs:` and no `services:` is a Compose file and is linted.
 
-Two parts of a file are not graded in 1.2.0, and say so with an
-`unread_input` warning. Under the runway below, each exits 2 from the next
-minor release:
+A job's `extends:` is resolved as a service's is. Compose differs in two
+ways that compose-lint follows: a cross-file `extends: {file:}` on a job
+inherits the other file's *service*, and `!reset` and `!override` do not
+apply to a job's `extends:` merge
+([ADR-040](adr/040-grade-every-container-the-file-deploys.md), amended).
+1.2.0 did not grade such a job and warned that it would exit 2; it is graded
+instead.
 
-- a job that uses `extends:`, which compose-lint does not resolve for jobs
-  yet;
-- the hooks and jobs of a document that has more than 4,096 units once they
-  are counted (its services are graded, as in 1.1.0).
+One part of a file is not graded in 1.2.0, and says so with an
+`unread_input` warning. Under the runway below, it exits 2 from the next
+minor release: the hooks and jobs of a document that has more than 4,096
+units once they are counted (its services are graded, as in 1.1.0).
 
 ### Coverage gaps are not findings
 
@@ -170,8 +174,9 @@ the repository, or into its `.git` directory, which is never read.
   directory symlink out of reach. Every file in the entry is reported.
 - **An `extends:` whose base cannot be found**: a cross-file one with no
   `service:`, or whose file declares no such service; an in-file one naming a
-  service the file does not declare, or forming a cycle. Compose refuses all
-  of these.
+  service the file does not declare, or forming a cycle. For a job, an
+  in-file one must name another job, and a cross-file one a service. Compose
+  refuses all of these.
 - **A `.env` Compose reads that compose-lint could not**: the project's, or
   an included file's own, that exists but is not valid UTF-8, is larger than
   the 256 KiB read cap, or is a symlink out of reach.

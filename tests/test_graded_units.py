@@ -740,47 +740,9 @@ class TestBounds:
         assert [w["kind"] for w in warnings] == ["unread_input"]
 
 
-class TestExtendedJobs:
-    def _write(self, tmp_path: Path) -> Path:
-        compose = tmp_path / "compose.yml"
-        compose.write_text(
-            "services:\n  a:\n    image: x:1@sha256:"
-            + "0" * 64
-            + "\n    read_only: true\n    cap_drop: [ALL]\n"
-            "    security_opt: [no-new-privileges:true]\n"
-            "jobs:\n"
-            "  base:\n    image: x:1\n    cap_drop: [ALL]\n"
-            "  child:\n    extends: base\n    command: ['true']\n",
-            encoding="utf-8",
-        )
-        return compose
-
-    def test_an_extended_job_is_not_graded(self, tmp_path: Path) -> None:
-        data, lines = load_compose(self._write(tmp_path))
-        services = {f.service for f in run_rules(data, lines)}
-        assert "jobs.base" in services
-        assert "jobs.child" not in services
-        assert unit_notes(data) == [
-            "job 'child' uses 'extends:', which compose-lint does not resolve "
-            "for jobs yet, so the job was not graded; from the next minor "
-            "release this is a coverage gap (exit 2)"
-        ]
-
-    def test_the_cli_warns_without_exiting_2(self, tmp_path: Path) -> None:
-        proc = _cli(
-            ["--format", "json", "--fail-on", "critical", str(self._write(tmp_path))]
-        )
-        assert proc.returncode == 0
-        warnings = json.loads(proc.stdout)["warnings"]
-        assert any("job 'child'" in w["message"] for w in warnings)
-        assert "note:" in proc.stderr
-
-    def test_fix_and_init_say_it_too(self, tmp_path: Path) -> None:
-        compose = self._write(tmp_path)
-        assert "job 'child'" in _cli(["fix", str(compose)]).stderr
-        out = tmp_path / "baseline.yml"
-        init = _cli(["init", str(compose), "--output", str(out)])
-        assert "job 'child'" in init.stderr
+# A job's `extends:` is resolved and graded since the minor after 1.2.0; its
+# tests, including a differential check against Compose, are in
+# tests/test_job_extends.py.
 
 
 def _cli(args: list[str]) -> subprocess.CompletedProcess[str]:

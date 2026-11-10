@@ -246,11 +246,12 @@ def units(data: Mapping[Any, Any], lines: Mapping[str, int]) -> list[Unit]:
     if within_bound and isinstance(jobs, dict) and jobs:
         aliased = job_lines(lines)
         for name, config in jobs.items():
-            if not isinstance(config, dict) or "extends" in config:
-                # An extended job is not resolved yet: graded as written it
-                # would report every key its base supplies as absent.
-                # `unit_notes` says it was not graded.
+            if not isinstance(config, dict):
                 continue
+            # A job's `extends:` is resolved by the parser (ADR-040 §5,
+            # amended), so an extended job arrives merged with its base. One
+            # whose base could not be followed is graded as written, beside a
+            # coverage gap that says so, exactly as a service is.
             unit_name = f"jobs.{name}"
             view = UnitLines(lines, alias=aliased, alias_prefix=f"services.{unit_name}")
             found.append(Unit(unit_name, config, view, env_key=unit_name))
@@ -310,24 +311,13 @@ def count_units(document: Mapping[Any, Any]) -> int:
     return count
 
 
-def extended_jobs(data: Mapping[Any, Any]) -> list[str]:
-    """Names of the jobs that use ``extends:``, which are not graded yet."""
-    jobs = data.get("jobs")
-    if not isinstance(jobs, dict):
-        return []
-    return [
-        str(name)
-        for name, config in jobs.items()
-        if isinstance(config, dict) and "extends" in config
-    ]
-
-
 def unit_notes(data: Mapping[Any, Any]) -> list[str]:
     """What this document deploys that was not graded, and why.
 
-    Both are runway warnings under ``compatibility.md``: a new coverage gap or
-    refusal is announced as a warning one MINOR before it exits 2. They name
-    the next MINOR so a threshold-gated pipeline has a release to act.
+    A runway warning under ``compatibility.md``: a new refusal is announced as
+    a warning one MINOR before it exits 2, and names the next MINOR so a
+    threshold-gated pipeline has a release to act. (A job's ``extends:`` was
+    the other one; it is resolved since, so it is graded rather than refused.)
     """
     notes: list[str] = []
     if count_units(data) > MAX_SERVICES:
@@ -336,13 +326,6 @@ def unit_notes(data: Mapping[Any, Any]) -> list[str]:
             "and jobs, so only its services were graded; from the next minor "
             "release such a document is refused (exit 2)"
         )
-        return notes
-    notes.extend(
-        f"job '{name}' uses 'extends:', which compose-lint does not resolve "
-        "for jobs yet, so the job was not graded; from the next minor release "
-        "this is a coverage gap (exit 2)"
-        for name in extended_jobs(data)
-    )
     return notes
 
 

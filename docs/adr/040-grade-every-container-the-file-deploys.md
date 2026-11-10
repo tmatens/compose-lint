@@ -222,3 +222,35 @@ Demand was low when this was decided: in the 11,111-file corpus, 7 files use
 `pre_start` and none of their services or hooks sets `env_file:`. It was done
 because §7 had already committed to revisiting, and because leaving it would
 have meant a premise check that passes over a known false negative.
+
+**Amendment (2026-11-10): a job's `extends:` is resolved.** §5 left a job
+that uses `extends:` ungraded, with a one-release runway to exit 2. Resolving
+it retires that gap instead: the job is graded with what it inherits, the way
+a service is. Measured on Compose 5.7.0, the version CI pins:
+
+- An in-file `extends: x` or `extends: {service: x}` names another **job**.
+  It merges as a service's does (lists append, mappings merge, the child
+  wins), chains are followed, and a cycle or a missing target is refused.
+  Naming a service is refused too ("service 'web' not found").
+- A cross-file `extends: {file: f, service: x}` takes `x` from `f`'s
+  **services**, not its jobs. It does so even when `f` also declares a job
+  `x`, and fails with "no services section" when `f` declares only jobs. The
+  spec describes the key as naming a job; what deploys is the service.
+- **`!reset` and `!override` do not apply to a job's `extends:` merge**, in
+  either form. A job with `cap_drop: !reset []` extending one with
+  `cap_drop: [ALL]` deploys `[ALL]`, and `cap_add: !override [CHOWN]`
+  appends to the base's list. A service gets `[CHOWN]` and no `cap_drop` from
+  the same lines. A tag on a job that does not extend still applies.
+
+compose-lint follows each of these. A job's base that cannot be followed is
+a coverage gap (exit 2), as a service's is, and the job is graded as
+written beside it. A job that an included file resolved is not resolved
+again by the including file. A document opened as a service's cross-file
+base resolves none of its jobs. `tests/test_job_extends.py` holds the
+behaviour, and compares compose-lint's resolved jobs and services with
+Compose's on each shape whenever a Compose that knows jobs is installed,
+which CI's test job has. Compose 5.6 was not cross-checked.
+
+Demand is low: no file in the 11,111-file corpus declares `jobs:`. It was
+done because the alternative was a new exit-2 condition that this change
+removes instead.
