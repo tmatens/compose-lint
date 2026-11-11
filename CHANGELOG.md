@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **CL-0020 no longer flags settings and addresses named after a
+  credential.** Two shapes fired at `high` with nothing to move into a
+  secret:
+
+  - A rate limit or count: `LIMITER_GET_PASSWORDS: 2`,
+    `ACCOUNT_MAX_PASSWORDS: 1000`, `PASSWORDMAXCHAR: 250`. `LIMITER`, `MAX_`
+    and `MAXCHAR` join the quantity-knob words under the same rule as the
+    rest: the value must also be a bare quantity, so `DB_PASSWORD: 12345678`
+    still fires.
+  - A URL that locates a credential without holding one:
+    `MAILER_DSN: smtp://mailpit:1025`, `OIDC_TOKEN_URI: http://dex:5556/token`.
+    A key ending `_DSN`, `_URI`, `_URL` or `_ENDPOINT` is exempt when its
+    value is a URL with no userinfo, no credential-named query parameter and
+    no fragment. `postgres://app:hunter2@db/app` still fires, and so does a
+    Sentry DSN, which keeps its key in the username slot. A `file://` URL is
+    exempt under any key: like a `*_FILE` key, it names the file the secret
+    is read from.
+
+  Both apply to `environment:`, `env_file:` and argument lists. Over the
+  11,111-file corpus, 40 findings are removed from 26 files and none are
+  added; no other rule's output changes, and 10 files stop failing at the
+  default `--fail-on high`. Over five self-hosted app catalogs (Coolify,
+  Dokploy, Umbrel, CasaOS and Runtipi; 1,845 files), 49 findings are removed
+  from 14 files, and 7 stop failing. Every removed value was checked by
+  hand; none held a credential.
+
+  A secret written into a URL's path under one of those keys, such as a
+  webhook URL with the token as a path segment, is no longer reported.
+  Finding it means judging the value, which this rule does not do.
+
 ## [1.3.0] - 2026-11-10
 
 ### Added

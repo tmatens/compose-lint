@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from compose_lint._service_env import EnvFileKey
 from compose_lint.models import Finding, Severity
 from compose_lint.parser import load_compose, loads
 from compose_lint.rules.CL0020_credential_env_keys import CredentialEnvKeysRule
@@ -294,6 +295,83 @@ class TestCredentialEnvKeysRule:
         # key does not end in it, so the credential still fires.
         assert len(self._check_key("PASSPORT_SECRET", "12345")) == 1
 
+    # ---- Exemptions: rate limits and counts (self-hosted app catalogs) ----
+
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            ("LIMITER_GET_PASSWORDS", "2"),
+            ("LIMITER_SAVE_PASSWORD", "2"),
+            ("LIMITER_GET_TOKEN", "3"),
+            ("ACCOUNT_MAX_PASSWORDS", "1000"),
+            ("PASSWORDMAXCHAR", "250"),
+        ],
+    )
+    def test_exempt_rate_limit_and_count_keys(self, key: str, value: str) -> None:
+        # A request budget, a count and a length, each named after the
+        # credential they limit. Found in app catalogs.
+        assert self._check_key(key, value) == []
+
+    def test_count_exemption_still_needs_a_quantity(self) -> None:
+        assert len(self._check_key("LIMITER_TOKEN", "hunter2")) == 1
+        assert len(self._check_key("MAX_PASSWORD", "changeme")) == 1
+
+    # ---- Exemptions: URLs that locate a credential without holding one ----
+
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            ("MAILER_DSN", "smtp://mailpit:1025"),
+            ("MAILER_DSN", "null://localhost"),
+            ("MESSENGER_TRANSPORT_DSN", "doctrine://default?queue_name=async"),
+            ("LOCK_DSN", "redis://valkey:6379"),
+            ("SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN", "tcp://clickhouse:9000"),
+            ("OIDC_TOKEN_URI", "http://dex:5556/dex/token"),
+            ("OAUTH_TOKEN_URL", "https://idp.example/oauth/token"),
+            ("CONTROL_PLANE_TOKEN_ENDPOINT", "http://server:3000/token"),
+        ],
+    )
+    def test_exempt_credential_free_locator(self, key: str, value: str) -> None:
+        assert self._check_key(key, value) == []
+
+    def test_locator_with_interpolated_default_is_exempt(self) -> None:
+        # The parser resolves the default before the rule runs.
+        assert self._check_key("MAILER_DSN", '"${MAILER_DSN:-null://localhost}"') == []
+
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            # A password in the userinfo is the credential.
+            ("DATABASE_DSN", "postgres://app:hunter2@db:5432/app"),
+            ("SQL_DSN", "postgres://app:@db/app"),
+            # Any userinfo: a Sentry DSN keeps its key in the username slot.
+            ("SENTRY_DSN", "https://abc@sentry.io/123"),
+            # So is a credential-named query parameter.
+            ("WEBHOOK_URL_TOKEN_URL", "https://api.example/hook?token=abc"),
+            ("STORAGE_DSN", "s3://bucket?access_key=AKIA&secret_key=abc"),
+            ("UPLOAD_SECRET_URL", "https://cdn.example/up?api_key=abc"),
+            ("UPLOAD_TOKEN_URL", "https://cdn.example/up?sig=abc"),
+            # A fragment can carry a token.
+            ("CALLBACK_TOKEN_URL", "https://app.example/cb#access_token=abc"),
+            # The key is not a locator, so a URL value is not enough.
+            ("GITHUB_TOKEN", "https://example.com"),
+            ("NEXTAUTH_SECRET", "http://localhost:3000"),
+        ],
+    )
+    def test_locator_exemption_keeps_credentials(self, key: str, value: str) -> None:
+        assert len(self._check_key(key, value)) == 1
+
+    @pytest.mark.parametrize(
+        "key", ["PASSPORT_PRIVATE_KEY", "TRIGGER_WORKER_TOKEN", "DB_PASSWORD"]
+    )
+    def test_exempt_file_url(self, key: str) -> None:
+        # A file:// URL names where the secret is read from: the `_FILE`
+        # exemption spelled as a URL, under any key.
+        assert self._check_key(key, "file:///srv/secrets/value") == []
+
+    def test_unparseable_url_still_fires(self) -> None:
+        assert len(self._check_key("DATABASE_DSN", "http://[::1:5432/app")) == 1
+
     # ---- Variable-substitution skips ----
 
     def test_skip_pure_var_ref(self) -> None:
@@ -391,3 +469,21 @@ class TestCredentialEnvKeysRule:
         assert meta.id == "CL-0020"
         assert meta.severity == Severity.HIGH
         assert len(meta.references) >= 2
+
+
+def test_env_file_keys_share_the_new_exemptions() -> None:
+    # `env_file:` keys are graded by the same tests as `environment:` ones.
+    keys = tuple(
+        EnvFileKey(key=k, value=v, source_file="app.env", line=i)
+        for i, (k, v) in enumerate(
+            [
+                ("LIMITER_GET_PASSWORDS", "2"),
+                ("MAILER_DSN", "smtp://mailpit:1025"),
+                ("PASSPORT_PRIVATE_KEY", "file:///srv/oauth-private.key"),
+                ("DATABASE_DSN", "postgres://app:hunter2@db/app"),
+            ],
+            start=1,
+        )
+    )
+    findings = list(CredentialEnvKeysRule().check_env_file_keys("a", keys, {}))
+    assert [f.evidence for f in findings] == ["DATABASE_DSN"]
