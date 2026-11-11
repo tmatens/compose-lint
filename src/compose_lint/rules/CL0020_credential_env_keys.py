@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import shlex
 from typing import TYPE_CHECKING, Any
+from urllib.parse import parse_qsl, urlsplit
 
 from compose_lint._output import inline
 from compose_lint._scalar import as_scalar_text
@@ -126,6 +127,12 @@ _QUANTITY_KEY_FRAGMENTS = (
     "_RETRIES",
     "_LENGTH",
     "_STRENGTH",
+    # Rate limits and counts, found in self-hosted app catalogs:
+    # `LIMITER_GET_PASSWORDS: 2` is a request budget, `ACCOUNT_MAX_PASSWORDS:
+    # 1000` a count, `PASSWORDMAXCHAR: 250` a length.
+    "LIMITER",
+    "MAX_",
+    "MAXCHAR",
 )
 
 # Suffix-anchored so PASSPORT_SECRET is not read as a port number.
@@ -135,6 +142,24 @@ _QUANTITY_KEY_SUFFIXES = ("_PORT", "_COST")
 # `500ms`). Anything else — a placeholder, a filename, a rate like `5/hour` —
 # is not a quantity and the rule still fires.
 _QUANTITY_VALUE_RE = re.compile(r"^\d+(\.\d+)?(ms|s|m|h|d)?$", re.IGNORECASE)
+
+# ---- Values that locate a credential rather than hold one -------------------
+#
+# A key whose name ends in one of these names *where* something is, not what
+# it is: `OIDC_TOKEN_URI` is the address of a token endpoint, `MAILER_DSN` a
+# connection string. Such a key is exempt when its value is a URL that carries
+# no credential: no userinfo at all (a Sentry DSN keeps its key in the username
+# slot), no credential-named query parameter, and no fragment.
+# `postgres://app:hunter2@db/app` keeps firing, as does
+# `https://api.example/?token=abc`.
+_LOCATOR_KEY_SUFFIXES = ("_DSN", "_URI", "_URL", "_ENDPOINT")
+
+# A value that begins with a URL scheme.
+_URL_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
+
+# Query parameter names that carry a credential but are too short for the key
+# patterns above to reach (`?pass=`, `?key=`, `?sig=`).
+_QUERY_CREDENTIAL_NAMES = frozenset({"PASS", "PWD", "KEY", "SIG", "SIGNATURE", "AUTH"})
 
 # ---- The argument-list surfaces (issue #1077) --------------------------------
 #
@@ -224,6 +249,49 @@ def _is_quantity_knob(key_upper: str, raw: Any) -> bool:
     return any(key_upper.endswith(suffix) for suffix in _QUANTITY_KEY_SUFFIXES)
 
 
+def _is_credential_free_locator(key_upper: str, raw: Any) -> bool:
+    """Return True for a URL value that points at a credential without holding one.
+
+    Two shapes. A `file://` URL, under any key, names the file the secret is
+    read from: `PASSPORT_PRIVATE_KEY: file:///srv/oauth-private.key` is the
+    `_FILE` exemption spelled as a URL. Any other URL is exempt only under a
+    key ending `_DSN`, `_URI`, `_URL` or `_ENDPOINT`, and only when nothing in
+    it is a credential: `MAILER_DSN: smtp://mail:25` is an address, while
+    `DATABASE_DSN: postgres://app:hunter2@db/app` holds a password and fires.
+    """
+    if not isinstance(raw, str):
+        return False
+    text = raw.strip()
+    if not _URL_SCHEME_RE.match(text):
+        return False
+    try:
+        parts = urlsplit(text)
+        userinfo = parts.username is not None or parts.password is not None
+    except ValueError:
+        return False
+    # Any userinfo counts: a Sentry DSN carries its key in the username slot.
+    if userinfo or parts.fragment:
+        return False
+    if parts.scheme.lower() == "file":
+        return True
+    if not key_upper.endswith(_LOCATOR_KEY_SUFFIXES):
+        return False
+    for name, _value in parse_qsl(parts.query, keep_blank_values=True):
+        name_upper = name.upper()
+        if name_upper in _QUERY_CREDENTIAL_NAMES or _matches_credential_pattern(
+            name_upper
+        ):
+            return False
+    return True
+
+
+def _names_no_credential(key_upper: str, raw: Any) -> bool:
+    """A quantity knob, or a URL that locates a credential without holding one."""
+    return _is_quantity_knob(key_upper, raw) or _is_credential_free_locator(
+        key_upper, raw
+    )
+
+
 def _is_literal_credential_value(raw: Any) -> bool:
     """Decide whether a value should be treated as a literal credential.
 
@@ -274,7 +342,7 @@ def _is_credential_name(name_upper: str, value: str) -> bool:
         return False
     if _is_exempt_key(name_upper):
         return False
-    return not _is_quantity_knob(name_upper, value)
+    return not _names_no_credential(name_upper, value)
 
 
 def _split_shell(text: str) -> list[str]:
@@ -424,7 +492,11 @@ class CredentialEnvKeysRule(BaseRule):
                 "does not appear in any of those surfaces. A key naming a "
                 "quantity about the credential (a lifetime, size, limit or "
                 "policy knob) whose value is also a bare quantity is exempt: "
-                "TOKEN_TTL_MINUTES: 30 is a duration, not a token. This rule "
+                "TOKEN_TTL_MINUTES: 30 is a duration, not a token. So is a URL "
+                "that locates a credential without holding one: a file:// URL, "
+                "or, under a key ending _DSN, _URI, _URL or _ENDPOINT, a URL "
+                "with no userinfo, no credential-named query parameter and no "
+                "fragment (MAILER_DSN: smtp://mail:25). This rule "
                 "is a naming-convention check, not a content scanner — it "
                 "does not inspect the value for secret-like entropy or "
                 "formats."
@@ -452,7 +524,7 @@ class CredentialEnvKeysRule(BaseRule):
                 continue
             if _is_exempt_key(key_upper):
                 continue
-            if _is_quantity_knob(key_upper, raw):
+            if _names_no_credential(key_upper, raw):
                 continue
             if not _is_literal_credential_value(raw):
                 continue
@@ -557,7 +629,7 @@ class CredentialEnvKeysRule(BaseRule):
                 continue
             if _is_exempt_key(key_upper):
                 continue
-            if _is_quantity_knob(key_upper, entry.value):
+            if _names_no_credential(key_upper, entry.value):
                 continue
             if not _is_literal_credential_value(entry.value):
                 continue

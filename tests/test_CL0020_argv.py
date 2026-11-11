@@ -159,6 +159,12 @@ def test_quantity_knob_flag_is_exempt() -> None:
     assert _service("    command: app --token-ttl 900 --password-min-length=12\n") == []
 
 
+def test_credential_free_locator_flag_is_exempt() -> None:
+    assert _service("    command: app --token-url http://idp:9000/token\n") == []
+    assert _service("    command: app --api-key file:///run/secrets/key\n") == []
+    assert len(_service("    command: app --database-dsn postgres://a:b@db/x\n")) == 1
+
+
 def test_boolean_toggle_value_is_exempt() -> None:
     assert _service("    command: app --require-password true\n") == []
 
