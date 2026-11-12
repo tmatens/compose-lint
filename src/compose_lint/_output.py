@@ -31,6 +31,8 @@ import re
 import sys
 from typing import TextIO
 
+from compose_lint._env_quote import quote as quote_env_values
+
 # Code-point ranges (inclusive) that can spoof or corrupt terminal output:
 # C0/C1 controls — ANSI/escape-sequence injection, including the ESC and CSI
 # introducers — plus DEL, and the bidirectional and zero-width formatting
@@ -169,7 +171,8 @@ def emit(message: str, *, stream: TextIO | None = None) -> None:
 
     Every human-facing status and error line goes through here. Sanitizing at
     the call site is opt-in and was therefore skipped 26 times; sanitizing at
-    the sink is not.
+    the sink is not. A ``.env`` value the run substituted is quoted back to its
+    ``${NAME}`` here for the same reason (:mod:`compose_lint._env_quote`).
 
     Newlines are kept rather than escaped, because some diagnostics are
     legitimately multi-line and lose their meaning without them — PyYAML's
@@ -182,7 +185,7 @@ def emit(message: str, *, stream: TextIO | None = None) -> None:
     still shows the text that followed it, but visibly as a continuation of
     this record rather than as a line compose-lint wrote itself.
     """
-    body = sanitize(message)
+    body = sanitize(quote_env_values(message))
     first, *rest = body.split("\n")
     lines = [first] + [_CONTINUATION_INDENT + line for line in rest]
     _write_diagnostic("\n".join(lines) + "\n", stream)

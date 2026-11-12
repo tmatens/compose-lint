@@ -1,6 +1,7 @@
 """Session-wide test configuration.
 
-One job: say which Compose answered.
+Two jobs: say which Compose answered, and start each test with no `.env` values
+to quote (see the fixture below).
 
 Six suites derive this project's loader semantics from ``docker compose`` on
 every run, and until now nothing in the output recorded which binary they
@@ -14,7 +15,28 @@ no way to tell.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+import pytest
+
+from compose_lint import _env_quote
 from tests.oracle_harness import oracle_version
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+
+@pytest.fixture(autouse=True)
+def _forget_env_values() -> Iterator[None]:
+    """Start and end every test with no ``.env`` values to quote.
+
+    The parser records each value it substitutes process-wide so the output
+    sinks can quote it back (``_env_quote``). A value one test's fixture
+    substituted must not rewrite another test's expected text.
+    """
+    _env_quote.forget()
+    yield
+    _env_quote.forget()
 
 
 def pytest_report_header() -> str:

@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, NoReturn, cast
 from compose_lint import __version__
 from compose_lint._clock import utc_today
 from compose_lint._env_file import ENV_FILENAME
+from compose_lint._env_quote import forget as forget_env_values
 from compose_lint._output import (
     STYLE_BOLD,
     STYLE_DIM,
@@ -898,6 +899,8 @@ def _exit_on_internal_error(
 def main(argv: list[str] | None = None) -> NoReturn:
     """Main entry point for the CLI."""
     _utf8_stdio()
+    # Values a previous in-process run substituted are not this run's.
+    forget_env_values()
     if sys.stdout is None:
         # Started with file descriptor 1 already closed (`compose-lint … >&-`).
         # CPython leaves `sys.stdout` as None rather than a stream that fails

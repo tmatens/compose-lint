@@ -39,6 +39,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   webhook URL with the token as a path segment, is no longer reported.
   Finding it means judging the value, which this rule does not do.
 
+### Security
+
+- **Coverage gaps, notes and errors quote `${NAME}`, not the `.env`
+  value.** 0.32.0 replaces each value a sibling `.env` filled in with its
+  reference in findings, but other messages were built from the substituted
+  text. An `include:` path, an `extends:` file or service name, or an
+  `env_file:` target that did not resolve was named with the value in it, on
+  stderr, in JSON `errors[]` and `warnings[]`, and in the SARIF
+  notifications. Every such message is now quoted where it is written out.
+  See GHSA-8m7x-x63m-5vv5.
+
 ## [1.3.0] - 2026-11-10
 
 ### Added

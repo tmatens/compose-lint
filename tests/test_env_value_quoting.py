@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from compose_lint import cli
+from compose_lint import _env_quote, cli
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -254,3 +254,137 @@ class TestFix:
         assert SECRET not in out + err
         assert code == 0
         assert "no-new-privileges" in compose.read_text(encoding="utf-8")
+
+
+# Messages other than findings: coverage gaps, notes, warnings and errors. Each
+# names a reference after substitution, so each quoted the value.
+_DIAGNOSTIC_CASES = {
+    "include": (
+        'include:\n  - "${DB_PASSWORD}/missing.yml"\n'
+        "services:\n  web:\n    image: nginx:1.27\n"
+    ),
+    "include-only": 'include:\n  - "${DB_PASSWORD}/missing.yml"\n',
+    "extends-file": (
+        "services:\n  web:\n    image: nginx:1.27\n    extends:\n"
+        '      file: "${DB_PASSWORD}/missing.yml"\n      service: base\n'
+    ),
+    "extends-service": (
+        "services:\n  web:\n    image: nginx:1.27\n    extends:\n"
+        '      service: "${DB_PASSWORD}"\n'
+    ),
+    "env-file": (
+        "services:\n  web:\n    image: nginx:1.27\n"
+        '    env_file: "${DB_PASSWORD}/missing.env"\n'
+    ),
+}
+
+
+class TestDiagnostics:
+    @pytest.mark.parametrize("fmt", ["text", "json", "sarif"])
+    @pytest.mark.parametrize("case", sorted(_DIAGNOSTIC_CASES))
+    def test_the_value_never_reaches_output(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        fmt: str,
+        case: str,
+    ) -> None:
+        _write(tmp_path / "compose.yml", _DIAGNOSTIC_CASES[case])
+        _write(tmp_path / ENV_NAME, f"DB_PASSWORD={SECRET}\n")
+        _, out, err = _run(
+            ["--format", fmt, "compose.yml"], tmp_path, monkeypatch, capsys
+        )
+        assert SECRET not in out
+        assert SECRET not in err
+        assert "${DB_PASSWORD}" in out + err
+
+    @pytest.mark.parametrize("fmt", ["json", "sarif"])
+    def test_an_accepted_gap_is_quoted_on_the_warnings_channel(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        fmt: str,
+    ) -> None:
+        _write(tmp_path / "compose.yml", _DIAGNOSTIC_CASES["include"])
+        _write(tmp_path / ENV_NAME, f"DB_PASSWORD={SECRET}\n")
+        code, out, err = _run(
+            ["--format", fmt, "--allow-partial-coverage", "compose.yml"],
+            tmp_path,
+            monkeypatch,
+            capsys,
+        )
+        assert code == 0
+        assert SECRET not in out + err
+        assert "${DB_PASSWORD}/missing.yml" in out
+
+    def test_the_document_is_quoted_by_fix_too(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        _write(tmp_path / "compose.yml", _DIAGNOSTIC_CASES["include"])
+        _write(tmp_path / ENV_NAME, f"DB_PASSWORD={SECRET}\n")
+        _, out, err = _run(["fix", "compose.yml"], tmp_path, monkeypatch, capsys)
+        assert SECRET not in out + err
+
+    def test_no_env_quotes_the_reference_as_written(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        _write(tmp_path / "compose.yml", _DIAGNOSTIC_CASES["include"])
+        _write(tmp_path / ENV_NAME, f"DB_PASSWORD={SECRET}\n")
+        _, out, err = _run(
+            ["--format", "json", "--no-env", "compose.yml"],
+            tmp_path,
+            monkeypatch,
+            capsys,
+        )
+        assert SECRET not in out + err
+        assert "${DB_PASSWORD}/missing.yml" in out
+
+    def test_a_later_run_does_not_quote_an_earlier_runs_values(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        first = tmp_path / "first"
+        _write(first / "compose.yml", _DIAGNOSTIC_CASES["include"])
+        _write(first / ENV_NAME, f"DB_PASSWORD={SECRET}\n")
+        _run(["--format", "json", "compose.yml"], first, monkeypatch, capsys)
+        second = _write(
+            tmp_path / "second" / "compose.yml",
+            "services:\n  web:\n    image: nginx:1.27\n",
+        )
+        _run(["--format", "json", "compose.yml"], second.parent, monkeypatch, capsys)
+        assert _env_quote.quote(SECRET) == SECRET
+
+
+class TestQuoteHelper:
+    def test_nothing_remembered_is_the_identity(self) -> None:
+        assert _env_quote.quote("a value of some length") == "a value of some length"
+
+    def test_a_value_and_its_long_pieces_are_quoted(self) -> None:
+        _env_quote.remember({"x": {"REPO": "registry.example/team-image:2026"}})
+        assert _env_quote.quote("pull registry.example/team-image:2026") == (
+            "pull ${REPO}"
+        )
+        assert _env_quote.quote("from registry.example") == "from ${REPO}"
+        # Below the floor: configuration tokens stay as written.
+        assert _env_quote.quote("tag 2026") == "tag 2026"
+
+    def test_the_longest_value_wins(self) -> None:
+        _env_quote.remember(
+            {"a": {"SHORTER": "abcdefgh"}, "b": {"LONGER": "abcdefghijkl"}}
+        )
+        assert _env_quote.quote("abcdefghijkl") == "${LONGER}"
+
+    def test_forget_drops_everything(self) -> None:
+        _env_quote.remember({"x": {"TOKEN": "abcdefghijkl"}})
+        _env_quote.forget()
+        assert _env_quote.quote("abcdefghijkl") == "abcdefghijkl"
