@@ -834,8 +834,8 @@ condition.
 ## Dependency updates — Renovate
 
 Renovate opens every dependency bump as a PR (`.github/renovate.json`; the
-schedule is Monday before 04:00 UTC, base images and security fixes open at
-once). Whether a PR merges itself or waits for a person follows one rule:
+schedule is Monday before 04:00 UTC; what ships to users, the base images
+and `pyyaml`, opens at once, as do security fixes). Whether a PR merges itself or waits for a person follows one rule:
 
 **A bump merges itself when the PR's own CI exercises the new version, so a
 green run is the review.** That is the repo-wide default, and the table

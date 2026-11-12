@@ -85,13 +85,20 @@
       "groupName": "python"
     },
     {
+      "description": "pyyaml, the only runtime dependency, is the one Python package that ships to users (in the wheel's range and in the image's requirements.lock), so it follows the same rule as the base images below: what ships opens at once, everything else waits for Monday. The security path already skips the schedule, but only once an advisory exists; a fix released upstream before its advisory is reviewed would otherwise wait up to seven days for the schedule on top of the three-day age (#1239). The age is unchanged, because the age is the protection and the schedule is not; for dev tooling and actions, which never reach a user, a faster schedule would buy CI churn and nothing else, so they stay weekly. Its own group because a group carries one schedule: it leaves `python` and moves every lock's pin in one PR. rangeStrategy update-lockfile because the wheel's range `>=6.0.2,<7` already admits a new minor or patch, and under the default strategy Renovate proposes nothing for an in-range release, so before this rule a pyyaml release reached the locks only through Monday's lockFileMaintenance; with it, the pip-compile manager recompiles every lock with --upgrade-package (manager/pip-compile/artifacts.js) and leaves the range alone. A major falls outside the range, so it still bumps the range and stays a person's call (the pyyaml-major rule below). Verified with `--platform=local --dry-run=lookup` against Renovate 44.235: a stale pyyaml lock pin yields one lockfile update on branch renovate/pyyaml, and every other Python update stays on renovate/python. pyyaml releases about once a year, so this costs nearly nothing. A second runtime dependency (AGENTS.md: none without discussion) joins this rule.",
+      "matchPackageNames": ["pyyaml"],
+      "groupName": "pyyaml",
+      "rangeStrategy": "update-lockfile",
+      "schedule": ["at any time"]
+    },
+    {
       "description": "Docker base images: digest-pin per CLAUDE.md.",
       "matchManagers": ["dockerfile"],
       "matchDatasources": ["docker"],
       "pinDigests": true
     },
     {
-      "description": "Production runtime + build-stage base images bypass the weekly schedule. Debian and distroless rebuilds carry CVE patches we cannot apply ourselves (no shell, no apt at runtime), so opening the bump PR same-day shrinks the window between upstream patch and our published image. debian then merges under the defaults; distroless is age-gated (its rule below).",
+      "description": "Production runtime + build-stage base images bypass the weekly schedule, as pyyaml does (its rule above): what ships opens at once. Debian and distroless rebuilds carry CVE patches we cannot apply ourselves (no shell, no apt at runtime), so opening the bump PR same-day shrinks the window between upstream patch and our published image. debian then merges under the defaults; distroless is age-gated (its rule below).",
       "matchManagers": ["dockerfile"],
       "matchFileNames": ["Dockerfile"],
       "matchPackageNames": ["debian", "gcr.io/distroless/python3-debian13"],
