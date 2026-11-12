@@ -115,6 +115,75 @@ class TestImageReferences:
         assert SECRET not in json.dumps(finding)
 
 
+# A mount rule reads a host path from a top-level definition the service
+# attaches, and quotes that path in its finding.
+_SHARED_CASES = {
+    "secret": (
+        "CL-0013",
+        "services:\n  web:\n    image: nginx:1.27\n    secrets: [s]\n"
+        "secrets:\n  s:\n    file: /${DB_PASSWORD}/../../../../etc/shadow\n",
+    ),
+    "config": (
+        "CL-0013",
+        "services:\n  web:\n    image: nginx:1.27\n    configs: [c]\n"
+        "configs:\n  c:\n    file: /${DB_PASSWORD}/../../../../etc/shadow\n",
+    ),
+    "socket": (
+        "CL-0001",
+        "services:\n  web:\n    image: nginx:1.27\n    secrets: [s]\n"
+        "secrets:\n  s:\n"
+        "    file: /${DB_PASSWORD}/../../../../var/run/docker.sock\n",
+    ),
+    "named-volume": (
+        "CL-0025",
+        "services:\n  web:\n    image: nginx:1.27\n    volumes:\n"
+        "      - data:/x\n"
+        "volumes:\n  data:\n    driver: local\n    driver_opts:\n"
+        "      type: none\n      o: bind\n"
+        "      device: /${DB_PASSWORD}/../../../../etc\n",
+    ),
+}
+
+
+class TestSharedDefinitions:
+    @pytest.mark.parametrize("fmt", ["text", "json", "sarif"])
+    @pytest.mark.parametrize("case", sorted(_SHARED_CASES))
+    def test_the_value_never_reaches_output(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        fmt: str,
+        case: str,
+    ) -> None:
+        _write(tmp_path / "compose.yml", _SHARED_CASES[case][1])
+        _write(tmp_path / ENV_NAME, f"DB_PASSWORD={SECRET}\n")
+        _, out, err = _run(
+            ["--format", fmt, "compose.yml"], tmp_path, monkeypatch, capsys
+        )
+        assert SECRET not in out
+        assert SECRET not in err
+        assert "${DB_PASSWORD}" in out
+
+    @pytest.mark.parametrize("case", sorted(_SHARED_CASES))
+    def test_the_finding_still_fires(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        case: str,
+    ) -> None:
+        """Quoting changes the report, not what is graded."""
+        rule_id, compose = _SHARED_CASES[case]
+        _write(tmp_path / "compose.yml", compose)
+        _write(tmp_path / ENV_NAME, f"DB_PASSWORD={SECRET}\n")
+        _, out, _ = _run(
+            ["--format", "json", "compose.yml"], tmp_path, monkeypatch, capsys
+        )
+        (finding,) = _by_rule(out, rule_id)
+        assert "${DB_PASSWORD}" in finding["message"] + (finding["fix"] or "")
+
+
 class TestWhereTheValueCameFrom:
     def test_an_included_documents_own_env(
         self,
