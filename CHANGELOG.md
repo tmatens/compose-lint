@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The published image moves to a newer distroless base.**
+  `gcr.io/distroless/python3-debian13:nonroot` is repinned from
+  `sha256:1c32c372…` to `sha256:c3ed2b61…`, picking up the base image's own
+  updates.
+
 ### Fixed
 
 - **CL-0020 no longer flags settings and addresses named after a
