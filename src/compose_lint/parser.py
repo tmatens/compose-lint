@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from compose_lint._env_file import ENV_FILENAME, env_read_failure, read_env
+from compose_lint._env_quote import remember as remember_env_values
 from compose_lint._limits import (
     MAX_LINE_KEY_CHARS,
     MAX_MERGED_PAIRS,
@@ -2519,9 +2520,14 @@ def _loads_full(  # noqa: PLR0913
                 supplied = layered or None
         starved: list[str] = []
         oversized: list[str] = []
+        # Recorded whether or not the caller asked: the values reach this
+        # run's messages either way (a gap names a substituted path), so the
+        # output sinks are told what to quote back (see `_env_quote`).
+        substituted: dict[str, dict[str, str]] = {} if env_seen is None else env_seen
         _substitute_interpolation_defaults(
-            data, supplied, record=env_seen, starved=starved, oversized=oversized
+            data, supplied, record=substituted, starved=starved, oversized=oversized
         )
+        remember_env_values(substituted)
         if starved:
             gaps.append(_starved_substitution_gap(len(starved)))
         if oversized:

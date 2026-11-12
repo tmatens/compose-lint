@@ -7,6 +7,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
 
 from compose_lint._clock import utc_today
+from compose_lint._env_quote import quotable
 from compose_lint._limits import MAX_FINDINGS
 from compose_lint._output import emit
 from compose_lint._units import Unit, units
@@ -274,7 +275,8 @@ def _quote_references(
     Scoped to the values that reached *that* service's own substituted fields,
     so a literal ``redis:latest`` in one service is not rewritten because
     another service's ``${TAG}`` supplied ``latest``. Within a service a value
-    is replaced wherever it appears, from :data:`_QUOTED_FROM` characters up.
+    is replaced wherever it appears, from
+    :data:`compose_lint._env_quote.QUOTED_FROM` characters up.
     """
     patterns: dict[str, tuple[re.Pattern[str], dict[str, str]] | None] = {}
     quoted: list[Finding] = []
@@ -334,29 +336,14 @@ def _service_pattern(
         # The whole value, and each separated part of it: a rule quotes pieces
         # of what it parsed (CL-0004's fix names the image without its tag), so
         # a secret inside the value would otherwise leave in a fragment.
-        for piece in (value, *_SEPARATORS.split(value)):
-            if len(piece) >= _QUOTED_FROM:
-                names.setdefault(piece, name)
+        for piece, piece_name in quotable(name, value).items():
+            names.setdefault(piece, piece_name)
     if not names:
         return None
     alternatives = "|".join(
         re.escape(value) for value in sorted(names, key=len, reverse=True)
     )
     return re.compile(alternatives), names
-
-
-# The shortest value replaced by its reference. A secret is often glued to the
-# text around it (`image: "app${TOKEN}"`), so a value is matched anywhere, not
-# as a whole word, and that is what makes a floor necessary: short values are
-# configuration tokens (`true`, `host`, `latest`, `1000`) that the rules' own
-# guidance also writes, and replacing them there turned `no-new-privileges:true`
-# into `no-new-privileges:${PRIV}`. A value a CI job writes as a secret is
-# longer than this.
-_QUOTED_FROM = 8
-
-# What rules split a value on before quoting part of it: image references,
-# ports, mounts, `key=value` options, lists.
-_SEPARATORS = re.compile(r"[:/@=,;\s]+")
 
 
 def filter_findings(

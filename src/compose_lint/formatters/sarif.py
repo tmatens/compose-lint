@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
 from compose_lint import __version__
+from compose_lint._env_quote import quote as quote_env_values
 from compose_lint._lines import split_lines
 from compose_lint._report_path import is_outside, report_path
 from compose_lint.attack import (
@@ -321,7 +322,8 @@ def _notification(diagnostic: Diagnostic, level: str) -> dict[str, Any]:
     notification: dict[str, Any] = {
         "level": level,
         "descriptor": {"id": diagnostic.kind.value},
-        "message": {"text": diagnostic.message},
+        # A diagnostic can name a substituted reference; see _env_quote.
+        "message": {"text": quote_env_values(diagnostic.message)},
     }
     if diagnostic.file:
         notification["locations"] = [

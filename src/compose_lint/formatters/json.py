@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from compose_lint import __version__
+from compose_lint._env_quote import quote as quote_env_values
 from compose_lint._report_path import report_path
 
 if TYPE_CHECKING:
@@ -93,7 +94,8 @@ def _diagnostics(entries: Sequence[Diagnostic] | None) -> list[dict[str, str]]:
             # A run-level entry's empty `file` is contract (ADR-015), not a
             # path to spell.
             "file": report_path(d.file) if d.file else "",
-            "message": d.message,
+            # A diagnostic can name a substituted reference; see _env_quote.
+            "message": quote_env_values(d.message),
             "kind": d.kind.value,
         }
         for d in (entries or [])
