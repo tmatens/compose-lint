@@ -49,6 +49,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stderr, in JSON `errors[]` and `warnings[]`, and in the SARIF
   notifications. Every such message is now quoted where it is written out.
   See GHSA-8m7x-x63m-5vv5.
+- **A mount defined at the top level quotes `${NAME}`, not the `.env`
+  value.** 0.32.0 quotes the references a service used in its own fields,
+  but a host path a mount rule reads from a top-level definition the
+  service attaches was quoted as substituted: a `secrets:` or `configs:`
+  entry's `file:`, or a bind-backed named volume's `device:`. CL-0013,
+  CL-0001 and CL-0025 named the value in their message and fix in text,
+  JSON and SARIF. The top-level `volumes:`, `secrets:` and `configs:`
+  blocks are now quoted with each service's own. See GHSA-4hjx-hvw6-pcw6.
 
 ## [1.3.0] - 2026-11-10
 

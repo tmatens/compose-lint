@@ -143,6 +143,11 @@ def run_rules(
             by_name[unit.name] = [by_name[unit.name], unit.config]
         else:
             by_name[unit.name] = unit.config
+    # The top-level definitions a mount rule reads alongside the service
+    # (`rules/_mounts.py`): a bind-backed named volume's `device:`, and a
+    # `secrets:` or `configs:` entry's `file:`. A finding quotes those paths, so
+    # their references are quoted with the service's own.
+    shared = [data.get(key) for key in _SHARED_DEFINITIONS]
 
     for rule in rules:
         rule_id = rule.metadata.id
@@ -234,15 +239,19 @@ def run_rules(
                 # Quote before raising: the caller reports these findings, so
                 # they must not carry a value a reference resolved to either.
                 if env_values:
-                    findings = _quote_references(findings, by_name, env_values)
+                    findings = _quote_references(findings, by_name, env_values, shared)
                 findings.sort(key=lambda f: (f.line is None, f.line or 0))
                 raise FindingLimitError(findings)
 
     if env_values:
-        findings = _quote_references(findings, by_name, env_values)
+        findings = _quote_references(findings, by_name, env_values, shared)
     findings.sort(key=lambda f: (f.line is None, f.line or 0))
     return findings
 
+
+# Top-level blocks a service's mounts are defined in. Findings about a mount
+# quote the host path from here, not from the service.
+_SHARED_DEFINITIONS = ("volumes", "secrets", "configs")
 
 # Nodes one service's walk may visit before its references are taken from the
 # whole document instead. Aliases make a service a DAG that can be far larger
@@ -269,13 +278,15 @@ def _quote_references(
     findings: list[Finding],
     services: Mapping[Any, Any],
     env_values: Mapping[str, Mapping[str, str]],
+    shared: list[Any],
 ) -> list[Finding]:
     """Replace each ``.env`` value a service used with its ``${NAME}``.
 
     Scoped to the values that reached *that* service's own substituted fields,
-    so a literal ``redis:latest`` in one service is not rewritten because
-    another service's ``${TAG}`` supplied ``latest``. Within a service a value
-    is replaced wherever it appears, from
+    plus the top-level definitions in ``shared`` its mounts are read from, so a
+    literal ``redis:latest`` in one service is not rewritten because another
+    service's ``${TAG}`` supplied ``latest``. Within a service a value is
+    replaced wherever it appears, from
     :data:`compose_lint._env_quote.QUOTED_FROM` characters up.
     """
     patterns: dict[str, tuple[re.Pattern[str], dict[str, str]] | None] = {}
@@ -283,7 +294,7 @@ def _quote_references(
     for finding in findings:
         if finding.service not in patterns:
             patterns[finding.service] = _service_pattern(
-                services.get(finding.service), env_values
+                [services.get(finding.service), shared], env_values
             )
         compiled = patterns[finding.service]
         if compiled is None:
