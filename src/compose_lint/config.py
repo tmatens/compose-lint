@@ -391,11 +391,23 @@ def _read_raw_config(
         # elsewhere on the runner is refused rather than read. The boundary is
         # the working directory when the config sits inside it, and otherwise
         # the config's own directory — the compose file's, which the user
-        # named. `--config` is a path the user typed and is read as given.
-        content = read_text_bounded(
-            config_path,
-            within=None if path is not None else _containment_root(config_path),
-        )
+        # named.
+        #
+        # `--config` is a path the user typed, and a plain one is read as
+        # given, wherever it is. But the path being typed does not make the
+        # file at it the user's: a workflow that names a policy file in the
+        # checkout is naming whatever the change under review committed
+        # there. So a `--config` path that is itself a link gets the rule a
+        # named Compose file gets (`_selection._links_outside`): followed
+        # while its target stays inside the repository holding the link,
+        # refused when it leaves.
+        if path is None:
+            within: Path | None = _containment_root(config_path)
+        elif config_path.is_symlink():
+            within = config_path.parent
+        else:
+            within = None
+        content = read_text_bounded(config_path, within=within)
     except OSError as e:
         # UnsafeFileError is an OSError, so one clause covers both the refusal
         # and an ordinary read failure.

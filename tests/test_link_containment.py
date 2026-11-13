@@ -126,13 +126,19 @@ class TestDiscoveredConfig:
         suppressed = {f["rule_id"] for f in doc["findings"] if f["suppressed"]}
         assert "CL-0007" in suppressed
 
-    def test_an_explicit_config_is_read_as_given(
+    def test_an_explicit_config_linking_out_is_refused_unread(
         self,
         tmp_path: Path,
         project: Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
+        """Naming the path does not make the file at it the user's.
+
+        ``--config lint.yml`` in a workflow names a file in the checkout, which
+        the change under review can commit as a link. It is held to the rule a
+        named Compose file is held to.
+        """
         _write(project / "compose.yml", PLAIN)
         _write(
             tmp_path / "shared" / "lint.yml", "rules:\n  CL-0007:\n    enabled: false\n"
@@ -140,6 +146,26 @@ class TestDiscoveredConfig:
         (project / "lint.yml").symlink_to(tmp_path / "shared" / "lint.yml")
         code, out, _ = _run(
             ["--format", "json", "--config", "lint.yml", "compose.yml"],
+            project,
+            monkeypatch,
+            capsys,
+        )
+        assert code == 2
+        doc = json.loads(out)
+        assert "outside the repository" in doc["errors"][0]["message"]
+
+    def test_an_explicit_plain_config_is_read_as_given(
+        self,
+        tmp_path: Path,
+        project: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        _write(project / "compose.yml", PLAIN)
+        shared = tmp_path / "shared" / "lint.yml"
+        _write(shared, "rules:\n  CL-0007:\n    enabled: false\n")
+        code, out, _ = _run(
+            ["--format", "json", "--config", str(shared), "compose.yml"],
             project,
             monkeypatch,
             capsys,

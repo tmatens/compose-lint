@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A `--config` path that is a link out of the repository is refused.**
+  `--config policy.yml`, and the Action's `config:` input, used to follow
+  `policy.yml` wherever it linked. A link whose target leaves the repository
+  holding it is now a configuration error, exit 2, as it already was for a
+  `.compose-lint.yml` found without being named. A link to a file inside the
+  repository is still followed, and a plain path is still read wherever it
+  is. To use a policy file kept outside the repository, pass its own path.
+
+### Security
+
+- **A named policy file cannot be swapped for one outside the
+  repository.** A workflow that passes a policy file from the checkout as
+  `--config` names whatever the pull request committed there. Committed as a
+  link to a policy elsewhere on the runner, it was followed, so the run was
+  graded under a policy that is not in the pull request, and an error about
+  the target could name its top-level keys. The link is now refused before
+  the target is opened. No advisory: the link is visible in the pull
+  request, the effect on the result matches editing the policy file there,
+  and no value from the target was printed.
+
 ## [1.4.1] - 2026-11-13
 
 ### Changed

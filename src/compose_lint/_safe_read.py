@@ -237,9 +237,10 @@ def read_text_bounded(
     are still followed for the shape check — a symlink to a real Compose file
     is ordinary — but a link whose target leaves the root is refused with
     :class:`OutsideProjectError` when the caller names a project. Callers that
-    were pointed at a file by the user (an argv path, ``--config``) pass
-    nothing and are unaffected; callers opening a path *the document named*
-    pass the project directory.
+    were pointed at a plain file by the user (an argv path, ``--config``) pass
+    nothing and are unaffected; callers opening a path *the document named*,
+    or a ``--config`` path that is itself a link, pass the directory to
+    contain it to.
     """
     if within is not None and out_of_reach(path, within):
         raise OutsideProjectError(f"{path} {OUT_OF_REACH} (refused rather than read)")
