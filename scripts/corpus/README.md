@@ -94,7 +94,7 @@ docker compose version
 
 The main corpus stores files one at a time, so it measures the *shape* of a reference path and not whether a multi-file layout works: an `include:`, a cross-file `extends:`, an `env_file:`, a `COMPOSE_FILE` list or an override only resolve with their siblings present. `multi/` keeps whole repositories for that question. It found the 235-project refusal behind ADR-038, and the four loader bugs fixed on the way to it.
 
-Data lives at `~/.cache/compose-lint-corpus-multi/` (shallow clones under `repos/`, `candidates.json`, `selection.json`, `results.jsonl`, per-project stderr under `logs/`). Nothing from a clone is executed, and nothing from one is committed; the posture is `LICENSE-corpus.md`'s.
+Data lives at `~/.cache/compose-lint-corpus-multi/` (shallow clones under `repos/`, `candidates.json`, `selection.json`, `results.jsonl`, per-project stderr under `logs/`). Nothing from one is committed; the posture is `LICENSE-corpus.md`'s. Nothing from a clone should be executed either, but each lint runs with the clone as its working directory, and `python -m` puts that directory first on Python's import path. `run.py` sets `PYTHONSAFEPATH` for every child, and a wrapper (below) must use `python -P`. The default `.venv/bin/compose-lint` console script is not affected.
 
 ```bash
 python scripts/corpus/multi/collect.py   # gh code search → candidates.json (10 req/min, ~8 min)
@@ -112,7 +112,9 @@ The October 2026 sample is 388 repositories, 1,821 Compose projects (a directory
 # A wrapper per build, because the child environment is scrubbed and the main
 # checkout's .venv/bin/compose-lint resolves to whatever branch it is on:
 #   #!/bin/sh
-#   PYTHONPATH=/path/to/checkout/src exec /path/to/.venv/bin/python -m compose_lint "$@"
+#   PYTHONPATH=/path/to/checkout/src exec /path/to/.venv/bin/python -P -m compose_lint "$@"
+# `-P` matters: each lint runs inside a clone, and without it a clone's own
+# `compose_lint/` or `yaml.py` is imported in place of the real one.
 python scripts/corpus/multi/run.py --bin base=/tmp/base-cl --bin head=/tmp/head-cl \
     --reuse-compose ~/.cache/compose-lint-corpus-multi/results.jsonl \
     --out ~/.cache/compose-lint-corpus-multi/results-compare.jsonl
