@@ -40,7 +40,7 @@ COPY docs/rules/ docs/rules/
 # just produced from this checkout.
 RUN python3 -m venv /build-venv \
     && /build-venv/bin/pip install --no-cache-dir --require-hashes -r requirements-build.lock \
-    && /build-venv/bin/python -m build --wheel --no-isolation --outdir /dist \
+    && /build-venv/bin/python -P -m build --wheel --no-isolation --outdir /dist \
     && python3 -m venv /venv \
     && /venv/bin/pip install --no-cache-dir --upgrade pip \
     && /venv/bin/pip install --no-cache-dir --require-hashes -r requirements.lock \

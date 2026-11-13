@@ -108,7 +108,7 @@ jobs:
         # an advisory with no fix, the escape hatch is to add the ignore
         # to BOTH files in a PR — not to bypass the tag.
         run: pip-audit --skip-editable
-      - run: python -m build --no-isolation
+      - run: python -P -m build --no-isolation
       - name: Verify dist contents
         run: |
           twine check dist/*
