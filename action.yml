@@ -7,9 +7,11 @@ branding:
 inputs:
   files:
     description: >-
-      Whitespace-separated list of Compose files to lint. Each entry is a
-      literal path, not a glob: `*` and `?` are passed through unexpanded.
-      Use `pattern` for globs.
+      Compose files to lint: one path per line, or a single line of paths
+      separated by spaces. A path that contains a space needs the one-per-line
+      form, so use that for a list of changed files. Each entry is a literal
+      path, not a glob: `*` and `?` are passed through unexpanded. Use
+      `pattern` for globs. Every entry must be inside the workspace.
     required: false
     default: ""
   pattern:
@@ -189,26 +191,59 @@ runs:
         COUNT=0
 
         if [ -n "$CL_FILES" ]; then
-          # The documented contract for `files:` is a space-separated list, so
-          # a newline in it is malformed rather than a filename we should try
-          # to honour. Refuse it loudly instead of splitting on it.
+          # Every entry must stay inside the workspace. A list of changed
+          # files is content the pull request chose, and splitting it on
+          # spaces can turn one committed path into several entries, one of
+          # them an absolute path the pull request never held. The CLI reads a
+          # plain path wherever it points, so the check belongs here, where
+          # the list arrives. It is physical: the entry's directory is
+          # resolved with `pwd -P`, so a committed directory link leading out
+          # of the workspace is refused as well. A final component that is a
+          # link is left to the CLI, which refuses one that leaves the
+          # repository. An entry whose directory does not exist is passed on
+          # for the CLI to report as not found: there is nothing there to read.
+          #
+          # This step runs outside the lint step's stop-commands window, so an
+          # entry is never echoed: the error names its position in the list.
+          WORKSPACE="$(cd "${GITHUB_WORKSPACE:-$PWD}" && pwd -P)"
+          add_entry() {
+            local entry="$1" dir
+            [ -n "$entry" ] || return 0
+            COUNT=$((COUNT + 1))
+            if dir="$(cd -- "$(dirname -- "$entry")" 2>/dev/null && pwd -P)"; then
+              case "$dir/" in
+                "$WORKSPACE"/*) ;;
+                *)
+                  echo "::error::files: entry $COUNT is outside the workspace. Every entry must be a path inside the checkout; a path that contains a space is split into separate entries unless the list is newline-separated."
+                  exit 2
+                  ;;
+              esac
+            fi
+            printf '%s\0' "$entry" >> "$LIST_FILE"
+          }
           case "$CL_FILES" in
             *$'\n'*)
-              echo "::error::files: must be a space-separated list; it contains a newline"
-              exit 2
+              # One path per line. This is the form that can carry a path
+              # containing a space, so it is the one to use for a list of
+              # changed files. A trailing carriage return is dropped so a
+              # CRLF list reads the same.
+              while IFS= read -r entry || [ -n "$entry" ]; do
+                add_entry "${entry%$'\r'}"
+              done <<< "$CL_FILES"
+              ;;
+            *)
+              # One line: entries are separated by spaces or tabs. Without
+              # `set -f` the unquoted expansion also ran pathname expansion,
+              # so `*.yml` quietly became whatever matched in the checkout (or
+              # stayed literal when nothing did) — an undocumented second
+              # discovery mechanism. `pattern` is the input for globs.
+              set -f
+              for entry in $CL_FILES; do
+                add_entry "$entry"
+              done
+              set +f
               ;;
           esac
-          # Each entry is a literal path. Without `set -f` the unquoted
-          # expansion also ran pathname expansion, so `*.yml` quietly became
-          # whatever matched in the checkout (or stayed literal when nothing
-          # did) — an undocumented second discovery mechanism. `pattern` is
-          # the input for globs.
-          set -f
-          for f in $CL_FILES; do
-            printf '%s\0' "$f" >> "$LIST_FILE"
-            COUNT=$((COUNT + 1))
-          done
-          set +f
         elif [ -n "$CL_PATTERN" ]; then
           # -name matches the file NAME, so a slash can never match: the
           # documented example used to be `**/docker-compose*.yml`, which

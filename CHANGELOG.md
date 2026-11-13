@@ -7,8 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The GitHub Action's `files:` input takes one path per line.** A list
+  with a line break in it is read one entry per line, so a path that
+  contains a space can be listed. A single line is still split on spaces
+  and tabs. A list with a line break used to be refused.
+
 ### Changed
 
+- **The GitHub Action fails on a `files:` entry outside the workspace.** A
+  workflow that passed the Action an absolute path outside the checkout, or
+  a path through a directory link leading out of it, now gets exit 2. Run
+  the CLI directly to lint such a file.
 - **A `--config` path that is a link out of the repository is refused.**
   `--config policy.yml`, and the Action's `config:` input, used to follow
   `policy.yml` wherever it linked. A link whose target leaves the repository
@@ -19,6 +30,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The GitHub Action refuses a `files:` entry outside the workspace.** The
+  input is split on spaces, so a workflow that passed a space-joined list of
+  changed files let a pull request add entries of its own: a committed path
+  such as `compose.yml /tmp/x.yml` reads as `compose.yml` and `/tmp/x.yml`.
+  The Action linted that second file on the runner, and the text output
+  printed the lines its findings point at. Every entry is now resolved, and
+  one outside the workspace, as an absolute path or through a directory that
+  is a link, fails the step with exit 2 before anything is linted. Use the
+  one-path-per-line form for a list of changed files. See
+  GHSA-cmpf-mw4r-grh2.
 - **A named policy file cannot be swapped for one outside the
   repository.** A workflow that passes a policy file from the checkout as
   `--config` names whatever the pull request committed there. Committed as a

@@ -12,7 +12,7 @@ the reference behind it.
 
 | Input | Default | What it does |
 |---|---|---|
-| `files` | `""` | Whitespace-separated list of Compose files to lint. Each entry is a literal path — `*` and `?` are not expanded; use `pattern` for globs. Takes precedence over `pattern` when both are set. Empty (with `pattern` also empty) lints whichever of `compose.yml`, `compose.yaml`, `docker-compose.yml`, `docker-compose.yaml` exist in the checkout root. Each file found is passed to the CLI by name, and graded as the CLI grades a named file: when a `.env` beside it sets a `COMPOSE_FILE` list that includes it, the whole list is merged in that order. A repository whose `COMPOSE_FILE` names none of those four files should list its documents in `files`, because the default search looks for the four names only. |
+| `files` | `""` | Compose files to lint: one path per line, or a single line of paths separated by spaces. A path that contains a space needs the one-per-line form, so use that for a [list of changed files](#linting-only-the-files-a-pull-request-changed). Each entry is a literal path — `*` and `?` are not expanded; use `pattern` for globs. Every entry must be inside the workspace: one that resolves outside it fails the step with exit 2. Takes precedence over `pattern` when both are set. Empty (with `pattern` also empty) lints whichever of `compose.yml`, `compose.yaml`, `docker-compose.yml`, `docker-compose.yaml` exist in the checkout root. Each file found is passed to the CLI by name, and graded as the CLI grades a named file: when a `.env` beside it sets a `COMPOSE_FILE` list that includes it, the whole list is merged in that order. A repository whose `COMPOSE_FILE` names none of those four files should list its documents in `files`, because the default search looks for the four names only. |
 | `pattern` | `""` | Glob matched against the file **name**, e.g. `'docker-compose*.yml'`, searched recursively under the checkout (`.git/` is skipped). It cannot contain `/` — the job fails before linting if it does — because a name glob never matches a path; use `files` for paths. |
 | `fail-on` | `high` | Minimum severity that fails the job: `low`, `medium`, `high`, `critical`. |
 | `config` | `""` | Path to a config file. Empty means the CLI's own discovery: `.compose-lint.yml`, then `.compose-lint.yaml`, in the checkout root. |
@@ -54,6 +54,32 @@ action writes the file itself under the same checks.
 
 A file that was at the path before the run is never reported as written: if
 compose-lint did not replace it, the step fails.
+
+## Linting only the files a pull request changed
+
+`files` takes one path per line, or a single line of paths separated by
+spaces:
+
+```yaml
+- uses: tmatens/compose-lint@v1
+  with:
+    files: |
+      compose.yml
+      deploy/my stack/compose.yml
+```
+
+A single line cannot carry a path that contains a space: `my stack/compose.yml`
+reads as the two entries `my` and `stack/compose.yml`. That matters most for a
+list of changed files, because the paths in it are whatever the pull request
+committed. Have the step that builds the list write one path per line, and pass
+its output to `files` unchanged. A step that joins the paths with spaces hands
+the pull request a way to add entries the workflow never meant to lint.
+
+Whichever form is used, every entry must be inside the workspace. An entry that
+resolves outside it, as an absolute path or through a directory that is a link,
+fails the step with exit 2 before anything is linted. The error gives the
+entry's position in the list, not its text. To lint a file kept outside the
+checkout, call the CLI directly ([Without the action](#without-the-action)).
 
 ## Pin the SHA, or float on `v1`
 
