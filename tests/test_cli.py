@@ -1720,6 +1720,49 @@ def test_a_flag_prefix_is_not_the_flag(tmp_path: Path, args: list[str]) -> None:
     assert compose.read_text() == before
 
 
+# No-break spaces: argparse reads an argument with a plain space in it as a
+# positional, not as an unknown option.
+_FORGED = "\u2713\u00a0PASS\u00a0\u00b7\u00a0threshold:\u00a0high"
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        [f"--x\n{_FORGED}\nzz/compose.yml"],
+        ["check", f"--x\n{_FORGED}\nzz/compose.yml"],
+        ["check", "--fail-on", f"nope\n{_FORGED}", "compose.yml"],
+        ["check", "--format", f"nope\n{_FORGED}", "compose.yml"],
+        ["fix", f"--x\n{_FORGED}"],
+    ],
+    ids=["bare", "check", "fail-on", "format", "fix"],
+)
+def test_a_usage_error_indents_what_follows_a_line_break(
+    tmp_path: Path, args: list[str]
+) -> None:
+    """An argument is echoed in the usage error, and a path from the
+    repository is an argument. Text after a line break in it is a
+    continuation of the error, not a line of its own."""
+    (tmp_path / "compose.yml").write_text("services:\n  web:\n    image: nginx:1.27\n")
+    result = run_cli(*args, cwd=tmp_path)
+    assert result.returncode == 2
+    lines = result.stderr.splitlines()
+    error = next(i for i, line in enumerate(lines) if ": error: " in line)
+    assert _FORGED in result.stderr
+    assert all(line.startswith("  ") for line in lines[error + 1 :])
+    assert not any(line.startswith(_FORGED) for line in lines)
+
+
+def test_a_usage_error_with_no_line_break_keeps_argparse_layout(
+    tmp_path: Path,
+) -> None:
+    result = run_cli("--nope", cwd=tmp_path)
+    assert result.returncode == 2
+    lines = result.stderr.splitlines()
+    assert lines[0].startswith("usage: compose-lint ")
+    assert lines[-1] == "compose-lint: error: unrecognized arguments: --nope"
+    assert result.stderr.endswith("--nope\n")
+
+
 def test_text_output_points_at_explain_once_before_the_verdict(
     tmp_path: Path,
 ) -> None:

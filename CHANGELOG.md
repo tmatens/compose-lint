@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A usage error indents what follows a line break in an argument.** An
+  argument the parser rejects is echoed in its `error:` line, and a path
+  from the repository is an argument when a caller passes paths without
+  `--` first. A line break in it left the rest of the argument at the start
+  of a line on stderr, where it could read as a line of the report. The
+  `error:` line now goes through the same sink as every other error, which
+  indents continuation lines. A usage error with no line break is
+  unchanged, and the exit code is 2 as before
+  ([#1258](https://github.com/tmatens/compose-lint/issues/1258)).
+
 ### Security
 
 - **The `.git` directory is not read under any spelling.** A reference into
