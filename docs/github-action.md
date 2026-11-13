@@ -23,7 +23,7 @@ the reference behind it.
 | `verbose` | `false` | Text output: repeat the fix block and reference on every finding. Mutually exclusive with `quiet`, as above. |
 | `sarif-file` | `""` | Path to write SARIF to. Setting it enables the Code Scanning upload. The path must stay inside the workspace; a parent directory that does not exist yet is created. |
 | `upload-sarif` | `true` | Upload the written SARIF to Code Scanning. `"false"` only writes the file. |
-| `version` | `""` | compose-lint version to install. Empty means the version this action was released with, so a SHA-pinned `uses:` is a reproducible check; `latest` tracks PyPI. |
+| `version` | `""` | compose-lint version to install. Empty means the version this action was released with, installed with the dependency versions locked at that release (`requirements.lock`, hash-checked), so a SHA-pinned `uses:` is a reproducible check. `latest` tracks PyPI; an explicit version or `latest` resolves its dependencies from PyPI. |
 | `allow-no-files` | `false` | Succeed when no Compose files are found. Off by default because a pattern that matches nothing is a misconfiguration, and the CLI itself exits 2 in that case. |
 
 Boolean inputs are on only for the exact string `"true"`, which is what a YAML
