@@ -168,8 +168,9 @@ def test_init_writes_a_fresh_config_when_none_exists(tmp_path: Path) -> None:
     assert os.access(written, os.W_OK)
 
 
-def test_both_write_paths_share_one_guard() -> None:
-    """`fix` had it and `init` did not; one definition keeps them together."""
+def test_every_write_path_shares_one_guard() -> None:
+    """`fix` had it and `init` did not; one definition keeps them together.
+    `check --output` is the third path that writes, and uses it too."""
     import ast
 
     source = (REPO_ROOT / "src" / "compose_lint" / "cli.py").read_text(encoding="utf-8")
@@ -181,7 +182,9 @@ def test_both_write_paths_share_one_guard() -> None:
         and isinstance(node.func, ast.Name)
         and node.func.id == "_refuses_write"
     ]
-    assert len(calls) == 2, f"expected the fix and init paths, found {len(calls)}"
+    assert len(calls) == 3, (
+        f"expected the fix, init and check --output paths, found {len(calls)}"
+    )
 
 
 # --- init baselines the document check grades ----------------------------

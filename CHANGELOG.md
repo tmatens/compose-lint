@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`check --output PATH` writes the report to a file.** `-o PATH` sends
+  what `check` would print to stdout, in any `--format`, to `PATH` as one
+  atomic replacement; stderr and the exit code are unchanged. It is built
+  for CI, where a pull request decides what is already at the path: `PATH`
+  must resolve inside the repository that holds the working directory (the
+  working directory itself when it is in none) and outside `.git`, a missing
+  parent directory is created, and a symbolic link, a directory, any other
+  non-regular file, a hard-linked file or a read-only file at `PATH` is
+  refused, as is a Compose or config file the run read. A refusal or a
+  failed write is exit 2 and names the path as it was given. See the
+  [CLI reference](docs/cli.md#writing-the-report-to-a-file).
+
 ### Changed
 
 - **Rules mark the document text they quote, and a `.env` value is replaced
