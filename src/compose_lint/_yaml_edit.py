@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import yaml
+
 from compose_lint._scalar import as_scalar_text
 from compose_lint.models import TextEdit
 
@@ -282,15 +284,75 @@ def first_child_indent(source_lines: list[str], key_line: int) -> int | None:
     return None
 
 
+_MERGE_TAG = "tag:yaml.org,2002:merge"
+
+# One entry, keyed by the identity of the shared ``source_lines`` list, as
+# ``_lines.split_lines`` caches the list itself: every fixer asks about the
+# same document, and composing it once per question would be quadratic.
+_MERGE_PARENTS: dict[int, tuple[list[str], frozenset[int] | None]] = {}
+
+
+def _merge_parent_lines(source_lines: list[str]) -> frozenset[int] | None:
+    """The lines of every key whose mapping value holds a merge key.
+
+    Read from the composed node tree, because whether a key is a merge key is
+    its *tag*, not its spelling. ``<<: *a``, ``!!merge <<: *a``, the explicit
+    form ``? <<`` over ``: *a`` and a key that carries its own anchor all
+    resolve to the tag ``merge`` and all inherit; a quoted ``"<<"`` resolves
+    to ``str`` and is an ordinary key. ``None`` when the text does not compose
+    as one document (a fragment, or a document the parser would have refused),
+    which leaves the answer to the text test alone.
+    """
+    cached = _MERGE_PARENTS.get(id(source_lines))
+    if cached is not None and cached[0] is source_lines:
+        return cached[1]
+    result: frozenset[int] | None
+    try:
+        root = yaml.compose("".join(source_lines), Loader=yaml.SafeLoader)
+    except (yaml.YAMLError, RecursionError):
+        result = None
+    else:
+        parents: set[int] = set()
+        seen: set[int] = set()
+        pending: list[yaml.Node] = [] if root is None else [root]
+        while pending:
+            node = pending.pop()
+            if id(node) in seen:
+                continue
+            seen.add(id(node))
+            if isinstance(node, yaml.SequenceNode):
+                pending.extend(node.value)
+            elif isinstance(node, yaml.MappingNode):
+                for key, value in node.value:
+                    if isinstance(value, yaml.MappingNode) and any(
+                        child.tag == _MERGE_TAG for child, _ in value.value
+                    ):
+                        parents.add(key.start_mark.line + 1)
+                    pending.append(key)
+                    pending.append(value)
+        result = frozenset(parents)
+    _MERGE_PARENTS.clear()
+    _MERGE_PARENTS[id(source_lines)] = (source_lines, result)
+    return result
+
+
 def has_merge_key_child(source_lines: list[str], key_line: int) -> bool:
     """Return whether the block under ``key_line`` has a merge-key (``<<``) child.
 
     A merge key means the mapping inherits from a YAML anchor, so an edit's
     correct target (the anchor vs. this block) is ambiguous and the fixer must
-    refuse (ADR-014 refusal policy). Only direct children — lines at the first
-    child indent — are considered. Blank lines and full-line comments are skipped
-    so neither can set the child-indent baseline (issue #261 H3).
+    refuse (ADR-014 refusal policy).
+
+    Two tests, and either one refuses. The composed tree answers for every
+    spelling of a merge key (:func:`_merge_parent_lines`); the text test that
+    was here first reads direct children — lines at the first child indent —
+    for one starting ``<<``, and still answers for a fragment that does not
+    compose. Blank lines and full-line comments are skipped so neither can set
+    the child-indent baseline (issue #261 H3).
     """
+    parents = _merge_parent_lines(source_lines)
+    if parents is not None and key_line in parents:
+        return True
     key_indent = line_indent(source_lines[key_line - 1])
     child_indent: int | None = None
     for raw in source_lines[key_line:]:
