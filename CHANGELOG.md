@@ -72,6 +72,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   merge key is now read from the parsed document. A file that was edited
   before and is now listed for a fix by hand is the intended effect; a
   quoted `"<<"` is an ordinary key, as before
+
+- **`fix` no longer removes `logging: {driver: none}` from a service that
+  uses `extends:`.** The CL-0014 fix deletes the block and says the default
+  driver is restored. A service that extends another can inherit a
+  `logging:` block, which takes effect once the local one is gone, so the
+  file then deployed the base's driver and options, not the default. Such a
+  service is now listed under "fix by hand" with that reason. The base of
+  an `extends:` and a service with no `extends:` are fixed as before
   ([#1252](https://github.com/tmatens/compose-lint/issues/1252)).
 
 ### Security

@@ -98,6 +98,45 @@ class TestLoggingDisabledFix:
         # The whole logging block is dropped, not left as an empty `logging:`.
         assert apply_edits(content, edits) == ("services:\n  web:\n    image: nginx\n")
 
+    def test_refuses_a_service_that_extends_another(self, tmp_path: Path) -> None:
+        # The base's `logging:` takes effect once the local opt-out is gone,
+        # so the edit would not restore the default the caveat promises (#1252).
+        content = (
+            "services:\n"
+            "  base:\n"
+            "    image: nginx:1.27\n"
+            "    logging:\n"
+            "      driver: syslog\n"
+            "  web:\n"
+            "    extends: base\n"
+            "    logging:\n"
+            "      driver: none\n"
+        )
+        path = tmp_path / "docker-compose.yml"
+        path.write_text(content)
+        data, lines = load_compose(path)
+        findings = list(self.rule.check("web", data["services"]["web"], data, lines))
+        assert findings, "expected CL-0014 to fire"
+        result = self.rule.fix(findings[0], data, lines, content)
+        assert isinstance(result, FixRefusal)
+        assert "extends:" in result.reason
+
+    def test_still_fixes_the_base_of_an_extends(self, tmp_path: Path) -> None:
+        # Removing the opt-out from the base is the fix for every service
+        # that inherits it; nothing above the base supplies another block.
+        content = (
+            "services:\n"
+            "  base:\n"
+            "    image: nginx:1.27\n"
+            "    logging:\n"
+            "      driver: none\n"
+            "  web:\n"
+            "    extends: base\n"
+        )
+        edits = self._fix(tmp_path, content, service="base")
+        assert edits is not None
+        assert "driver: none" not in apply_edits(content, edits)
+
     def test_refuses_when_logging_has_other_keys(self, tmp_path: Path) -> None:
         # Deleting only the driver would strand `options:` — a partial block.
         content = (

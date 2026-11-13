@@ -25,6 +25,17 @@ _CAVEAT = (
     "collected again, which consumes disk and I/O."
 )
 
+# Why the fixer leaves a service that uses ``extends:`` alone. Deleting the
+# local block is only "restore the default" when nothing else supplies one,
+# and a base service can: its ``logging:`` takes effect the moment the local
+# opt-out is gone, so the file would deploy the base's driver and options
+# while the caveat promised Docker's default (#1252).
+INHERITED_LOGGING = (
+    "the service uses extends:, and a logging: block it inherits would take "
+    "effect once this one is removed, so deleting it is not known to restore "
+    "the default driver"
+)
+
 DOCKER_REF = "https://docs.docker.com/engine/logging/configure/"
 OWASP_REF = "https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html"
 
@@ -99,7 +110,9 @@ class LoggingDisabledRule(BaseRule):
         block carries other keys (e.g. ``options:``) — deleting just the driver
         would leave a structurally partial block we can't safely resolve — and
         for anchored/merged services or flow-style blocks (ADR-014 refusal
-        policy). The edit carries a caveat because re-enabling logging changes
+        policy). Refuses with a reason for a service that uses ``extends:``,
+        which can inherit a ``logging:`` block (:data:`INHERITED_LOGGING`).
+        The edit carries a caveat because re-enabling logging changes
         runtime behavior. A full-line comment sitting inside the block is removed
         with it; it is treated as belonging to the block (issue #261 L5).
         """
@@ -131,6 +144,9 @@ class LoggingDisabledRule(BaseRule):
             return None
         if not opens_block_body(source_lines[logging_line - 1]):
             return None
+
+        if "extends" in service_config:
+            return FixRefusal(INHERITED_LOGGING)
 
         # Other keys alongside the driver -> partial block; refuse.
         if len(logging_config) != 1:
