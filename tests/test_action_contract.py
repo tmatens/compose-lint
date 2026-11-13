@@ -437,14 +437,12 @@ def test_install_pins_by_default(ws: Path, outputs: Path) -> None:
     rc, _out, _err = _run_step(
         "Install compose-lint", {"CL_VERSION": ""}, ws, outputs, extra_path=shim_dir
     )
-    from compose_lint import __version__
-
     assert rc == 0
     calls = log.read_text(encoding="utf-8").strip().splitlines()
     lock = REPO_ROOT / "requirements.lock"
     assert calls == [
         f"install --require-hashes --no-deps -r {lock}",
-        f"install --no-deps compose-lint=={__version__}",
+        f"install --no-deps compose-lint=={compose_lint.__version__}",
     ], calls
 
 
@@ -579,13 +577,11 @@ def test_install_gives_up_naming_index_propagation(ws: Path, outputs: Path) -> N
 
 def test_the_default_pin_matches_the_package_version() -> None:
     """Drift here would ship an action that installs a different linter."""
-    from compose_lint import __version__
-
     script = _step("Install compose-lint")["run"]
     match = re.search(r'DEFAULT_VERSION="([^"]+)"', script)
     assert match, "no DEFAULT_VERSION in the install step"
-    assert match.group(1) == __version__, (
-        f"action.yml pins {match.group(1)}, package is {__version__}"
+    assert match.group(1) == compose_lint.__version__, (
+        f"action.yml pins {match.group(1)}, package is {compose_lint.__version__}"
     )
 
 
