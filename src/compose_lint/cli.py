@@ -626,7 +626,11 @@ class _Parser(argparse.ArgumentParser):
 
     def exit(self, status: int = 0, message: str | None = None) -> NoReturn:
         if message:
-            emit_block(message)
+            # The ``prog: error: ...`` line echoes the rejected argument, so
+            # it is a record like any other error: `emit` indents what
+            # follows a line break in it. The usage text above it is
+            # compose-lint's own layout and keeps `emit_block`.
+            emit(message.removesuffix("\n"))
         sys.exit(status)
 
     @staticmethod
