@@ -160,14 +160,24 @@ CI installs dev dependencies from hash-pinned lockfiles:
 
 - `requirements.lock` — runtime only (PyYAML).
 - `requirements-dev.lock` — dev + lint + security + publish extras.
-- `requirements-build.lock` — container builds only.
+- `requirements-build.lock` — container builds: `build`, the `hatchling`
+  backend, and the runtime dependency.
 
 Every install in CI passes `--require-hashes`. Most jobs install with
 `uv pip install`, which is much faster than pip on the same lock. Two keep pip
 on purpose: `security`, whose `python -m pip install --upgrade pip` bootstraps
 pip itself before the hash-pinned install and the audit, and `dist-check`,
 which mirrors `publish.yml`'s install exactly. That pip upgrade is the one
-unhashed install. Regeneration instructions
+unhashed install.
+
+The build backend is installed the same way. Every `python -m build` runs
+with `--no-isolation` and every editable install with `--no-build-isolation`,
+after a lock that carries `hatchling`, so the backend that writes the wheel,
+the sdist and the image is the hash-checked one and moves through Renovate's
+age gate like any other dependency. `[build-system] requires` stays a floor
+for anyone building the sdist themselves. The one job whose venv must stay the
+runtime closure builds isolated with `--build-constraint
+requirements-build.lock`, which uv checks against the lock's hashes. Regeneration instructions
 live in [`CLAUDE.md`](https://github.com/tmatens/compose-lint/blob/main/AGENTS.md) under "Regenerating lockfiles".
 
 ---

@@ -64,7 +64,7 @@ jobs:
       - name: Install pinned env
         run: |
           pip install --require-hashes -r requirements-dev.lock
-          pip install --no-deps -e .
+          pip install --no-deps --no-build-isolation -e .
 
       # No --ignore-vuln flags: this report is the un-suppressed view.
       # continue-on-error because pip-audit exits non-zero when it finds
