@@ -76,6 +76,9 @@ publish = [
     # `[build-system] requires` resolves to on PyPI that minute. Keep it in
     # step with the `container` extra below.
     "hatchling==1.33.0",
+    # What hatchling's editable build asks for. Build isolation used to
+    # fetch it; with isolation off it has to be installed already.
+    "editables==0.6",
     "twine==7.0.0",
     # Used by the post-release canary in publish.yml to verify the
     # Sigstore bundles attached to the GitHub Release. Kept at the
@@ -90,6 +93,7 @@ publish = [
 container = [
     "build==1.6.1",
     "hatchling==1.33.0",
+    "editables==0.6",
 ]
 # Chart generation for the State of Compose report (scripts/corpus/charts.py).
 # Manual maintainer task run at report-refresh time, not a CI job — so this
