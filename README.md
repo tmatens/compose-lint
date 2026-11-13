@@ -447,6 +447,10 @@ runs it against a live Forgejo.
 compose-lint --format sarif docker-compose.yml > results.sarif
 ```
 
+In CI, `--output results.sarif` writes the same report without following a
+symlink or directory a pull request put at that path; see the
+[CLI reference](https://tmatens.github.io/compose-lint/cli/#writing-the-report-to-a-file).
+
 ## Pre-commit
 
 ```yaml

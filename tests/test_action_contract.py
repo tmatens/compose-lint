@@ -28,10 +28,12 @@ from typing import Any
 import pytest
 import yaml
 
+import compose_lint
 from tests._execdir import require_exec
 from tests._workflow_commands import forged, processed
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+_SOURCE_ROOT = str(Path(compose_lint.__file__).resolve().parent.parent)
 VENV_BIN = REPO_ROOT / ".venv" / "bin"
 
 _INSECURE = (
@@ -113,6 +115,11 @@ def _run_step(
         # checkout under test (#595). With no index, that becomes a loud
         # local failure instead of silent environment corruption.
         "PIP_NO_INDEX": "1",
+        # The compose-lint the step finds on PATH must import this tree's
+        # source. An editable install made from another checkout (a git
+        # worktree shares one) otherwise grades the action against that
+        # checkout's CLI.
+        "PYTHONPATH": _SOURCE_ROOT,
         **env,
     }
     (workspace / "_temp").mkdir(exist_ok=True)
@@ -323,7 +330,13 @@ def test_a_failed_sarif_run_leaves_no_truncated_artifact(
     )
 
     assert rc != 0, "a SARIF run that produced nothing must not report success"
-    assert "refusing to upload an empty artifact" in (out + err)
+    # Either wording, by whether the shim found a real compose-lint to answer
+    # `--help` (a local .venv) or not (CI), which picks the write path.
+    assert re.search(
+        r"::error::compose-lint (did not write the SARIF file|produced no SARIF "
+        r"output) \(exit 2\)",
+        out + err,
+    )
     # The previously valid artifact was not truncated by the redirect.
     assert sarif.read_text(encoding="utf-8") == "PREVIOUS CONTENT"
     assert _outputs(outputs).get("sarif-written") != "true"
@@ -911,7 +924,7 @@ def _lint_one_log(ws: Path, outputs: Path, extra_path: Path | None, **env: str) 
 
 
 @pytest.mark.parametrize("sarif", ["", "results.sarif"], ids=["text", "text+sarif"])
-def test_both_runs_are_bracketed_by_stop_commands(
+def test_both_runs_are_inside_one_stop_commands_window(
     ws: Path, outputs: Path, sarif: str
 ) -> None:
     log = _lint_one_log(ws, outputs, _raw_printing_shim(ws), CL_SARIF_FILE=sarif)
@@ -921,8 +934,10 @@ def test_both_runs_are_bracketed_by_stop_commands(
     assert log.count(f"::error::{_FORGED}-stdout") == 1
     assert log.count(f"::warning::{_FORGED}-stderr") == runs
     assert forged(log, _FORGED) == []
+    # One window over both runs and the shell between them: processing does
+    # not come back on until nothing is left to print.
     stops = [c for c in processed(log) if c.startswith("::stop-commands::")]
-    assert len(stops) == runs
+    assert len(stops) == 1
 
 
 def test_the_stop_token_is_fresh_and_unguessable(ws: Path, outputs: Path) -> None:
@@ -1031,3 +1046,350 @@ def test_a_find_error_under_pattern_is_not_a_command(ws: Path, outputs: Path) ->
     assert _FORGED in log
     assert forged(log, _FORGED) == []
     assert _outputs(outputs)["count"] == "1"
+
+
+# --- GHSA-r3vf-vcmg-vp42, GHSA-r827-h7r9-j3g6: what is already at sarif-file --
+#
+# The workflow fixes `sarif-file`; the pull request decides what is in the
+# checkout at that path. Each case below commits something there and runs the
+# real lint step against it, once writing through `check --output` and once
+# through the shell path kept for a release that predates the option.
+
+_MODES = ["output", "fallback"]
+_FORGED_SARIF = '{"forged": "cl-ghsa-forged-results"}\n'
+
+
+def _hostile_step_guard() -> None:
+    """Skip where the fixtures cannot exist or the step cannot run."""
+    if os.name == "nt" or _BASH_MAJOR < 4:
+        pytest.skip("needs POSIX symlinks, modes and bash >= 4")
+
+
+def _real_compose_lint() -> str:
+    real = shutil.which(
+        "compose-lint", path=f"{VENV_BIN}{os.pathsep}{os.environ.get('PATH', '')}"
+    )
+    if real is None:
+        pytest.skip("compose-lint is not installed on PATH")
+    return real
+
+
+def _mode_shim(ws: Path, mode: str) -> tuple[Path, Path]:
+    """A ``compose-lint`` that logs each run's argv, for one of the two paths.
+
+    ``output`` is the real CLI. ``fallback`` is the real CLI behind a
+    ``--help`` that names neither ``--output`` nor ``--as-of`` and a refusal
+    of ``--output``, which is what an older release looks like to the step.
+    The shim lives outside the workspace's tracked content in ``_shim``.
+    """
+    real = _real_compose_lint()
+    shim_dir = ws / "_shim"
+    shim_dir.mkdir(exist_ok=True)
+    log = ws / "_argv.log"
+    log.write_text("", encoding="utf-8")
+    old_help = (
+        'case " $* " in *" --help "*) echo "usage: compose-lint check [FILE ...]"; '
+        "exit 0;; esac\n"
+        'case " $* " in *" --output"*) echo "unrecognized arguments" >&2; '
+        "exit 2;; esac\n"
+    )
+    shim = shim_dir / "compose-lint"
+    shim.write_text(
+        "#!/usr/bin/env bash\n"
+        + (old_help if mode == "fallback" else "")
+        + f'case " $* " in *" --help "*) ;; *) printf "%s\\n" "$*" >> {log};; esac\n'
+        f'exec {real} "$@"\n',
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    return shim_dir, log
+
+
+def _sarif_step(
+    ws: Path, outputs: Path, mode: str, sarif_file: str
+) -> tuple[int, str, list[str]]:
+    """Run discovery and the lint step with ``sarif-file`` set; one log."""
+    (ws / "docker-compose.yml").write_text(_INSECURE, encoding="utf-8")
+    # What `actions/checkout` leaves: the workspace is the repository.
+    (ws / ".git").mkdir(exist_ok=True)
+    _discover(ws, outputs)
+    shim_dir, argv_log = _mode_shim(ws, mode)
+    env = {
+        "CL_CONFIG": "",
+        "CL_FAIL_ON": "high",
+        "CL_SKIP_SUPPRESSED": "false",
+        "CL_ALLOW_PARTIAL_COVERAGE": "false",
+        "CL_STRICT_CONFIG": "false",
+        "CL_QUIET": "false",
+        "CL_VERBOSE": "false",
+        "CL_SARIF_FILE": sarif_file,
+        "CL_ALLOW_NO_FILES": "false",
+        "CL_COUNT": "1",
+        "CL_LIST_FILE": _outputs(outputs)["list-file"],
+    }
+    rc, log, _ = _run_step(
+        "Run compose-lint", env, ws, outputs, extra_path=shim_dir, one_log=True
+    )
+    return rc, log, argv_log.read_text(encoding="utf-8").splitlines()
+
+
+def _own_commands(log: str) -> list[str]:
+    """The commands the runner would act on, less the window's own bracket.
+
+    Every one of them must be a line the action wrote from fixed text; the
+    callers compare this list to exactly that.
+    """
+    commands = processed(log)
+    assert commands, log
+    assert commands[0].startswith("::stop-commands::"), commands
+    token = commands[0].removeprefix("::stop-commands::")
+    assert commands[1] == f"::{token}::", commands
+    return commands[2:]
+
+
+def _is_our_sarif(path: Path) -> bool:
+    """Whether ``path`` is a regular file holding compose-lint's own SARIF."""
+    if path.is_symlink() or not path.is_file():
+        return False
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError:
+        return False
+    runs = document.get("runs") or [{}]
+    return runs[0].get("tool", {}).get("driver", {}).get("name") == "compose-lint"
+
+
+def _tree(root: Path) -> dict[str, str]:
+    """Every file under ``root`` with its content, to show nothing changed."""
+    return {
+        str(path.relative_to(root)): path.read_text(encoding="utf-8")
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and not path.is_symlink()
+    }
+
+
+_NOT_WRITTEN = (
+    "::error::sarif-file exists and is a directory, a symbolic link or another "
+    "non-regular file; it is not written to: results.sarif"
+)
+
+
+@pytest.mark.parametrize("mode", _MODES)
+def test_a_directory_at_the_sarif_path_is_refused(
+    ws: Path, outputs: Path, mode: str
+) -> None:
+    """GHSA-r827-h7r9-j3g6. The move used to land the real SARIF *inside* a
+    committed `results.sarif/`, beside the pull request's `forged.sarif`, and
+    report it written; the upload takes every `*.sarif` in a directory."""
+    _hostile_step_guard()
+    committed = ws / "results.sarif"
+    committed.mkdir()
+    (committed / "forged.sarif").write_text(_FORGED_SARIF, encoding="utf-8")
+
+    rc, log, _calls = _sarif_step(ws, outputs, mode, "results.sarif")
+
+    assert rc == 2, log
+    assert _outputs(outputs).get("sarif-written") != "true"
+    assert _tree(committed) == {"forged.sarif": _FORGED_SARIF}
+    assert _own_commands(log) == [_NOT_WRITTEN]
+
+
+@pytest.mark.parametrize("mode", _MODES)
+@pytest.mark.parametrize("where", ["inside", "outside"])
+def test_a_link_to_a_directory_at_the_sarif_path_is_refused(
+    ws: Path,
+    outputs: Path,
+    tmp_path_factory: pytest.TempPathFactory,
+    mode: str,
+    where: str,
+) -> None:
+    """GHSA-r827-h7r9-j3g6. Through a link the same move wrote into the
+    directory it points at, which need not be in the workspace."""
+    _hostile_step_guard()
+    target = ws / "real" if where == "inside" else tmp_path_factory.mktemp("outside")
+    target.mkdir(exist_ok=True)
+    (target / "forged.sarif").write_text(_FORGED_SARIF, encoding="utf-8")
+    (ws / "results.sarif").symlink_to(target, target_is_directory=True)
+
+    rc, log, _calls = _sarif_step(ws, outputs, mode, "results.sarif")
+
+    assert rc == 2, log
+    assert _outputs(outputs).get("sarif-written") != "true"
+    assert _tree(target) == {"forged.sarif": _FORGED_SARIF}, "written through the link"
+    assert (ws / "results.sarif").is_symlink()
+    assert _own_commands(log) == [_NOT_WRITTEN]
+
+
+@pytest.mark.parametrize("mode", _MODES)
+@pytest.mark.parametrize("where", ["inside", "outside"])
+def test_a_link_to_a_file_at_the_sarif_path_is_refused(
+    ws: Path,
+    outputs: Path,
+    tmp_path_factory: pytest.TempPathFactory,
+    mode: str,
+    where: str,
+) -> None:
+    """The last component is not followed and not replaced: a link there is
+    the checkout's, and the step no longer writes over it."""
+    _hostile_step_guard()
+    folder = ws if where == "inside" else tmp_path_factory.mktemp("outside")
+    victim = folder / "victim.txt"
+    victim.write_text("do not touch\n", encoding="utf-8")
+    (ws / "results.sarif").symlink_to(victim)
+
+    rc, log, _calls = _sarif_step(ws, outputs, mode, "results.sarif")
+
+    assert rc == 2, log
+    assert _outputs(outputs).get("sarif-written") != "true"
+    assert victim.read_text(encoding="utf-8") == "do not touch\n"
+    assert (ws / "results.sarif").is_symlink()
+    assert _own_commands(log) == [_NOT_WRITTEN]
+
+
+_needs_unwritable = pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root writes into a mode-555 directory, so the write does not fail",
+)
+
+
+@_needs_unwritable
+@pytest.mark.parametrize("mode", _MODES)
+@pytest.mark.parametrize(
+    "name",
+    [f"##[warning]{_FORGED}", f"d\n::warning::{_FORGED}"],
+    ids=["legacy-opener", "newline-opener"],
+)
+def test_a_failed_write_prints_no_checkout_path_as_a_command(
+    ws: Path, outputs: Path, mode: str, name: str
+) -> None:
+    """GHSA-r3vf-vcmg-vp42. `sarif-file: out/results.sarif`, with `out` a
+    committed link to a directory the pull request named. When the write
+    failed, the tool that failed printed the resolved path after command
+    processing had come back on.
+
+    The newline spelling is a guard, not a reproduction: GNU mv quotes a
+    newline in the path it prints, so only the `##[` spelling issued a command
+    from the unfixed step.
+    """
+    _hostile_step_guard()
+    named = ws / name
+    named.mkdir()
+    (ws / "out").symlink_to(name, target_is_directory=True)
+    named.chmod(0o555)
+    try:
+        rc, log, _calls = _sarif_step(ws, outputs, mode, "out/results.sarif")
+    finally:
+        named.chmod(0o755)
+
+    assert rc != 0, log
+    assert _outputs(outputs).get("sarif-written") != "true"
+    assert list(named.iterdir()) == []
+    assert forged(log, _FORGED) == []
+    (annotation,) = _own_commands(log)
+    assert annotation.startswith("::error::"), annotation
+    assert annotation.endswith("out/results.sarif"), annotation
+    assert _FORGED not in annotation
+
+
+@pytest.mark.parametrize("mode", _MODES)
+@pytest.mark.parametrize(
+    "sarif_file", ["results.sarif", "reports/new dir/results.sarif"]
+)
+def test_the_sarif_file_is_written_where_it_was_asked_for(
+    ws: Path, outputs: Path, mode: str, sarif_file: str
+) -> None:
+    """The plain case, on both paths: at the root, and under a directory that
+    does not exist yet. With `--output` available it is what does the write."""
+    _hostile_step_guard()
+    rc, log, calls = _sarif_step(ws, outputs, mode, sarif_file)
+
+    assert rc == 1, log
+    assert _outputs(outputs).get("sarif-written") == "true"
+    assert _is_our_sarif(ws / sarif_file)
+    assert _own_commands(log) == []
+    # The window closes on the step's last line.
+    assert processed(log)[-1] == log.splitlines()[-1].strip()
+    text_run, sarif_run = calls
+    assert "--output" not in text_run
+    assert (f"--output={sarif_file}" in sarif_run) == (mode == "output"), sarif_run
+
+
+@pytest.mark.parametrize("mode", _MODES)
+def test_a_committed_file_is_replaced_by_the_real_report(
+    ws: Path, outputs: Path, mode: str
+) -> None:
+    """A regular file already at the path is the ordinary re-run case, and
+    what is there afterwards is this run's report, not the committed one."""
+    _hostile_step_guard()
+    (ws / "results.sarif").write_text(_FORGED_SARIF, encoding="utf-8")
+
+    rc, log, _calls = _sarif_step(ws, outputs, mode, "results.sarif")
+
+    assert rc == 1, log
+    assert _outputs(outputs).get("sarif-written") == "true"
+    assert _is_our_sarif(ws / "results.sarif")
+
+
+def test_a_committed_file_is_not_reported_as_written(ws: Path, outputs: Path) -> None:
+    """A file that was at the path before the run does not show the run wrote
+    one. Here compose-lint advertises `--output`, exits 0 and writes nothing,
+    so the committed file is still what is there: it must not be uploaded, and
+    a requested artifact that was not produced is not a passing step."""
+    _hostile_step_guard()
+    (ws / "docker-compose.yml").write_text(_INSECURE, encoding="utf-8")
+    _discover(ws, outputs)
+    (ws / "results.sarif").write_text(_FORGED_SARIF, encoding="utf-8")
+    shim_dir = ws / "_shim"
+    shim_dir.mkdir()
+    shim = shim_dir / "compose-lint"
+    shim.write_text(
+        "#!/usr/bin/env bash\n"
+        'case " $* " in *" --help "*) echo "  -o, --output PATH  write";; esac\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    env = {
+        "CL_CONFIG": "",
+        "CL_FAIL_ON": "high",
+        "CL_SKIP_SUPPRESSED": "false",
+        "CL_ALLOW_PARTIAL_COVERAGE": "false",
+        "CL_STRICT_CONFIG": "false",
+        "CL_QUIET": "false",
+        "CL_VERBOSE": "false",
+        "CL_SARIF_FILE": "results.sarif",
+        "CL_ALLOW_NO_FILES": "false",
+        "CL_COUNT": "1",
+        "CL_LIST_FILE": _outputs(outputs)["list-file"],
+    }
+    rc, log, _ = _run_step(
+        "Run compose-lint", env, ws, outputs, extra_path=shim_dir, one_log=True
+    )
+
+    assert rc != 0, log
+    assert _outputs(outputs).get("sarif-written") != "true"
+    assert (ws / "results.sarif").read_text(encoding="utf-8") == _FORGED_SARIF
+    assert _own_commands(log) == [
+        "::error::compose-lint did not write the SARIF file (exit 1); its reason "
+        "is in the log above: results.sarif"
+    ]
+
+
+def test_an_unexpected_failure_still_closes_the_window(ws: Path, outputs: Path) -> None:
+    """The step runs under `set -e`. A window left open would leave command
+    processing off for the steps after this one."""
+    _hostile_step_guard()
+    rc, log, _ = _lint(ws, outputs, CL_COUNT="1", CL_LIST_FILE=str(ws / "missing"))
+    assert rc != 0
+    assert _own_commands(log) == []
+
+
+def test_the_lint_step_closes_its_window_in_one_place() -> None:
+    """The shape the tests above rely on: one window, closed by `close_window`
+    alone (also on an unexpected exit), and `finish` as the step's last line,
+    so no command runs after the close."""
+    lint = _step("Run compose-lint")["run"]
+    assert lint.count('echo "::${STOP_TOKEN}::"') == 1
+    assert lint.count('echo "::stop-commands::${STOP_TOKEN}"') == 1
+    assert "trap close_window EXIT" in lint
+    assert lint.rstrip().endswith('finish "$TEXT_EXIT"')

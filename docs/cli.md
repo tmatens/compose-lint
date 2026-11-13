@@ -15,6 +15,8 @@ compose-lint --version                      Show version and exit (top level onl
 
 check options:
   --format {text,json,sarif}   Output format (default: text)
+  -o, --output PATH            Write the report to PATH instead of stdout, as one
+                               complete file (see "Writing the report to a file")
   --fail-on {low,medium,high,critical}
                                Minimum severity to trigger exit 1 (default: high)
   -v, --verbose                Repeat the fix block and reference on every finding (text mode)
@@ -76,6 +78,37 @@ nothing to lint and no machine form of the doc. Every other `check` option is
 accepted and ignored, including `--config`, which is not read. `--no-pager`
 without `--explain` does nothing.
 
+### Writing the report to a file
+
+`check --output PATH` (`-o PATH`) writes what `check` would print to stdout,
+in any `--format`, to `PATH` instead. Stderr and the exit code are the same as
+without it. The file is written whole and swapped into place, so a reader sees
+the previous file or the complete new one, and a run that fails before it has a
+report leaves the previous file alone.
+
+It is meant for CI, where the path is fixed by the pipeline and the checkout
+around it may be a pull request's, so it does not trust what is already there:
+
+- A `PATH` written inside the repository that holds the working directory (the
+  nearest directory at or above it with a `.git` entry; the working directory
+  itself when it is in no repository) must also resolve inside it. One whose
+  directory is a symbolic link leading out of the repository is refused, and
+  so is one inside `.git`, written that way or reached through a link.
+- A `PATH` written outside that repository, such as `/tmp/report.sarif` or
+  `../reports/report.sarif`, is written as given. You typed it, and nothing in
+  a checkout can change that.
+- A missing parent directory is created.
+- An existing regular file is replaced. A symbolic link, a directory, a FIFO or
+  device, a file with more than one hard link, or a read-only file at `PATH` is
+  refused. The last component is never followed.
+- `PATH` cannot be a Compose or config file the run read.
+- `--explain` has no file form and refuses `--output`.
+
+A refusal, or a write that fails, is exit 2 with a message on stderr that names
+`PATH` as you wrote it; nothing is written. When a run exits 2 for another
+reason and `--format json` or `--format sarif` still produced its envelope, the
+envelope is what the file holds.
+
 Values are case-insensitive wherever the CLI takes a fixed set or a rule id:
 `--fail-on HIGH`, `--format JSON`, `--explain cl-0001` and `--only cl-0007`
 all work, and so do a `severity: CRITICAL` in `.compose-lint.yml` and
@@ -94,7 +127,7 @@ not the failure.
 |---|---|---|---|
 | **0** | No finding at or above `--fail-on`. | The diff was printed, or the fixes were written, or there was nothing to fix. Findings left to fix by hand, and coverage gaps it reported, do not change this. | The config was written, or there were no findings to write one from. |
 | **1** | A finding at or above `--fail-on`. | Never. | Never. |
-| **2** | compose-lint could not run, or could not see the whole stack: bad arguments; a file missing, not valid Compose, or over a [size limit](what-a-run-reads.md#size-limits); a crashed rule; a config error, or a config warning under `--strict-config`; or a [coverage gap](compatibility.md#coverage-gaps-are-not-findings) not accepted with `--allow-partial-coverage`. | Bad arguments; a file missing or not valid Compose; a crashed rule or fixer; the 20,000-findings limit; a computed fix that fails the re-parse or verify check; a refused write (read-only file, symlink, hard link, unwritable directory); a config error. Nothing is written to that file, and the rest of the batch still runs. | Bad arguments; the file missing or not valid Compose; a crashed rule; the 20,000-findings limit; an existing config without `--force`; a failed write. |
+| **2** | compose-lint could not run, or could not see the whole stack: bad arguments; a file missing, not valid Compose, or over a [size limit](what-a-run-reads.md#size-limits); a crashed rule; a config error, or a config warning under `--strict-config`; a [coverage gap](compatibility.md#coverage-gaps-are-not-findings) not accepted with `--allow-partial-coverage`; or an `--output` path that was refused or could not be written. | Bad arguments; a file missing or not valid Compose; a crashed rule or fixer; the 20,000-findings limit; a computed fix that fails the re-parse or verify check; a refused write (read-only file, symlink, hard link, unwritable directory); a config error. Nothing is written to that file, and the rest of the batch still runs. | Bad arguments; the file missing or not valid Compose; a crashed rule; the 20,000-findings limit; an existing config without `--force`; a failed write. |
 
 ## Color
 

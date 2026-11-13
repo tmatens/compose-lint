@@ -35,6 +35,7 @@ from compose_lint._output import (
     emit_styled,
     sanitize,
 )
+from compose_lint._safe_read import containment_root, out_of_reach
 from compose_lint._selection import DocumentGroup, Selection, plan_documents
 from compose_lint._service_env import (
     MACHINE_READABLE,
@@ -408,6 +409,20 @@ def _add_check_subparser(
         ),
     )
     _add_document_selection_flags(check)
+    check.add_argument(
+        "-o",
+        "--output",
+        metavar="PATH",
+        default=None,
+        help=(
+            "write the report to PATH instead of stdout, as one complete "
+            "file. A missing parent directory is created. Refused (exit 2): "
+            "a PATH inside the repository that holds the working directory "
+            "whose directory is a symbolic link leading out of it or into "
+            ".git, and a PATH that is itself a symbolic link, a directory or "
+            "anything else that is not a regular file"
+        ),
+    )
     verbosity = check.add_mutually_exclusive_group()
     verbosity.add_argument(
         "-v",
@@ -1077,8 +1092,157 @@ def _exit_2_with_envelope(
     sys.exit(2)
 
 
+def _refuse_output(written: str, why: str) -> NoReturn:
+    """Refuse ``--output`` as a usage error, naming the path as it was typed.
+
+    Never the resolved path: a link in the checkout puts a name the checkout
+    chose into that, and this line is read by a CI log.
+    """
+    emit(f"Error: --output {written}: {why}; no report written")
+    sys.exit(2)
+
+
+def _report_target(written: str) -> Path:
+    """Where ``check --output`` will write, or exit 2 when it must not.
+
+    In CI the path is often fixed by the workflow while the checkout it lands
+    in is a pull request's, so what is already at that path is not trusted:
+
+    * A path typed inside the repository that holds the working directory
+      (the working directory when there is none) must also resolve inside it,
+      and outside ``.git``: the root every read of this run is held to
+      (:func:`~compose_lint._safe_read.out_of_reach`). The only way it does
+      not is a link in the checkout, such as a committed one, and that is
+      refused rather than written through. A path typed outside that root
+      (``/tmp/report.sarif``, ``../reports/r.sarif``) is the user's own
+      choice, which a pull request cannot change, and is written as given.
+      Whether it is typed inside is asked of the spelling alone, ``..``
+      folded and no link resolved, as the root itself is found.
+    * The last component is never followed. A symbolic link, a directory, a
+      FIFO or a device there is refused, and so is a file with a second name.
+      A report moved into a directory someone else put at the path is not at
+      the path, and whatever reads the path next would read their files.
+
+    Checked before anything is linted, so a refusal costs nothing, and again by
+    :func:`_atomic_write` when the report is written.
+    """
+    path = Path(written)
+    if path.name in ("", ".."):
+        _refuse_output(written, "is not a file path")
+    try:
+        cwd = Path.cwd()
+        typed = Path(os.path.normpath(cwd / path.parent))
+        typed_inside = typed.is_relative_to(containment_root(cwd))
+        parent = path.parent.resolve()
+        outside = typed_inside and out_of_reach(parent, cwd)
+    except (OSError, RuntimeError):  # pragma: no cover - version-dependent
+        # A link loop before Python 3.13 (later versions resolve it without
+        # raising, and the lstat below refuses it), or a working directory
+        # that no longer exists.
+        _refuse_output(written, "its directory cannot be resolved")
+    if outside:
+        _refuse_output(
+            written,
+            "resolves through a symbolic link to somewhere outside the "
+            "repository, or into its .git",
+        )
+    target = parent / path.name
+    try:
+        info = target.lstat()
+    except FileNotFoundError:
+        return target
+    except OSError as exc:
+        _refuse_output(written, _write_failure(exc))
+    if stat.S_ISLNK(info.st_mode):
+        _refuse_output(written, "is a symbolic link, which is not written through")
+    if not stat.S_ISREG(info.st_mode):
+        _refuse_output(written, "exists and is not a regular file")
+    if info.st_nlink > 1:
+        _refuse_output(written, f"has {info.st_nlink} hard links")
+    if _refuses_write(target):
+        _refuse_output(written, "is not writable")
+    return target
+
+
+def _sources(lines: Mapping[Any, object]) -> set[str]:
+    """The documents a line map records lines from: what a load merged in."""
+    return {
+        str(source)
+        for line in lines.values()
+        if (source := getattr(line, "source", None)) is not None
+    }
+
+
+def _write_report(written: str, target: Path, report: str) -> None:
+    """Write a finished report to ``target``, or exit 2 saying it was not.
+
+    One atomic swap, so a reader sees the previous file or the whole new one.
+    A missing directory is created here, after the containment check passed
+    on its resolved path, which is the path created.
+    """
+    existed = target.exists()
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write(target, report)
+    except OSError as exc:
+        # Only the condition: the exception's own text names the resolved
+        # directory and a scratch file.
+        _refuse_output(written, _write_failure(exc))
+    if not existed:
+        # A new file would keep mkstemp's 0600; a report is read by the next
+        # step or tool, so it gets the mode `init` gives a new config.
+        with contextlib.suppress(OSError):
+            target.chmod(0o644)
+
+
 def _run_check(args: argparse.Namespace) -> NoReturn:
-    """Run the `check` operation: lint files and exit with the verdict code."""
+    """Run `check`, sending the report to ``--output`` when one is given.
+
+    The run itself is unchanged: it prints to stdout, which is pointed at a
+    buffer for its duration, and exits with its verdict. What it printed is
+    then written as one file. A run that printed nothing (a usage error says
+    what is wrong on stderr only) writes no file, and a report that could not
+    be written is exit 2 whatever the verdict was.
+
+    The report replaces what is at the path, so `-o compose.yml` would put a
+    SARIF log where the Compose file was. A path that is one of the Compose
+    or config files the run read is refused, as ``init -o`` refuses it.
+    """
+    if args.output is None:
+        _check(args)
+    if args.explain is not None:
+        emit("Error: --explain cannot be combined with --output")
+        sys.exit(2)
+    target = _report_target(args.output)
+    buffer = io.StringIO()
+    read: set[str] = set()
+    code: str | int | None = 2
+    with contextlib.redirect_stdout(buffer):
+        try:
+            _check(args, read)
+        except SystemExit as stop:
+            code = stop.code
+        except Exception as exc:  # noqa: BLE001 - as `main` handles it
+            # The envelope an internal error leaves on stdout belongs in the
+            # file too: a consumer of the file is the one reading it.
+            with contextlib.suppress(SystemExit):
+                _exit_on_internal_error(args, exc)
+    report = buffer.getvalue()
+    if _is_an_input(target, read, {}):
+        _refuse_output(args.output, "is one of the files this run read")
+    if report:
+        _write_report(args.output, target, report)
+    sys.exit(code)
+
+
+def _check(args: argparse.Namespace, read: set[str] | None = None) -> NoReturn:
+    """Run the `check` operation: lint files and exit with the verdict code.
+
+    ``read`` collects the Compose and config files the run opened, for the
+    caller that is about to write a file and must not write over one of them.
+    """
+    if read is None:
+        read = set()
     if args.explain is not None:
         if args.files:
             emit("Error: --explain cannot be combined with FILE arguments")
@@ -1127,6 +1291,9 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
     severity_overrides = policy.overrides
     excluded_services = policy.excluded
     as_of = args.as_of or utc_today()
+    read.update(path for group in selection.groups for path in group.paths)
+    if config_path is not None:
+        read.add(str(config_path))
 
     args.files = [group.primary for group in selection.groups]
     overlay_of = {
@@ -1228,6 +1395,7 @@ def _run_check(args: argparse.Namespace) -> NoReturn:
             )
             continue
 
+        read.update(_sources(lines))
         gap_channel.extend(
             _report_coverage_gaps(filepath, gaps, fatal=gap_is_fatal, remedy=gap_remedy)
         )
@@ -2006,12 +2174,7 @@ def _is_an_input(
     """
     if not out_path.exists():
         return False
-    inputs = {*paths}
-    inputs.update(
-        str(source)
-        for line in lines.values()
-        if (source := getattr(line, "source", None)) is not None
-    )
+    inputs = {*paths, *_sources(lines)}
     for candidate in inputs:
         with contextlib.suppress(OSError):
             if os.path.samefile(out_path, candidate):

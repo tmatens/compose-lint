@@ -21,7 +21,7 @@ the reference behind it.
 | `strict-config` | `false` | Pass `--strict-config`: config-file warnings (unknown rule id, unknown key, an inert `reason:` or `severity:`, a stale `exclude_services` name, both config spellings present) become a hard error. See [`--strict-config`](configuration.md#validation). |
 | `quiet` | `false` | Text output: one line per finding. Mutually exclusive with `verbose`: setting both fails the job with `quiet and verbose are mutually exclusive` before anything is linted. |
 | `verbose` | `false` | Text output: repeat the fix block and reference on every finding. Mutually exclusive with `quiet`, as above. |
-| `sarif-file` | `""` | Path to write SARIF to. Setting it enables the Code Scanning upload. The path must stay inside the workspace; a parent directory that does not exist yet is created. |
+| `sarif-file` | `""` | Path to write SARIF to. Setting it enables the Code Scanning upload. The path must stay inside the workspace; a parent directory that does not exist yet is created. A path where a directory, a symbolic link or another non-regular file already exists is [refused](#what-sarif-file-refuses). |
 | `upload-sarif` | `true` | Upload the written SARIF to Code Scanning. `"false"` only writes the file. |
 | `version` | `""` | compose-lint version to install. Empty means the version this action was released with, installed with the dependency versions locked at that release (`requirements.lock`, hash-checked), so a SHA-pinned `uses:` is a reproducible check. `latest` tracks PyPI; an explicit version or `latest` resolves its dependencies from PyPI. |
 | `allow-no-files` | `false` | Succeed when no Compose files are found. Off by default because a pattern that matches nothing is a misconfiguration, and the CLI itself exits 2 in that case. |
@@ -29,9 +29,31 @@ the reference behind it.
 Boolean inputs are on only for the exact string `"true"`, which is what a YAML
 `true` becomes; `"True"` or `"yes"` leave the input off.
 
-One output, `sarif-written`, is `"true"` when the file requested via
-`sarif-file` was written and non-empty, and empty otherwise. Use it to gate a
-later `upload-artifact` step.
+One output, `sarif-written`, is `"true"` when this run wrote the file
+requested via `sarif-file`, as a non-empty regular file at that path, and
+empty otherwise. Use it to gate a later `upload-artifact` step.
+
+## What `sarif-file` refuses
+
+The workflow chooses the `sarif-file` path, but on a pull request the checkout
+decides what is already at it. The action writes the file only when all of
+these hold, and otherwise fails the step with exit 2, leaves `sarif-written`
+empty and skips the upload:
+
+- The path resolves inside the workspace, through any symbolic links in its
+  directories, and not into `.git`.
+- Nothing is at the path, or a regular file is, which is replaced. A
+  directory, a symbolic link (whatever it points to) or any other non-regular
+  file at the path is refused, not written into or through.
+- The directory can be created and written to.
+
+The write itself is done by `compose-lint check --output`
+([CLI reference](cli.md#writing-the-report-to-a-file)), as one atomic
+replacement. A `version:` older than 1.4.0 has no such option; for those the
+action writes the file itself under the same checks.
+
+A file that was at the path before the run is never reported as written: if
+compose-lint did not replace it, the step fails.
 
 ## Pin the SHA, or float on `v1`
 
@@ -58,8 +80,10 @@ Drop `security-events: write` if you are not uploading SARIF.
 ## Problem matchers still read the output
 
 compose-lint's output quotes text from the files it grades, so the action
-turns workflow-command processing off while compose-lint runs
-(`stop-commands`). That does not turn off
+turns workflow-command processing off (`stop-commands`) before the first
+compose-lint run and turns it back on as the last thing the lint step does.
+Anything the step reports as an annotation after that is fixed text, plus the
+`sarif-file` input as the workflow wrote it. That does not turn off
 [problem matchers](https://github.com/actions/toolkit/blob/main/docs/problem-matchers.md).
 A matcher registered earlier in the job still reads compose-lint's output,
 and any line matching its pattern becomes an annotation. Some setup actions
