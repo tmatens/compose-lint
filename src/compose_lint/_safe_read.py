@@ -107,6 +107,19 @@ def containment_root(project: Path) -> Path:
     return start
 
 
+def names_git_dir(segment: str) -> bool:
+    """Whether a path segment spells ``.git`` on some filesystem.
+
+    A checkout on macOS or Windows usually sits on a filesystem that ignores
+    case, where ``.GIT/config`` opens ``.git/config``, and NTFS also drops
+    trailing dots and spaces. The comparison folds both, on every platform:
+    what a path says is a fact about the document (ADR-023), so ``.GIT`` is
+    refused on Linux too, where it could only name some other directory that
+    no project has a reason to route a run into.
+    """
+    return segment.rstrip(". ").casefold() == GIT_MARKER
+
+
 def inside_git_dir(path: Path, root: Path) -> bool:
     """Whether ``path`` resolves into a ``.git`` directory under ``root``.
 
@@ -116,12 +129,36 @@ def inside_git_dir(path: Path, root: Path) -> bool:
     is never read, however the path got there — a ``..`` spelling is refused
     lexically by :func:`~compose_lint._service_env.project_relative`, and a
     link into it here.
+
+    Two tests, because a name is not an identity. A resolved path keeps the
+    spelling it was given, so a segment is compared the way
+    :func:`names_git_dir` compares it. And a filesystem can treat names as
+    equal that no folding here predicts (HFS+ ignores some code points, NTFS
+    has short names), so each existing directory on the way down is also
+    compared with the root's own ``.git`` by device and inode.
     """
     try:
-        relative = path.resolve().relative_to(root.resolve())
+        resolved = path.resolve()
+        base = root.resolve()
+        relative = resolved.relative_to(base)
     except (OSError, ValueError):  # pragma: no cover - outside, or unresolvable
         return True
-    return GIT_MARKER in relative.parts
+    if any(names_git_dir(part) for part in relative.parts):
+        return True
+    try:
+        marker = (base / GIT_MARKER).stat()
+    except OSError:
+        return False
+    current = base
+    for part in relative.parts:
+        current = current / part
+        try:
+            info = current.stat()
+        except OSError:
+            return False
+        if (info.st_dev, info.st_ino) == (marker.st_dev, marker.st_ino):
+            return True
+    return False
 
 
 def out_of_reach(path: Path, root: Path) -> bool:

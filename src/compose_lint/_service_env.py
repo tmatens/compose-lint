@@ -48,9 +48,9 @@ from compose_lint._env_file import (
 )
 from compose_lint._env_quote import remember as remember_env_values
 from compose_lint._safe_read import (
-    GIT_MARKER,
     UnsafeFileError,
     containment_root,
+    names_git_dir,
     out_of_reach,
     read_text_bounded,
 )
@@ -244,7 +244,7 @@ def project_relative(path: str, prefix: tuple[str, ...] = ()) -> list[str] | Non
                 return None
             segments.pop()
             continue
-        if segment == GIT_MARKER:
+        if names_git_dir(segment):
             return None
         segments.append(segment)
     return segments or None

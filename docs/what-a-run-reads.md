@@ -40,7 +40,8 @@ boundary is the directory compose-lint was run from when that contains the
 project, and otherwise the project directory. What a path *says* is still a
 separate test: a reference written out of the repository, or an absolute one,
 is refused whether or not a link is involved, and the `.git` directory itself
-is never read ([ADR-038](adr/038-contain-references-to-the-repository.md)).
+is never read, under any spelling a filesystem opens it by (`.GIT` where case
+is ignored) ([ADR-038](adr/038-contain-references-to-the-repository.md)).
 `COMPOSE_FILE` is the one list that is still read relative to the project
 directory alone: an entry written with `..` is refused, though a linked entry
 follows the repository rule.
