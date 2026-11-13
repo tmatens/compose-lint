@@ -213,10 +213,20 @@ def test_the_lint_step_is_not_gated_on_a_file_count(ws: Path, outputs: Path) -> 
 # --- VULN-040: nothing attacker-controlled in $GITHUB_OUTPUT --------------
 
 
-def test_a_newline_in_files_is_refused(ws: Path, outputs: Path) -> None:
+def test_a_newline_in_files_forges_no_output_record(ws: Path, outputs: Path) -> None:
+    """A newline separates entries; it never reaches ``$GITHUB_OUTPUT``.
+
+    The list used to be refused when it held a newline, because filenames
+    were once written to the line-oriented output file. They travel in a
+    NUL-separated file now, so a line is simply an entry.
+    """
     rc, out, err = _discover(ws, outputs, CL_FILES="a.yml\nfiles=evil")
-    assert rc == 2, "a newline in a space-separated list is malformed"
-    assert "newline" in (out + err)
+    assert rc == 0, out + err
+    recorded = _outputs(outputs)
+    assert set(recorded) == {"count", "list-file"}, recorded
+    assert "evil" not in outputs.read_text(encoding="utf-8")
+    entries = Path(recorded["list-file"]).read_bytes().split(b"\0")[:-1]
+    assert entries == [b"a.yml", b"files=evil"], entries
 
 
 def test_an_ordinary_files_input_is_accepted(ws: Path, outputs: Path) -> None:
@@ -263,6 +273,140 @@ def test_discovery_preserves_a_path_containing_spaces(ws: Path, outputs: Path) -
     assert recorded["count"] == "1"
     entries = Path(recorded["list-file"]).read_bytes().split(b"\0")[:-1]
     assert entries == [b"./my stack/docker-compose.yml"], entries
+
+
+# --- every `files` entry stays inside the workspace ------------------------
+
+_OUTSIDE_MARKER = "MKOUTSIDEFIXTURE"
+_OUTSIDE_COMPOSE = (
+    "services:\n  app:\n    image: nginx:1.27\n"
+    f"    privileged: true  # {_OUTSIDE_MARKER}\n"
+)
+
+
+@pytest.fixture
+def checkout(tmp_path: Path) -> Path:
+    """A workspace beside a directory that is not part of it."""
+    root = tmp_path / "checkout"
+    root.mkdir()
+    (root / "compose.yml").write_text(_INSECURE, encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "fixture.yml").write_text(_OUTSIDE_COMPOSE, encoding="utf-8")
+    return root
+
+
+def _split_list(checkout: Path) -> str:
+    """What a space-joined list of changed files holds for a hostile path.
+
+    The pull request commits a directory whose name ends in a space, so one
+    tracked path reads as two entries once the list is joined with spaces.
+    """
+    outside = checkout.parent / "outside" / "fixture.yml"
+    tracked = f"compose.yml {outside}"
+    return " ".join(["compose.yml", tracked])
+
+
+def test_a_split_entry_outside_the_workspace_is_refused(
+    checkout: Path, outputs: Path
+) -> None:
+    rc, out, err = _discover(checkout, outputs, CL_FILES=_split_list(checkout))
+    assert rc == 2, out + err
+    assert "outside the workspace" in out + err
+    assert "list-file" not in _outputs(outputs)
+
+
+def test_the_refusal_does_not_echo_the_entry(checkout: Path, outputs: Path) -> None:
+    """The step runs with workflow commands on, so a name is never printed."""
+    hostile = "/tmp/x::warning::FORGED"
+    rc, out, err = _discover(checkout, outputs, CL_FILES=f"compose.yml {hostile}")
+    assert rc == 2, out + err
+    assert "FORGED" not in out + err
+
+
+def test_an_outside_file_is_not_linted_through_a_split_list(
+    checkout: Path, outputs: Path
+) -> None:
+    """End to end: the outside file's lines never reach the log."""
+    rc, out, err = _discover(checkout, outputs, CL_FILES=_split_list(checkout))
+    recorded = _outputs(outputs)
+    log = out + err
+    if rc == 0:
+        _rc, lint_out, lint_err = _lint(
+            checkout,
+            outputs,
+            CL_COUNT=recorded["count"],
+            CL_LIST_FILE=recorded["list-file"],
+        )
+        log += lint_out + lint_err
+    assert _OUTSIDE_MARKER not in log
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="needs symlinks")
+def test_an_entry_under_a_directory_link_out_is_refused(
+    checkout: Path, outputs: Path
+) -> None:
+    """The check is physical: a committed directory link is resolved."""
+    try:
+        (checkout / "d").symlink_to(checkout.parent / "outside")
+    except OSError:
+        pytest.skip("symlinks unavailable")
+    rc, out, err = _discover(checkout, outputs, CL_FILES="compose.yml d/fixture.yml")
+    assert rc == 2, out + err
+    assert "outside the workspace" in out + err
+
+
+def test_entries_inside_the_workspace_are_accepted(
+    checkout: Path, outputs: Path
+) -> None:
+    """Relative, nested and absolute spellings of a path in the checkout."""
+    (checkout / "stack").mkdir()
+    (checkout / "stack" / "compose.yml").write_text(_INSECURE, encoding="utf-8")
+    absolute = str(checkout / "stack" / "compose.yml")
+    value = f"compose.yml ./stack/compose.yml {absolute}"
+    rc, out, err = _discover(checkout, outputs, CL_FILES=value)
+    assert rc == 0, out + err
+    assert _outputs(outputs)["count"] == "3"
+
+
+def test_an_entry_in_a_missing_directory_is_left_to_the_cli(
+    checkout: Path, outputs: Path
+) -> None:
+    """Nothing is there to read, so the CLI reports it as not found."""
+    rc, out, err = _discover(checkout, outputs, CL_FILES="nowhere/compose.yml")
+    assert rc == 0, out + err
+    assert _outputs(outputs)["count"] == "1"
+
+
+def test_a_newline_separated_list_keeps_a_path_with_a_space(
+    checkout: Path, outputs: Path
+) -> None:
+    """One path per line is the form a list of changed files should take."""
+    (checkout / "my stack").mkdir()
+    (checkout / "my stack" / "compose.yml").write_text(_INSECURE, encoding="utf-8")
+    value = "compose.yml\nmy stack/compose.yml\n"
+    rc, out, err = _discover(checkout, outputs, CL_FILES=value)
+    assert rc == 0, out + err
+    recorded = _outputs(outputs)
+    entries = Path(recorded["list-file"]).read_bytes().split(b"\0")[:-1]
+    assert entries == [b"compose.yml", b"my stack/compose.yml"], entries
+
+
+def test_a_newline_separated_list_is_contained_too(
+    checkout: Path, outputs: Path
+) -> None:
+    outside = checkout.parent / "outside" / "fixture.yml"
+    rc, out, err = _discover(checkout, outputs, CL_FILES=f"compose.yml\n{outside}\n")
+    assert rc == 2, out + err
+    assert "outside the workspace" in out + err
+
+
+def test_a_crlf_list_reads_the_same(checkout: Path, outputs: Path) -> None:
+    rc, out, err = _discover(checkout, outputs, CL_FILES="compose.yml\r\n")
+    assert rc == 0, out + err
+    recorded = _outputs(outputs)
+    entries = Path(recorded["list-file"]).read_bytes().split(b"\0")[:-1]
+    assert entries == [b"compose.yml"], entries
 
 
 # --- VULN-038: never ship an artifact that was not written ----------------
