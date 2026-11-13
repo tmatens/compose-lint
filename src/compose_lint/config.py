@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from compose_lint._output import emit
-from compose_lint._safe_read import containment_root, read_text_bounded
+from compose_lint._safe_read import containment_root, read_text_bounded, resolved
 from compose_lint._scalar import as_scalar_text
 from compose_lint._yaml_error import describe_yaml_error
 from compose_lint.models import Severity
@@ -94,7 +94,7 @@ def config_search_dirs(start: Path | None = None) -> list[Path]:
     places, and the banner names the one that was read.
     """
     dirs = [Path(".")]
-    if start is not None and start.resolve() != Path.cwd().resolve():
+    if start is not None and resolved(start) != resolved(Path.cwd()):
         dirs.insert(0, start)
     return dirs
 

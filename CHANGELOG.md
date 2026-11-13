@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged, and the exit code is 2 as before
   ([#1258](https://github.com/tmatens/compose-lint/issues/1258)).
 
+- **A link that leads back to itself no longer ends the run as an internal
+  error on Python 3.11 and 3.12.** Before Python 3.13, resolving a link loop
+  raises an error the handlers around it did not catch, so an `include:`,
+  an `extends:` file, an `env_file:`, a sibling env file or a named path
+  that was such a link, alone or as a pair pointing at each other, printed
+  a traceback and "This is a bug in compose-lint". Every supported Python
+  now gives the answer 3.13 gave: the reference is reported as one that
+  could not be read, with the same message and exit code
+  ([#1259](https://github.com/tmatens/compose-lint/issues/1259)).
+
 ### Security
 
 - **The `.git` directory is not read under any spelling.** A reference into
