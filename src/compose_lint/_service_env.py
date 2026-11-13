@@ -35,7 +35,7 @@ means the project cannot deploy.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from functools import cached_property
 from typing import TYPE_CHECKING, Any
@@ -46,6 +46,7 @@ from compose_lint._env_file import (
     parse_env_file,
     read_env,
 )
+from compose_lint._env_quote import remember as remember_env_values
 from compose_lint._safe_read import (
     GIT_MARKER,
     UnsafeFileError,
@@ -159,6 +160,11 @@ class ServiceEnvFiles:
     unread: tuple[UnreadEnvFile, ...]
     skipped: tuple[SkippedLines, ...] = ()
     shadowed: frozenset[str] = frozenset()
+    # The names these files' values referenced and what they were filled in
+    # with: from the sibling `.env`, or from a file earlier in the list. A
+    # finding about a key quotes the reference, not this value, exactly as
+    # one about the Compose file does (`compose_lint.engine.run_rules`).
+    substituted: Mapping[str, str] = field(default_factory=dict)
 
     @cached_property
     def keys(self) -> tuple[EnvFileKey, ...]:
@@ -362,6 +368,9 @@ def resolve_env_files(
         key = tuple((ref, path, refusal) for ref, path, refusal in plan)
         if key not in shared:
             shared[key] = _resolve_one(plan, texts, supplied)
+            # A note or gap can name a path built from one of these values, so
+            # the diagnostic sinks are told about them too (`_env_quote`).
+            remember_env_values({"": shared[key].substituted})
         result = shared[key]
         if name in hooks:
             continue
@@ -371,6 +380,7 @@ def resolve_env_files(
             unread=result.unread,
             skipped=result.skipped,
             shadowed=frozenset(own & result.names),
+            substituted=result.substituted,
         )
     for unit, (parent, hook) in hooks.items():
         plan = plans[unit]
@@ -418,6 +428,7 @@ def _hook_env_files(
         unread=unread,
         skipped=skipped,
         shadowed=frozenset(environment & names),
+        substituted=result.substituted,
     )
 
 
@@ -429,6 +440,7 @@ class _Resolved:
     names: frozenset[str]
     unread: tuple[UnreadEnvFile, ...]
     skipped: tuple[SkippedLines, ...]
+    substituted: Mapping[str, str] = field(default_factory=dict)
 
 
 def _read_text(path: Path) -> str | None:
@@ -477,6 +489,7 @@ def _resolve_one(
     contributed: dict[str, EnvFileKey] = {}
     unread: list[UnreadEnvFile] = []
     skipped: list[SkippedLines] = []
+    substituted: dict[str, str] = {}
 
     for ref, path, refusal in plan:
         if refusal is not None or path is None:
@@ -492,6 +505,14 @@ def _resolve_one(
         parsed = parse_env_file(text, defined=scope, raw=ref.raw)
         if parsed.skipped_lines:
             skipped.append(SkippedLines(ref.path, parsed.skipped_lines))
+        # What this file's values could be filled in from, before its own keys
+        # join the scope: the sibling `.env`, and the files listed before it.
+        # Recorded by name so a finding quotes `${NAME}` and not the value, as
+        # one about the Compose file does. A reference to a key of this same
+        # file is not recorded: the file's own text holds that value.
+        for name in env_file_references(text, raw=ref.raw):
+            if name in scope and name not in parsed.values:
+                substituted[name] = scope[name]
         for key, value in parsed.values.items():
             scope[key] = value
             contributed[key] = EnvFileKey(
@@ -507,6 +528,7 @@ def _resolve_one(
         names=frozenset(contributed),
         unread=tuple(unread),
         skipped=tuple(skipped),
+        substituted=substituted,
     )
 
 
@@ -571,7 +593,7 @@ def describe_unread(
         for entry in resolved[service].unread:
             if only is not None and entry.reason not in only:
                 continue
-            path = repr(entry.path)
+            path = f"'{entry.path}'"
             if entry.reason is Unread.ABSENT and entry.required:
                 notes.append(
                     f"service '{service}' reads {path}, which is not present. "
@@ -605,7 +627,7 @@ def describe_unread(
             numbers = ", ".join(str(number) for number in skip.lines)
             plural = "lines" if len(skip.lines) > 1 else "line"
             notes.append(
-                f"service '{service}' reads {skip.path!r}, whose {plural} "
+                f"service '{service}' reads '{skip.path}', whose {plural} "
                 f"{numbers} could not be read as KEY=value. Compose refuses a "
                 "whole env file over one such line; the remaining entries were "
                 "graded"

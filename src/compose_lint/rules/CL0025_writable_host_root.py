@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from compose_lint._output import inline
+from compose_lint._output import inline, quoted
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 from compose_lint.rules._mounts import (
@@ -253,7 +253,7 @@ class WritableHostRootMountRule(BaseRule):
                 evidence=mount.host_path,
                 target=mount.target,
                 message=(
-                    f"Service mounts host path '{mount.host_path}' writable "
+                    f"Service mounts host path '{quoted(mount.host_path)}' writable "
                     f"(under {matched}). Writing there is host root: "
                     f"{_GRANTS[matched]}."
                 ),

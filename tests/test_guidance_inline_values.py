@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from compose_lint._doc_text import split
 from compose_lint._output import inline
 from tests._cli_env import cli_env
 
@@ -32,9 +33,11 @@ MATCHER_RAISE = re.compile(r"^\s*raise\s(.*)\(\'(.*)\'\)$")
 
 
 def test_inline_escapes_a_line_break() -> None:
-    assert inline("a\nb") == "a\\u000ab"
-    assert inline("nginx:1.27") == "nginx:1.27"
-    assert inline(8080) == "8080"
+    # inline() also marks its result as document text; the marks are stripped
+    # at the rule boundary (tests/test_doc_text_marking.py).
+    assert split(inline("a\nb"))[0] == "a\\u000ab"
+    assert split(inline("nginx:1.27"))[0] == "nginx:1.27"
+    assert split(inline(8080))[0] == "8080"
 
 
 @pytest.mark.parametrize(

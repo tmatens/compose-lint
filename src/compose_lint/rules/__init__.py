@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import abc
+import functools
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
+
+from compose_lint._doc_text import split
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -14,11 +18,59 @@ if TYPE_CHECKING:
 _registry: list[type[BaseRule]] = []
 
 
+def _unmarked(finding: Finding) -> Finding:
+    """``finding`` with its document marks turned into spans.
+
+    A rule marks the text it quotes from the document
+    (:func:`compose_lint._output.quoted`). The marks are stripped here, at
+    the rule's boundary, so nothing downstream ever sees one, and where they
+    were is kept on the finding for the engine.
+    """
+    message, message_spans = split(finding.message)
+    fix, fix_spans = split(finding.fix) if finding.fix else (finding.fix, ())
+    evidence = split(finding.evidence)[0] if finding.evidence else finding.evidence
+    target = split(finding.target)[0] if finding.target else finding.target
+    if (
+        message is finding.message
+        and fix is finding.fix
+        and evidence is finding.evidence
+        and target is finding.target
+    ):
+        return finding
+    return replace(
+        finding,
+        message=message,
+        fix=fix,
+        evidence=evidence,
+        target=target,
+        message_spans=message_spans,
+        fix_spans=fix_spans,
+    )
+
+
+def _unmarking(method: Any) -> Any:
+    """Wrap a rule's finding generator so each finding is :func:`_unmarked`."""
+
+    @functools.wraps(method)
+    def wrapper(*args: Any, **kwargs: Any) -> Iterator[Finding]:
+        for finding in method(*args, **kwargs):
+            yield _unmarked(finding)
+
+    return wrapper
+
+
 class BaseRule(abc.ABC):
     """Base class for all compose-lint rules.
 
     Subclasses must define metadata and implement the check method.
     """
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        for name in ("check", "check_env_file_keys"):
+            method = cls.__dict__.get(name)
+            if method is not None:
+                setattr(cls, name, _unmarking(method))
 
     @property
     @abc.abstractmethod

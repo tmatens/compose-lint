@@ -457,3 +457,265 @@ class TestQuoteHelper:
         _env_quote.remember({"x": {"TOKEN": "abcdefghijkl"}})
         _env_quote.forget()
         assert _env_quote.quote("abcdefghijkl") == "abcdefghijkl"
+
+
+# --- GHSA-4923-jg9h-5w44: a relative source is rewritten after substitution --
+
+# The parser rewrites a relative bind source to the absolute path it names.
+# The rewritten string was no longer the one recorded as substituted, so a
+# finding about it quoted the value.
+_RELATIVE_CASES = {
+    "short": (
+        "services:\n  web:\n    image: nginx:1.27\n"
+        '    volumes: ["./${DB_PASSWORD}/docker.sock:/var/run/docker.sock"]\n'
+    ),
+    "long": (
+        "services:\n  web:\n    image: nginx:1.27\n    volumes:\n"
+        "      - type: bind\n"
+        "        source: ./${DB_PASSWORD}/docker.sock\n"
+        "        target: /var/run/docker.sock\n"
+    ),
+    "secret": (
+        "services:\n  web:\n    image: nginx:1.27\n    secrets: [s]\n"
+        "secrets:\n  s:\n    file: ./${DB_PASSWORD}/docker.sock\n"
+    ),
+    "config": (
+        "services:\n  web:\n    image: nginx:1.27\n    configs: [c]\n"
+        "configs:\n  c:\n    file: ./${DB_PASSWORD}/docker.sock\n"
+    ),
+    "extended": (
+        "services:\n  web:\n    extends:\n      file: base.yml\n      service: base\n"
+    ),
+}
+_RELATIVE_BASE = (
+    "services:\n  base:\n    image: nginx:1.27\n"
+    '    volumes: ["./${DB_PASSWORD}/docker.sock:/var/run/docker.sock"]\n'
+)
+
+
+class TestRelativeSources:
+    @pytest.mark.parametrize("fmt", ["text", "json", "sarif"])
+    @pytest.mark.parametrize("case", sorted(_RELATIVE_CASES))
+    def test_the_value_never_reaches_output(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        fmt: str,
+        case: str,
+    ) -> None:
+        _write(tmp_path / "compose.yml", _RELATIVE_CASES[case])
+        _write(tmp_path / "base.yml", _RELATIVE_BASE)
+        _write(tmp_path / ENV_NAME, f"DB_PASSWORD={SECRET}\n")
+        _, out, err = _run(
+            ["--format", fmt, "compose.yml"], tmp_path, monkeypatch, capsys
+        )
+        assert SECRET not in out
+        assert SECRET not in err
+        assert "${DB_PASSWORD}" in out
+
+    @pytest.mark.parametrize("case", sorted(_RELATIVE_CASES))
+    def test_the_socket_finding_still_fires(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        case: str,
+    ) -> None:
+        _write(tmp_path / "compose.yml", _RELATIVE_CASES[case])
+        _write(tmp_path / "base.yml", _RELATIVE_BASE)
+        _write(tmp_path / ENV_NAME, f"DB_PASSWORD={SECRET}\n")
+        _, out, _ = _run(
+            ["--format", "json", "compose.yml"], tmp_path, monkeypatch, capsys
+        )
+        (finding,) = _by_rule(out, "CL-0001")
+        assert "${DB_PASSWORD}" in finding["message"]
+
+    def test_the_fingerprint_does_not_depend_on_the_value(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """A SARIF fingerprint is a hash anyone can recompute. Built from the
+        value, it let a guess at a short secret be checked offline."""
+        prints = []
+        for value in ("first-synthetic-value", "second-synthetic-value"):
+            _write(tmp_path / "compose.yml", _RELATIVE_CASES["short"])
+            _write(tmp_path / ENV_NAME, f"DB_PASSWORD={value}\n")
+            _, out, _ = _run(
+                ["--format", "sarif", "compose.yml"], tmp_path, monkeypatch, capsys
+            )
+            results = json.loads(out)["runs"][0]["results"]
+            prints.append(
+                [r["partialFingerprints"] for r in results if r["ruleId"] == "CL-0001"]
+            )
+        assert prints[0] and prints[0] == prints[1]
+
+
+# --- GHSA-g5qx-4j8p-9ch5: a value filled into an env_file target ------------
+
+# Alphanumeric, so CL-0021 reads the whole of it as a connection string's
+# scheme, and long enough to be quoted.
+SCHEME_SECRET = "zqSyntheticSchemeValue9"
+
+
+class TestEnvFileValues:
+    @pytest.mark.parametrize("fmt", ["text", "json", "sarif"])
+    def test_a_value_from_the_sibling_env(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        fmt: str,
+    ) -> None:
+        _write(
+            tmp_path / "compose.yml",
+            "services:\n  web:\n    image: nginx:1.27\n    env_file: app.env\n",
+        )
+        _write(tmp_path / "app.env", "DB_URL=${DB_PASSWORD}://user:pw@db/app\n")
+        _write(tmp_path / ENV_NAME, f"DB_PASSWORD={SCHEME_SECRET}\n")
+        _, out, err = _run(
+            ["--format", fmt, "compose.yml"], tmp_path, monkeypatch, capsys
+        )
+        assert SCHEME_SECRET not in out
+        assert SCHEME_SECRET not in err
+        assert "${DB_PASSWORD}://" in out
+
+    @pytest.mark.parametrize("fmt", ["text", "json", "sarif"])
+    def test_a_value_from_an_earlier_env_file(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        fmt: str,
+    ) -> None:
+        """No `.env` at all: the value comes from a file listed first, which a
+        CI job can write just as it writes a `.env`."""
+        _write(
+            tmp_path / "compose.yml",
+            "services:\n  web:\n    image: nginx:1.27\n"
+            "    env_file: [ci.env, app.env]\n",
+        )
+        _write(tmp_path / "ci.env", f"API_KEY={SCHEME_SECRET}\n")
+        _write(tmp_path / "app.env", "DB_URL=${API_KEY}://user:pw@db/app\n")
+        _, out, err = _run(
+            ["--format", fmt, "compose.yml"], tmp_path, monkeypatch, capsys
+        )
+        assert SCHEME_SECRET not in out
+        assert SCHEME_SECRET not in err
+        assert "${API_KEY}://" in out
+
+    @pytest.mark.parametrize("fmt", ["text", "json", "sarif"])
+    def test_a_piece_cut_where_no_separator_is(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        fmt: str,
+    ) -> None:
+        """CL-0021 reads the scheme back to the last character a scheme cannot
+        hold. `_` is one, and it is not a character a value is split on, so
+        the piece after it was never one the report looked for."""
+        tail = "zqTailAfterUnderscore9"
+        _write(
+            tmp_path / "compose.yml",
+            "services:\n  web:\n    image: nginx:1.27\n    env_file: app.env\n",
+        )
+        _write(tmp_path / "app.env", "DB_URL=${DB_PASSWORD}://user:pw@db/app\n")
+        _write(tmp_path / ENV_NAME, f"DB_PASSWORD=zqHead_{tail}\n")
+        _, out, err = _run(
+            ["--format", fmt, "compose.yml"], tmp_path, monkeypatch, capsys
+        )
+        assert tail not in out
+        assert tail not in err
+
+    def test_the_finding_still_fires(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        _write(
+            tmp_path / "compose.yml",
+            "services:\n  web:\n    image: nginx:1.27\n    env_file: app.env\n",
+        )
+        _write(tmp_path / "app.env", "DB_URL=${DB_PASSWORD}://user:pw@db/app\n")
+        _write(tmp_path / ENV_NAME, f"DB_PASSWORD={SCHEME_SECRET}\n")
+        _, out, _ = _run(
+            ["--format", "json", "compose.yml"], tmp_path, monkeypatch, capsys
+        )
+        (finding,) = _by_rule(out, "CL-0021")
+        assert "${DB_PASSWORD}://" in finding["message"]
+        assert "${DB_PASSWORD}://" in finding["fix"]
+
+    def test_a_key_of_the_same_file_is_not_a_reference(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """A value the env file itself wrote is its own text, quoted as before."""
+        _write(
+            tmp_path / "compose.yml",
+            "services:\n  web:\n    image: nginx:1.27\n    env_file: app.env\n",
+        )
+        _write(
+            tmp_path / "app.env",
+            "SCHEME=postgresql\nDB_URL=${SCHEME}://user:pw@db/app\n",
+        )
+        _, out, _ = _run(
+            ["--format", "json", "compose.yml"], tmp_path, monkeypatch, capsys
+        )
+        (finding,) = _by_rule(out, "CL-0021")
+        assert "postgresql://" in finding["message"]
+
+
+# --- GHSA-4pqv-x435-ppj6: a note that escaped the path it named -------------
+
+# The env_file note formatted its path with repr(), which doubles a backslash
+# and escapes a quote. The escaped text was not the value, so it was not
+# replaced.
+_ESCAPED_VALUES = {
+    "backslash": "zqSynthetic\\MarkerValue9",
+    "both-quotes": "zqSynth'etic\"MarkerValue9",
+}
+_ESCAPED_PATHS = {
+    "outside": '"../${DB_PASSWORD}/x.env"',
+    "missing": '"${DB_PASSWORD}/missing.env"',
+}
+
+
+class TestEscapedNotes:
+    @pytest.mark.parametrize("fmt", ["text", "json", "sarif"])
+    @pytest.mark.parametrize("where", sorted(_ESCAPED_PATHS))
+    @pytest.mark.parametrize("shape", sorted(_ESCAPED_VALUES))
+    def test_the_value_never_reaches_output(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        fmt: str,
+        where: str,
+        shape: str,
+    ) -> None:
+        value = _ESCAPED_VALUES[shape]
+        project = tmp_path / "project"
+        _write(
+            project / "compose.yml",
+            "services:\n  web:\n    image: nginx:1.27\n"
+            f"    env_file: {_ESCAPED_PATHS[where]}\n",
+        )
+        # Single-quoted when it can be, so the backslash is taken literally.
+        written = f"'{value}'" if "'" not in value else value
+        _write(project / ENV_NAME, f"DB_PASSWORD={written}\n")
+        _, out, err = _run(
+            ["--format", fmt, "compose.yml"], project, monkeypatch, capsys
+        )
+        # Whatever escaping a sink applies, the letters either side of the
+        # escaped character would still be there.
+        plain = value.replace("\\", "").replace("'", "").replace('"', "")
+        for stream in (out, err):
+            stripped = stream.replace("\\", "").replace("'", "").replace('"', "")
+            assert plain not in stripped
+        assert "${DB_PASSWORD}" in out + err

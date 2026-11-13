@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from compose_lint._output import inline
+from compose_lint._output import inline, quoted
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 from compose_lint.rules._mounts import (
@@ -270,7 +270,7 @@ class SensitiveMountRule(BaseRule):
                 evidence=mount.host_path,
                 target=mount.target,
                 message=(
-                    f"Service mounts sensitive host path '{mount.host_path}' "
+                    f"Service mounts sensitive host path '{quoted(mount.host_path)}' "
                     f"(under {matched}). The mount {reason}."
                 ),
                 line=mount.line,

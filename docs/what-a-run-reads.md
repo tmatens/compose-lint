@@ -85,8 +85,12 @@ machine. `--no-env` ignores env files entirely.
 
 A value the `.env` supplies is graded but not printed: wherever a finding,
 its fix guidance or a note would quote it, the report shows the reference
-instead (`${DB_PASSWORD}`), in text, JSON and SARIF alike. One limit: a value
-shorter than 8 characters is shown as written. Short values (`true`,
+instead (`${DB_PASSWORD}`), in text, JSON and SARIF alike. The same holds for
+a value an `env_file:` target was filled in with, from the `.env` or from a
+file listed before it. Where a finding quotes the document, any run of 8 or
+more characters of the value is replaced, so a piece of it is not printed
+either ([ADR-042](adr/042-rules-mark-the-document-text-they-quote.md)). One
+limit: a value shorter than 8 characters is shown as written. Short values (`true`,
 `latest`, `1000`) are also words the guidance itself uses, and replacing
 them there would corrupt it.
 

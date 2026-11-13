@@ -31,6 +31,7 @@ import re
 import sys
 from typing import TextIO
 
+from compose_lint._doc_text import mark
 from compose_lint._env_quote import quote as quote_env_values
 
 # Code-point ranges (inclusive) that can spoof or corrupt terminal output:
@@ -149,6 +150,19 @@ def sanitize_line(text: str) -> str:
     return _defuse_commands(_UNSAFE_LINE_CHARS.sub(_escape, text))
 
 
+def quoted(value: object) -> str:
+    """A value from a Compose file, quoted in a finding's message.
+
+    Every value a rule puts into a message, a fix or guidance goes through
+    here or through :func:`inline`. The result is marked as document text
+    (:mod:`compose_lint._doc_text`), which is what lets the engine replace a
+    ``.env`` value in it wherever it appears, including in a piece the rule
+    cut out of a longer value. ``tests/test_doc_text_marking.py`` fails for a
+    rule that quotes the document any other way.
+    """
+    return mark(str(value))
+
+
 def inline(value: object) -> str:
     """A value from a Compose file, quoted inside rule guidance on one line.
 
@@ -156,9 +170,10 @@ def inline(value: object) -> str:
     break carried in with a quoted value would start a line whose whole text
     the file chose, which a problem matcher registered earlier in a CI job
     reads as one of its own lines. The break is shown as the same visible
-    escape the sanitizer gives other control characters.
+    escape the sanitizer gives other control characters. Marked as document
+    text, as :func:`quoted` is.
     """
-    return str(value).replace("\n", "\\u000a")
+    return mark(str(value).replace("\n", "\\u000a"))
 
 
 # Continuation lines are indented so nothing after an embedded newline can sit

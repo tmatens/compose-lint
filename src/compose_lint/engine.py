@@ -7,6 +7,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
 
 from compose_lint._clock import utc_today
+from compose_lint._doc_text import grams, quote_spans
 from compose_lint._env_quote import quotable
 from compose_lint._limits import MAX_FINDINGS
 from compose_lint._output import emit
@@ -148,6 +149,13 @@ def run_rules(
     # `secrets:` or `configs:` entry's `file:`. A finding quotes those paths, so
     # their references are quoted with the service's own.
     shared = [data.get(key) for key in _SHARED_DEFINITIONS]
+    # What each unit's `env_file:` targets were filled in with. Those values
+    # are not in the document, so the walk over it never meets them.
+    from_env_files: dict[str, dict[str, str]] = {}
+    for unit in graded_units:
+        contributed = (env_files or {}).get(unit.env_key) if unit.env_key else None
+        if contributed is not None and contributed.substituted:
+            from_env_files.setdefault(unit.name, {}).update(contributed.substituted)
 
     for rule in rules:
         rule_id = rule.metadata.id
@@ -238,13 +246,15 @@ def run_rules(
             if len(findings) > MAX_FINDINGS:
                 # Quote before raising: the caller reports these findings, so
                 # they must not carry a value a reference resolved to either.
-                if env_values:
-                    findings = _quote_references(findings, by_name, env_values, shared)
+                findings = _quote_references(
+                    findings, by_name, env_values or {}, shared, from_env_files
+                )
                 findings.sort(key=lambda f: (f.line is None, f.line or 0))
                 raise FindingLimitError(findings)
 
-    if env_values:
-        findings = _quote_references(findings, by_name, env_values, shared)
+    findings = _quote_references(
+        findings, by_name, env_values or {}, shared, from_env_files
+    )
     findings.sort(key=lambda f: (f.line is None, f.line or 0))
     return findings
 
@@ -279,49 +289,136 @@ def _quote_references(
     services: Mapping[Any, Any],
     env_values: Mapping[str, Mapping[str, str]],
     shared: list[Any],
+    env_file_values: Mapping[str, Mapping[str, str]] | None = None,
 ) -> list[Finding]:
     """Replace each ``.env`` value a service used with its ``${NAME}``.
 
-    Scoped to the values that reached *that* service's own substituted fields,
-    plus the top-level definitions in ``shared`` its mounts are read from, so a
-    literal ``redis:latest`` in one service is not rewritten because another
-    service's ``${TAG}`` supplied ``latest``. Within a service a value is
-    replaced wherever it appears, from
-    :data:`compose_lint._env_quote.QUOTED_FROM` characters up.
+    Scoped to the values that reached *that* service: its own fields, the
+    top-level definitions in ``shared`` its mounts are read from, and what its
+    ``env_file:`` targets were filled in with (``env_file_values``). A literal
+    ``redis:latest`` in one service is not rewritten because another service's
+    ``${TAG}`` supplied ``latest``.
+
+    Two searches, because a message is two kinds of text. What the rule marked
+    as quoted from the document (:mod:`compose_lint._doc_text`) is searched
+    for any run of a value, so a piece the rule cut out of a value is replaced
+    wherever it was cut. The rule's own words are searched for the whole value
+    and its separated parts only, from
+    :data:`compose_lint._env_quote.QUOTED_FROM` characters up, so guidance is
+    not rewritten by a value that happens to share a word with it.
+    ``evidence`` and ``target`` are document text throughout.
     """
-    patterns: dict[str, tuple[re.Pattern[str], dict[str, str]] | None] = {}
+    if not env_values and not env_file_values:
+        # Nothing was substituted, so there is nothing to look for, and a walk
+        # of every service's configuration would be all cost: an aliased
+        # mapping shared by thousands of services is walked once per service.
+        return [_without_spans(finding) for finding in findings]
+    run_values: dict[str, str] = {}
+    for leaf_names in env_values.values():
+        run_values.update(leaf_names)
+    scopes: dict[str, _Scope | None] = {}
     quoted: list[Finding] = []
     for finding in findings:
-        if finding.service not in patterns:
-            patterns[finding.service] = _service_pattern(
-                [services.get(finding.service), shared], env_values
+        if finding.service not in scopes:
+            scopes[finding.service] = _service_scope(
+                [services.get(finding.service), shared],
+                env_values,
+                run_values,
+                (env_file_values or {}).get(finding.service, {}),
             )
-        compiled = patterns[finding.service]
-        if compiled is None:
-            quoted.append(finding)
+        scope = scopes[finding.service]
+        if scope is None:
+            quoted.append(_without_spans(finding))
             continue
-        pattern, names = compiled
-
-        def sub(
-            text: str, _p: re.Pattern[str] = pattern, _n: dict[str, str] = names
-        ) -> str:
-            return _p.sub(lambda m: "${" + _n[m.group(0)] + "}", text)
-
         quoted.append(
             replace(
                 finding,
-                message=sub(finding.message),
-                fix=sub(finding.fix) if finding.fix else finding.fix,
+                message=scope.quote(finding.message, finding.message_spans),
+                fix=(
+                    scope.quote(finding.fix, finding.fix_spans)
+                    if finding.fix
+                    else finding.fix
+                ),
+                evidence=(
+                    scope.quote_all(finding.evidence)
+                    if finding.evidence
+                    else finding.evidence
+                ),
+                target=(
+                    scope.quote_all(finding.target)
+                    if finding.target
+                    else finding.target
+                ),
+                message_spans=(),
+                fix_spans=(),
             )
         )
     return quoted
 
 
-def _service_pattern(
-    config: Any, env_values: Mapping[str, Mapping[str, str]]
-) -> tuple[re.Pattern[str], dict[str, str]] | None:
-    """A regex matching every ``.env`` value ``config`` used, and its names."""
-    used: dict[str, str] = {}
+def _without_spans(finding: Finding) -> Finding:
+    if not finding.message_spans and not finding.fix_spans:
+        return finding
+    return replace(finding, message_spans=(), fix_spans=())
+
+
+class _Scope:
+    """The ``.env`` values one service used, ready to be quoted back."""
+
+    def __init__(self, used: Mapping[str, str]) -> None:
+        names: dict[str, str] = {}
+        for name, value in used.items():
+            # The whole value, and each separated part of it: a rule quotes
+            # pieces of what it parsed (CL-0004's fix names the image without
+            # its tag), so a secret inside the value would otherwise leave in
+            # a fragment.
+            for piece, piece_name in quotable(name, value).items():
+                names.setdefault(piece, piece_name)
+        self._names = names
+        self._pattern = (
+            re.compile(
+                "|".join(
+                    re.escape(value) for value in sorted(names, key=len, reverse=True)
+                )
+            )
+            if names
+            else None
+        )
+        self._grams = grams(used)
+
+    def __bool__(self) -> bool:
+        return bool(self._grams)
+
+    def _own_words(self, text: str) -> str:
+        if self._pattern is None:
+            return text
+        return self._pattern.sub(lambda m: "${" + self._names[m.group(0)] + "}", text)
+
+    def quote(self, text: str, spans: tuple[tuple[int, int], ...]) -> str:
+        """``text`` quoted: aggressively inside ``spans``, cautiously outside."""
+        return self._own_words(quote_spans(text, spans, self._grams))
+
+    def quote_all(self, text: str) -> str:
+        """``text`` quoted as document text from end to end."""
+        return self.quote(text, ((0, len(text)),))
+
+
+def _service_scope(
+    config: Any,
+    env_values: Mapping[str, Mapping[str, str]],
+    run_values: Mapping[str, str],
+    from_env_files: Mapping[str, str],
+) -> _Scope | None:
+    """The ``.env`` values ``config`` used.
+
+    A string the parser substituted is looked up as the parser recorded it.
+    The lookup is by the whole string, not by searching for values inside it,
+    so that a literal one service wrote is not treated as a reference because
+    another service's variable holds the same text. That makes the record the
+    parser's to keep: when it rewrites a substituted string, it records the
+    new one (``parser._resolve_bind_sources``).
+    """
+    used: dict[str, str] = dict(from_env_files)
     seen: set[int] = set()
     stack = [config]
     visited = 0
@@ -329,9 +426,7 @@ def _service_pattern(
         node = stack.pop()
         visited += 1
         if visited > _MAX_WALK:
-            used = {}
-            for leaf_names in env_values.values():
-                used.update(leaf_names)
+            used.update(run_values)
             break
         if isinstance(node, str):
             used.update(env_values.get(node, {}))
@@ -342,19 +437,8 @@ def _service_pattern(
             stack.extend(node.values() if isinstance(node, dict) else node)
     if not used:
         return None
-    names: dict[str, str] = {}
-    for name, value in used.items():
-        # The whole value, and each separated part of it: a rule quotes pieces
-        # of what it parsed (CL-0004's fix names the image without its tag), so
-        # a secret inside the value would otherwise leave in a fragment.
-        for piece, piece_name in quotable(name, value).items():
-            names.setdefault(piece, piece_name)
-    if not names:
-        return None
-    alternatives = "|".join(
-        re.escape(value) for value in sorted(names, key=len, reverse=True)
-    )
-    return re.compile(alternatives), names
+    scope = _Scope(used)
+    return scope if scope else None
 
 
 def filter_findings(

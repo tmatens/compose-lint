@@ -2164,7 +2164,11 @@ def _split_short_volume(volume: str) -> tuple[str, str, str]:
     return volume, "", ""
 
 
-def _resolve_bind_sources(data: dict[str, Any], base_dir: Path) -> None:
+def _resolve_bind_sources(
+    data: dict[str, Any],
+    base_dir: Path,
+    record: dict[str, dict[str, str]] | None = None,
+) -> None:
     """Rewrite relative and ``~`` bind sources to the host paths they name.
 
     Left as written, neither shape reaches the host-path rules: ``../../../..``
@@ -2184,7 +2188,19 @@ def _resolve_bind_sources(data: dict[str, Any], base_dir: Path) -> None:
     5.5.0 resolves a relative ``file:`` against the compose file's directory
     exactly as it does a bind source: ``file: ../../../../etc/shadow`` ships as
     ``/etc/shadow``. Left relative, it never reached the host-path rules.
+
+    ``record`` is what a ``.env`` substituted, keyed by the substituted text
+    (:func:`_substitute_interpolation_defaults`). A source rewritten here is
+    no longer that text, so the rewritten string is recorded under the same
+    names: a finding about ``./${TOKEN}/docker.sock`` quotes the reference,
+    exactly as one about the absolute spelling does.
     """
+
+    def carried(written: str, rewritten: str) -> str:
+        if record is not None and written in record:
+            record.setdefault(rewritten, {}).update(record[written])
+        return rewritten
+
     for channel in ("secrets", "configs"):
         block = data.get(channel)
         if not isinstance(block, dict):
@@ -2196,7 +2212,7 @@ def _resolve_bind_sources(data: dict[str, Any], base_dir: Path) -> None:
             if isinstance(file_value, str):
                 resolved = _resolved_bind_source(file_value, base_dir)
                 if resolved is not None:
-                    spec["file"] = resolved
+                    spec["file"] = carried(file_value, resolved)
     # Every container the document writes, not only services: a `pre_start`
     # hook or a job mounting `../../..` mounts the host root just the same
     # (ADR-040).
@@ -2211,13 +2227,13 @@ def _resolve_bind_sources(data: dict[str, Any], base_dir: Path) -> None:
                     continue  # a lone name is an anonymous volume, not a bind
                 resolved = _resolved_bind_source(source, base_dir)
                 if resolved is not None:
-                    volumes[i] = f"{resolved}:{rest}"
+                    volumes[i] = carried(volume, f"{resolved}:{rest}")
             elif isinstance(volume, dict):
                 source_value = volume.get("source")
                 if isinstance(source_value, str):
                     resolved = _resolved_bind_source(source_value, base_dir)
                     if resolved is not None:
-                        volume["source"] = resolved
+                        volume["source"] = carried(source_value, resolved)
 
 
 def load_compose(
@@ -2544,7 +2560,7 @@ def _loads_full(  # noqa: PLR0913
         # are left alone, so nothing arriving from another document is
         # re-resolved against this one's directory.
         if base_dir is not None:
-            _resolve_bind_sources(data, base_dir)
+            _resolve_bind_sources(data, base_dir, substituted)
         # Likewise its own `env_file:` paths, re-expressed against the primary
         # file's directory because that is where `resolve_env_files` reads them
         # from. Done here, once per document and before anything is folded in,

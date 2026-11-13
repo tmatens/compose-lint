@@ -6,7 +6,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from compose_lint._limits import MAX_SCAN_LEN
-from compose_lint._output import inline
+from compose_lint._output import inline, quoted
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 from compose_lint.rules._interpolation import ships_no_literal
@@ -214,8 +214,8 @@ class ConnectionStringCredentialsRule(BaseRule):
                 service=service_name,
                 evidence=key,
                 message=(
-                    f"Service has env var '{key}' containing an inline "
-                    f"credential in a {scheme}:// connection string "
+                    f"Service has env var '{quoted(key)}' containing an inline "
+                    f"credential in a {quoted(scheme)}:// connection string "
                     "(scheme://user:password@host). Env vars are exposed "
                     "via `docker inspect`, `/proc/<pid>/environ`, "
                     "`docker compose config`, process listings, and CI "
@@ -269,9 +269,9 @@ class ConnectionStringCredentialsRule(BaseRule):
                 service=service_name,
                 evidence=entry.key,
                 message=(
-                    f"Service reads env var '{entry.key}' from "
-                    f"'{entry.source_file}' containing an inline credential in "
-                    f"a {scheme}:// connection string "
+                    f"Service reads env var '{quoted(entry.key)}' from "
+                    f"'{quoted(entry.source_file)}' containing an inline credential in "
+                    f"a {quoted(scheme)}:// connection string "
                     "(scheme://user:password@host). Compose merges that file "
                     "into the container's process environment, where it is "
                     "exposed via `docker inspect`, `/proc/<pid>/environ`, "

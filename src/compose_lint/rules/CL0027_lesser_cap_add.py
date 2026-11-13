@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from compose_lint._output import inline
+from compose_lint._output import inline, quoted
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
 from compose_lint.rules._caps import REFERENCES, iter_cap_add
@@ -72,7 +72,7 @@ class LesserCapAddRule(BaseRule):
                 severity=Severity.MEDIUM,
                 service=service_name,
                 evidence=bare,
-                message=(f"Service adds {as_written}: {LESSER_CAPS[bare]}."),
+                message=(f"Service adds {quoted(as_written)}: {LESSER_CAPS[bare]}."),
                 line=line,
                 fix=(
                     f"Remove {inline(as_written)} from cap_add unless the workload "

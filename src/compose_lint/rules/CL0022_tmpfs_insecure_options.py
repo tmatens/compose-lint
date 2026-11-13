@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from compose_lint._lines import split_lines
-from compose_lint._output import inline
+from compose_lint._output import inline, quoted
 from compose_lint._yaml_edit import (
     is_anchored_or_merged,
     mapping_scalar_span,
@@ -134,10 +134,10 @@ class TmpfsInsecureOptionsRule(BaseRule):
                 service=service_name,
                 evidence=normalize_container_path(path),
                 message=(
-                    f"tmpfs mount '{path}' re-enables {opts}. Docker mounts tmpfs "
-                    "noexec,nosuid by default; this turns that off, making a "
-                    "writable in-memory mount a place to stage and run dropped "
-                    "payloads — especially under read_only: true."
+                    f"tmpfs mount '{quoted(path)}' re-enables {quoted(opts)}. "
+                    "Docker mounts tmpfs noexec,nosuid by default; this turns "
+                    "that off, making a writable in-memory mount a place to stage "
+                    "and run dropped payloads — especially under read_only: true."
                 ),
                 line=lines.get(line_key) or lines.get(f"services.{service_name}.tmpfs"),
                 fix=(

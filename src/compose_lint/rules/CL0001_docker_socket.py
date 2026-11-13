@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._output import quoted
 from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
@@ -175,7 +176,7 @@ class DockerSocketRule(BaseRule):
             )
             if runtime is not None:
                 message = (
-                    f"{runtime} runtime socket mounted via '{volume_str}'. "
+                    f"{runtime} runtime socket mounted via '{quoted(volume_str)}'. "
                     f"This gives the container full control over the {runtime} "
                     "runtime — equivalent to root on the host."
                 )
@@ -187,7 +188,7 @@ class DockerSocketRule(BaseRule):
                 if directory is None:
                     continue
                 message = (
-                    f"Service mounts '{volume_str}', which contains "
+                    f"Service mounts '{quoted(volume_str)}', which contains "
                     f"{_SOCKET_DIRS[directory]}. Exposing the directory "
                     "exposes the socket inside it."
                 )

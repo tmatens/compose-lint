@@ -174,6 +174,18 @@ class Finding:
     # in JSON or SARIF -- it describes where the tool may look, not anything a
     # consumer grades, so the output contract does not move.
     source_is_document: bool = True
+    # Where `message` and `fix` quote text from the document, as (start, end)
+    # offsets: what a rule passed through `compose_lint._doc_text.mark`. The
+    # engine replaces a `.env` value inside these spans far more readily than
+    # in the rule's own words around them. Bookkeeping, not part of what a
+    # finding says: never serialized, and two findings that read the same
+    # compare equal whatever was marked.
+    message_spans: tuple[tuple[int, int], ...] = field(
+        default=(), compare=False, repr=False
+    )
+    fix_spans: tuple[tuple[int, int], ...] = field(
+        default=(), compare=False, repr=False
+    )
 
 
 @dataclass(frozen=True)
