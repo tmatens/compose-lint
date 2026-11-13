@@ -7,7 +7,7 @@ import shlex
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qsl, urlsplit
 
-from compose_lint._output import inline
+from compose_lint._output import inline, quoted
 from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
@@ -536,7 +536,7 @@ class CredentialEnvKeysRule(BaseRule):
                 service=service_name,
                 evidence=key,
                 message=(
-                    f"Service has credential-shaped env key '{key}' with a "
+                    f"Service has credential-shaped env key '{quoted(key)}' with a "
                     "literal value. Env vars are exposed via `docker inspect`, "
                     "`/proc/<pid>/environ`, `docker compose config`, process "
                     "listings, and CI logs — any process or operator with "
@@ -580,7 +580,7 @@ class CredentialEnvKeysRule(BaseRule):
                     service=service_name,
                     evidence=f"{location}:{name}",
                     message=(
-                        f"Service passes credential-shaped argument '{name}' "
+                        f"Service passes credential-shaped argument '{quoted(name)}' "
                         f"with a literal value in `{location}`. The argument "
                         "list is exposed via `docker inspect`, "
                         "`/proc/<pid>/cmdline` (readable by every user in the "
@@ -640,8 +640,8 @@ class CredentialEnvKeysRule(BaseRule):
                 service=service_name,
                 evidence=entry.key,
                 message=(
-                    f"Service reads credential-shaped env key '{entry.key}' "
-                    f"with a literal value from '{entry.source_file}'. "
+                    f"Service reads credential-shaped env key '{quoted(entry.key)}' "
+                    f"with a literal value from '{quoted(entry.source_file)}'. "
                     "Compose merges that file into the container's process "
                     "environment, where it is exposed via `docker inspect`, "
                     "`/proc/<pid>/environ`, `docker compose config`, process "

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from compose_lint._output import inline
+from compose_lint._output import inline, quoted
 from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
@@ -69,7 +69,7 @@ class ImageNotPinnedRule(BaseRule):
                 severity=Severity.MEDIUM,
                 service=service_name,
                 message=(
-                    f"Image '{image}' has no tag, which defaults to ':latest'. "
+                    f"Image '{quoted(image)}' has no tag, which defaults to ':latest'. "
                     "Pin to a specific version for reproducible builds."
                 ),
                 line=lines.get(f"services.{service_name}.image"),
@@ -84,7 +84,7 @@ class ImageNotPinnedRule(BaseRule):
                 severity=Severity.MEDIUM,
                 service=service_name,
                 message=(
-                    f"Image '{image}' uses mutable tag ':{tag}'. "
+                    f"Image '{quoted(image)}' uses mutable tag ':{quoted(tag)}'. "
                     "Pin to a specific version for reproducible builds."
                 ),
                 line=lines.get(f"services.{service_name}.image"),

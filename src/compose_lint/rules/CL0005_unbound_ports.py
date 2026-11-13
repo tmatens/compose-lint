@@ -7,7 +7,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from compose_lint._lines import split_lines
-from compose_lint._output import inline
+from compose_lint._output import inline, quoted
 from compose_lint._scalar import as_scalar_text
 from compose_lint._yaml_edit import (
     is_anchored_or_merged,
@@ -295,8 +295,8 @@ class UnboundPortsRule(BaseRule):
     ) -> Finding:
         if bare:
             message = (
-                f"Bare port '{port_str}' is published on all interfaces: Docker "
-                "assigns a random (ephemeral) host port bound to 0.0.0.0. It "
+                f"Bare port '{quoted(port_str)}' is published on all interfaces: "
+                "Docker assigns a random (ephemeral) host port bound to 0.0.0.0. It "
                 "bypasses host firewalls (UFW/firewalld), potentially exposing "
                 "this port to the public internet."
             )
@@ -309,9 +309,9 @@ class UnboundPortsRule(BaseRule):
             )
         else:
             message = (
-                f"Port '{port_str}' is bound to all interfaces. Docker bypasses "
-                "host firewalls (UFW/firewalld), potentially exposing this port "
-                "to the public internet."
+                f"Port '{quoted(port_str)}' is bound to all interfaces. Docker "
+                "bypasses host firewalls (UFW/firewalld), potentially exposing "
+                "this port to the public internet."
             )
             fix = (
                 f"Bind to localhost: 127.0.0.1:{inline(bind or port_str)}\n"

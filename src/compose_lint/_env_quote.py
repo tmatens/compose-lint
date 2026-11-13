@@ -26,6 +26,8 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+from compose_lint._doc_text import forms
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
@@ -62,10 +64,14 @@ def remember(env_values: Mapping[str, Mapping[str, str]]) -> None:
     added = False
     for used in env_values.values():
         for name, value in used.items():
-            for piece, piece_name in quotable(name, value).items():
-                if piece not in _names:
-                    _names[piece] = piece_name
-                    added = True
+            # Each spelling a message can carry the value in: a note that
+            # formats a path with `repr` doubles its backslashes, and the
+            # doubled text is not the value.
+            for form in forms(value):
+                for piece, piece_name in quotable(name, form).items():
+                    if piece not in _names:
+                        _names[piece] = piece_name
+                        added = True
     if added:
         alternatives = "|".join(
             re.escape(value) for value in sorted(_names, key=len, reverse=True)

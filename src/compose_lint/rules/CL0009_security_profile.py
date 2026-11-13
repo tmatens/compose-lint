@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from compose_lint._lines import split_lines
-from compose_lint._output import inline
+from compose_lint._output import inline, quoted
 from compose_lint._yaml_edit import (
     DISABLED_SECURITY_PROFILES,
     INTERPOLATED_DELETION,
@@ -132,7 +132,7 @@ class SecurityProfileRule(BaseRule):
                 evidence=profile_key,
                 message=(
                     f"Service disables {profile_name} "
-                    f"('{opt_str}'). This removes {removal} "
+                    f"('{quoted(opt_str)}'). This removes {removal} "
                     "that limit what a compromised container can do."
                 ),
                 line=lines.get(f"services.{service_name}.security_opt[{i}]")

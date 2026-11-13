@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
+from compose_lint._output import quoted
 from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
@@ -80,7 +81,7 @@ class ExplicitRootRule(BaseRule):
                 service=service_name,
                 message=(
                     f"Service explicitly runs as root "
-                    f"(user: {service_config['user']}). This overrides any "
+                    f"(user: {quoted(service_config['user'])}). This overrides any "
                     "non-root USER instruction in the image."
                 ),
                 line=lines.get(f"services.{service_name}.user"),

@@ -169,7 +169,7 @@ order or shares state with another test, and that is the bug to fix.
 
 ## Conventions the diff won't show you
 
-Six rules that reviews here have asked for and no file stated. Each names
+Seven rules that reviews here have asked for and no file stated. Each names
 the test that enforces it, or says that a reviewer does.
 
 - **Every list in the docs is exhaustive, and tested.** The Validation bullets
@@ -180,6 +180,13 @@ the test that enforces it, or says that a reviewer does.
   to every surface that lists rules (`tests/test_rule_surfaces.py`). Adding to
   the code means adding to the page in the same PR, and CI names the missing
   entry.
+- **A rule marks what it quotes from the document.** A value from the
+  Compose file goes into a finding's `message` or `fix` through
+  `_output.quoted()` or `_output.inline()`, never bare. The mark is what lets
+  a `.env` value be replaced wherever it appears in the quoted text
+  ([ADR-042](docs/adr/042-rules-mark-the-document-text-they-quote.md)).
+  `tests/test_doc_text_marking.py` and
+  `tests/test_guidance_inline_values.py`.
 - **One grammar, one reader.** A regex or grammar lives in one module and is
   imported from there — `_env_file.py` takes the `${...}` grammar from
   `rules/_interpolation` "so the two readers cannot drift". A second copy of

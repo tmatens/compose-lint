@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Rules mark the document text they quote, and a `.env` value is replaced
+  anywhere inside it.** Until now a finished message was searched for the
+  whole value and its `/`- or `:`-separated parts, so a piece a rule had cut
+  elsewhere could be printed. Every value a rule takes from the document is
+  now marked, and inside a mark any run of 8 or more characters of a value
+  the service used is replaced by its `${NAME}`. A test fails the build for
+  a rule that quotes the document unmarked, and a sweep puts a marker
+  through every string of every fixture and requires it in no output
+  ([ADR-042](docs/adr/042-rules-mark-the-document-text-they-quote.md)).
+- **A SARIF fingerprint no longer depends on a `.env` value.** The identity
+  a fingerprint is built from now holds the reference where it held the
+  value. The fingerprint of a finding about a substituted value changes once
+  on upgrade, so Code Scanning closes that alert and opens it again, and it
+  then stays the same when the value changes.
+
 - **The GitHub Action installs its locked dependencies by default.** With
   `version:` empty, the Action pinned compose-lint to its own release but
   let pip resolve PyYAML fresh on every run, so a SHA-pinned `uses:` was
@@ -17,6 +32,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pip install --require-hashes -r requirements.lock` from the action's own
   checkout, then compose-lint with `--no-deps`. An explicit `version:` or
   `latest` resolves dependencies from PyPI as before.
+
+### Security
+
+- **A relative mount path quotes `${NAME}`, not the `.env` value.** The
+  parser rewrites a relative bind source to the absolute path it names, and
+  the rewritten path was no longer recognised as carrying a value a sibling
+  `.env` filled in. A finding about `./${NAME}/docker.sock`, in short or long
+  syntax or as the `file:` of a top-level `secrets:` or `configs:` entry,
+  named the value in text, JSON and SARIF. The rewrite now keeps the record.
+  See GHSA-4923-jg9h-5w44.
+- **A finding about an `env_file:` value quotes `${NAME}`, not the value it
+  was filled in with.** A reference inside an `env_file:` target is filled in
+  from the sibling `.env`, or from a file listed before it, by a separate
+  step that recorded nothing. CL-0021 names a connection string's scheme, so
+  `DB_URL=${NAME}://...` put the value into its message and fix. Those
+  values are now recorded per service and quoted like the rest. See
+  GHSA-g5qx-4j8p-9ch5.
+- **The `env_file:` note quotes `${NAME}` when the value holds a backslash or
+  quote characters.** The note about a target that was not read formatted
+  its path with the characters escaped, and the escaped text was not
+  replaced. The path is now written as it is, and every message is also
+  searched for the escaped spellings of a value. See GHSA-4pqv-x435-ppj6.
 
 ## [1.3.1] - 2026-11-12
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from compose_lint._output import inline
+from compose_lint._output import inline, quoted
 from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
@@ -77,7 +77,7 @@ class ImageNoDigestRule(BaseRule):
             severity=Severity.MEDIUM,
             service=service_name,
             message=(
-                f"Image '{image}' is pinned to a tag but not a digest. "
+                f"Image '{quoted(image)}' is pinned to a tag but not a digest. "
                 "Tags can be overwritten on the registry, so this does not "
                 "guarantee image immutability."
             ),

@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
-from compose_lint._output import inline
+from compose_lint._output import inline, quoted
 from compose_lint._scalar import as_scalar_text
 from compose_lint.models import Finding, RuleMetadata, Severity
 from compose_lint.rules import BaseRule, register_rule
@@ -339,7 +339,7 @@ class DangerousDevicesRule(BaseRule):
                         target=_device_target(device, host_device),
                         message=(
                             f"Service exposes dangerous host device "
-                            f"'{host_device}' ({description})."
+                            f"'{quoted(host_device)}' ({description})."
                         ),
                         line=lines.get(f"services.{service_name}.devices[{i}]")
                         or lines.get(f"services.{service_name}.devices"),
@@ -386,7 +386,7 @@ class DangerousDevicesRule(BaseRule):
                 service=service_name,
                 evidence=evidence,
                 message=(
-                    f"Service's device cgroup rule '{evidence}' permits "
+                    f"Service's device cgroup rule '{quoted(evidence)}' permits "
                     f"{description}, and the container can obtain the node "
                     "(the default MKNOD capability, or a /dev bind mount)."
                 ),
