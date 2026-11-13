@@ -364,30 +364,61 @@ def _leaks(output: str, marker: str) -> bool:
     return plain in output.replace("\\", "").lower()
 
 
+def _distinct(strings: list[tuple[tuple[Any, ...], str]]) -> list[tuple[Any, ...]]:
+    """One path per distinct (field, text) pair.
+
+    A fixture repeats the same value in the same field across many services,
+    and each repeat is the same run. The service name and list positions are
+    left out of the key, so `image: nginx:1.27` is swept once per fixture.
+    """
+    seen: set[tuple[tuple[str, ...], str]] = set()
+    paths = []
+    for path, text in strings:
+        field = tuple(step for step in path[2:] if isinstance(step, str))
+        if (field, text) not in seen:
+            seen.add((field, text))
+            paths.append(path)
+    return paths
+
+
 def _sweep(
     fixture: Path,
     marker: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    *,
+    every_spelling: bool,
 ) -> list[str]:
+    """Supply ``marker`` through a `.env` to each string of ``fixture``.
+
+    With ``every_spelling`` each string is tried with the marker in every
+    position, in JSON, and with one position in text and SARIF: a finding's
+    message is built once and printed three ways, so the positions matter to
+    the rules and the formats to the printers. Without it, one position in
+    all three formats.
+    """
     document = _raw_document(fixture)
     if not isinstance(document, dict):
         return []
     monkeypatch.chdir(tmp_path)
     compose = tmp_path / "compose.yml"
     leaked: list[str] = []
-    for path, text in _strings(document):
-        for spelling in _spellings(text, marker):
-            mutated = copy.deepcopy(document)
-            _put(mutated, path, "${CL_CANARY}")
-            compose.write_text(yaml.safe_dump(mutated), encoding="utf-8")
+    strings = dict(_strings(document))
+    for path in _distinct(list(strings.items())):
+        spellings = _spellings(strings[path], marker)
+        mutated = copy.deepcopy(document)
+        _put(mutated, path, "${CL_CANARY}")
+        compose.write_text(yaml.safe_dump(mutated), encoding="utf-8")
+        runs = [(spellings[0], fmt) for fmt in ("json", "text", "sarif")]
+        if every_spelling:
+            runs += [(spelling, "json") for spelling in spellings[1:]]
+        for spelling, fmt in runs:
             quoted = "'" + spelling.replace("'", "\\'") + "'"
             (tmp_path / ENV_NAME).write_text(f"CL_CANARY={quoted}\n", encoding="utf-8")
-            for fmt in ("text", "json", "sarif"):
-                output = _run(["--format", fmt, "compose.yml"], monkeypatch, capsys)
-                if _leaks(output, marker):
-                    leaked.append(f"{fmt} at {path} as {spelling!r}")
+            output = _run(["--format", fmt, "compose.yml"], monkeypatch, capsys)
+            if _leaks(output, marker):
+                leaked.append(f"{fmt} at {path} as {spelling!r}")
     return leaked
 
 
@@ -400,7 +431,10 @@ def test_no_env_value_reaches_any_output(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert _sweep(fixture, marker, tmp_path, monkeypatch, capsys) == []
+    leaked = _sweep(
+        fixture, marker, tmp_path, monkeypatch, capsys, every_spelling=marker == CANARY
+    )
+    assert leaked == []
 
 
 def test_the_sweep_sees_a_value_when_nothing_quotes_it(
@@ -416,4 +450,4 @@ def test_the_sweep_sees_a_value_when_nothing_quotes_it(
     monkeypatch.setattr(engine, "_quote_references", unquoted)
     monkeypatch.setattr(_env_quote, "quote", lambda text: text)
     fixture = REPO_ROOT / "tests" / "compose_files" / "insecure_socket.yml"
-    assert _sweep(fixture, CANARY, tmp_path, monkeypatch, capsys)
+    assert _sweep(fixture, CANARY, tmp_path, monkeypatch, capsys, every_spelling=True)
