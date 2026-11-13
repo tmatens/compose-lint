@@ -23,7 +23,7 @@ CRITICAL > HIGH > MEDIUM > LOW. A rule's severity is **derived**, not chosen: it
 
 ## CLI output
 
-Stdout carries data (findings in `check`; future artifacts in operations like `fix` or `completion`). `check --output PATH` sends that same data to a file instead, through `_run_check`, which is the only place `check` writes: contained to the repository, atomic, and never following what is at the path. Stderr carries human status and errors. Today's text-mode banner, per-file summary, aggregate summary, and verdict are the exception — gated on `output_format == "text"` in `cli.py` so JSON/SARIF redirects stay clean. When a second stdout-emitting mode lands, decide in that feature's ADR whether to extend the gate or move human-status lines to stderr permanently. `--explain` pages through `$PAGER` on a TTY only (ADR-034); piped output is byte-identical to a pagerless run.
+Stdout carries data (findings in `check`; future artifacts in operations like `fix` or `completion`). `check --output PATH` sends that same data to a file instead, through `_run_check`, which is the only place `check` writes: atomic, never following what is at the path, and refusing a path written inside the repository that a linked directory takes out of it. Stderr carries human status and errors. Today's text-mode banner, per-file summary, aggregate summary, and verdict are the exception — gated on `output_format == "text"` in `cli.py` so JSON/SARIF redirects stay clean. When a second stdout-emitting mode lands, decide in that feature's ADR whether to extend the gate or move human-status lines to stderr permanently. `--explain` pages through `$PAGER` on a TTY only (ADR-034); piped output is byte-identical to a pagerless run.
 
 ## Config file (`.compose-lint.yml`)
 

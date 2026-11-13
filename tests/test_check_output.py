@@ -233,14 +233,40 @@ def test_a_read_only_file_is_refused(
     assert target.read_text(encoding="utf-8") == "keep"
 
 
-def test_a_path_outside_the_repository_is_refused(
+@pytest.mark.parametrize("spelling", ["absolute", "dot-dot"])
+def test_a_typed_path_outside_the_repository_is_written(
+    project: Path, tmp_path: Path, spelling: str
+) -> None:
+    """The user typed it, and nothing in a checkout can change what was typed.
+    The directory is still created and the write is still one swap."""
+    outside = tmp_path / "elsewhere"
+    written = (
+        str(outside / "new" / "r.sarif")
+        if spelling == "absolute"
+        else "../elsewhere/new/r.sarif"
+    )
+
+    assert _check("--format", "sarif", "-o", written, "compose.yml") == 1
+
+    report = outside / "new" / "r.sarif"
+    assert json.loads(report.read_text(encoding="utf-8"))["version"] == "2.1.0"
+    assert [p.name for p in report.parent.iterdir()] == ["r.sarif"]
+
+
+@posix_only
+def test_a_typed_outside_path_still_refuses_a_link_at_the_path(
     project: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Where the directory is does not change what is refused at the path."""
     outside = tmp_path / "elsewhere"
     outside.mkdir()
-    for written in (str(outside / "r.sarif"), "../elsewhere/r.sarif"):
-        assert "outside the repository" in _refused(capsys, written)
-    assert list(outside.iterdir()) == []
+    (outside / "victim").write_text("keep", encoding="utf-8")
+    (outside / "r.sarif").symlink_to("victim")
+    (outside / "d.sarif").mkdir()
+
+    assert "symbolic link" in _refused(capsys, str(outside / "r.sarif"))
+    assert "not a regular file" in _refused(capsys, "../elsewhere/d.sarif")
+    assert (outside / "victim").read_text(encoding="utf-8") == "keep"
 
 
 @posix_only
@@ -248,20 +274,44 @@ def test_a_linked_directory_leading_out_is_refused(
     project: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`out/r.sarif` is spelled like a path in the checkout; `out` is a
-    committed link to somewhere that is not."""
+    committed link to somewhere that is not. This is the one containment
+    refusal: the spelling stays inside and the filesystem does not."""
     outside = tmp_path / "elsewhere"
     outside.mkdir()
     (project / "out").symlink_to(outside, target_is_directory=True)
 
-    assert "outside the repository" in _refused(capsys, "out/r.sarif")
-    assert "outside the repository" in _refused(capsys, "out/new/r.sarif")
+    for written in ("out/r.sarif", "out/new/r.sarif", str(project / "out/r.sarif")):
+        err = _refused(capsys, written)
+        assert "through a symbolic link to somewhere outside the repository" in err
+        assert "elsewhere" not in err
     assert list(outside.iterdir()) == []
 
 
-def test_the_git_directory_is_refused(
+@posix_only
+def test_a_linked_directory_that_stays_inside_is_followed(project: Path) -> None:
+    (project / "reports").mkdir()
+    (project / "out").symlink_to("reports", target_is_directory=True)
+
+    assert _check("--format", "sarif", "-o", "out/r.sarif", "compose.yml") == 1
+
+    assert (project / "reports" / "r.sarif").is_file()
+    assert (project / "out").is_symlink()
+
+
+@posix_only
+def test_a_link_into_the_git_directory_is_refused(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert ".git" in _refused(capsys, ".git/r.sarif")
+    (project / "out").symlink_to(".git", target_is_directory=True)
+    assert ".git" in _refused(capsys, "out/r.sarif")
+    assert list((project / ".git").iterdir()) == []
+
+
+def test_the_git_directory_typed_directly_is_refused(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    for written in (".git/r.sarif", ".git/hooks/r.sarif"):
+        assert ".git" in _refused(capsys, written)
     assert list((project / ".git").iterdir()) == []
 
 

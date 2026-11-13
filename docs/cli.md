@@ -89,10 +89,14 @@ report leaves the previous file alone.
 It is meant for CI, where the path is fixed by the pipeline and the checkout
 around it may be a pull request's, so it does not trust what is already there:
 
-- `PATH` must resolve inside the repository that holds the working directory
-  (the nearest directory at or above it with a `.git` entry), or inside the
-  working directory when it is in no repository, and outside `.git`. To write
-  anywhere else, redirect stdout.
+- A `PATH` written inside the repository that holds the working directory (the
+  nearest directory at or above it with a `.git` entry; the working directory
+  itself when it is in no repository) must also resolve inside it. One whose
+  directory is a symbolic link leading out of the repository is refused, and
+  so is one inside `.git`, written that way or reached through a link.
+- A `PATH` written outside that repository, such as `/tmp/report.sarif` or
+  `../reports/report.sarif`, is written as given. You typed it, and nothing in
+  a checkout can change that.
 - A missing parent directory is created.
 - An existing regular file is replaced. A symbolic link, a directory, a FIFO or
   device, a file with more than one hard link, or a read-only file at `PATH` is

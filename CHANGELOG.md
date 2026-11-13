@@ -12,12 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`check --output PATH` writes the report to a file.** `-o PATH` sends
   what `check` would print to stdout, in any `--format`, to `PATH` as one
   atomic replacement; stderr and the exit code are unchanged. It is built
-  for CI, where a pull request decides what is already at the path: `PATH`
-  must resolve inside the repository that holds the working directory (the
-  working directory itself when it is in none) and outside `.git`, a missing
-  parent directory is created, and a symbolic link, a directory, any other
-  non-regular file, a hard-linked file or a read-only file at `PATH` is
-  refused, as is a Compose or config file the run read. A refusal or a
+  for CI, where a pull request decides what is already at the path: a
+  `PATH` written inside the repository that holds the working directory is
+  refused when a symbolic link in it leads out of the repository or into
+  `.git`, a missing parent directory is created, and a symbolic link, a
+  directory, any other non-regular file, a hard-linked file or a read-only
+  file at `PATH` is refused, as is a Compose or config file the run read. A
+  `PATH` written outside the repository, such as `/tmp/report.sarif`, is
+  written as given. A refusal or a
   failed write is exit 2 and names the path as it was given. See the
   [CLI reference](docs/cli.md#writing-the-report-to-a-file).
 

@@ -35,7 +35,7 @@ from compose_lint._output import (
     emit_styled,
     sanitize,
 )
-from compose_lint._safe_read import out_of_reach
+from compose_lint._safe_read import containment_root, out_of_reach
 from compose_lint._selection import DocumentGroup, Selection, plan_documents
 from compose_lint._service_env import (
     MACHINE_READABLE,
@@ -416,11 +416,11 @@ def _add_check_subparser(
         default=None,
         help=(
             "write the report to PATH instead of stdout, as one complete "
-            "file. PATH must stay inside the repository that holds the "
-            "working directory (the working directory itself when it is in "
-            "none); a missing parent directory is created. A PATH that is a "
-            "symbolic link, a directory or anything else that is not a "
-            "regular file is refused (exit 2)"
+            "file. A missing parent directory is created. Refused (exit 2): "
+            "a PATH inside the repository that holds the working directory "
+            "whose directory is a symbolic link leading out of it or into "
+            ".git, and a PATH that is itself a symbolic link, a directory or "
+            "anything else that is not a regular file"
         ),
     )
     verbosity = check.add_mutually_exclusive_group()
@@ -1108,11 +1108,16 @@ def _report_target(written: str) -> Path:
     In CI the path is often fixed by the workflow while the checkout it lands
     in is a pull request's, so what is already at that path is not trusted:
 
-    * The directory must resolve inside the repository that holds the working
-      directory, or the working directory when there is none, and outside
-      ``.git``: the root every read of this run is held to
-      (:func:`~compose_lint._safe_read.out_of_reach`). A committed link that
-      leads out of the checkout is refused rather than written through.
+    * A path typed inside the repository that holds the working directory
+      (the working directory when there is none) must also resolve inside it,
+      and outside ``.git``: the root every read of this run is held to
+      (:func:`~compose_lint._safe_read.out_of_reach`). The only way it does
+      not is a link in the checkout, such as a committed one, and that is
+      refused rather than written through. A path typed outside that root
+      (``/tmp/report.sarif``, ``../reports/r.sarif``) is the user's own
+      choice, which a pull request cannot change, and is written as given.
+      Whether it is typed inside is asked of the spelling alone, ``..``
+      folded and no link resolved, as the root itself is found.
     * The last component is never followed. A symbolic link, a directory, a
       FIFO or a device there is refused, and so is a file with a second name.
       A report moved into a directory someone else put at the path is not at
@@ -1125,8 +1130,11 @@ def _report_target(written: str) -> Path:
     if path.name in ("", ".."):
         _refuse_output(written, "is not a file path")
     try:
+        cwd = Path.cwd()
+        typed = Path(os.path.normpath(cwd / path.parent))
+        typed_inside = typed.is_relative_to(containment_root(cwd))
         parent = path.parent.resolve()
-        outside = out_of_reach(parent, Path.cwd())
+        outside = typed_inside and out_of_reach(parent, cwd)
     except (OSError, RuntimeError):  # pragma: no cover - version-dependent
         # A link loop before Python 3.13 (later versions resolve it without
         # raising, and the lstat below refuses it), or a working directory
@@ -1135,8 +1143,8 @@ def _report_target(written: str) -> Path:
     if outside:
         _refuse_output(
             written,
-            "resolves outside the repository or working directory the run "
-            "started in (or into its .git); redirect stdout to write elsewhere",
+            "resolves through a symbolic link to somewhere outside the "
+            "repository, or into its .git",
         )
     target = parent / path.name
     try:
