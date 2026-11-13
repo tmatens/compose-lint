@@ -62,6 +62,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compose-lint as it is on every other surface
   ([#1253](https://github.com/tmatens/compose-lint/issues/1253)).
 
+- **`fix` refuses a service that inherits through a merge key however the
+  key is spelled.** A mapping with a merge key takes values from an anchor,
+  so `fix` cannot tell which of the two an edit belongs in and lists the
+  finding under "fix by hand". The test read the line for a leading `<<`, so
+  `!!merge <<: *base`, the verbatim tag and the explicit form `? <<` over
+  `: *base` were not recognised, and the fixers for CL-0003, CL-0005,
+  CL-0009, CL-0014 and CL-0022 edited such a service. Whether a key is a
+  merge key is now read from the parsed document. A file that was edited
+  before and is now listed for a fix by hand is the intended effect; a
+  quoted `"<<"` is an ordinary key, as before
+  ([#1252](https://github.com/tmatens/compose-lint/issues/1252)).
+
 ### Security
 
 - **The `.git` directory is not read under any spelling.** A reference into
