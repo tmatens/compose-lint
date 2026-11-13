@@ -205,6 +205,20 @@ class TestRefusalsSayWhy:
                 "CL-0014 on 'web': the value comes from a ${...} default",
             ),
             (
+                "services:\n  base:\n    image: nginx:1.27\n    logging:\n"
+                "      driver: syslog\n      options:\n"
+                '        syslog-address: "tcp://203.0.113.7:514"\n'
+                "  web:\n    extends: base\n    logging:\n      driver: none\n",
+                "CL-0014 on 'web': the service uses extends:, and a logging: "
+                "block it inherits would take effect once this one is removed",
+            ),
+            (
+                "services:\n  base:\n    image: nginx:1.27\n"
+                "  web:\n    extends:\n      service: base\n"
+                "    logging:\n      driver: none\n",
+                "CL-0014 on 'web': the service uses extends:",
+            ),
+            (
                 "services:\n  web:\n    image: nginx:1.27\n    security_opt:\n"
                 "      - no-new-privileges:true\n"
                 "      - ${SECCOMP_OPT:-seccomp:unconfined}\n",
