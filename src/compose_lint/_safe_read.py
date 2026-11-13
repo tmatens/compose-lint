@@ -43,6 +43,23 @@ class OutsideProjectError(UnsafeFileError):
     """Raised when a path resolves outside the project it was named from."""
 
 
+def resolved(path: Path) -> Path:
+    """``path.resolve()``, with a link loop answered the same on every Python.
+
+    Before Python 3.13 ``Path.resolve()`` raises ``RuntimeError`` for a link
+    that leads back to itself. That is not an ``OSError``, so it passed every
+    handler here and ended the run as an internal error. From 3.13 the call
+    returns what ``os.path.realpath`` returns, the path with the loop left
+    unresolved, and the open that follows fails with ``ELOOP`` and is
+    reported as any other unreadable file. This gives the older versions that
+    answer.
+    """
+    try:
+        return path.resolve()
+    except RuntimeError:
+        return Path(os.path.realpath(path))
+
+
 def escapes_project(path: Path, project: Path) -> bool:
     """Whether ``path`` resolves outside ``project`` on *this* filesystem.
 
@@ -60,11 +77,11 @@ def escapes_project(path: Path, project: Path) -> bool:
     ruled on the document. Both have to pass.
     """
     try:
-        resolved = path.resolve()
-        root = project.resolve()
+        target = resolved(path)
+        root = resolved(project)
     except OSError:  # pragma: no cover - resolution failed; treat as escaping
         return True
-    return not resolved.is_relative_to(root)
+    return not target.is_relative_to(root)
 
 
 def containment_root(project: Path) -> Path:
@@ -138,9 +155,8 @@ def inside_git_dir(path: Path, root: Path) -> bool:
     compared with the root's own ``.git`` by device and inode.
     """
     try:
-        resolved = path.resolve()
-        base = root.resolve()
-        relative = resolved.relative_to(base)
+        base = resolved(root)
+        relative = resolved(path).relative_to(base)
     except (OSError, ValueError):  # pragma: no cover - outside, or unresolvable
         return True
     if any(names_git_dir(part) for part in relative.parts):
