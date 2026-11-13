@@ -445,6 +445,33 @@ Store as the `MARKETPLACE_SMOKE_PAT` repo secret. Classic PATs with
 the `repo` + `workflow` scopes also work, but fine-grained is easier
 to revoke and audit.
 
+### Who can release without the signature check
+
+`verify-tag` runs inside `publish.yml`, and a tag push runs `publish.yml`
+from the tagged commit. A tag at a commit whose own `publish.yml` no
+longer calls `verify-tag` or `release-gate` publishes without either.
+Pushing that tag takes a credential that can push both tags and workflow
+files to this repository. Three hold that today:
+
+- the maintainer's own account;
+- `MARKETPLACE_SMOKE_PAT`, because of its **Workflows** permission, which
+  only `bump-marketplace-smoke-pin` needs (it rewrites
+  `marketplace-smoke.yml`);
+- the Renovate app, which needs workflow write to update actions.
+
+A workflow's `GITHUB_TOKEN` is not on the list: a tag it pushes starts no
+workflow.
+
+The `pypi`, `testpypi` and `dockerhub` environments have no required
+reviewer, so nothing outside the tagged tree stops such a run. That is a
+deliberate choice for a single-maintainer project. A second approval
+would come from the same person, and the token only runs in jobs on
+reviewed code from `main` or a signed tag, with every action SHA-pinned.
+Revisit it if the token spreads to more workflows, if a second
+maintainer joins, or when the release flow is next reworked. Moving the
+smoke pin bump to Renovate would let the token drop its Workflows
+permission.
+
 ---
 
 ## Maintainer-triggered workflows

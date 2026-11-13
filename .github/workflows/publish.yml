@@ -44,10 +44,13 @@ jobs:
   #      that commit has.
   #   3. The tag's SSH signature verifies against
   #      `.github/allowed_signers`. This is the cryptographic root of the
-  #      Sigstore provenance chain — without it, an attacker who pushed
-  #      a tag from a stolen GitHub credential could trigger a release
-  #      from a commit they control. Adding/rotating signing keys is a
-  #      maintainer action documented in GOVERNANCE.md.
+  #      Sigstore provenance chain: without it, a tag that reached this
+  #      check would publish whether or not anyone signed it.
+  #      Adding/rotating signing keys is a maintainer action documented
+  #      in GOVERNANCE.md.
+  #   All three run inside the workflow the tag selects, so a credential
+  #   that can push both tags and workflow files can skip them; see
+  #   verify-tag.yml and docs/CI.md.
   verify-tag:
     # Extracted to a reusable workflow when a second publish workflow existed
     # and its copy of the gate drifted (it omitted the signature check
@@ -1229,8 +1232,8 @@ jobs:
   #
   # Deliberately a LIGHTWEIGHT tag pushed with the workflow token, not a
   # signed annotated tag: the SSH release-signing key stays offline with the
-  # maintainer (verify-tag exists to catch tags a stolen credential could
-  # mint, so CI must never hold that key). The signed, immutable claim is
+  # maintainer (verify-tag rejects a release tag nobody signed, so CI must
+  # never hold that key). The signed, immutable claim is
   # the release tag; the major tag is a mutable convenience pointer and is
   # documented as such (docs/running-hardened.md) — consumers who want integrity
   # pin the SHA or the exact version, exactly as this repo's own workflows
