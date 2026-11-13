@@ -46,6 +46,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pip install --require-hashes -r requirements.lock` from the action's own
   checkout, then compose-lint with `--no-deps`. An explicit `version:` or
   `latest` resolves dependencies from PyPI as before.
+- **The GitHub Action fails when a requested SARIF file is not produced.**
+  With `sarif-file` set, a SARIF run that exited 0 and wrote nothing printed
+  an error and left the step green. The step now exits non-zero.
+
+### Security
+
+- **The GitHub Action keeps workflow commands off until its lint step
+  ends.** The step turned command processing back on after each
+  compose-lint run, then moved the SARIF file into place. When that move
+  failed, its error named the resolved `sarif-file` path, and a symbolic
+  link committed in a pull request could put a directory name of the pull
+  request's choosing in that path, which the runner read as a workflow
+  command. Command processing now goes off before the first run and comes
+  back on as the step's last line, the errors of the shell commands in
+  between are discarded, and what the step reports afterwards is fixed text
+  plus the `sarif-file` input as written. See GHSA-r3vf-vcmg-vp42.
+- **The GitHub Action no longer writes SARIF into a directory or through a
+  symbolic link at `sarif-file`.** The containment check covered the
+  directory the file goes in, not what a pull request had committed at the
+  path itself. With a directory there, the SARIF file was moved inside it
+  and reported as written, and the upload step read every `*.sarif` in that
+  directory, the pull request's included; with a link to a directory
+  outside the workspace, the file was written there. A directory, a
+  symbolic link or any other non-regular file at the path is now refused,
+  the write goes through `check --output`, which never follows the last
+  path component (a `version:` without that option gets the same checks in
+  the step), and `sarif-written` is set only when this run put a regular
+  file at that path. See GHSA-r827-h7r9-j3g6.
 
 ### Security
 

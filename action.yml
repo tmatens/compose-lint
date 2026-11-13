@@ -64,7 +64,8 @@ inputs:
     description: >-
       Path to write SARIF output (enables GitHub Code Scanning upload). Must
       stay inside the workspace; a parent directory that does not exist yet
-      is created.
+      is created. A path where a directory, a symbolic link or another
+      non-regular file already exists is refused.
     required: false
     default: ""
   version:
@@ -95,8 +96,8 @@ inputs:
 outputs:
   sarif-written:
     description: >-
-      "true" when the file requested via `sarif-file` was written and
-      non-empty; empty otherwise.
+      "true" when this run wrote the file requested via `sarif-file`, as a
+      non-empty regular file at that path; empty otherwise.
     value: ${{ steps.lint.outputs.sarif-written }}
 
 runs:
@@ -285,6 +286,56 @@ runs:
           exit 2
         fi
 
+        # compose-lint prints text taken from the Compose files it grades
+        # (service names, env keys, source lines), and the runner treats text
+        # in a step's output as workflow commands: `##[...]` anywhere in a
+        # line, `::cmd::` at its start. A file in a pull request could forge
+        # annotations, fold the verdict out of sight, or reach the deprecated
+        # `set-output`. `stop-commands` with a fresh, unguessable token turns
+        # command processing off; it is GitHub's documented control for
+        # printing untrusted text. It does not turn off problem matchers
+        # registered earlier in the job, which still read the output
+        # (docs/github-action.md).
+        #
+        # Processing goes off here and stays off to the end of the step. It
+        # used to come back on between the two compose-lint runs and after
+        # the second, and the shell around them (mkdir, mv) printed errors
+        # that quote a resolved path, in which a committed symlink puts a
+        # directory name the pull request chose. So nothing below prints
+        # outside the window except `finish`, and what `finish` prints after
+        # closing it is a fixed string plus the `sarif-file` input as the
+        # workflow author wrote it: never a resolved path, never a tool's own
+        # error text.
+        STOP_TOKEN="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
+        WINDOW_OPEN=false
+        SARIF_WRITTEN=false
+        close_window() {
+          if [ "$WINDOW_OPEN" = "true" ]; then
+            WINDOW_OPEN=false
+            echo "::${STOP_TOKEN}::"
+          fi
+        }
+        # An unexpected failure under `set -e` must not leave processing off
+        # for the steps after this one.
+        trap close_window EXIT
+        # finish EXIT_CODE [MESSAGE]: the only way out of the window.
+        finish() {
+          close_window
+          if [ -n "${2:-}" ]; then
+            echo "::error::$2"
+          fi
+          if [ "$SARIF_WRITTEN" = "true" ]; then
+            echo "sarif-written=true" >> "$GITHUB_OUTPUT"
+          fi
+          exit "$1"
+        }
+        # One stream from here on. The runner reads stdout and stderr through
+        # separate pipes, so a diagnostic on stderr could otherwise be read
+        # after the line on stdout that closes the window.
+        exec 2>&1
+        echo "::stop-commands::${STOP_TOKEN}"
+        WINDOW_OPEN=true
+
         mapfile -d '' -t TARGET_FILES < "$CL_LIST_FILE"
 
         ARGS=()
@@ -307,118 +358,154 @@ runs:
         if [ "$CL_VERBOSE" = "true" ]; then
           ARGS+=(--verbose)
         fi
+        # The `version` input can install a release that predates a flag, and
+        # passing it there would fail the job with a usage error. So each
+        # newer flag is probed for rather than assumed.
+        CHECK_HELP="$(compose-lint check --help 2>/dev/null || true)"
         # A suppression's `expires:` date is judged against the UTC date
         # (ADR-041), and this step runs compose-lint twice. Fixing the day
         # once keeps the two runs on the same side of midnight, so the SARIF
-        # file never disagrees with the verdict. Probed rather than assumed:
-        # the `version` input can install a release that predates the flag,
-        # and passing it there would fail the job with a usage error.
-        if compose-lint check --help 2>/dev/null | grep -q -e '--as-of'; then
-          ARGS+=(--as-of "$(date -u +%Y-%m-%d)")
-        fi
-
-        # compose-lint prints text taken from the Compose files it grades
-        # (service names, env keys, source lines), and the runner treats text
-        # in a step's output as workflow commands: `##[...]` anywhere in a
-        # line, `::cmd::` at its start. A file in a pull request could forge
-        # annotations, fold the verdict out of sight, or reach the deprecated
-        # `set-output`. `stop-commands` with a fresh, unguessable token turns
-        # command processing off while compose-lint runs; it is GitHub's
-        # documented control for printing untrusted text. It does not turn off
-        # problem matchers registered earlier in the job, which still read the
-        # output (docs/github-action.md).
-        STOP_TOKEN="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
+        # file never disagrees with the verdict.
+        case "$CHECK_HELP" in
+          *"--as-of"*) ARGS+=(--as-of "$(date -u +%Y-%m-%d)") ;;
+        esac
+        # `check --output` writes the report itself: one atomic write that
+        # never follows what is at the path (compose-lint 1.4.0 and later).
+        HAS_OUTPUT=false
+        case "$CHECK_HELP" in
+          *"--output PATH"*) HAS_OUTPUT=true ;;
+        esac
 
         # `--` terminates the option namespace, so a repository file named
         # `--config=evil/compose.yml` arrives as a path instead of installing
         # an attacker-authored policy.
         TEXT_EXIT=0
-        echo "::stop-commands::${STOP_TOKEN}"
         compose-lint "${ARGS[@]}" -- "${TARGET_FILES[@]}" || TEXT_EXIT=$?
-        echo "::${STOP_TOKEN}::"
 
-        # When a SARIF artifact is requested, re-run in SARIF mode. The first
-        # run prints human-readable output to the job log and sets the exit
-        # code; this run only writes the file. Rules are deterministic, so the
-        # two runs report the same findings.
-        if [ -n "$CL_SARIF_FILE" ]; then
-          # Keep the write target inside the workspace. `>` truncates before
-          # the command runs, so an unvalidated path let a caller-supplied
-          # value destroy a file anywhere the runner could write — including
-          # outside the checkout — whether or not the lint itself succeeded.
-          WORKSPACE="$(cd "${GITHUB_WORKSPACE:-$PWD}" && pwd -P)"
-          # The parent directory need not exist yet, but it is created only
-          # after the containment check below has passed. That check needs a
-          # physical path, so resolve the nearest existing ancestor with
-          # `pwd -P` and carry the not-yet-existing tail lexically. A `..`
-          # in that tail is refused: it would climb back out of whatever the
-          # check approved once the directories exist.
-          SARIF_PARENT="$(dirname "$CL_SARIF_FILE")"
-          SARIF_TAIL=""
-          while [ ! -d "$SARIF_PARENT" ]; do
-            SEGMENT="$(basename "$SARIF_PARENT")"
-            case "$SEGMENT" in
-              ..)
-                echo "::error::sarif-file: a directory that does not exist yet cannot contain '..': $CL_SARIF_FILE"
-                exit 2
-                ;;
-              .) ;;
-              *) SARIF_TAIL="${SEGMENT}/${SARIF_TAIL}" ;;
-            esac
-            SARIF_NEXT="$(dirname "$SARIF_PARENT")"
-            if [ "$SARIF_NEXT" = "$SARIF_PARENT" ]; then
-              echo "::error::sarif-file directory cannot be created: $CL_SARIF_FILE"
-              exit 2
-            fi
-            SARIF_PARENT="$SARIF_NEXT"
-          done
-          SARIF_DIR="$(cd "$SARIF_PARENT" && pwd -P)"
-          if [ -n "$SARIF_TAIL" ]; then
-            SARIF_DIR="$SARIF_DIR/${SARIF_TAIL%/}"
-          fi
-          SARIF_PATH="$SARIF_DIR/$(basename "$CL_SARIF_FILE")"
-          case "$SARIF_PATH" in
-            "$WORKSPACE"/*) ;;
-            *)
-              echo "::error::sarif-file must be inside the workspace"
-              exit 2
-              ;;
-          esac
-          # Outside the stop-commands windows, so nothing here may print a
-          # path the checkout chose. `$SARIF_DIR` is resolved through the
-          # workspace, and a committed symlink puts the pull request's own
-          # directory name in it, newlines and `::` included. The message names
-          # the input as the workflow author wrote it, and mkdir's own error,
-          # which quotes the resolved path, is discarded.
-          mkdir -p "$SARIF_DIR" 2>/dev/null || {
-            echo "::error::sarif-file directory could not be created: $CL_SARIF_FILE"
-            exit 2
-          }
-
-          # Write to a temporary file and move it into place only once it
-          # holds a complete document. Redirecting straight at the target
-          # truncated it first, so a failed run left a 0-byte artifact — and
-          # `|| true` reported that as success, so the upload below shipped an
-          # empty result set as if the scan had been clean.
-          SARIF_TMP="$(mktemp "${RUNNER_TEMP:-/tmp}/compose-lint-sarif.XXXXXX")"
-          SARIF_EXIT=0
-          # stdout goes to the file, but diagnostics on stderr still reach the
-          # log and can quote the document, so this run is bracketed too.
-          echo "::stop-commands::${STOP_TOKEN}"
-          compose-lint --format sarif "${ARGS[@]}" -- "${TARGET_FILES[@]}" \
-            > "$SARIF_TMP" || SARIF_EXIT=$?
-          echo "::${STOP_TOKEN}::"
-
-          if [ ! -s "$SARIF_TMP" ]; then
-            rm -f "$SARIF_TMP"
-            echo "::error::compose-lint produced no SARIF output (exit ${SARIF_EXIT}); refusing to upload an empty artifact"
-            exit "${SARIF_EXIT:-1}"
-          fi
-          mv "$SARIF_TMP" "$SARIF_PATH"
-          echo "sarif-written=true" >> "$GITHUB_OUTPUT"
+        if [ -z "$CL_SARIF_FILE" ]; then
+          finish "$TEXT_EXIT"
         fi
 
-        exit "$TEXT_EXIT"
+        # A SARIF artifact is requested, so re-run in SARIF mode. The first
+        # run printed human-readable output to the job log and set the exit
+        # code; this run only writes the file. Rules are deterministic, so the
+        # two runs report the same findings.
+        #
+        # Keep the write target inside the workspace. An unvalidated path let
+        # a caller-supplied value destroy a file anywhere the runner could
+        # write, including outside the checkout, whether or not the lint
+        # itself succeeded.
+        WORKSPACE="$(cd "${GITHUB_WORKSPACE:-$PWD}" && pwd -P)"
+        # The parent directory need not exist yet, but it is created only
+        # after the containment check below has passed. That check needs a
+        # physical path, so resolve the nearest existing ancestor with
+        # `pwd -P` and carry the not-yet-existing tail lexically. A `..`
+        # in that tail is refused: it would climb back out of whatever the
+        # check approved once the directories exist.
+        SARIF_PARENT="$(dirname -- "$CL_SARIF_FILE")"
+        SARIF_TAIL=""
+        while [ ! -d "$SARIF_PARENT" ]; do
+          SEGMENT="$(basename -- "$SARIF_PARENT")"
+          case "$SEGMENT" in
+            ..)
+              finish 2 "sarif-file: a directory that does not exist yet cannot contain '..': $CL_SARIF_FILE"
+              ;;
+            .) ;;
+            *) SARIF_TAIL="${SEGMENT}/${SARIF_TAIL}" ;;
+          esac
+          SARIF_NEXT="$(dirname -- "$SARIF_PARENT")"
+          if [ "$SARIF_NEXT" = "$SARIF_PARENT" ]; then
+            finish 2 "sarif-file directory cannot be created: $CL_SARIF_FILE"
+          fi
+          SARIF_PARENT="$SARIF_NEXT"
+        done
+        SARIF_DIR="$(cd -- "$SARIF_PARENT" 2>/dev/null && pwd -P)" ||
+          finish 2 "sarif-file directory cannot be entered: $CL_SARIF_FILE"
+        if [ -n "$SARIF_TAIL" ]; then
+          SARIF_DIR="$SARIF_DIR/${SARIF_TAIL%/}"
+        fi
+        SARIF_PATH="$SARIF_DIR/$(basename -- "$CL_SARIF_FILE")"
+        case "$SARIF_PATH" in
+          "$WORKSPACE"/*) ;;
+          *)
+            finish 2 "sarif-file must be inside the workspace"
+            ;;
+        esac
+        mkdir -p -- "$SARIF_DIR" 2>/dev/null ||
+          finish 2 "sarif-file directory could not be created: $CL_SARIF_FILE"
+
+        # The containment check covers the directory. What is already AT the
+        # path is the checkout's too, and a pull request can commit a
+        # directory or a symlink there. A file moved "to" a directory lands
+        # inside it, beside whatever `*.sarif` the pull request put there, and
+        # the upload step takes every `*.sarif` in a directory it is given; a
+        # symlink sends the write wherever it points. Neither is written to.
+        sarif_is_regular() {
+          [ ! -L "$SARIF_PATH" ] && [ -f "$SARIF_PATH" ]
+        }
+        if [ -L "$SARIF_PATH" ] || { [ -e "$SARIF_PATH" ] && [ ! -f "$SARIF_PATH" ]; }; then
+          finish 2 "sarif-file exists and is a directory, a symbolic link or another non-regular file; it is not written to: $CL_SARIF_FILE"
+        fi
+        # The file's inode, empty when there is none. A file already at the
+        # path may be one the pull request committed, so "a file is there
+        # afterwards" does not show this run wrote it; a new inode does.
+        sarif_inode() {
+          local listing=""
+          if sarif_is_regular; then
+            listing="$(ls -di -- "$SARIF_PATH" 2>/dev/null)" || listing=""
+          fi
+          local inode=""
+          read -r inode _ <<< "$listing" || true
+          printf '%s' "$inode"
+        }
+
+        SARIF_EXIT=0
+        if [ "$HAS_OUTPUT" = "true" ]; then
+          INODE_BEFORE="$(sarif_inode)"
+          # `--output=` keeps a value that begins with `-` attached to its
+          # option. The path is passed as written so compose-lint's own
+          # refusals name the input, not a resolved path.
+          compose-lint --format sarif --output="$CL_SARIF_FILE" "${ARGS[@]}" \
+            -- "${TARGET_FILES[@]}" || SARIF_EXIT=$?
+          INODE_AFTER="$(sarif_inode)"
+          if [ -z "$INODE_AFTER" ] || [ "$INODE_AFTER" = "$INODE_BEFORE" ]; then
+            if [ "$SARIF_EXIT" -eq 0 ]; then SARIF_EXIT=1; fi
+            finish "$SARIF_EXIT" "compose-lint did not write the SARIF file (exit ${SARIF_EXIT}); its reason is in the log above: $CL_SARIF_FILE"
+          fi
+        else
+          # A release without `--output`. Write to a temporary file and move
+          # it into place only once it holds a complete document. Redirecting
+          # straight at the target truncated it first, so a failed run left a
+          # 0-byte artifact, and `|| true` reported that as success, so the
+          # upload shipped an empty result set as if the scan had been clean.
+          SARIF_TMP="$(mktemp "${RUNNER_TEMP:-/tmp}/compose-lint-sarif.XXXXXX")"
+          compose-lint --format sarif "${ARGS[@]}" -- "${TARGET_FILES[@]}" \
+            > "$SARIF_TMP" || SARIF_EXIT=$?
+          if [ ! -s "$SARIF_TMP" ]; then
+            rm -f -- "$SARIF_TMP"
+            if [ "$SARIF_EXIT" -eq 0 ]; then SARIF_EXIT=1; fi
+            finish "$SARIF_EXIT" "compose-lint produced no SARIF output (exit ${SARIF_EXIT}); refusing to upload an empty artifact"
+          fi
+          # `-T` (GNU) treats the destination as a file whatever it is, so
+          # the move can never land inside a directory. mv's own error quotes
+          # the resolved path and is discarded.
+          MV_ARGS=(-f)
+          if mv --version >/dev/null 2>&1; then
+            MV_ARGS+=(-T)
+          fi
+          if ! mv "${MV_ARGS[@]}" -- "$SARIF_TMP" "$SARIF_PATH" 2>/dev/null; then
+            rm -f -- "$SARIF_TMP"
+            finish 2 "sarif-file could not be written: $CL_SARIF_FILE"
+          fi
+        fi
+
+        # `sarif-written` is what the upload is gated on, so it says only
+        # what is true: a non-empty regular file is at exactly that path.
+        if ! sarif_is_regular || [ ! -s "$SARIF_PATH" ]; then
+          finish 2 "sarif-file was not written as a regular file: $CL_SARIF_FILE"
+        fi
+        SARIF_WRITTEN=true
+        finish "$TEXT_EXIT"
 
     - name: Upload SARIF
       # Gated on the file actually having been written, not on `always()`.
