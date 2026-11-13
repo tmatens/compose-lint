@@ -70,8 +70,10 @@ inputs:
   version:
     description: >-
       compose-lint version to install. Defaults to the version this action was
-      released with, so a SHA-pinned `uses:` gets a reproducible check. Set to
-      "latest" to track PyPI instead.
+      released with, installed with the dependency versions locked at that
+      release (requirements.lock), so a SHA-pinned `uses:` gets a reproducible
+      check. Set to "latest" to track PyPI instead; an explicit version or
+      "latest" resolves its dependencies from PyPI.
     required: false
     default: ""
   allow-no-files:
@@ -116,8 +118,18 @@ runs:
         # step with the release, and CI's "Version strings in sync" job fails
         # if it drifts.
         DEFAULT_VERSION="1.3.1"
+        LOCK=""
         if [ -z "$CL_VERSION" ]; then
           SPEC="compose-lint==${DEFAULT_VERSION}"
+          # Its dependencies are pinned too. Pinning compose-lint alone left
+          # PyYAML to resolve fresh on every run, so a SHA-pinned `uses:` was
+          # not the reproducible check it promises, and a new PyYAML release
+          # reached every run the day it was uploaded. requirements.lock ships
+          # in this action at every tag and is the hash-locked set that release
+          # was tested with; Renovate moves it, after its age gate and CI.
+          # An explicit `version:` may need other dependencies, so it
+          # resolves them as before.
+          LOCK="${GITHUB_ACTION_PATH}/requirements.lock"
         elif [ "$CL_VERSION" = "latest" ]; then
           # Opt-in to tracking PyPI. Used by this repo's own smoke jobs, which
           # exist to catch drift between the source action and the published
@@ -140,8 +152,14 @@ runs:
         # workflow. The cost is that a genuinely wrong version now takes ~100s
         # to fail instead of failing at once; the final message names both
         # possibilities so that wait is not a mystery.
+        if [ -n "$LOCK" ]; then
+          if ! pip install --require-hashes --no-deps -r "$LOCK"; then
+            echo "::error::Could not install this action's locked dependencies from ${LOCK}."
+            exit 1
+          fi
+        fi
         for attempt in 1 2 3 4 5 6; do
-          if pip install "$SPEC"; then
+          if pip install ${LOCK:+--no-deps} "$SPEC"; then
             exit 0
           fi
           if [ "$attempt" = 6 ]; then

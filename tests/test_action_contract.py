@@ -107,6 +107,7 @@ def _run_step(
         "GITHUB_OUTPUT": str(outputs),
         "GITHUB_WORKSPACE": str(workspace),
         "RUNNER_TEMP": str(workspace / "_temp"),
+        "GITHUB_ACTION_PATH": str(REPO_ROOT),
         # Even a bypassed shim must never reach the network: a real pip
         # running here installs a published compose-lint over the editable
         # checkout under test (#595). With no index, that becomes a loud
@@ -423,8 +424,46 @@ def test_install_pins_by_default(ws: Path, outputs: Path) -> None:
     rc, _out, _err = _run_step(
         "Install compose-lint", {"CL_VERSION": ""}, ws, outputs, extra_path=shim_dir
     )
+    from compose_lint import __version__
+
     assert rc == 0
-    assert "compose-lint==" in log.read_text(encoding="utf-8")
+    calls = log.read_text(encoding="utf-8").strip().splitlines()
+    lock = REPO_ROOT / "requirements.lock"
+    assert calls == [
+        f"install --require-hashes --no-deps -r {lock}",
+        f"install --no-deps compose-lint=={__version__}",
+    ], calls
+
+
+def test_the_default_install_locks_its_dependencies() -> None:
+    """The lock the default path installs pins every runtime dependency.
+
+    A SHA-pinned `uses:` promises a reproducible check; with PyYAML left to
+    resolve, a new release reached every run the day it was uploaded.
+    """
+    lock = (REPO_ROOT / "requirements.lock").read_text(encoding="utf-8")
+    assert re.search(r"^pyyaml==\S+ \\$", lock, re.M), "PyYAML is not pinned"
+    assert "--hash=sha256:" in lock, "the lock carries no hashes"
+
+
+def test_an_unreadable_lock_fails_the_install(ws: Path, outputs: Path) -> None:
+    """No silent fallback to resolving from PyPI."""
+    shim_dir = ws / "pipshim"
+    shim_dir.mkdir()
+    log = ws / "pip.log"
+    shim = shim_dir / "pip"
+    shim.write_text(
+        f'#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> {log}\n'
+        'case " $* " in *" -r "*) exit 1;; esac\n',
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    rc, out, err = _run_step(
+        "Install compose-lint", {"CL_VERSION": ""}, ws, outputs, extra_path=shim_dir
+    )
+    assert rc != 0
+    assert "locked dependencies" in out + err
+    assert "compose-lint==" not in log.read_text(encoding="utf-8")
 
 
 def test_install_tracks_pypi_only_when_asked(ws: Path, outputs: Path) -> None:
@@ -450,7 +489,7 @@ def test_install_honours_an_explicit_version(ws: Path, outputs: Path) -> None:
         extra_path=shim_dir,
     )
     assert rc == 0
-    assert "compose-lint==0.16.0" in log.read_text(encoding="utf-8")
+    assert log.read_text(encoding="utf-8").strip() == "install compose-lint==0.16.0"
 
 
 def _failing_pip_shim(ws: Path, fail_times: int) -> tuple[Path, Path]:
@@ -467,6 +506,7 @@ def _failing_pip_shim(ws: Path, fail_times: int) -> tuple[Path, Path]:
     shim = shim_dir / "pip"
     shim.write_text(
         f"""#!/usr/bin/env bash
+case " $* " in *" -r "*) exit 0;; esac
 printf "%s\\n" "$*" >> {log}
 attempts=$(wc -l < {log})
 if [ "$attempts" -le {fail_times} ]; then

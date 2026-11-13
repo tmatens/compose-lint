@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The GitHub Action installs its locked dependencies by default.** With
+  `version:` empty, the Action pinned compose-lint to its own release but
+  let pip resolve PyYAML fresh on every run, so a SHA-pinned `uses:` was
+  not the reproducible check the docs promise, and a new PyYAML release
+  reached every run the day it was uploaded. The default install now runs
+  `pip install --require-hashes -r requirements.lock` from the action's own
+  checkout, then compose-lint with `--no-deps`. An explicit `version:` or
+  `latest` resolves dependencies from PyPI as before.
+
 ## [1.3.1] - 2026-11-12
 
 ### Changed
