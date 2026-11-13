@@ -558,7 +558,7 @@ jobs:
         # requirements-dev.lock carries the publish extra (build, twine),
         # hash-pinned: the same file and command publish.yml installs from.
         run: pip install --require-hashes -r requirements-dev.lock
-      - run: python -m build --no-isolation
+      - run: python -P -m build --no-isolation
       - name: Verify dist contents
         run: |
           twine check --strict dist/*
@@ -625,7 +625,7 @@ jobs:
           python-version: "3.13"
       - name: Install pinned build env
         run: pip install --require-hashes -r requirements-dev.lock
-      - run: python -m build --no-isolation
+      - run: python -P -m build --no-isolation
       - uses: sigstore/gh-action-sigstore-python@790bc6befb9d733738f18d8f895854b453640ec9 # v3.5.0
         with:
           inputs: ./dist/*.tar.gz ./dist/*.whl
