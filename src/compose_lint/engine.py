@@ -308,6 +308,11 @@ def _quote_references(
     not rewritten by a value that happens to share a word with it.
     ``evidence`` and ``target`` are document text throughout.
     """
+    if not env_values and not env_file_values:
+        # Nothing was substituted, so there is nothing to look for, and a walk
+        # of every service's configuration would be all cost: an aliased
+        # mapping shared by thousands of services is walked once per service.
+        return [_without_spans(finding) for finding in findings]
     run_values: dict[str, str] = {}
     for leaf_names in env_values.values():
         run_values.update(leaf_names)
