@@ -154,6 +154,82 @@ def test_a_config_under_a_linked_project_directory_is_read(tmp_path: Path) -> No
     assert "config: link/.compose-lint.yml" in proc.stdout
 
 
+# --- a --config path that is itself a link ----------------------------------
+
+
+@pytest.fixture
+def checkout(tmp_path: Path) -> Path:
+    """A repository beside a directory that is not part of it."""
+    root = tmp_path / "checkout"
+    (root / ".git").mkdir(parents=True)
+    (root / "docker-compose.yml").write_text(_INSECURE, encoding="utf-8")
+    (tmp_path / "outside").mkdir()
+    return root
+
+
+def _link(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target)
+    except OSError:
+        pytest.skip("symlinks unavailable")
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="needs symlinks")
+def test_a_named_config_linking_out_of_the_repository_is_refused(
+    checkout: Path,
+) -> None:
+    """The path was typed; the file at it is whatever the checkout holds.
+
+    A workflow that passes ``--config policy.yml`` names a file in the
+    checkout, and a change under review can commit that name as a link to a
+    policy elsewhere on the machine. The discovered config already refused
+    such a link. The named one followed it.
+    """
+    outside = checkout.parent / "outside" / "policy.yml"
+    outside.write_text(_DISABLE_0002, encoding="utf-8")
+    _link(checkout / "policy.yml", Path("..", "outside", "policy.yml"))
+    proc = _run("check", "--config", "policy.yml", "docker-compose.yml", cwd=checkout)
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert "Cannot read config file: policy.yml" in proc.stderr
+    assert "outside the repository" in proc.stderr
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="needs symlinks")
+def test_a_refused_config_link_says_nothing_about_its_target(checkout: Path) -> None:
+    """Refused before it is parsed, so no key of the target is named."""
+    outside = checkout.parent / "outside" / "settings.yml"
+    outside.write_text("OUTSIDEKEYMARKER: 1\n", encoding="utf-8")
+    _link(checkout / "policy.yml", Path("..", "outside", "settings.yml"))
+    proc = _run("check", "--config", "policy.yml", "docker-compose.yml", cwd=checkout)
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert "OUTSIDEKEYMARKER" not in proc.stdout + proc.stderr
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="needs symlinks")
+def test_a_named_config_linking_inside_the_repository_is_read(checkout: Path) -> None:
+    """A shared policy linked into a project directory is ordinary."""
+    (checkout / "shared").mkdir()
+    (checkout / "shared" / "policy.yml").write_text(_DISABLE_0002, encoding="utf-8")
+    _link(checkout / "policy.yml", Path("shared", "policy.yml"))
+    proc = _run("check", "--config", "policy.yml", "docker-compose.yml", cwd=checkout)
+    # The config disables the only HIGH, so a config that was read passes.
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def test_a_plain_named_config_outside_the_repository_is_read(checkout: Path) -> None:
+    """A plain path is read as given, wherever it is: only a link is asked."""
+    outside = checkout.parent / "outside" / "policy.yml"
+    outside.write_text(_DISABLE_0002, encoding="utf-8")
+    proc = _run(
+        "check",
+        "--config",
+        str(Path("..", "outside", "policy.yml")),
+        "docker-compose.yml",
+        cwd=checkout,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
 # --- init writes where check reads -----------------------------------------
 
 

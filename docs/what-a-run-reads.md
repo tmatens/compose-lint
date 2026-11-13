@@ -26,7 +26,10 @@ them. A target outside both is refused rather than followed: exit 2, a
 coverage gap for a Compose document. The policy file is contained to the
 working directory — or, when it was found beside a Compose file outside it, to
 that file's directory — and one that leaves it is a configuration error. A plain
-path you type is read as given, and so is `--config`.
+path you type is read as given, and so is a plain `--config` path. A `--config`
+path that is itself a link is treated like a linked Compose file: followed while
+its target stays inside the repository that holds the link, and a configuration
+error when it leaves. To use a policy file kept elsewhere, name that file.
 
 The same rule holds for every file a document routes the run to: the `.env`,
 a `COMPOSE_FILE` entry, an `include:` or `extends:` target, an `env_file:`,
