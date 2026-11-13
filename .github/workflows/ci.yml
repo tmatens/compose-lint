@@ -1779,6 +1779,34 @@ jobs:
             exit 1
           fi
 
+      # A Compose file committed as a symbolic link (issue #1253). pre-commit
+      # tags a link `symlink`, not `file` or `yaml`, so with the default
+      # `types` the hook received nothing and passed. The target's name does
+      # not match the hook's `files` pattern, so the link is the only way
+      # the insecure file reaches the linter: a pass here means it did not.
+      - name: Linked insecure stack should fail the hook
+        env:
+          SMOKE: ${{ runner.temp }}/hook-link
+        run: |
+          set -euo pipefail
+          mkdir -p "$SMOKE/stack"
+          cp tests/smoke/insecure.yml "$SMOKE/stack/app.yml"
+          ln -s stack/app.yml "$SMOKE/docker-compose.yml"
+          git -C "$SMOKE" init -q
+          git -C "$SMOKE" add -A
+          cd "$SMOKE"
+          if pre-commit try-repo "$GITHUB_WORKSPACE" compose-lint --all-files \
+            2>&1 | tee out.txt; then
+            echo "::error::Expected the hook to fail on a linked insecure file."
+            exit 1
+          fi
+          if grep -q "no files to check" out.txt; then
+            echo "::error::Hook did not receive the linked Compose file."
+            exit 1
+          fi
+          grep -q "CL-0002" out.txt \
+            || { echo "::error::Hook failed without grading the linked file."; exit 1; }
+
       # The two cases below exercise the user `args:` override contract
       # (issue #571). `.pre-commit-hooks.yaml` ships `args: [--]`, and a
       # consumer's own `args:` replaces that default entirely — the README

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The pre-commit hook fails on a Compose file that is a link to nothing.**
+  This follows from the fix below: a linked Compose file now reaches
+  compose-lint, and one whose target is missing is reported as "file not
+  found", exit 2, where the hook used to skip it. Compose cannot load that
+  file either. The hook also declares `minimum_pre_commit_version: 2.9.0`,
+  the release that added `types_or`.
+
 ### Fixed
 
 - **A usage error indents what follows a line break in an argument.** An
@@ -41,6 +50,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "file not found", so the message no longer says whether a path outside
   the checkout exists
   ([#1260](https://github.com/tmatens/compose-lint/issues/1260)).
+
+- **The pre-commit hook lints a Compose file committed as a symbolic link.**
+  pre-commit tags a link `symlink` and not `file` or `yaml`, and the hook
+  asked for `types: [yaml]`, so a `compose.yml` that links to a file
+  elsewhere in the repository was never passed to compose-lint and the hook
+  passed without looking at it. A bare run and the Action's default list
+  both lint that file. The hook now sets `types: []` with
+  `types_or: [yaml, symlink]`; the `files` pattern still limits it to
+  Compose file names, and a link that leaves the repository is refused by
+  compose-lint as it is on every other surface
+  ([#1253](https://github.com/tmatens/compose-lint/issues/1253)).
 
 ### Security
 

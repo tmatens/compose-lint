@@ -21,7 +21,15 @@
   # needs the whole list in one run, as the CLI and the Action get it.
   require_serial: true
   language: python
-  types: [yaml]
+  # A Compose file committed as a symbolic link is a Compose file: Compose
+  # follows it, and so does a bare `compose-lint` run. pre-commit tags a link
+  # `symlink` and nothing else, not `file` and not `yaml`, and a hook's
+  # `types` defaults to `[file]`, so `types_or` on its own still drops the
+  # link. Emptying `types` is what lets it through; `files` below still
+  # limits the hook to Compose file names.
+  types: []
+  types_or: [yaml, symlink]
+  minimum_pre_commit_version: "2.9.0"
   # A separator must follow `compose`, so every real variant (compose.prod.yml,
   # compose-dev.yaml, compose_staging.yml, docker-compose.override.yml) is
   # selected but a YAML file that merely starts with those letters

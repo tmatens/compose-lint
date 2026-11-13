@@ -471,6 +471,10 @@ an option ([why](https://tmatens.github.io/compose-lint/cli/#end-of-options)):
         args: [--fail-on, low, --]
 ```
 
+A Compose file committed as a symbolic link is linted like any other, and a
+link whose target is missing fails the hook. The hook sets `types: []` and
+`types_or: [yaml, symlink]` for this; a `types:` of your own replaces it.
+
 ## Agent-written Compose
 
 If a coding agent writes Compose in your repo, the two gates above already

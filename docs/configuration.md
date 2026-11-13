@@ -31,6 +31,7 @@ Finding none is an error (exit 2), not a pass — a gate reporting success over 
 | `docker-compose.override.yml` | merged into whichever of the four names exists (when there are several overrides, Compose's own pick: `compose.override.yml`, then `.yaml`, then this pair) | linted |
 | `stack/compose.yml` | not found | linted |
 | `compose2.yml`, `composed.yml` | not found | skipped: no separator after `compose` |
+| `compose.yml` committed as a symbolic link | linted while the target stays inside the repository | the same: passed to `compose-lint`, which applies that rule |
 
 The asymmetry is intentional. pre-commit hands the hook a filename-filtered list of files you actually changed, so matching broadly is useful and safe. A bare `compose-lint` has no such list and must not guess which of a repository's YAML files are Compose files.
 

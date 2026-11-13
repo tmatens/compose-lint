@@ -125,6 +125,32 @@ def test_every_hook_declares_a_files_pattern(hooks: list[dict[str, Any]]) -> Non
         assert hook.get("files"), f"hook '{hook['id']}' has no 'files' pattern"
 
 
+def test_a_linked_compose_file_reaches_the_hook(hooks: list[dict[str, Any]]) -> None:
+    """A Compose file committed as a symbolic link is passed to the hook.
+
+    pre-commit tags a link ``symlink`` and nothing else, and a hook's
+    ``types`` defaults to ``[file]``. ``types`` and ``types_or`` must both
+    pass, so ``types_or: [yaml, symlink]`` alone still drops the link: with
+    pre-commit 4.6.2 the hook reported ``(no files to check)`` and passed
+    over a linked file with findings. ``types`` has to be emptied as well.
+    ci.yml's ``precommit-smoke`` runs the real hook over a linked file.
+    """
+    for hook in hooks:
+        assert hook.get("types") == [], (
+            f"hook '{hook['id']}' must set types: [] so a symlink is not "
+            "filtered out by the default [file]"
+        )
+        assert {"yaml", "symlink"} <= set(hook.get("types_or", []))
+
+
+def test_the_manifest_declares_the_version_types_or_needs(
+    hooks: list[dict[str, Any]],
+) -> None:
+    for hook in hooks:
+        declared = hook.get("minimum_pre_commit_version", "0")
+        assert tuple(int(part) for part in declared.split(".")) >= (2, 9, 0)
+
+
 @pytest.mark.parametrize("path, expected", TEST_DATA)
 def test_hook_selects_only_compose_files(
     hook_patterns: dict[str, tuple[re.Pattern[str], re.Pattern[str]]],
