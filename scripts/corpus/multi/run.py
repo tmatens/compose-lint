@@ -19,9 +19,12 @@ For each Compose project (a directory holding a primary compose file) under
 
 To compare a branch against ``main`` without installing either, point each
 ``--bin`` at a wrapper that sets ``PYTHONPATH`` to that checkout's ``src/``
-before exec'ing ``python -m compose_lint`` — the environment handed to the
+before exec'ing ``python -P -m compose_lint`` — the environment handed to the
 child is scrubbed, so the wrapper has to set it, and the main checkout's
 ``.venv/bin/compose-lint`` resolves to whatever branch that checkout is on.
+``-P`` keeps the clone, which is the child's working directory, off the
+import path; the scrubbed environment also sets ``PYTHONSAFEPATH`` for the
+same reason.
 
 Writes ``results.jsonl`` (``--out`` to choose) under the cache root. Prints
 only counts. Read the results with ``analyze.py``.
@@ -66,6 +69,11 @@ def clean_env(home: str) -> dict[str, str]:
         "DOCKER_CONFIG": home,
         "NO_COLOR": "1",
         "LANG": "C.UTF-8",
+        # Each lint runs with a clone as its working directory, and
+        # `python -m` puts that directory first on the import path, so a
+        # clone's own `compose_lint/` or `yaml.py` would run in place of the
+        # real one. This keeps it off for a wrapper that forgets `-P`.
+        "PYTHONSAFEPATH": "1",
     }
 
 
