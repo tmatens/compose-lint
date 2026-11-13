@@ -24,10 +24,17 @@ name: Verify release tag
 #      pointed at an arbitrary commit outside main's merge history would still
 #      trigger a publish and ship whatever tree that commit has.
 #   3. The tag's SSH signature verifies against `.github/allowed_signers`. This
-#      is the cryptographic root of the Sigstore provenance chain — without it,
-#      an attacker with a stolen GitHub credential could trigger a release from
-#      a commit they control. Adding or rotating signing keys is a maintainer
-#      action documented in GOVERNANCE.md.
+#      is the cryptographic root of the Sigstore provenance chain: without it,
+#      any tag that reached this workflow would publish, signed or not. Adding
+#      or rotating signing keys is a maintainer action documented in
+#      GOVERNANCE.md.
+#
+# What the three cannot do: they run inside the workflow the tag selects,
+# because a tag push runs publish.yml from the tagged commit. A tag at a commit
+# whose own publish.yml no longer calls this workflow skips all of them. They
+# stop a mistaken, malformed or unsigned tag, not a credential that can push
+# both tags and workflow files. Which credentials can, and why that is
+# accepted, is in docs/CI.md ("Who can release without the signature check").
 
 on:
   workflow_call:
