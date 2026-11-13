@@ -76,9 +76,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path component (a `version:` without that option gets the same checks in
   the step), and `sarif-written` is set only when this run put a regular
   file at that path. See GHSA-r827-h7r9-j3g6.
-
-### Security
-
 - **A relative mount path quotes `${NAME}`, not the `.env` value.** The
   parser rewrites a relative bind source to the absolute path it names, and
   the rewritten path was no longer recognised as carrying a value a sibling
