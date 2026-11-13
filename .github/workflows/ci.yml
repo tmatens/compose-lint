@@ -171,7 +171,7 @@ jobs:
         run: |
           py="$(python -c 'import sys; print(sys.executable)')"
           uv pip install --python "${py}" --require-hashes -r requirements-dev.lock
-          uv pip install --python "${py}" --no-deps -e .
+          uv pip install --python "${py}" --no-deps --no-build-isolation -e .
       - run: ruff check src/ tests/
       - run: ruff format --check src/ tests/
 
@@ -198,7 +198,7 @@ jobs:
         run: |
           py="$(python -c 'import sys; print(sys.executable)')"
           uv pip install --python "${py}" --require-hashes -r requirements-dev.lock
-          uv pip install --python "${py}" --no-deps -e .
+          uv pip install --python "${py}" --no-deps --no-build-isolation -e .
       - run: mypy src/ tests/
 
   test:
@@ -228,7 +228,7 @@ jobs:
         run: |
           py="$(python -c 'import sys; print(sys.executable)')"
           uv pip install --python "${py}" --require-hashes -r requirements-dev.lock
-          uv pip install --python "${py}" --no-deps -e .
+          uv pip install --python "${py}" --no-deps --no-build-isolation -e .
       - name: Install the pinned Docker Compose plugin
         env:
           # renovate: datasource=github-releases depName=docker/compose
@@ -297,7 +297,7 @@ jobs:
         run: |
           py="$(python -c 'import sys; print(sys.executable)')"
           uv pip install --python "${py}" --require-hashes -r requirements-dev.lock
-          uv pip install --python "${py}" --no-deps -e .
+          uv pip install --python "${py}" --no-deps --no-build-isolation -e .
       - name: Enable subprocess coverage
         # test_cli.py and test_integration.py invoke `python -m compose_lint`
         # as a subprocess. The standard pattern for measuring child-process
@@ -437,7 +437,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install --require-hashes -r requirements-dev.lock
-          pip install --no-deps -e .
+          pip install --no-deps --no-build-isolation -e .
       - name: Bandit (source SAST)
         run: bandit -r src/ -ll
       - name: pip-audit (dependency CVEs)
@@ -558,7 +558,7 @@ jobs:
         # requirements-dev.lock carries the publish extra (build, twine),
         # hash-pinned: the same file and command publish.yml installs from.
         run: pip install --require-hashes -r requirements-dev.lock
-      - run: python -m build
+      - run: python -m build --no-isolation
       - name: Verify dist contents
         run: |
           twine check --strict dist/*
@@ -625,7 +625,7 @@ jobs:
           python-version: "3.13"
       - name: Install pinned build env
         run: pip install --require-hashes -r requirements-dev.lock
-      - run: python -m build
+      - run: python -m build --no-isolation
       - uses: sigstore/gh-action-sigstore-python@790bc6befb9d733738f18d8f895854b453640ec9 # v3.5.0
         with:
           inputs: ./dist/*.tar.gz ./dist/*.whl
@@ -745,7 +745,7 @@ jobs:
         run: |
           uv venv /tmp/head-venv
           uv pip install --python /tmp/head-venv/bin/python --require-hashes -r requirements-dev.lock
-          uv pip install --python /tmp/head-venv/bin/python --no-deps -e .
+          uv pip install --python /tmp/head-venv/bin/python --no-deps --no-build-isolation -e .
           /tmp/head-venv/bin/python -m pytest --collect-only -q -p no:cacheprovider | tail -1 | tee /tmp/head-count.txt
       - name: Collect the suite on the base, with the base's own dev env
         env:
@@ -1933,7 +1933,9 @@ jobs:
         run: |
           py="$(python -c 'import sys; print(sys.executable)')"
           uv pip install --python "${py}" --require-hashes -r requirements.lock
-          uv pip install --python "${py}" --no-deps -e .
+          # Built in isolation so this venv stays the runtime closure, with the
+          # backend held to the hash-checked version in requirements-build.lock.
+          uv pip install --python "${py}" --no-deps --build-constraint requirements-build.lock -e .
       - name: fix --apply survives a round trip on LF and CRLF inputs
         run: python scripts/smoke_fix_roundtrip.py
 

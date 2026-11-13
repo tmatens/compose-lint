@@ -31,14 +31,16 @@ COPY src/ src/
 # See pyproject.toml [tool.hatch.build.targets.wheel.force-include].
 COPY docs/rules/ docs/rules/
 # Two-venv layout so every package entering the final image is hash-pinned:
-#   /build-venv — ephemeral, runs `python -m build` (build + transitives)
+#   /build-venv — ephemeral, runs `python -m build` (build, the hatchling
+#                 backend, and transitives; --no-isolation so the backend is
+#                 this hash-checked one, not whatever PyPI serves)
 #   /venv       — the runtime venv that gets copied into the final stage
 # The runtime venv installs PyYAML from requirements.lock, then the locally
 # built wheel with --no-deps so the only unpinned artifact is the wheel we
 # just produced from this checkout.
 RUN python3 -m venv /build-venv \
     && /build-venv/bin/pip install --no-cache-dir --require-hashes -r requirements-build.lock \
-    && /build-venv/bin/python -m build --wheel --outdir /dist \
+    && /build-venv/bin/python -m build --wheel --no-isolation --outdir /dist \
     && python3 -m venv /venv \
     && /venv/bin/pip install --no-cache-dir --upgrade pip \
     && /venv/bin/pip install --no-cache-dir --require-hashes -r requirements.lock \

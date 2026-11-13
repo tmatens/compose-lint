@@ -94,7 +94,7 @@ jobs:
       - name: Install pinned build env
         run: |
           pip install --require-hashes -r requirements-dev.lock
-          pip install --no-deps -e .
+          pip install --no-deps --no-build-isolation -e .
       - name: pip-audit (block release on dependency CVEs)
         # Release-time HARD gate for the build/publish toolchain (twine,
         # sigstore, build, cryptography, ...). On PRs the same audit is
@@ -108,7 +108,7 @@ jobs:
         # an advisory with no fix, the escape hatch is to add the ignore
         # to BOTH files in a PR — not to bypass the tag.
         run: pip-audit --skip-editable
-      - run: python -m build
+      - run: python -m build --no-isolation
       - name: Verify dist contents
         run: |
           twine check dist/*

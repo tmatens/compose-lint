@@ -129,8 +129,10 @@ jobs:
 
       - name: Generate SARIF from the working tree
         run: |
-          python3 -m pip install --quiet --require-hashes -r requirements.lock
-          python3 -m pip install --quiet --no-deps -e .
+          # requirements-build.lock is the runtime lock plus the build backend, so
+          # the editable build uses the hash-checked backend instead of PyPI's.
+          python3 -m pip install --quiet --require-hashes -r requirements-build.lock
+          python3 -m pip install --quiet --no-deps --no-build-isolation -e .
           # Exit 1 is expected and is not this job's failure signal: the
           # overlay probe deliberately produces a CRITICAL, and the point of
           # the step is the document, not the gate. Exit 2 still fails — that

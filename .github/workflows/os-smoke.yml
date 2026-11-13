@@ -95,7 +95,7 @@ jobs:
         run: |
           py="$(python -c 'import sys; print(sys.executable)')"
           uv pip install --python "${py}" --require-hashes -r requirements-dev.lock
-          uv pip install --python "${py}" --no-deps -e .
+          uv pip install --python "${py}" --no-deps --no-build-isolation -e .
       # -n auto as in ci.yml's test job: one pytest-xdist worker per core.
       - run: pytest -n auto
 
