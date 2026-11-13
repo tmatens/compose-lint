@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -595,3 +597,106 @@ class TestOneLinkRuleAtEveryReadSite:
         assert MARKER not in out + err
         assert "coverage_gap" in {kind for kind, _ in _kinds(json.loads(out))}
         assert code == 2
+
+
+_AUDIT = """
+import sys
+
+opened = []
+
+
+def _hook(event, args):
+    if event == "open" and "compose.yml" in str(args[0]):
+        opened.append(str(args[0]))
+
+
+sys.addaudithook(_hook)
+from compose_lint import cli
+
+try:
+    cli.main(sys.argv[1:])
+except SystemExit as exc:
+    code = exc.code
+print(f"opened={len(opened)} code={code}")
+"""
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="needs /dev/null and FIFOs")
+class TestLinkToSomethingThatIsNotAFile:
+    """The link rule is asked about a link whatever it points at (#1260).
+
+    ``is_file`` follows links, so a named link to a device, a directory or
+    nothing at all used to skip the rule and reach the reader, which opens the
+    path before it can refuse it."""
+
+    @staticmethod
+    def _audited(cwd: Path, *args: str) -> tuple[str, str]:
+        result = subprocess.run(
+            [sys.executable, "-c", _AUDIT, *args],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env={**os.environ, "NO_COLOR": "1"},
+            check=False,
+        )
+        return result.stdout.strip().splitlines()[-1], result.stderr
+
+    @pytest.mark.parametrize("target", ["device", "directory", "dangling", "fifo"])
+    def test_a_link_leaving_the_repository_is_refused_before_any_open(
+        self, tmp_path: Path, target: str
+    ) -> None:
+        repo = tmp_path / "repo"
+        (repo / ".git").mkdir(parents=True)
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        if target == "fifo":
+            os.mkfifo(outside / "pipe")
+        aims = {
+            "device": Path(os.devnull),
+            "directory": outside,
+            "dangling": outside / "absent.yml",
+            "fifo": outside / "pipe",
+        }
+        (repo / "compose.yml").symlink_to(aims[target])
+        last, err = self._audited(repo, "--", "compose.yml")
+        assert last == "opened=0 code=2"
+        assert "links to a file outside the repository" in err
+
+    def test_a_dangling_link_inside_the_repository_is_still_not_found(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        (tmp_path / ".git").mkdir()
+        (tmp_path / "compose.yml").symlink_to("absent.yml")
+        code, _, err = _run(["--", "compose.yml"], tmp_path, monkeypatch, capsys)
+        assert code == 2
+        assert "links to a file outside" not in err
+        assert "compose.yml" in err
+
+    def test_a_missing_path_is_still_not_found(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        (tmp_path / ".git").mkdir()
+        code, _, err = _run(["--", "absent.yml"], tmp_path, monkeypatch, capsys)
+        assert code == 2
+        assert "links to a file outside" not in err
+
+    def test_a_link_to_a_regular_file_inside_is_still_followed(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        (tmp_path / ".git").mkdir()
+        _write(tmp_path / "stack" / "app.yml", PLAIN)
+        (tmp_path / "compose.yml").symlink_to(Path("stack", "app.yml"))
+        code, out, _ = _run(
+            ["--format", "json", "--", "compose.yml"], tmp_path, monkeypatch, capsys
+        )
+        assert json.loads(out)["errors"] == []

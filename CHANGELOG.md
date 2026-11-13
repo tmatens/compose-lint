@@ -29,6 +29,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   could not be read, with the same message and exit code
   ([#1259](https://github.com/tmatens/compose-lint/issues/1259)).
 
+- **A named link that leaves the repository is refused before it is opened,
+  whatever it points at.** A Compose file committed as a symbolic link to a
+  file outside the repository is refused without being read. The test asked
+  first whether the path was a regular file, following the link, so a link
+  to a device, a FIFO or a directory, and a link whose target is missing,
+  skipped the rule and was opened before the reader refused it. Nothing was
+  read from it. The rule now applies to every link, so these are reported as
+  a link outside the repository, exit 2 as before. A link whose missing
+  target is outside the repository is reported the same way where it was
+  "file not found", so the message no longer says whether a path outside
+  the checkout exists
+  ([#1260](https://github.com/tmatens/compose-lint/issues/1260)).
+
 ### Security
 
 - **The `.git` directory is not read under any spelling.** A reference into

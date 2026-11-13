@@ -316,7 +316,12 @@ def _links_outside(path: Path) -> bool:
     (:func:`~compose_lint._safe_read.out_of_reach`); here the site's own root
     is the link's directory, widened to its repository there.
     """
-    if not path.is_file():
+    # ``is_file`` follows links, so on its own it also answered "no" for a link
+    # to a device, a FIFO or a directory, and for a link whose target is
+    # missing. Those skipped the rule and went on to be opened. A link is asked
+    # about whatever it points at; only a path that is neither a link nor a
+    # regular file has nothing to ask.
+    if not path.is_symlink() and not path.is_file():
         return False
     return out_of_reach(path, path.parent)
 
