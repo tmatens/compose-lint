@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The `.git` directory is not read under any spelling.** A reference into
+  the repository's `.git` is refused, because a CI checkout writes the job's
+  credential into `.git/config`. The test compared the name exactly, so on a
+  filesystem that ignores case, the default on macOS and Windows,
+  `env_file: ../.GIT/config`, an `include:` or `extends:` of it, or a `.env`
+  linked to it was opened and parsed. The name is now compared without case
+  and without trailing dots or spaces, on every platform, and a directory
+  on the path is also compared with the repository's `.git` by device and
+  inode. No advisory: no value from the file reached any output in text,
+  JSON or SARIF on 1.4.0, where values a run reads are quoted as `${NAME}`;
+  what a run disclosed was which lines were not `KEY=value`.
+
 ## [1.4.0] - 2026-11-13
 
 ### Added

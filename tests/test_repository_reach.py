@@ -21,7 +21,13 @@ import pytest
 
 from compose_lint import cli
 from compose_lint._env_file import read_env
-from compose_lint._safe_read import OUT_OF_REACH, containment_root, out_of_reach
+from compose_lint._safe_read import (
+    OUT_OF_REACH,
+    containment_root,
+    inside_git_dir,
+    names_git_dir,
+    out_of_reach,
+)
 from compose_lint._service_env import project_relative, resolve_env_files
 from compose_lint.parser import load_compose_full
 
@@ -347,3 +353,113 @@ def test_the_projects_own_unreadable_env_is_reported_once(
     env_gaps = [e for e in doc["errors"] if e["file"].endswith(".env")]
     assert len(env_gaps) == 1
     assert code == 2
+
+
+# --- .git under another spelling ---------------------------------------------
+
+# A checkout on macOS or Windows usually ignores case, so `.GIT/config` opens
+# `.git/config`, and NTFS drops trailing dots and spaces. The rule is the same
+# on every platform: what a path says is a fact about the document.
+GIT_SPELLINGS = [".GIT", ".Git", ".gIt", ".git.", ".git ", ".GIT. "]
+
+
+@pytest.mark.parametrize("spelling", GIT_SPELLINGS)
+def test_any_spelling_of_the_git_directory_leaves_lexically(spelling: str) -> None:
+    assert names_git_dir(spelling)
+    assert project_relative(f"{spelling}/config") is None
+    assert project_relative(f"../{spelling}/config", ("svc",)) is None
+    assert project_relative(f"sub/{spelling}/x", ("svc",)) is None
+
+
+@pytest.mark.parametrize("name", ["gitless", ".github", ".gitignore", "git", ".gi"])
+def test_a_name_that_only_resembles_it_stays_inside(name: str) -> None:
+    assert not names_git_dir(name)
+    assert project_relative(f"{name}/x", ("svc",)) == ["svc", name, "x"]
+
+
+@pytest.mark.parametrize("spelling", [".GIT", ".Git"])
+def test_an_include_under_another_spelling_stays_a_gap(
+    tmp_path: Path, spelling: str
+) -> None:
+    repo = _repo(tmp_path)
+    # On a filesystem that ignores case this is `.git/part.yml`; on one that
+    # does not, it is a second directory. Neither is read.
+    _write(repo / spelling / "part.yml", PART)
+    target = _write(
+        repo / "svc" / "compose.yml", f"include:\n  - ../{spelling}/part.yml\n" + PLAIN
+    )
+
+    loaded = load_compose_full(target)
+
+    (gap,) = loaded.gaps
+    assert "outside the repository" in gap
+    assert "shared" not in loaded.data["services"]
+    assert out_of_reach(repo / spelling / "part.yml", repo / "svc")
+
+
+@pytest.mark.parametrize("spelling", [".GIT", ".Git"])
+def test_an_env_file_under_another_spelling_is_not_opened(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    spelling: str,
+) -> None:
+    repo = _repo(tmp_path)
+    _write(repo / spelling / "app.env", f"DB_PASSWORD={MARKER}\n")
+    _write(
+        repo / "svc" / "compose.yml",
+        "services:\n  web:\n    image: nginx:1.27\n"
+        f"    env_file: ../{spelling}/app.env\n",
+    )
+
+    _, document, err = _run(["compose.yml"], repo / "svc", monkeypatch, capsys)
+
+    assert "resolves outside the repository and is not opened" in err
+    assert not [f for f in document["findings"] if f["rule_id"] == "CL-0020"]
+    assert MARKER not in json.dumps(document) + err
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="needs symlinks")
+@pytest.mark.parametrize("spelling", [".GIT", ".Git"])
+def test_a_link_under_another_spelling_is_refused(
+    tmp_path: Path, spelling: str
+) -> None:
+    repo = _repo(tmp_path)
+    _write(repo / spelling / "config", f"[core]\n\tmarker = {MARKER}\n")
+    (repo / "svc").mkdir()
+    (repo / "svc" / "linked.yml").symlink_to(repo / spelling / "config")
+    target = _write(repo / "svc" / "compose.yml", "include:\n  - linked.yml\n" + PLAIN)
+
+    loaded = load_compose_full(target)
+
+    (gap,) = loaded.gaps
+    assert OUT_OF_REACH in gap
+    assert MARKER not in gap
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="needs symlinks")
+def test_the_git_directory_is_known_by_what_it_is_not_only_its_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A filesystem can open `.git` under a name no folding predicts. Stood in
+    for here by a link whose resolved spelling is kept: the directory is the
+    repository's `.git` by device and inode, whatever it is called."""
+    repo = _repo(tmp_path)
+    _write(repo / ".git" / "config", "[core]\n")
+    (repo / "alias").symlink_to(repo / ".git", target_is_directory=True)
+    monkeypatch.setattr(
+        type(repo), "resolve", lambda self, strict=False: self.absolute()
+    )
+
+    assert inside_git_dir(repo / "alias" / "config", repo)
+    assert inside_git_dir(repo / "alias", repo)
+    assert not inside_git_dir(repo / "shared" / "part.yml", repo)
+    assert not inside_git_dir(repo / "shared" / "missing" / "x.yml", repo)
+
+
+def test_without_a_git_directory_only_the_name_is_tested(tmp_path: Path) -> None:
+    root = tmp_path / "plain"
+    _write(root / "sub" / "x.yml", PLAIN)
+
+    assert not inside_git_dir(root / "sub" / "x.yml", root)
+    assert inside_git_dir(root / ".GIT" / "x.yml", root)
