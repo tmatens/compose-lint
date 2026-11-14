@@ -11,10 +11,9 @@ from compose_lint.rules import BaseRule, register_rule
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-OWASP_REF = (
-    "https://cheatsheetseries.owasp.org/cheatsheets/"
-    "Docker_Security_Cheat_Sheet.html#rule-5-be-mindful-of-inter-container-connectivity"
-)
+# No OWASP reference. The Docker Security Cheat Sheet's Rule 5, cited here
+# before, is about inter-container traffic on the default bridge and never
+# mentions host networking; no rule on the sheet does.
 
 CIS_REF = (
     "CIS Docker Benchmark 5.10 — Ensure that the host's network namespace is not shared"
@@ -36,7 +35,7 @@ class HostNetworkRule(BaseRule):
                 "can observe all host network traffic."
             ),
             severity=Severity.HIGH,
-            references=[OWASP_REF, CIS_REF],
+            references=[CIS_REF],
         )
 
     def check(
@@ -64,5 +63,5 @@ class HostNetworkRule(BaseRule):
                     "  ports:\n"
                     '    - "127.0.0.1:8080:8080"'
                 ),
-                references=[OWASP_REF, CIS_REF],
+                references=[CIS_REF],
             )

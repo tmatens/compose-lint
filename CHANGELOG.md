@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for an untagged number too long to convert and, in the policy file, a
   date-shaped value naming a date that does not exist. `init` no longer
   stops on a service whose name is such a value.
+- **CL-0008 and CL-0010 no longer cite an OWASP rule that does not cover
+  them.** CL-0008 (host network mode) cited the cheat sheet's Rule 5, which
+  is about traffic between containers, and CL-0010 (host PID and IPC
+  namespaces) cited Rule 3, which is about capabilities. Neither rule
+  mentions what these two grade. Both keep their CIS references, which
+  match exactly. In text output the reference line for these two rules is
+  now the CIS control.
 
 ## [1.5.0] - 2026-11-13
 

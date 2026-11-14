@@ -92,7 +92,10 @@ class TestHostNamespaceRule:
             self.rule.check("pid_host", data["services"]["pid_host"], data, lines)
         )
         assert len(findings[0].references) > 0
-        assert "owasp" in findings[0].references[0].lower()
+        assert findings[0].references == [
+            "CIS Docker Benchmark 5.16 — Ensure that the host's process "
+            "namespace is not shared"
+        ]
 
     def test_metadata(self) -> None:
         meta = self.rule.metadata
