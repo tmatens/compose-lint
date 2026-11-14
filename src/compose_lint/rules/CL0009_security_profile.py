@@ -66,8 +66,7 @@ OWASP_REF = (
 )
 
 CIS_SECCOMP_REF = (
-    "CIS Docker Benchmark 5.22 — Ensure that the default seccomp profile "
-    "is not Disabled"
+    "CIS Docker Benchmark 5.22 — Ensure the default seccomp profile is not Disabled"
 )
 CIS_APPARMOR_REF = (
     "CIS Docker Benchmark 5.2 — Ensure that, if applicable, an AppArmor "
