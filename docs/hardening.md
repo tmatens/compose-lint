@@ -594,14 +594,26 @@ Rules: [CL-0014](rules/CL-0014.md).
 ## Hardening compose-lint does not grade
 
 Each step above maps to a rule. The settings in this section do not, and that
-is a decision in every case, not an oversight; each one says why. They are
-still worth setting. The first two are in the hardened file below, which was
+is a decision in every case, not an oversight; each one says why. They can
+still be worth setting. The first two are in the hardened file below, which was
 run with them: both services started, served, and came back after a restart.
 
 ### Cap the number of processes
 
-A memory limit does not bound how many processes a container starts. A process
-limit does, and it turns a fork bomb into a refused `fork` inside one
+CIS Docker Benchmark v1.9.0 asks for a process limit on every container
+(5.29, a Level 1 control), and OWASP's Docker Security Cheat Sheet lists the
+number of processes among the resources to limit
+([Rule 7](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-7-limit-resources-memory-cpu-file-descriptors-processes-restarts)).
+On many hosts it can be skipped, because the container is already bounded. The
+benchmark describes the default as no restriction, which is Docker's own
+default; where Docker uses the systemd cgroup driver, the host adds one. A
+container that set no limit read `pids.max` as 18751, the host's
+`DefaultTasksMax`, and as 100 with a limit of 100 (Docker 29.1.3), and the
+memory limit from step 7 bounds what those processes can use.
+
+An explicit limit is a tightening on top of that: a ceiling chosen for the
+service in place of a large host default, and the only one on a host that
+supplies none. It turns a fork bomb into a refused `fork` inside one
 container. With a limit of 20, a shell asked for 40 background jobs got
 `sh: can't fork: Resource temporarily unavailable`.
 
