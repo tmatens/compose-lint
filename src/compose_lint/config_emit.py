@@ -63,7 +63,12 @@ def _round_trips_as_itself(value: str) -> bool:
     """
     try:
         return bool(yaml.safe_load(value) == value)
-    except yaml.YAMLError:  # pragma: no cover - the pattern excludes these
+    except (yaml.YAMLError, ValueError):
+        # ValueError: PyYAML resolves a token by its shape and then converts
+        # it with a bare Python call, so a service named `2026-13-45` (a date
+        # with no such month) or a run of digits past the interpreter's
+        # integer-string limit raises from the conversion. Neither reloads as
+        # itself, so both are quoted.
         return False
 
 

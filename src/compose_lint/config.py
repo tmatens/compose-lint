@@ -13,7 +13,7 @@ import yaml
 from compose_lint._output import emit
 from compose_lint._safe_read import containment_root, read_text_bounded, resolved
 from compose_lint._scalar import as_scalar_text
-from compose_lint._yaml_error import describe_yaml_error
+from compose_lint._yaml_error import describe_yaml_error, guard_scalar_constructors
 from compose_lint.models import Severity
 
 if TYPE_CHECKING:
@@ -265,6 +265,7 @@ _StrictLoader.add_constructor(
     yaml.resolver.BaseResolver.DEFAULT_SEQUENCE_TAG,
     _construct_config_sequence,
 )
+guard_scalar_constructors(_StrictLoader)
 
 
 def load_config(
