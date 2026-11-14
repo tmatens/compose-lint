@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **SARIF rules are tagged with their CIS, OWASP and MITRE ATT&CK mapping.**
+  Each rule in `--format sarif` output now has `properties.tags`, for
+  example `external/cis-docker/5.4`, `external/owasp-docker/rule-3` and
+  `external/mitre-attack/T1611`. GitHub Code Scanning can filter alerts on
+  them with `tag:`. The mapping is the one the rules already cited; the new
+  [standards mapping](docs/standards.md) page lists it for every rule and
+  says what a tag claims. Existing alerts keep their identity: tags are not
+  part of the fingerprint. The tags are informational and can change in any
+  release ([ADR-043](docs/adr/043-standards-mappings-are-sarif-tags.md)).
+  There is no `security` tag.
+- **CL-0014 cites CIS Docker Benchmark 2.14**, the control on centralized
+  and remote logging. It is a daemon-level control, so the rule relates to
+  it and does not satisfy it.
+
 ### Changed
 
 - **CIS Docker Benchmark citations are pinned to v1.9.0.** They were pinned

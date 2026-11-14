@@ -257,6 +257,9 @@ Benchmark v1.9.0** (published 2026-09-30) unless otherwise noted. Numbers shift
 between benchmark versions; if a citation looks wrong against your benchmark
 copy, check the version first.
 
+The CIS, OWASP and ATT&CK mapping for every rule is on one page,
+[Standards mapping](standards.md), with the tags SARIF output carries for it.
+
 ## Current rule assignments
 
 Every rule below was given a recorded keep-or-reclaim disposition before the

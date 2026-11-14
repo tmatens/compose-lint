@@ -127,6 +127,7 @@ nav:
       - "GitHub Action": github-action.md
       - "Forgejo Actions": forgejo.md
       - Severity levels: severity.md
+      - "Standards mapping: CIS, OWASP, ATT&CK tags": standards.md
       - "Docker Compose security: hardening guide": hardening.md
       - Running compose-lint hardened: running-hardened.md
       - Verifying releases: verifying.md

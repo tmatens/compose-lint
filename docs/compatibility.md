@@ -50,6 +50,10 @@ These may change in any release, including PATCH, without a major bump:
   plus a notification". Match `rule_id`, `kind` and the other fields
   [the SARIF contract](adr/015-machine-readable-output-contract.md#sarif-contract)
   names, never text.
+- **The standards tags in SARIF** — `properties.tags` on a rule carries its
+  CIS, OWASP and ATT&CK mapping ([Standards mapping](standards.md)). A tag
+  can be corrected, added or removed in any release
+  ([ADR-043](adr/043-standards-mappings-are-sarif-tags.md)).
 - **The dry-run `fix` diff as a patch format** — it is for review. Lines that
   a CI runner could read as a workflow command are escaped, so the output is
   not promised to `git apply`. To change the files, use `fix --apply`; for a

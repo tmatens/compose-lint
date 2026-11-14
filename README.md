@@ -451,6 +451,12 @@ In CI, `--output results.sarif` writes the same report without following a
 symlink or directory a pull request put at that path; see the
 [CLI reference](https://tmatens.github.io/compose-lint/cli/#writing-the-report-to-a-file).
 
+Each rule in the SARIF output is tagged with the CIS Docker Benchmark
+controls, OWASP Docker Security rules and MITRE ATT&CK techniques it relates
+to, so Code Scanning alerts can be filtered by them. The mapping and what a
+tag does and does not claim are on the
+[standards mapping](https://tmatens.github.io/compose-lint/standards/) page.
+
 ## Pre-commit
 
 ```yaml
