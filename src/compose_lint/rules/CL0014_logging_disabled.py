@@ -38,6 +38,12 @@ INHERITED_LOGGING = (
 
 DOCKER_REF = "https://docs.docker.com/engine/logging/configure/"
 OWASP_REF = "https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html"
+# A daemon-level control: it asks for a logging driver that ships logs off the
+# host. A service that sets `driver: none` opts out of whatever the daemon is
+# configured to do, so the rule relates to 2.14 and cannot satisfy it.
+CIS_REF = (
+    "CIS Docker Benchmark 2.14 — Ensure centralized and remote logging is configured"
+)
 
 
 @register_rule
@@ -54,7 +60,7 @@ class LoggingDisabledRule(BaseRule):
                 "collection, making incident response and forensics impossible."
             ),
             severity=Severity.LOW,
-            references=[DOCKER_REF, OWASP_REF],
+            references=[DOCKER_REF, OWASP_REF, CIS_REF],
         )
 
     def check(
@@ -89,7 +95,7 @@ class LoggingDisabledRule(BaseRule):
                     "      max-size: 10m\n"
                     "      max-file: '3'"
                 ),
-                references=[DOCKER_REF, OWASP_REF],
+                references=[DOCKER_REF, OWASP_REF, CIS_REF],
             )
 
     def fix_writes_keys(self) -> frozenset[str]:

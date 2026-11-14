@@ -127,6 +127,14 @@ registered, or remove the matcher in a step before it:
 
 The owner is the `owner` field of the matcher's JSON file.
 
+## Filtering alerts by standard
+
+Each rule is tagged with the CIS Docker Benchmark controls, OWASP Docker
+Security rules and MITRE ATT&CK techniques it relates to. In the Code
+Scanning alert list, filter with `tag:`, for example
+`tag:external/cis-docker/5.4`. The full list and what a tag claims are on
+[Standards mapping](standards.md).
+
 ## Suppressed findings in Code Scanning
 
 A finding suppressed in `.compose-lint.yml` is written to the SARIF file with

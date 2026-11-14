@@ -20,6 +20,7 @@ from compose_lint.attack import (
 )
 from compose_lint.models import Diagnostic, DiagnosticKind, Severity
 from compose_lint.rules import get_registered_rules
+from compose_lint.standards import rule_tags
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -423,6 +424,14 @@ def _build_rules(
                 "security-severity": _SECURITY_SEVERITY[severity],
             },
         }
+
+        # The CIS, OWASP and ATT&CK mapping as tags, which is the only form
+        # GitHub Code Scanning filters on: it does not read `relationships`
+        # or `taxonomies`. Informational, not contract (ADR-043). Not an
+        # input to `partialFingerprints`, so tagging re-keys no alert.
+        tags = rule_tags(meta.id)
+        if tags:
+            rule_obj["properties"]["tags"] = tags
 
         if meta.references:
             # SARIF 2.1.0 declares helpUri with "format": "uri"; a CIS benchmark
