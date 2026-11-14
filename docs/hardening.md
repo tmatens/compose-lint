@@ -394,6 +394,11 @@ plain `docker compose up`. Size memory with more headroom than CPU: a memory
 limit kills, a CPU limit only throttles. The rule page has the sizing
 procedure and how to read each failure.
 
+The limits are per container, and nothing makes them add up to what the host
+has. Check that their total fits the machine, with room for the host itself:
+several services at their limits together can exhaust it while each stays
+inside its own.
+
 Rules: [CL-0026](rules/CL-0026.md).
 
 ## 8. Do not run as root when the image does not need to
@@ -594,16 +599,37 @@ Rules: [CL-0014](rules/CL-0014.md).
 ## Hardening compose-lint does not grade
 
 Each step above maps to a rule. The settings in this section do not, and that
-is a decision in every case, not an oversight; each one says why. They are
-still worth setting. The first two are in the hardened file below, which was
+is a decision in every case, not an oversight; each one says why. They can
+still be worth setting. The first two are in the hardened file below, which was
 run with them: both services started, served, and came back after a restart.
 
 ### Cap the number of processes
 
-A memory limit does not bound how many processes a container starts. A process
-limit does, and it turns a fork bomb into a refused `fork` inside one
-container. With a limit of 20, a shell asked for 40 background jobs got
-`sh: can't fork: Resource temporarily unavailable`.
+Optional when the memory limit from step 7 is set. That limit, not this one,
+is what protects the host from a fork bomb; a process limit changes how the
+failure ends. Measured with a fork bomb in a container held to 128M and half a
+CPU (Docker 29.9.3, 8 CPUs):
+
+| Process limit | Processes reached | Outcome | Host |
+|---|---|---|---|
+| none (host ceiling 9046) | about 1,200 in five seconds | memory limit reached, OOM killer fired, container exited | responsive |
+| 100 | 100 | further forks refused, about 10M used, container stayed up | responsive |
+
+Neither ending is healthy. A killed container under a restart policy comes
+back to the same attack, and a service at its process ceiling cannot start new
+work: postgres there cannot fork a backend for a new connection. A refused fork
+reads `sh: can't fork: Resource temporarily unavailable`. Without a memory
+limit, do not skip this one.
+
+Who asks for it: CIS Docker Benchmark v1.9.0 (5.29, a Level 1 control), and
+OWASP's Docker Security Cheat Sheet, which lists the number of processes among
+the resources to limit
+([Rule 7](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-7-limit-resources-memory-cpu-file-descriptors-processes-restarts)).
+A file audited against either should set it. The benchmark describes the
+default as no restriction, which is Docker's own default. Where Docker uses the
+systemd cgroup driver the host supplies a ceiling, its `DefaultTasksMax`
+(`pids.max` read 18751 on one host and 9046 on another with no limit set),
+which is too high to matter once memory is limited.
 
 ```yaml
 deploy:
@@ -623,10 +649,9 @@ nginx ran one master and one worker per CPU, 5 processes on a 4-CPU host, and
 postgres idled at 6 and forks one backend per client connection, so its limit
 has to clear `max_connections`.
 
-Why no rule: compose-lint retired its rule for this, CL-0012. On a systemd host
-the count is already bounded by `DefaultTasksMax` whether or not the file sets
-a limit, and where it is not, memory is unbounded too, which
-[CL-0026](rules/CL-0026.md) flags
+Why no rule: compose-lint retired its rule for this, CL-0012. Memory is the
+dominant exhaustion vector, and a file that leaves it unbounded is flagged by
+[CL-0026](rules/CL-0026.md)
 ([ADR-020](adr/020-severity-scoping-and-overrides.md)).
 
 ### Separate the networks
@@ -726,7 +751,7 @@ services:
         limits:
           memory: 128M
           cpus: '0.50'
-          pids: 100                                  # not graded
+          pids: 100                                  # optional, not graded
     logging:                                         # step 13
       driver: json-file
       options:
@@ -763,7 +788,7 @@ services:
         limits:
           memory: 512M
           cpus: '1.0'
-          pids: 200                                  # not graded
+          pids: 200                                  # optional, not graded
     logging:                                         # step 13
       driver: json-file
       options:
@@ -814,7 +839,7 @@ versions you run.
 | Host paths mounted only when needed, `:ro` where possible | [CL-0013](rules/CL-0013.md), [CL-0025](rules/CL-0025.md) | 2.5% / under 2% |
 | No host devices, no `shared` mount propagation | [CL-0016](rules/CL-0016.md), [CL-0017](rules/CL-0017.md) | — |
 | Logging driver not `none` | [CL-0014](rules/CL-0014.md) | — |
-| Process limit | not graded | — |
+| Process limit, optional with a memory limit | not graded | — |
 | Database on an `internal` network | not graded | — |
 | No root at start, where the image allows it | not graded | — |
 
