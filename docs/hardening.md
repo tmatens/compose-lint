@@ -608,13 +608,21 @@ On many hosts it can be skipped, because the container is already bounded. The
 benchmark describes the default as no restriction, which is Docker's own
 default; where Docker uses the systemd cgroup driver, the host adds one. A
 container that set no limit read `pids.max` as 18751, the host's
-`DefaultTasksMax`, and as 100 with a limit of 100 (Docker 29.1.3), and the
-memory limit from step 7 bounds what those processes can use.
+`DefaultTasksMax`, and as 100 with a limit of 100 (Docker 29.1.3).
+
+That ceiling is large, and the memory limit from step 7 is what stops a fork
+bomb short of it. In a container held to 128M and half a CPU with no process
+limit, on a host whose ceiling was 9046, a fork bomb reached about 1,200
+processes in five seconds, the kernel's OOM killer fired, and the container
+exited; the host stayed responsive throughout (Docker 29.9.3, 8 CPUs). Skipping
+the process limit is safe for the host only with that memory limit in place.
 
 An explicit limit is a tightening on top of that: a ceiling chosen for the
 service in place of a large host default, and the only one on a host that
-supplies none. It turns a fork bomb into a refused `fork` inside one
-container. With a limit of 20, a shell asked for 40 background jobs got
+supplies none. It also changes how the failure ends. With a limit of 100, the
+same fork bomb stopped at 100 processes, used about 10M, and the container
+stayed up, where without it the container was killed. A refused `fork` looks
+like this: with a limit of 20, a shell asked for 40 background jobs got
 `sh: can't fork: Resource temporarily unavailable`.
 
 ```yaml
