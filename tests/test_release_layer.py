@@ -653,6 +653,39 @@ def test_every_scheduled_workflow_reports_a_failure_as_an_issue(workflow: str) -
         )
 
 
+def test_the_harness_bump_holds_only_a_first_failure_in_a_row() -> None:
+    """One workflow waits for a second scheduled failure before reporting.
+
+    A registry refusing one runner clears on the next run, so the first
+    failure in a row opens nothing (see the workflow header). That is safe
+    only while three things hold together: a second slot the same day, so
+    the wait is hours; a reporter that runs unless the hold was positively
+    granted, so a lookup that fails still reports; and a lookup that can
+    read the run history.
+    """
+    doc = _load("forgejo-smoke-bump.yml")
+    # PyYAML reads the bare `on:` key as boolean True.
+    triggers = doc.get(True) or doc.get("on") or {}
+    assert len(triggers["schedule"]) >= 2, "one slot a day makes the hold a day"
+
+    jobs = doc["jobs"]
+    lookup = jobs["previous-run"]
+    assert lookup.get("permissions") == {"actions": "read"}
+    assert "failure()" in lookup["if"] and "schedule" in lookup["if"]
+
+    report = jobs["report-failure"]
+    assert "previous-run" in report["needs"]
+    assert "needs.previous-run.outputs.hold != 'true'" in report["if"], (
+        "the reporter must run whenever the hold was not positively granted"
+    )
+
+    script = lookup["steps"][0]["run"]
+    assert "--event schedule" in script and "--status completed" in script
+    assert script.count("hold=true") == 1
+    granted = script.split("hold=true")[0].rsplit("if [", 1)[1]
+    assert '"success"' in granted, "only a green previous run grants the hold"
+
+
 # --- Each Docker Hub token is read only by the jobs that need it -------------
 
 _PUSH_MARKERS = ("push=true", "imagetools create")

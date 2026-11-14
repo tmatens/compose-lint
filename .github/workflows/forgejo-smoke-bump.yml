@@ -15,13 +15,21 @@ name: Forgejo smoke harness bump
 # would fail the smoke anyway: it cannot move the docs claim. Meanwhile
 # Codeberg garbage-collects a superseded Forgejo patch tag, digest
 # included, within days of the next patch (#746), so the pin has to move
-# within that window. Daily, not weekly, for that reason.
+# within that window. Twice daily, not weekly, for that reason.
 #
 # scripts/forgejo_smoke_bump.py does the work and is three-valued: 0
 # nothing to do, 1 files rewritten (this job commits them), 2 no
 # trustworthy answer (network, a stale anchor, a digest that is not a
 # manifest list) — 2 fails the run and is reported as an issue below,
 # because a watcher that silently stops watching reads as "covered".
+#
+# The issue opens on the second scheduled failure in a row, not the first.
+# The script already retries a timeout, a 429 or a 5xx inside one run, and
+# what is left is a registry refusing one runner's address for longer than
+# a retry can wait (a 403 on a request that works the next day). A new run
+# gets a new runner, so the schedule has two slots a day and a single
+# failure waits for the next one: a real break is reported within about
+# twelve hours, and a refusal that clears on its own opens nothing.
 #
 # The PR is authored with MARKETPLACE_SMOKE_PAT so its checks run
 # (a GITHUB_TOKEN-authored PR triggers no workflows, #342); the same
@@ -38,6 +46,7 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "17 5 * * *"
+    - cron: "17 17 * * *"
 
 permissions: {}
 
@@ -134,11 +143,51 @@ jobs:
   # for a daily failure is an email to the workflow author, which is how a
   # watcher stays broken — and a broken watcher here means the next Forgejo
   # patch takes the weekly smoke red with it.
+  #
+  # `previous-run` decides whether this failure is the first in a row. It
+  # answers `hold: true` only when the scheduled run before this one is known
+  # to have succeeded. Anything else reports: an earlier failure, no earlier
+  # run, or this job failing to find out, because not knowing is not a
+  # reason to stay quiet.
+  previous-run:
+    name: Was the previous scheduled run green
+    needs:
+      - bump
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 3
+    permissions:
+      actions: read
+    outputs:
+      hold: ${{ steps.previous.outputs.hold }}
+    steps:
+      - name: Read the previous scheduled run's conclusion
+        id: previous
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Newest first. This run is still in progress, so `completed`
+          # leaves it out; the id filter says so explicitly.
+          conclusion=$(gh run list --workflow forgejo-smoke-bump.yml \
+            --event schedule --status completed --limit 5 \
+            --json databaseId,conclusion \
+            --jq "[.[] | select(.databaseId != ${GITHUB_RUN_ID})][0].conclusion // \"none\"")
+          echo "previous scheduled run: ${conclusion}"
+          if [ "${conclusion}" = "success" ]; then
+            echo "hold=true" >> "${GITHUB_OUTPUT}"
+            echo "::notice::First scheduled failure in a row; an issue opens if the next scheduled run fails too."
+          else
+            echo "hold=false" >> "${GITHUB_OUTPUT}"
+          fi
+
   report-failure:
     name: Report scheduled failure
     needs:
       - bump
-    if: failure() && github.event_name == 'schedule'
+      - previous-run
+    if: failure() && github.event_name == 'schedule' && needs.previous-run.outputs.hold != 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 3
     permissions:

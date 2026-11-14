@@ -19,7 +19,7 @@ per-channel publish contract see [`DISTRIBUTION.md`](DISTRIBUTION.md).
 | `release-prep.yml`        | Manual (`workflow_dispatch`, maintainer)   | Opens the "Prepare X.Y.Z release" PR                   |
 | `marketplace-smoke.yml`   | Push to `main` touching the file + manual + weekly cron | Verifies the published action, pre-commit hook, and the `uvx`/`pipx run` one-shot forms end-to-end; after a release, re-records the README demos if their output changed |
 | `forgejo-smoke.yml`       | PRs + pushes to `main` touching the harness + manual + weekly cron | Runs the Forgejo guide's snippet on a live containerized Forgejo |
-| `forgejo-smoke-bump.yml`  | Daily (05:17 UTC) + manual                 | Opens the PR that moves the harness to the newest Forgejo + runner, docs claim included |
+| `forgejo-smoke-bump.yml`  | Twice daily (05:17, 17:17 UTC) + manual    | Opens the PR that moves the harness to the newest Forgejo + runner, docs claim included |
 | `compose-spec-watch.yml`  | Weekly (Mon 05:41 UTC) + manual            | Opens an issue when the Compose spec adds a key or a container slot compose-lint has not triaged |
 | `digest-age-gate.yml`     | Hourly (:23) + manual (dry run by default) | Merges Renovate's gcr.io/ghcr.io digest PRs once they have aged 72h, the age gate Renovate cannot apply to them; flags ones that stall |
 | `os-smoke.yml`            | Called by `ci.yml` on PRs touching code + push to `main` + manual + weekly cron | pytest (3.11 and 3.13) + pre-commit hook on macOS and Windows — **gates via `ci-ok`** |
@@ -667,9 +667,19 @@ obtaining docker token`) while a local `renovate --platform=local
 egress. `renovate.json` disables the docker-compose manager on that file
 so two writers never race on one pin.
 
-Daily rather than weekly because Codeberg deletes a superseded Forgejo
-patch tag — digest included — within days of the next patch ([#746]);
-the old pin is on the clock from the moment a release ships.
+Twice daily rather than weekly because Codeberg deletes a superseded
+Forgejo patch tag — digest included — within days of the next patch
+([#746]); the old pin is on the clock from the moment a release ships.
+
+A failed scheduled run opens its issue only when the scheduled run before
+it also failed. The script retries a timeout, a 429 or a 5xx inside one
+run, so what a single failure usually is by then is a registry refusing
+that runner's address for longer than a retry can wait, and the next run,
+on a new runner, passes. With two runs a day a real break is reported
+within about twelve hours. The `previous-run` job makes the call and
+reports whenever it cannot tell: an earlier failure, no earlier run, or
+the lookup itself failing. This applies to this workflow only; every other
+scheduled workflow reports its first failure.
 
 `scripts/forgejo_smoke_bump.py` is three-valued like `eol_watch.py`: 0
 nothing to do, 1 files rewritten (the job commits them, one branch per
@@ -945,7 +955,7 @@ nothing reports that; a pin CI never runs merges on nothing but its age.
 | Scorecard finding                   | Security → Code Scanning (`scorecard` category)        |
 | Docker Scout CVE                    | Security → Code Scanning (`docker-scout` category)     |
 | Vulnerability with an available fix | Rolling issue labelled `fixable-vulns`                 |
-| Scheduled workflow failure          | Issue `Scheduled run failed: <workflow>` — one per workflow, repeat failures comment on it (`.github/actions/report-scheduled-failure`); plus the author email and red X |
+| Scheduled workflow failure          | Issue `Scheduled run failed: <workflow>` — one per workflow, repeat failures comment on it (`.github/actions/report-scheduled-failure`); plus the author email and red X. `forgejo-smoke-bump.yml` waits for a second failure in a row ([why](#forgejo-smoke-bumpyml)) |
 | Post-release smoke failure          | Issue `Post-release run failed: Marketplace smoke test` — same action, separate thread from the weekly one so a break in a shipped release is not triaged as a flake |
 | Renovate PR                         | A PR per update. Automerges once green and three days old when the PR itself exercises the change; otherwise labelled `manual-merge` (a person has to act) or `age-gated` (gcr/ghcr digests, merged by `digest-age-gate.yml` after 72h). See [Dependency updates](#dependency-updates-renovate) |
 
