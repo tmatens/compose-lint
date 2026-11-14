@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from compose_lint.parser import load_compose
-from compose_lint.rules.CL0008_host_network import HostNetworkRule
+from compose_lint.rules.CL0008_host_network import CIS_REF, HostNetworkRule
 
 FIXTURES = Path(__file__).parent / "compose_files"
 
@@ -72,7 +72,7 @@ class TestHostNetworkRule:
             )
         )
         assert len(findings[0].references) > 0
-        assert "owasp" in findings[0].references[0].lower()
+        assert findings[0].references == [CIS_REF]
 
     def test_metadata(self) -> None:
         meta = self.rule.metadata

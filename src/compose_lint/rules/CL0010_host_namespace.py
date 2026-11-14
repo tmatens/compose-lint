@@ -12,11 +12,8 @@ from compose_lint.rules import BaseRule, register_rule
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-OWASP_REF = (
-    "https://cheatsheetseries.owasp.org/cheatsheets/"
-    "Docker_Security_Cheat_Sheet.html#rule-3-limit-capabilities-grant-only-"
-    "specific-capabilities-needed-by-a-container"
-)
+# No OWASP reference. The Docker Security Cheat Sheet's Rule 3, cited here
+# before, is about capabilities; no rule on the sheet covers host namespaces.
 
 _NAMESPACE_CHECKS: list[tuple[str, str, str, str]] = [
     (
@@ -72,7 +69,7 @@ class HostNamespaceRule(BaseRule):
             # One entry per graded namespace. 5.21 (UTS) and 5.31 (user
             # namespace) were cited here until the checks for them were
             # removed; a control the rule does not grade is not a reference.
-            references=[OWASP_REF, *(cis for _, _, cis, _ in _NAMESPACE_CHECKS)],
+            references=[cis for _, _, cis, _ in _NAMESPACE_CHECKS],
         )
 
     def check(
@@ -106,5 +103,5 @@ class HostNamespaceRule(BaseRule):
                         f"Remove '{inline(key)}: {inline(value)}' to restore "
                         "namespace isolation."
                     ),
-                    references=[OWASP_REF, cis_ref],
+                    references=[cis_ref],
                 )
