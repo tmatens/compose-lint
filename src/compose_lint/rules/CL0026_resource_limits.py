@@ -19,10 +19,10 @@ OWASP_REF = (
 )
 
 CIS_MEM_REF = (
-    "CIS Docker Benchmark 5.10 — Ensure that the memory usage for containers is limited"
+    "CIS Docker Benchmark 5.11 — Ensure that the memory usage for containers is limited"
 )
 CIS_CPU_REF = (
-    "CIS Docker Benchmark 5.11 — Ensure that CPU priority is set "
+    "CIS Docker Benchmark 5.12 — Ensure that CPU priority is set "
     "appropriately on containers"
 )
 

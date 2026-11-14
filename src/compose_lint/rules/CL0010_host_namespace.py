@@ -69,10 +69,10 @@ class HostNamespaceRule(BaseRule):
                 "process, or reaches host shared-memory segments."
             ),
             severity=Severity.HIGH,
-            references=[
-                OWASP_REF,
-                "CIS Docker Benchmark 5.16, 5.17, 5.21, 5.31",
-            ],
+            # One entry per graded namespace. 5.21 (UTS) and 5.31 (user
+            # namespace) were cited here until the checks for them were
+            # removed; a control the rule does not grade is not a reference.
+            references=[OWASP_REF, *(cis for _, _, cis, _ in _NAMESPACE_CHECKS)],
         )
 
     def check(

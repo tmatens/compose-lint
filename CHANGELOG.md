@@ -7,7 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **CIS Docker Benchmark citations are pinned to v1.9.0.** They were pinned
+  to v1.7.0. Every control number a rule cites was checked against the
+  v1.9.0 text, and the numbers the other rules cite are unchanged.
+
 ### Fixed
+
+- **CL-0026 cites the right CIS controls.** It cited 5.10 for memory limits
+  and 5.11 for CPU priority. Those controls are 5.11 and 5.12; 5.10 is the
+  host network namespace, which CL-0008 cites.
+- **CL-0010's rule description no longer cites CIS 5.21 and 5.31.** Those
+  are the UTS and user namespace controls, which the rule stopped grading
+  before 1.0. Its findings already cited only 5.16 and 5.17.
+- **CL-0009 gives CIS 5.22 its published title.**
+- **The rule pages for CL-0024 to CL-0028 list their references.** The rules
+  cited OWASP and CIS sources that their pages did not show.
 
 - **A YAML value its type cannot hold is reported as invalid YAML.** A file
   with an explicit type tag on a value that does not fit it, such as
