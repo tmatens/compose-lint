@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A YAML value its type cannot hold is reported as invalid YAML.** A file
+  with an explicit type tag on a value that does not fit it, such as
+  `!!int "abc"`, made `check` print a traceback and "internal error ... This
+  is a bug". It is now the ordinary "Invalid YAML" error with a line and
+  column, in text, JSON and SARIF, for a Compose file, an included file and
+  the policy file. The exit code was already 2 and still is. The same holds
+  for an untagged number too long to convert and, in the policy file, a
+  date-shaped value naming a date that does not exist. `init` no longer
+  stops on a service whose name is such a value.
+
 ## [1.5.0] - 2026-11-13
 
 ### Added

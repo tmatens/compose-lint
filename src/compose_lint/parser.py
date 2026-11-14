@@ -40,7 +40,7 @@ from compose_lint._safe_read import (
 )
 from compose_lint._service_env import project_relative
 from compose_lint._units import container_specs, count_units
-from compose_lint._yaml_error import describe_yaml_error
+from compose_lint._yaml_error import describe_yaml_error, guard_scalar_constructors
 from compose_lint.config import KNOWN_TOP_LEVEL_KEYS
 from compose_lint.rules._interpolation import (
     exceeds_limits,
@@ -467,6 +467,7 @@ LineLoader.add_constructor(
 # key it is attached to (see `_construct_mapping`).
 LineLoader.add_constructor("!reset", _construct_override_tag)
 LineLoader.add_constructor("!override", _construct_override_tag)
+guard_scalar_constructors(LineLoader)
 
 
 def _install_scalar_resolvers() -> None:
