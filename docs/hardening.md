@@ -137,17 +137,17 @@ content and ignores the tag.
 image: nginx:latest
 
 # ✅ Better
-image: nginx:1.27-alpine
+image: nginx:1.30-alpine
 
 # ✅ Best
-image: nginx:1.27-alpine@sha256:…
+image: nginx:1.30-alpine@sha256:…
 ```
 
 Get the digest without pulling the whole image. `crane` runs from its own
 container, so nothing needs installing:
 
 ```bash
-docker run --rm gcr.io/go-containerregistry/crane digest nginx:1.27-alpine
+docker run --rm gcr.io/go-containerregistry/crane digest nginx:1.30-alpine
 ```
 
 Pin the index digest that command returns, not a per-architecture digest; a
@@ -235,7 +235,7 @@ none of them once running. Dropping them all and only adding back the ones
 required removes privileges the service never uses but an attacker could.
 
 ```yaml
-# ✅ After, for nginx:1.27-alpine
+# ✅ After, for nginx:1.30-alpine
 cap_drop:
   - ALL
 cap_add:
@@ -244,7 +244,7 @@ cap_add:
   - SETGID
 ```
 
-The list is image-specific. That one is verified for `nginx:1.27-alpine`
+The list is image-specific. That one is verified for `nginx:1.30-alpine`
 against a live daemon; another image needs a different set, and the rule page
 has the method for finding it. Two things worth knowing before you start:
 
@@ -265,7 +265,7 @@ function exercised. What remains is the set whose removal broke it.
 
 | Image | `cap_add` | `tmpfs` needed under `read_only` | Why |
 |---|---|---|---|
-| `nginx:1.27-alpine` | `CHOWN, SETUID, SETGID` | `/run`, `/var/cache/nginx` | the entrypoint chowns the cache directory, then drops the workers to the `nginx` user |
+| `nginx:1.30-alpine` | `CHOWN, SETUID, SETGID` | `/run`, `/var/cache/nginx` | the entrypoint chowns the cache directory, then drops the workers to the `nginx` user |
 | `postgres:16` | `CHOWN, DAC_OVERRIDE, SETGID, SETUID` | `/run/postgresql` | the entrypoint chowns the data and socket directories and switches to the `postgres` user; on every later start it reads the `0700` data directory as root, and it reads the secret file, which Compose mounts with the host file's owner and mode (`0600` after step 1) |
 
 Both follow the most common pattern: an entrypoint that starts as root, fixes
@@ -287,8 +287,10 @@ itself.
 
 An image that
 starts directly as its service user, or that is a single static binary, often
-needs nothing at all. Measured for the tags shown in October 2026 on Docker
-29.7.2, on a host without AppArmor; the nginx set is also verified on the rule page. A different `user:`, a volume that already
+needs nothing at all. The postgres set was measured in October 2026 on Docker
+29.7.2, on a host without AppArmor. The nginx set was measured in November
+2026 on Docker 29.1.3, on a host with AppArmor, and is the same set the rule
+page verifies for `nginx:1.27-alpine`. A different `user:`, a volume that already
 holds data, an overridden entrypoint or a new major version can change a set
 in either direction, so measure again for what you run.
 
@@ -589,16 +591,119 @@ logging:
 
 Rules: [CL-0014](rules/CL-0014.md).
 
+## Hardening compose-lint does not grade
+
+Each step above maps to a rule. The settings in this section do not, and that
+is a decision in every case, not an oversight; each one says why. They are
+still worth setting. The first two are in the hardened file below, which was
+run with them: both services started, served, and came back after a restart.
+
+### Cap the number of processes
+
+A memory limit does not bound how many processes a container starts. A process
+limit does, and it turns a fork bomb into a refused `fork` inside one
+container. With a limit of 20, a shell asked for 40 background jobs got
+`sh: can't fork: Resource temporarily unavailable`.
+
+```yaml
+deploy:
+  resources:
+    limits:
+      memory: 512M
+      cpus: '1.0'
+      pids: 200
+```
+
+Put it beside the limits from step 7. The service-level `pids_limit:` key next
+to a `deploy.resources.limits` block that sets no `pids` was refused
+(`can't set distinct values on 'pids_limit' and
+'deploy.resources.limits.pids'`, Compose 5.6.1). Size it from what the service
+runs, read with `docker stats --no-stream --format '{{.Name}} {{.PIDs}}'`:
+nginx ran one master and one worker per CPU, 5 processes on a 4-CPU host, and
+postgres idled at 6 and forks one backend per client connection, so its limit
+has to clear `max_connections`.
+
+Why no rule: compose-lint retired its rule for this, CL-0012. On a systemd host
+the count is already bounded by `DefaultTasksMax` whether or not the file sets
+a limit, and where it is not, memory is unbounded too, which
+[CL-0026](rules/CL-0026.md) flags
+([ADR-020](adr/020-severity-scoping-and-overrides.md)).
+
+### Separate the networks
+
+Compose puts every service of a project on one network, so `web` and `db`
+reach each other and both reach the internet. Two networks, with the
+database's marked `internal`, narrow that:
+
+```yaml
+services:
+  web:
+    networks:
+      - frontend
+      - backend
+  db:
+    networks:
+      - backend
+
+networks:
+  frontend:
+  backend:
+    internal: true
+```
+
+Measured on the hardened file: `web` still served its published port and
+reached `db:5432`, and a client on `backend` authenticated with the secret
+from step 1. A container attached only to an `internal` network had no default
+route and could not resolve or reach an outside host; attached to both
+networks, it could.
+
+Why no rule: which services of one project should reach each other is a design
+decision the file does not settle, so no rule grades it
+([CL-0008](rules/CL-0008.md#what-it-detects)).
+
+### Start without root
+
+Both services in the hardened file start as root, and the capabilities from
+step 5 are what that costs: the nginx master process stays root for its
+lifetime, and postgres starts as root before it switches user. Two alternatives
+were measured, each with `cap_drop: [ALL]`, no `cap_add`, `read_only: true`
+and `no-new-privileges`:
+
+- **`nginxinc/nginx-unprivileged:1.30-alpine`** ran as uid 101 and served,
+  with one `tmpfs` at `/tmp`; without it the container exited at startup. It
+  listens on 8080, so the mapping becomes `"127.0.0.1:8080:8080"`.
+- **`postgres:16` with `user: "999:999"`**, the image's `postgres` user, ran on
+  a fresh named volume through a first start and a restart, with the same
+  `/run/postgresql` tmpfs. The cost moves to the secret. With no
+  `DAC_OVERRIDE`, uid 999 has to be allowed to read the file by its mode: at
+  `0600` and owned by another user the entrypoint stopped with
+  `/run/secrets/db_password: Permission denied`, and at `0644` it started.
+  Giving the file to uid 999 on the host keeps it at `0600`; that was not run
+  here.
+
+Why no rule: the image's `USER` is not in the Compose file, so compose-lint
+cannot tell a root default from a non-root one and does not guess. It flags
+`user: root` when it is written ([CL-0018](rules/CL-0018.md)).
+
+### Leave the other host namespaces unset
+
+`uts: host`, `userns_mode: host` and `cgroup: host` are not graded. The
+[CL-0010](rules/CL-0010.md#what-it-detects) page records what each does under
+Docker's defaults and why none has a rule. The one that matters most is
+`userns_mode: host` on a daemon that runs with `--userns-remap`, where it opts
+the service out of the remapping.
+
 ## The hardened file
 
-The starting file with every step applied. With real digests in place of the
+The starting file with every step applied, plus the process limits and
+networks from the section above. With real digests in place of the
 shortened ones, `compose-lint check --fail-on low` reports no findings on it:
 the twelve findings at the top of the page become none.
 
 ```yaml
 services:
   web:
-    image: nginx:1.27-alpine@sha256:…               # step 2
+    image: nginx:1.30-alpine@sha256:…               # step 2
     ports:
       - "127.0.0.1:8080:80"                          # step 3
     volumes:
@@ -621,11 +726,15 @@ services:
         limits:
           memory: 128M
           cpus: '0.50'
+          pids: 100                                  # not graded
     logging:                                         # step 13
       driver: json-file
       options:
         max-size: 10m
         max-file: '3'
+    networks:                                        # not graded
+      - frontend
+      - backend
     depends_on:
       - db
 
@@ -654,14 +763,22 @@ services:
         limits:
           memory: 512M
           cpus: '1.0'
+          pids: 200                                  # not graded
     logging:                                         # step 13
       driver: json-file
       options:
         max-size: 10m
         max-file: '3'
+    networks:                                        # not graded
+      - backend
 
 volumes:
   pgdata:
+
+networks:
+  frontend:
+  backend:
+    internal: true
 
 secrets:
   db_password:
@@ -669,7 +786,7 @@ secrets:
 ```
 
 Both capability lists are measured ones: `web` is the set the
-[CL-0006](rules/CL-0006.md) page verifies for `nginx:1.27-alpine`, and `db`
+[CL-0006](rules/CL-0006.md) page verifies for `nginx:1.27-alpine`, measured again for `nginx:1.30-alpine` in step 5, and `db`
 is the `postgres:16` example in step 5. Without the `/run/postgresql`
 tmpfs, postgres cannot create its lock file and exits under `read_only`;
 step 6's `docker diff` pass is there to predict paths like that one. Measure again for the
@@ -697,6 +814,9 @@ versions you run.
 | Host paths mounted only when needed, `:ro` where possible | [CL-0013](rules/CL-0013.md), [CL-0025](rules/CL-0025.md) | 2.5% / under 2% |
 | No host devices, no `shared` mount propagation | [CL-0016](rules/CL-0016.md), [CL-0017](rules/CL-0017.md) | — |
 | Logging driver not `none` | [CL-0014](rules/CL-0014.md) | — |
+| Process limit | not graded | — |
+| Database on an `internal` network | not graded | — |
+| No root at start, where the image allows it | not graded | — |
 
 Run `compose-lint check --fail-on low compose.yaml` to check the file against
 all of it at once; `compose-lint fix` applies the steps that can be applied
