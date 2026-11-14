@@ -182,3 +182,14 @@ class TestStandardsPage:
     def test_severity_page_names_the_same_cis_version(self) -> None:
         severity = (DOCS / "severity.md").read_text(encoding="utf-8")
         assert f"Benchmark v{standards.CIS_DOCKER_VERSION}**" in severity
+
+
+@pytest.mark.parametrize("rule_id", RULE_IDS)
+def test_rule_page_says_what_a_reference_claims(rule_id: str) -> None:
+    """A reader who lands on a rule page sees the caveat, not only the list."""
+    page = (DOCS / "rules" / f"{rule_id}.md").read_text(encoding="utf-8")
+    after_references = page.split("**References:**")[-1]
+    assert "does not mean a file with no finding complies" in " ".join(
+        after_references.split()
+    )
+    assert "[Standards mapping](../standards.md)" in after_references
