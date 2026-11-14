@@ -515,9 +515,13 @@ Rules: [CL-0002](rules/CL-0002.md), [CL-0011](rules/CL-0011.md),
 
 **Share of real files affected: 2.8%** use `network_mode: host`.
 
-`network_mode: host` puts the container on the host's interfaces directly.
-Port-publish rules do not apply, so the firewall bypass from step 3 becomes
-total, and the container sees every host interface. Bridge networking with an
+`network_mode: host` puts the container on the host's network stack directly.
+`ports:` is ignored, so a service cannot be held to `127.0.0.1` the way step 3
+does: it is on whatever address the application binds. The container sees
+every host interface and reaches the services the host keeps on `127.0.0.1`.
+The host firewall is the one control that still applies. A host-network
+listener is an ordinary host socket, so UFW and firewalld rules filter it,
+which they do not do for a published port. Bridge networking with an
 explicit port mapping restores the isolation. `pid: host` and `ipc: host` share the host's process
 and shared-memory namespaces; a sidecar that needs to see another container's
 processes can use `pid: "service:<name>"` instead.
