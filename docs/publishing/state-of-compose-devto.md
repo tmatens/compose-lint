@@ -16,7 +16,7 @@ canonical_url:
 
 I maintain [compose-lint](https://github.com/tmatens/compose-lint), a security linter for Docker Compose files, and I ran it over **11,111 public `docker-compose.yml` and `compose.yaml` files from GitHub**.
 
-6,666 of those are ordinary Compose files. The rest are override files, test fixtures and deliberately vulnerable labs, which the study reports separately and I leave out here. Of the 6,666, compose-lint could lint 5,907, and every percentage below is a share of those 5,907.
+6,666 of those are ordinary Compose files. The rest are override files, test fixtures and deliberately vulnerable labs, which the study reports separately and I leave out here. Of the 6,666, compose-lint could lint 5,907. The other 759 use the old Compose v1 layout, are fragments, or aren't valid Compose, which is Finding 3 below. Every percentage below is a share of those 5,907.
 
 Three things stood out:
 
