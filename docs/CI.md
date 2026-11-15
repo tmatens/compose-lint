@@ -930,6 +930,7 @@ actions because there the age is the only review there is.
 | `pyyaml` majors | `manual-merge` | `pyproject.toml` allows `>=6.0.2,<7` for every user of the wheel; a major crosses that ceiling and is a compose-lint MAJOR after 1.0, a release decision rather than a bump. Minors move only the locks and merge themselves |
 | The demo `compose-lint` pin (`scripts/demo/`) | Disabled | It records which release the committed GIF was rendered on; it moves only when the demos are re-recorded, by `marketplace-smoke.yml`'s `rerecord-demos` job after a release that changed their output, or by hand ([`RELEASING.md`](RELEASING.md)) |
 | Forgejo smoke stack pins | Disabled | Owned by [`forgejo-smoke-bump.yml`](#forgejo-smoke-bumpyml), which also moves the docs claim Renovate cannot |
+| Tool-comparison fixtures and tool versions (`scripts/compare/`) | Disabled | The fixture images belong to deliberately broken Compose files that are never started, and the tool tags in `run.sh` record which versions [the comparison page](compare.md) was measured on. They move when the comparison is run again by hand |
 
 **Labels.** `manual-merge` means a person decides, and only a pyyaml major
 carries it from Renovate; the age gate adds it to a digest PR it refuses

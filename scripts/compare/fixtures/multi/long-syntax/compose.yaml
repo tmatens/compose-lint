@@ -1,0 +1,10 @@
+services:
+  app:
+    image: nginx:1.27.2-alpine
+    ports:
+      - target: 80
+        published: "8080"
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock

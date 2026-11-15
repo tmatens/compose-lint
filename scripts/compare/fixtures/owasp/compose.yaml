@@ -1,0 +1,76 @@
+# OWASP-framed fixture: one service per violation of an OWASP Docker Security
+# Cheat Sheet rule that can be expressed in a Compose file. Service names carry
+# the rule number. Never run this file.
+services:
+  rule1-socket:          # RULE 1 — Docker daemon socket mounted into a container
+    image: portainer/portainer-ce:2.21.4
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+  rule2-explicit-root:   # RULE 2 — user set to root explicitly
+    image: nginx:1.27.2-alpine
+    user: root
+  rule2-no-user:         # RULE 2 — no user set; image default (root for busybox)
+    image: busybox:1.36.1
+  rule3-privileged:      # RULE 3 — --privileged
+    image: busybox:1.36.1
+    privileged: true
+  rule3-all-caps:        # RULE 3 — default capability set, nothing dropped
+    image: nginx:1.27.2-alpine
+  rule3-sys-admin:       # RULE 3 — a dangerous capability added back
+    image: nginx:1.27.2-alpine
+    cap_drop: [ALL]
+    cap_add: [SYS_ADMIN]
+  rule4-nnp-missing:     # RULE 4 — no-new-privileges not set (nothing else wrong)
+    image: nginx:1.27.2-alpine
+    cap_drop: [ALL]
+    read_only: true
+  rule5-host-network:    # RULE 5 — network_mode: host
+    image: nginx:1.27.2-alpine
+    network_mode: host
+  rule5-default-network: # RULE 5 — no networks: key, so it joins the shared default network
+    image: nginx:1.27.2-alpine
+  rule5a-all-interfaces: # RULE 5a — port published on 0.0.0.0, bypassing the host firewall
+    image: nginx:1.27.2-alpine
+    ports:
+      - "8080:80"
+  rule6-seccomp-off:     # RULE 6 — seccomp disabled
+    image: nginx:1.27.2-alpine
+    security_opt:
+      - seccomp:unconfined
+  rule6-apparmor-off:    # RULE 6 — AppArmor disabled
+    image: nginx:1.27.2-alpine
+    security_opt:
+      - apparmor:unconfined
+  rule6-selinux-off:     # RULE 6 — SELinux separation disabled
+    image: nginx:1.27.2-alpine
+    security_opt:
+      - label:disable
+  rule7-no-limits:       # RULE 7 — no memory or CPU limits
+    image: nginx:1.27.2-alpine
+  rule7-no-pids-limit:   # RULE 7 — memory/CPU set, no process limit
+    image: nginx:1.27.2-alpine
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.50"
+  rule7-restart-always:  # RULE 7 — unbounded restarts
+    image: nginx:1.27.2-alpine
+    restart: always
+  rule8-writable-root:   # RULE 8 — root filesystem writable
+    image: nginx:1.27.2-alpine
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  rule8-rw-volume:       # RULE 8 — host directory mounted read-write
+    image: nginx:1.27.2-alpine
+    read_only: true
+    volumes:
+      - ./site:/usr/share/nginx/html
+  rule12-plaintext:      # RULE 12 — credential as a literal environment value
+    image: postgres:16.4
+    environment:
+      POSTGRES_PASSWORD: hunter2
+  rule13-latest:         # RULE 13 — mutable :latest tag
+    image: redis:latest
+  rule13-no-digest:      # RULE 13 — version tag without a digest pin
+    image: nginx:1.27.2-alpine

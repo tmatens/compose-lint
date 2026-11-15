@@ -1,0 +1,19 @@
+run 2026-11-15T16:08:54Z
+docker 29.9.3
+Docker Compose version v5.7.0
+composelint/compose-lint:1.6.0 composelint/compose-lint@sha256:e02194511f211b7250fd043773acfa04b57d2732cf17fe36da8ca00f9da14585
+zavoloklom/dclint:3.1.0 zavoloklom/dclint@sha256:dd6e0faa9fa8856a643a1e55476077d555b8e9c946cc481f8fbee203662c3e77
+checkmarx/kics:v2.2.1 checkmarx/kics@sha256:49ccc54b6ae7f5d5fc95e96f8f95c18c57f3bba047ab611a03d80792bdff6757
+owasp/docksec:2026.9.21 owasp/docksec@sha256:646e8250e2dc98ac4c8fd5f9a5d37f9aecae149a468271b5b1dc04092f927be4
+semgrep/semgrep:1.185.0 semgrep/semgrep@sha256:67518c174185a2043fdbed16c70631b79209499b3671178e7194379b48295a0d
+bridgecrew/checkov:3.4.5 bridgecrew/checkov@sha256:122602cf32cc72286155d39f1f234b7b594818f7b8d7fdf490701620e521368b
+aquasec/trivy:0.76.2 aquasec/trivy@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
+hadolint/hadolint:v2.15.1 hadolint/hadolint@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d
+compose-lint compose-lint 1.6.0
+dclint 3.1.0
+kics Keeping Infrastructure as Code Secure v2.2.1
+docksec DockSec 2026.8.19
+semgrep 1.185.0
+checkov 3.4.5
+trivy Version: 0.76.2
+hadolint Haskell Dockerfile Linter 2.15.1
