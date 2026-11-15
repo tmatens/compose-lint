@@ -10,9 +10,8 @@ canonical_url:
 > [docs/state-of-compose.md](../state-of-compose.md). The live article is
 > [on dev.to](https://dev.to/tmatens/9-in-10-docker-compose-files-skip-the-basic-security-flags-2dpf).
 > Its slug keeps the first edition's title. Everything below this note is the
-> article body. See [README.md](README.md) for how the article is updated.
-
-> **Updated November 2026.** This article was first published in May 2026 with numbers from compose-lint 0.7.0 and 6,444 files. It now uses the fourth edition of the study: compose-lint 1.6.0, 11,111 files, run on November 15, 2026. The [first edition](https://github.com/tmatens/compose-lint/blob/082db9f5c63c5a5637f2e9e2b29d00e345023b00/docs/state-of-compose.md) is still available.
+> article body, starting at "I maintain". See [README.md](README.md) for how
+> the article is updated.
 
 I maintain [compose-lint](https://github.com/tmatens/compose-lint), a security linter for Docker Compose files, and I ran it over **11,111 public `docker-compose.yml` and `compose.yaml` files from GitHub**.
 
@@ -78,7 +77,9 @@ services:
 
 It is rarely that simple in practice. A read-only filesystem needs a `tmpfs:` for the paths the app writes to, and some images need one or two capabilities added back. The [hardening guide](https://tmatens.github.io/compose-lint/hardening/) walks one file from twelve findings to none and shows what breaks at each step.
 
-**"Aren't these optional settings and not vulnerabilities?"** Mostly, yes. A finding here means the file leaves a recommended control unset. It does not mean anything was exploited. Whether that matters depends on what the service does and where it runs, and that call belongs to whoever runs it. These four are named controls in the [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker) and the OWASP cheat sheet, so the linter is reporting a difference from a published baseline. What it saves you is having to know that each control exists.
+**"Aren't these optional settings and not vulnerabilities?"** Mostly, yes. A finding here means the file leaves a recommended control unset. It does not mean anything was exploited.
+
+Whether that matters depends on what the service does and where it runs, and that call belongs to whoever runs it. These four are named controls in the [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker) and the OWASP cheat sheet, so the linter is reporting a difference from a published baseline. What it saves you is having to know that each control exists.
 
 ## Finding 2: the examples people copy are no better
 
@@ -90,7 +91,9 @@ Popular projects' files have the most findings, about 20 per file against 9 to 1
 
 Per service, every group has about six findings. Popular projects write 3.3 services per file and templates write 1.5 to 2.1, so the popular files are bigger and the rate is the same. A popular project's services are no more hardened than anyone else's, and a vendor's aren't either.
 
-The serious findings are less common. This is the worst finding in each file:
+## How serious the findings are
+
+Most findings are the four flags above. The serious ones are less common. This is the worst finding in each file:
 
 ![Of every 100 files, 11 have a CRITICAL finding, another 30 have a HIGH, 58 have only MEDIUM or LOW findings, and fewer than 1 is clean.](https://raw.githubusercontent.com/tmatens/compose-lint/main/docs/publishing/assets/file-severity.png)
 
@@ -172,5 +175,7 @@ jobs:
 `fail-on: high` is the default. It fails the job only on HIGH and CRITICAL findings, so you can adopt it without fixing every MEDIUM on day one. There is also a pre-commit hook, JSON and SARIF output, and `compose-lint --explain CL-0007` prints any rule's reasoning and fix. Releases are signed and ship with build provenance, and the [repo](https://github.com/tmatens/compose-lint) explains how to verify one.
 
 The tables, the method and the steps to reproduce every number are in the report: **[State of Docker Compose Security](https://tmatens.github.io/compose-lint/state-of-compose/)**. If you maintain a Compose example that other people copy, I'd welcome an issue or a pull request.
+
+**Updated November 2026.** This article was first published in May 2026 with numbers from compose-lint 0.7.0 and 6,444 files. It now uses the fourth edition of the study: compose-lint 1.6.0, 11,111 files, run on November 15, 2026. The [first edition](https://github.com/tmatens/compose-lint/blob/082db9f5c63c5a5637f2e9e2b29d00e345023b00/docs/state-of-compose.md) is still available.
 
 compose-lint is a personal project and is not affiliated with my employer. The views here are my own.
