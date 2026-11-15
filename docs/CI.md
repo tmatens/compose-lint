@@ -22,7 +22,7 @@ per-channel publish contract see [`DISTRIBUTION.md`](DISTRIBUTION.md).
 | `forgejo-smoke-bump.yml`  | Twice daily (05:17, 17:17 UTC) + manual    | Opens the PR that moves the harness to the newest Forgejo + runner, docs claim included |
 | `compose-spec-watch.yml`  | Weekly (Mon 05:41 UTC) + manual            | Opens an issue when the Compose spec adds a key or a container slot compose-lint has not triaged |
 | `digest-age-gate.yml`     | Hourly (:23) + manual (dry run by default) | Merges Renovate's gcr.io/ghcr.io digest PRs once they have aged 72h, the age gate Renovate cannot apply to them; flags ones that stall |
-| `os-smoke.yml`            | Called by `ci.yml` on PRs touching code and on every push to `main` + manual + weekly cron | pytest (3.11 and 3.13) + pre-commit hook on macOS and Windows — **gates via `ci-ok`** |
+| `os-smoke.yml`            | Called by `ci.yml` on PRs touching code and on every push to `main` + manual + weekly cron | pytest (3.11 and 3.13, each in two parts; macOS 3.11 not on PRs) + pre-commit hook on macOS and Windows — **gates via `ci-ok`** |
 | `sarif-ingestion.yml`     | Push to `main` touching SARIF inputs + manual + weekly cron | Uploads a probe SARIF to Code Scanning and asserts GitHub ingested it — then deletes its own alerts |
 
 
@@ -853,7 +853,16 @@ hook predominantly run.
 path filter matches, and `ci-ok` needs that job — so a macOS or Windows
 regression blocks the PR that introduces it. Branch protection needed no
 change, because it points only at `ci-ok`. Roughly 2 minutes of wall clock
-for all four legs, in parallel with the rest of the suite.
+for all of its jobs, in parallel with the rest of the suite.
+
+Each pytest leg runs as two jobs, split by test file name (`a-e` and the
+rest). On a pull request the macOS 3.11 leg does not run: an account gets
+five concurrent macOS jobs, and two versions in two parts plus the
+pre-commit job would use all five in one run and queue whenever two runs
+overlap. It runs on every push to `main`, on the weekly cron and on
+dispatch. Python 3.11 stays in the PR gate on Linux and Windows, so the
+gap is a fault that needs macOS and 3.11 together; that one shows up on
+`main`'s run instead of the PR's.
 
 Note that lockfile PRs do **not** skip these legs: the `code` filter
 matches `requirements*.lock`. That is intended — the locks are compiled
