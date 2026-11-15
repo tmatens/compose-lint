@@ -43,7 +43,7 @@ the order that matters most.
 
 ## 1. Get credentials out of `environment:`
 
-**Share of real files affected: 28.1%** carry a credential-shaped key with a
+**Share of real files affected: 28.2%** carry a credential-shaped key with a
 literal value, and 5.1% embed one in a connection string. This is the
 most common acute finding in the study.
 
@@ -161,7 +161,7 @@ Rules: [CL-0004](rules/CL-0004.md), [CL-0019](rules/CL-0019.md).
 
 ## 3. Bind published ports to an address
 
-**Share of real files affected: 72.0%** publish at least one port on all
+**Share of real files affected: 72.1%** publish at least one port on all
 interfaces. Steps 4 to 7 score higher, but they count settings a file leaves
 out; this is the most common thing a file writes in that it should not.
 
@@ -821,10 +821,10 @@ versions you run.
 
 | Setting | Rule | Real files skipping it |
 |---|---|---|
-| Credentials in `secrets:`, not `environment:` or `env_file:` | [CL-0020](rules/CL-0020.md), [CL-0021](rules/CL-0021.md) | 28.1% / 5.1% |
+| Credentials in `secrets:`, not `environment:` or `env_file:` | [CL-0020](rules/CL-0020.md), [CL-0021](rules/CL-0021.md) | 28.2% / 5.1% |
 | Image pinned to a tag | [CL-0004](rules/CL-0004.md) | 50.2% |
 | Image pinned to a digest | [CL-0019](rules/CL-0019.md) | 50.2% |
-| Published ports bound to an address | [CL-0005](rules/CL-0005.md) | 72.0% |
+| Published ports bound to an address | [CL-0005](rules/CL-0005.md) | 72.1% |
 | `no-new-privileges:true` | [CL-0003](rules/CL-0003.md) | 97.3% |
 | Seccomp, AppArmor and SELinux labelling left on | [CL-0009](rules/CL-0009.md) | — |
 | `cap_drop: [ALL]`, image-specific `cap_add` | [CL-0006](rules/CL-0006.md) | 98.6% |
