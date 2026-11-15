@@ -54,6 +54,17 @@ python scripts/corpus/charts.py latest       # or a specific runs/<ts>
 
 Commit the regenerated `docs/assets/*.svg` alongside the report when the pinned run changes. matplotlib is a maintainer-only extra — it is deliberately absent from every `requirements*.lock` and never reaches the runtime wheel (PyYAML-only).
 
+## Report numbers
+
+`report_numbers.py` computes the figures in `docs/state-of-compose.md` that `summary.md` and `tier_summary.md` do not carry: per-service rates, file-age buckets, the overlay lane, the replication lane and the repo-resampling intervals. With `--base` it also prints the same-files delta between two runs of one snapshot, which is how an edition reports what a new compose-lint version changed. It prints JSON with counts, rates and rule ids only.
+
+```bash
+python scripts/corpus/report_numbers.py latest
+python scripts/corpus/report_numbers.py <run> --base <earlier run>
+```
+
+Run it with the Python that holds the compose-lint version that made the run, so service counts come from the same parser. File ages are measured against `run.SNAPSHOT_DATE`, the day the snapshot was captured, so relinting a snapshot later does not move a file between age buckets. Update that constant when a new snapshot is archived.
+
 ## Fix gate
 
 `fix_gate.py` is the parallel form of `tests/test_corpus_fix.py` — it runs the three ADR-014 fix-safety invariants (patched text re-parses, is idempotent, and introduces no new finding) over the whole corpus across all cores, ~1-2 min instead of the ~8 min single-process pytest gate.

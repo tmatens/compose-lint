@@ -1,32 +1,33 @@
-# Hashnode cross-post — State of Docker Compose Security
+# Hashnode cross-post: State of Docker Compose Security
 
-The Hashnode post is a **cross-post of the dev.to teaser**, published **~48h after**
-dev.to so dev.to keeps indexing priority. To avoid two prose copies drifting apart,
-the body is single-sourced: **use the body of [`state-of-compose-devto.md`](state-of-compose-devto.md)
-verbatim** (everything below its frontmatter and the draft note). The only differences
-are the publish settings below.
+The Hashnode post is a cross-post of the dev.to article. Its body is the body
+of [`state-of-compose-devto.md`](state-of-compose-devto.md), everything below
+the front matter and the source note, pasted unchanged. Keeping one body means
+the two posts cannot drift apart. Only the publish settings below differ.
 
 ## Publish settings (set in the Hashnode editor)
 
 | Setting | Value |
 | --- | --- |
-| **Title** | 9 in 10 Docker Compose files skip the basic security flags |
-| **Subtitle** | What real-world Compose files actually look like, and why even the examples people copy ship insecure defaults. |
-| **Canonical URL** | Set under *Settings → Canonical URL* to the live dev.to post: `https://dev.to/tmatens/9-in-10-docker-compose-files-skip-the-basic-security-flags-2dpf`. Mandatory — it points search authority at dev.to and stops Hashnode competing with it. |
+| **Title** | More than 9 in 10 Docker Compose files skip the basic security flags |
+| **Subtitle** | What 11,111 public Compose files look like to a security linter, and why the examples people copy are no better than the rest. |
+| **Canonical URL** | Under *Settings → Canonical URL*, the live dev.to post: `https://dev.to/tmatens/9-in-10-docker-compose-files-skip-the-basic-security-flags-2dpf`. This is required. It tells search engines that dev.to holds the original. |
 | **Tags** | docker, security, containers, opensource |
-| **Cover image** | Upload `docs/publishing/assets/cover.png` (same hardening-triple cover as dev.to). |
+| **Cover image** | Upload `docs/publishing/assets/cover.png`, the same cover as dev.to. |
 
-## Image rendering
+## Images
 
-The four charts are referenced by `raw.githubusercontent.com` PNG URLs in the dev.to
-body. PNGs render on Hashnode the same way they do on dev.to — paste the body as-is, no
-re-upload needed. (The repo SVGs would *not* render via raw GitHub; that's why the blog
-charts are PNG. See `docs/publishing/README.md`.)
+The article's four charts are PNG files in `docs/publishing/assets/`, linked by
+their `raw.githubusercontent.com` URLs. They render on Hashnode the same way
+they do on dev.to, so paste the body as it is. The report's SVGs would not
+render through raw GitHub, which is why the article uses PNGs. See
+[`README.md`](README.md).
 
-## Timing checklist
+## Updating the post for a new edition
 
-1. dev.to post goes live (set `published: true`, `canonical_url` blank).
-2. Wait ~48h.
-3. Create the Hashnode post: paste the dev.to body, apply the settings above, and set
-   the Canonical URL to the live dev.to link.
-4. Publish.
+1. Merge the report and this folder's changes to `main`, so the chart URLs
+   serve the new images.
+2. Update the dev.to article first.
+3. Replace the Hashnode body with the same text, set the title and subtitle
+   above, and upload the new cover.
+4. Check that the Canonical URL still points at the dev.to post.

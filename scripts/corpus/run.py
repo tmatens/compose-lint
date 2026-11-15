@@ -361,6 +361,13 @@ def summarize(run_dir: Path, results: list[dict], index: dict[str, dict], starte
 # for attribution; tier_summary.md and the report read this set.
 EXCLUDED_FROM_PREVALENCE = frozenset({"synthetic", "lab", "overlay"})
 
+# The corpus snapshot date. File ages are measured against the day the files
+# were captured, so relinting the same snapshot later with a newer
+# compose-lint cannot move a file between age buckets. Change it when a new
+# snapshot is archived. `charts.py` and `report_numbers.py` import it so the
+# figures and the tables agree.
+SNAPSHOT_DATE = datetime(2026, 8, 27, tzinfo=timezone.utc)
+
 
 def aggregate_tiers(
     results: list[dict], index: dict[str, dict]
