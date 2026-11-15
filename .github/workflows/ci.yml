@@ -97,7 +97,15 @@ jobs:
           # release changed a loader rule" is meant to surface. Left out of
           # this group, that PR would skip the differential suites it exists
           # to run.
-          if match '^(src/|tests/|scripts/|docs/|README\.md$|mkdocs\.yml$|pyproject\.toml$|requirements[.-].*lock$|action\.yml$|\.pre-commit-hooks\.yaml$|\.github/scripts/|\.github/workflows/ci\.yml$)'; then
+          # `docs/publishing/` is the one part of docs/ left out: article
+          # drafts that no test reads (tests/test_rule_surfaces.py lists the
+          # directory as historical) and that mkdocs does not build
+          # (`exclude_docs` in mkdocs.yml). A PR touching only those files
+          # skips this group. Only this group changes: CodeQL still runs on
+          # every PR and `ci-ok` still reports, so Scorecard's SAST and
+          # CI-Tests checks see the PR the way they see a digest bump.
+          code_changed=$(echo "${changed}" | grep -vE '^docs/publishing/' || true)
+          if echo "${code_changed}" | grep -qE '^(src/|tests/|scripts/|docs/|README\.md$|mkdocs\.yml$|pyproject\.toml$|requirements[.-].*lock$|action\.yml$|\.pre-commit-hooks\.yaml$|\.github/scripts/|\.github/workflows/ci\.yml$)'; then
             code=true
           fi
           if match '^(Dockerfile$|\.dockerignore$|requirements\.lock$|requirements-build\.lock$|pyproject\.toml$|src/)'; then
@@ -212,6 +220,11 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+        # Each version runs as two jobs. The oracle harness is one file and
+        # about half the suite's CPU time, so the split is that file against
+        # everything else. `rest` is `tests` minus that file, so a new test
+        # file always lands in a part.
+        part: [oracle, rest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -234,10 +247,23 @@ jobs:
           # renovate: datasource=github-releases depName=docker/compose
           COMPOSE_VERSION: v5.7.0
         run: .github/scripts/install-compose-plugin.sh
-      # -n auto: one pytest-xdist worker per core. The suite is ~6,000 small
-      # tests with no single slow one, so it parallelises almost linearly
-      # (5m22s serial, 71s on 4 workers, same results).
-      - run: pytest -n auto
+      # -n auto: one pytest-xdist worker per core. The suite is ~7,400 small
+      # tests with no single slow one, so it parallelises almost linearly.
+      # Hosted runners differ in speed by about 2x from one job to the next
+      # (the whole suite measured 105 s and 214 s in the same run), which is
+      # why each version is split in two: a slow runner then costs half as
+      # much wall clock.
+      - name: Run this part of the suite
+        env:
+          PART: ${{ matrix.part }}
+        run: |
+          set -euo pipefail
+          case "${PART}" in
+            oracle) selection=(tests/test_oracle_harness.py) ;;
+            rest) selection=(tests --ignore=tests/test_oracle_harness.py) ;;
+            *) echo "::error::unknown part ${PART}"; exit 1 ;;
+          esac
+          pytest -n auto "${selection[@]}"
 
   # Two gates over one measurement run.
   #
@@ -263,12 +289,14 @@ jobs:
   #
   # The suite under coverage is the slowest thing CI runs: every
   # `python -m compose_lint` child the CLI tests start is traced too. So it
-  # runs as three shards in parallel and this job's successor merges them.
+  # runs as four shards in parallel and this job's successor merges them.
   # The partition is complete by construction, so a new test file always
   # lands in a shard: the oracle harness alone (the heaviest file), the
-  # lowercase test files a-q, and everything else (`tests` minus those two
-  # sets). Each shard skips the 80% floor, which only means something for
-  # the merged data; `coverage` below applies it and the patch gate.
+  # text-marking suite alone (the heaviest under coverage after it, because
+  # nearly every case starts a traced child), the other lowercase test
+  # files a-q, and everything else (`tests` minus those three sets). Each
+  # shard skips the 80% floor, which only means something for the merged
+  # data; `coverage` below applies it and the patch gate.
   coverage-shard:
     name: Test coverage shard (${{ matrix.shard }})
     needs: changes
@@ -280,7 +308,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [oracle, a-q, rest]
+        shard: [oracle, marking, a-q, rest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -323,13 +351,18 @@ jobs:
           set -euo pipefail
           first=()
           for f in tests/test_[a-q]*.py; do
-            [ "${f}" = tests/test_oracle_harness.py ] || first+=("${f}")
+            case "${f}" in
+              tests/test_oracle_harness.py | tests/test_doc_text_marking.py) ;;
+              *) first+=("${f}") ;;
+            esac
           done
           case "${SHARD}" in
             oracle) selection=(tests/test_oracle_harness.py) ;;
+            marking) selection=(tests/test_doc_text_marking.py) ;;
             a-q) selection=("${first[@]}") ;;
             rest)
-              selection=(tests --ignore=tests/test_oracle_harness.py)
+              selection=(tests --ignore=tests/test_oracle_harness.py
+                --ignore=tests/test_doc_text_marking.py)
               for f in "${first[@]}"; do selection+=("--ignore=${f}"); done
               ;;
             *) echo "::error::unknown shard ${SHARD}"; exit 1 ;;
@@ -390,8 +423,8 @@ jobs:
           # on part of the suite.
           shards=(.coverage.shard-*)
           printf '%s\n' "${shards[@]}"
-          if [ "${#shards[@]}" -ne 3 ] || [ ! -e "${shards[0]}" ]; then
-            echo "::error::expected 3 shard coverage files, found ${#shards[@]}"
+          if [ "${#shards[@]}" -ne 4 ] || [ ! -e "${shards[0]}" ]; then
+            echo "::error::expected 4 shard coverage files, found ${#shards[@]}"
             exit 1
           fi
           coverage combine

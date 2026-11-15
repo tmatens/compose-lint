@@ -18,8 +18,10 @@ name: OS smoke (macOS/Windows)
 #
 # The other triggers stay: the weekly cron catches drift that arrives with
 # no PR at all — a yanked dependency, a resolver change, a runner-image
-# update — which a merge gate structurally cannot see, and `push: main`
-# keeps covering merges that bypassed the PR path.
+# update — which a merge gate structurally cannot see. There is no
+# `push: main` trigger here: `ci.yml` runs every job group on a push to
+# main and calls this workflow from there, so a trigger of its own ran
+# these six jobs a second time for the same commit.
 #
 # The pre-commit steps mirror ci.yml's `precommit-smoke` with one
 # portability change: throwaway repos are created with `mktemp -d` under
@@ -33,16 +35,6 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "27 10 * * 1"
-  push:
-    branches: [main]
-    paths:
-      - "src/**"
-      - "tests/**"
-      - "scripts/**"
-      - pyproject.toml
-      - "requirements*.lock"
-      - .pre-commit-hooks.yaml
-      - .github/workflows/os-smoke.yml
 
 permissions: {}
 

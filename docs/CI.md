@@ -22,7 +22,7 @@ per-channel publish contract see [`DISTRIBUTION.md`](DISTRIBUTION.md).
 | `forgejo-smoke-bump.yml`  | Twice daily (05:17, 17:17 UTC) + manual    | Opens the PR that moves the harness to the newest Forgejo + runner, docs claim included |
 | `compose-spec-watch.yml`  | Weekly (Mon 05:41 UTC) + manual            | Opens an issue when the Compose spec adds a key or a container slot compose-lint has not triaged |
 | `digest-age-gate.yml`     | Hourly (:23) + manual (dry run by default) | Merges Renovate's gcr.io/ghcr.io digest PRs once they have aged 72h, the age gate Renovate cannot apply to them; flags ones that stall |
-| `os-smoke.yml`            | Called by `ci.yml` on PRs touching code + push to `main` + manual + weekly cron | pytest (3.11 and 3.13) + pre-commit hook on macOS and Windows — **gates via `ci-ok`** |
+| `os-smoke.yml`            | Called by `ci.yml` on PRs touching code and on every push to `main` + manual + weekly cron | pytest (3.11 and 3.13) + pre-commit hook on macOS and Windows — **gates via `ci-ok`** |
 | `sarif-ingestion.yml`     | Push to `main` touching SARIF inputs + manual + weekly cron | Uploads a probe SARIF to Code Scanning and asserts GitHub ingested it — then deletes its own alerts |
 
 
@@ -61,8 +61,8 @@ before merging, so `main`'s own run is what proves the merged result.
 | ------------------------- | ----------------------------------------------------------------------------------------- |
 | `lint`                    | `ruff check` + `ruff format --check` on `src/` and `tests/`                               |
 | `type-check`              | `mypy src/ tests/`; strict on `src/`, relaxed on `tests/`                                  |
-| `test`                    | `pytest -n auto` (pytest-xdist, one worker per core) across the Python matrix — 3.11, 3.12, 3.13, 3.14, 3.15 |
-| `coverage-shard`          | The suite under coverage in three parallel shards (the oracle harness, test files a–q, the rest), each uploading its coverage data |
+| `test`                    | `pytest -n auto` (pytest-xdist, one worker per core) across the Python matrix — 3.11, 3.12, 3.13, 3.14, 3.15. Each version runs as two jobs (the oracle harness, everything else) |
+| `coverage-shard`          | The suite under coverage in four parallel shards (the oracle harness, the text-marking suite, the other test files a–q, the rest), each uploading its coverage data |
 | `coverage`                | Merges the shards' data (`coverage combine`) and applies `--fail-under=80` — fails below 80% statement coverage repo-wide; on a PR, `diff-cover` also fails below 90% coverage of the lines that PR adds or changes (see note) |
 | `security`                | `bandit -r src/ -ll` (blocking) + `pip-audit` for dep CVEs (informational on PRs — see note) |
 | `dependency-review`       | Blocks PRs adding deps with known high-severity CVEs or disallowed licenses               |
@@ -864,8 +864,10 @@ Both jobs install the dev environment with `uv pip install --require-hashes`
 from the same lock, as most of `ci.yml` does: pip took about 80 seconds of the
 Windows leg to install the dev lock even with a warm cache.
 
-The `workflow_dispatch`, weekly `schedule` and `push: main` triggers all
-remain. The cron is not redundant with the gate: drift that arrives with
+The `workflow_dispatch` and weekly `schedule` triggers remain. The
+workflow has no `push: main` trigger of its own: `ci.yml` runs every job
+group on a push to `main` and calls it from there, so a second trigger ran
+the same six jobs twice per merge. The cron is not redundant with the gate: drift that arrives with
 no PR at all — a yanked dependency, a resolver change, a runner-image
 update — is structurally invisible to a merge gate.
 
