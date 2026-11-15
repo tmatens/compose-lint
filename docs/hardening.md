@@ -7,9 +7,10 @@ page that holds the details, the failure signatures, and the exceptions. The
 complete hardened file is at the end, with a checklist.
 
 The prevalence figures come from [the State of Docker Compose Security
-study](state-of-compose.md): 11,111 public Compose files from GitHub, of which
-99.2% of the files that parsed carried at least one security finding.
-Mostly, they're defaults nobody changed.
+study](state-of-compose.md) of 11,111 public Compose files from GitHub. Every
+percentage on this page is a share of the 5,907 files that parsed, and 99.2%
+of those carried at least one security finding. Mostly, they're defaults
+nobody changed.
 
 ## The starting file
 
@@ -93,23 +94,23 @@ If the same password also goes into a connection URL, generate it with
 `openssl rand -hex 32` instead: base64 output can contain `/`, which ends a
 URL's host part.
 
-A new random value only works on a database that has not started yet. The
-postgres image reads the password once, when it initialises an empty data
-directory, so on the starting file's existing `pgdata` volume it keeps the old
-password and refuses the new one. For a database that already holds data, put
-its current password in the file instead, as the CL-0020 page's section on
-moving an existing database's password shows.
+Before relying on it, check these:
 
-A file-sourced secret is mounted byte for byte and keeps the host file's owner
-and mode, so an env-file-style line would become the password, and the
-process that reads it in the container must be able to open it. The
-CL-0020 page covers both. The same fix applies when the credential lives in an
-`env_file:`; that file's values land in the process environment exactly as
-`environment:` values do, and keeping it out of git does not change that.
-
-Connection strings with a password inside (`postgresql://app:hunter2@db/app`)
-have the same exposure. The CL-0021 page gives three ways
-to take the password out, in order of preference.
+- **An existing database keeps its old password.** The postgres image reads
+  the password once, when it initialises an empty data directory, so on the
+  starting file's existing `pgdata` volume it refuses the new one. For a
+  database that already holds data, put its current password in the file, as
+  the CL-0020 page's section on moving an existing database's password shows.
+- **The file is mounted byte for byte, with the host file's owner and mode.**
+  An env-file-style line would become the password, and the process that
+  reads it in the container must be able to open it. The CL-0020 page covers
+  both.
+- **`env_file:` has the same exposure.** That file's values land in the
+  process environment exactly as `environment:` values do, and keeping it out
+  of git does not change that.
+- **So does a connection string with a password inside**
+  (`postgresql://app:hunter2@db/app`). The CL-0021 page gives three ways to
+  take the password out, in order of preference.
 
 Rules: [CL-0020](rules/CL-0020.md), [CL-0021](rules/CL-0021.md).
 
@@ -124,7 +125,8 @@ a single host, a file-sourced secret is a read-only bind mount of that file.
 ## 2. Pin the image
 
 **Share of real files affected: 50.2%** use a mutable tag or no tag, and 50.2%
-pin a tag but not a digest.
+pin a tag but not a digest. The two figures match by coincidence: they are
+2,963 and 2,967 files.
 
 `nginx:latest` means a different image every time the registry's tag moves. You
 can't reproduce it or roll it back, and a compromised upstream push deploys
@@ -150,7 +152,7 @@ container, so nothing needs installing:
 docker run --rm gcr.io/go-containerregistry/crane digest nginx:1.30-alpine
 ```
 
-Pin the index digest that command returns, not a per-architecture digest; a
+Pin the index digest that command returns, not a per-architecture digest. A
 per-architecture pin breaks every user on the other architecture. Then let
 Renovate or Dependabot bump the digest when the tag moves. Projects that
 publish only a `latest` tag can still be digest-pinned:
@@ -162,8 +164,8 @@ Rules: [CL-0004](rules/CL-0004.md), [CL-0019](rules/CL-0019.md).
 ## 3. Bind published ports to an address
 
 **Share of real files affected: 72.1%** publish at least one port on all
-interfaces. Steps 4 to 7 score higher, but they count settings a file leaves
-out; this is the most common thing a file writes in that it should not.
+interfaces. Steps 4 to 7 have higher figures, but they count settings a file leaves
+out. This is the most common thing a file writes that it should not.
 
 `"8080:80"` binds to every interface, IPv4 and IPv6 (`0.0.0.0` and `[::]`). Docker publishes a port by writing its own
 iptables rules, so the binding is reachable from the network even where UFW or
@@ -182,7 +184,7 @@ ports:
 A service that has to be reachable from outside goes behind a reverse proxy
 that terminates TLS, and only the proxy publishes a port. For a host-wide
 answer, Docker's `DOCKER-USER` iptables chain is where firewall rules that
-survive Docker's own rules belong; the rule page links Docker's documentation
+survive Docker's own rules belong. The rule page links Docker's documentation
 for it.
 
 Rules: [CL-0005](rules/CL-0005.md).
@@ -201,11 +203,11 @@ security_opt:
   - no-new-privileges:true
 ```
 
-Most of what it blocks fails quietly: a setuid helper runs, without the
-privilege, and later fails with an ordinary `Permission denied`; the rule
-page lists what it breaks and the one message that names the flag. A
-container that needs `sudo` in its entrypoint is a container that should be fixed at the image, not by
-leaving escalation open; the rule page covers the cases.
+Most of what it blocks fails quietly. A setuid helper runs without the
+privilege and later fails with an ordinary `Permission denied`. The rule page
+lists what it breaks and the one message that names the flag. A container
+that needs `sudo` in its entrypoint should be fixed at the image, not by
+leaving escalation open.
 
 While you are in `security_opt`, do not disable the kernel profiles. Docker
 applies a seccomp profile and, where available, an AppArmor profile or SELinux
@@ -245,8 +247,8 @@ cap_add:
 ```
 
 The list is image-specific. That one is verified for `nginx:1.30-alpine`
-against a live daemon; another image needs a different set, and the rule page
-has the method for finding it. Two things worth knowing before you start:
+against a live daemon. Another image needs a different set, and the method
+for finding it is below. Two things worth knowing before you start:
 
 - Do not begin from `cap_add: [NET_BIND_SERVICE]`. Under Docker's
   per-container network namespaces a low port needs no capability (since
@@ -259,14 +261,14 @@ has the method for finding it. Two things worth knowing before you start:
 ### Two measured examples
 
 The sets below were determined through testing, not read off documentation. Each was run under
-`read_only: true` with the image's own entrypoint and no `user:` override;
-one capability was removed at a time, the service restarted, and its real
+`read_only: true` with the image's own entrypoint and no `user:` override.
+One capability was removed at a time, the service restarted, and its real
 function exercised. What remains is the set whose removal broke it.
 
 | Image | `cap_add` | `tmpfs` needed under `read_only` | Why |
 |---|---|---|---|
 | `nginx:1.30-alpine` | `CHOWN, SETUID, SETGID` | `/run`, `/var/cache/nginx` | the entrypoint chowns the cache directory, then drops the workers to the `nginx` user |
-| `postgres:16` | `CHOWN, DAC_OVERRIDE, SETGID, SETUID` | `/run/postgresql` | the entrypoint chowns the data and socket directories and switches to the `postgres` user; on every later start it reads the `0700` data directory as root, and it reads the secret file, which Compose mounts with the host file's owner and mode (`0600` after step 1) |
+| `postgres:16` | `CHOWN, DAC_OVERRIDE, SETGID, SETUID` | `/run/postgresql` | the entrypoint chowns the data and socket directories and switches to the `postgres` user. As root it also reads the `0700` data directory and the `0600` secret file from step 1 |
 
 Both follow the most common pattern: an entrypoint that starts as root, fixes
 ownership of something, and drops to a service user needs `SETUID` and
@@ -279,7 +281,9 @@ a capability can be needed by more than one step, so test a restart, not only
 the first start. Without `DAC_OVERRIDE` and with the step 1 secret, postgres
 fails its first start, unable to read the `0600` file. With a world-readable
 secret it initialises and serves, then fails every later start, unable to read
-its own `0700` data directory. Second, not every
+its own `0700` data directory.
+
+Second, not every
 logged failure is a missing capability: even with the full set, the first
 start logs an `Operation not permitted` from a `chmod` of the data
 directory, which the entrypoint tolerates because `initdb` sets the mode
@@ -347,8 +351,8 @@ too, by what each one reaches: [CL-0024](rules/CL-0024.md) (`ALL`,
 With `read_only: true`, a process that gets code execution cannot modify the
 container's binaries, drop tools, or persist. The paths an application
 genuinely writes to become `tmpfs` entries (ephemeral) or volumes (persistent).
-Named volumes and bind mounts stay writable under `read_only`; that is what
-declaring them means, so persistence through a volume is out of this
+Named volumes and bind mounts stay writable under `read_only`, because that
+is what declaring them means. Persistence through a volume is out of this
 setting's reach and is handled by the mount steps below.
 
 ```yaml
@@ -362,8 +366,10 @@ tmpfs:
 
 Finding the paths: run the service once without `read_only`, exercise it, and
 read `docker diff <container>`. It lists the writable-layer writes, which is
-exactly what `read_only` will block. Leave `tmpfs` entries without `:exec`
-or `:suid` unless the image needs them; Docker mounts every tmpfs `noexec`
+exactly what `read_only` will block.
+
+Leave `tmpfs` entries without `:exec`
+or `:suid` unless the image needs them. Docker mounts every tmpfs `noexec`
 and `nosuid` by default, and `:exec` re-enables the download-to-`/tmp`-and-run
 playbook. A few images do need it. When yours does, keep the entry and
 suppress CL-0022 for that service with the reason recorded, so the exception
@@ -403,6 +409,8 @@ Rules: [CL-0026](rules/CL-0026.md).
 
 ## 8. Do not run as root when the image does not need to
 
+**Share of real files affected: 1.9%** set a root `user:`.
+
 An explicit `user: root` overrides whatever user the image was built to run
 as. Remove it and let the image decide, or set a specific non-root user. When
 the image needs root at startup to fix volume ownership and then drops
@@ -428,7 +436,7 @@ Rules: [CL-0018](rules/CL-0018.md).
 
 A container that can reach `/var/run/docker.sock` can start a privileged
 container with the host's root filesystem mounted. It is host root with one
-extra step, and `:ro` does not change that; the API accepts writes over a
+extra step, and `:ro` does not change that, because the API accepts writes over a
 read-only socket mount. compose-lint rates it CRITICAL, and in the study it is
 the most common CRITICAL finding.
 
@@ -437,58 +445,21 @@ answers, in order of preference: delete the service that wanted it, re-design
 so it is not needed, put a filtering proxy in front of it that exposes only
 the API endpoints required, or suppress the finding with the risk written
 down and a review date. [The examples library](examples/index.md) shows a
-deployed stack for each of the four. The proxy pattern, from the
-[netdata example](examples/netdata-socket-proxy/index.md), looks like this:
+deployed stack for each of the four, and the
+[netdata example](examples/netdata-socket-proxy/index.md) has the full proxy
+configuration with its setup steps.
 
-```yaml
-services:
-  docker-socket-proxy:
-    image: wollomatic/socket-proxy:1@sha256:…
-    user: "65534:${DOCKER_GID}"   # nobody, plus the host docker group
-    read_only: true
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./sockets:/sock
-    command:
-      - -proxysocketendpoint=/sock/docker.sock
-      - -proxysocketendpointfilemode=432   # 0660, so a consumer in the docker group can connect
-      # Only the GET endpoints the consumer calls; every write answers 405.
-      - -allowGET=^(/v[0-9]+\.[0-9]+)?/(_ping|version|info|images/json(\?.*)?|containers/json(\?.*)?|containers/[a-zA-Z0-9_.-]+/json(\?.*)?)$$
-
-  netdata:
-    # image and the rest as in the netdata example; it runs as root
-    environment:
-      DOCKER_HOST: unix:///sock/docker.sock
-    volumes:
-      - ./sockets:/sock               # the filtered socket, not the real one
-```
-
-The proxy runs as `nobody`, so create its socket directory for the docker
-group, and give Compose the group id, before the first start:
-
-```bash
-install -d -m 0770 -g docker sockets
-echo "DOCKER_GID=$(getent group docker | cut -d: -f3)" >> .env
-```
-
-Without the first line the proxy cannot create its socket and exits. A
-consumer that runs as root, as netdata does, connects to the `0660` socket as
-it is; a non-root consumer needs the docker group, as the CL-0001 page's
-example shows.
-
-The proxy still holds the socket, so it has to be at least as hardened as
-anything else would be, and its CL-0001 finding is suppressed for that one
-service with the reason written down, so the rule stays live for the rest of
-the stack.
+A proxy still holds the socket, so it has to be at least as hardened as
+anything else would be. Its CL-0001 finding is suppressed for that one service
+with the reason written down, so the rule stays live for the rest of the
+stack.
 
 One key grants the socket without a `volumes:` line. `use_api_socket: true`
 (Compose 2.37.1 and later) bind-mounts the socket read-write and copies the
 registry logins of whoever runs `docker compose up` into the container as
-well, so the service can push and pull as that person. Engine-management
+well, so the service can push and pull as that person.
+
+Engine-management
 tools such as Docker's MCP gateway ask for it. The same four answers apply,
 with one more consideration for the credential half: it can only be narrowed
 on the host, by running the stack from a deploy identity whose Docker config
@@ -526,12 +497,15 @@ Rules: [CL-0002](rules/CL-0002.md), [CL-0011](rules/CL-0011.md),
 `ports:` is ignored, so a service cannot be held to `127.0.0.1` the way step 3
 does: it is on whatever address the application binds. The container sees
 every host interface and reaches the services the host keeps on `127.0.0.1`.
+
 The host firewall is the one control that still applies. A host-network
 listener is an ordinary host socket, so UFW and firewalld rules filter it,
 which they do not do for a published port. Bridge networking with an
-explicit port mapping restores the isolation. `pid: host` and `ipc: host` share the host's process
-and shared-memory namespaces; a sidecar that needs to see another container's
-processes can use `pid: "service:<name>"` instead.
+explicit port mapping restores the isolation.
+
+`pid: host` and `ipc: host` share the host's process and shared-memory
+namespaces. A sidecar that needs to see another container's processes can use
+`pid: "service:<name>"` instead.
 
 ```yaml
 # ❌ Before
@@ -555,14 +529,16 @@ subject, are under 2%.
 
 A bind mount of `/etc`, `/proc`, `/root`, `/var/lib/docker` or a home
 directory hands the container the host's secrets even when read-only. Writable,
-`/etc`, `/root`, `/proc` and `/var/lib/docker` hand it the host itself;
-`/var/lib/docker` writable is every other container's filesystem. Device nodes under `devices:` and `shared` mount propagation open
-further routes. The questions to ask of each `volumes:` entry:
+`/etc`, `/root`, `/proc` and `/var/lib/docker` hand it the host itself, and
+a writable `/var/lib/docker` is every other container's filesystem. Device
+nodes under `devices:` and `shared` mount propagation open further routes.
+
+The questions to ask of each `volumes:` entry:
 
 - Does the container need this path at all, or a copy of some of it? A named
   volume or a `COPY` at build time usually replaces a host bind.
 - If it needs the host path, does it need to write? Add `:ro`.
-- Is it `/dev/shm`? The container already has its own; if the bind is there
+- Is it `/dev/shm`? The container already has its own. If the bind is there
   because 64 MiB is too small, set `shm_size:` instead of sharing the host's.
 
 ```yaml
@@ -581,6 +557,8 @@ Rules: [CL-0013](rules/CL-0013.md), [CL-0025](rules/CL-0025.md),
 
 ## 13. Keep logs on
 
+**Share of real files affected: 0.3%** (15 files) turn logging off.
+
 `logging: driver: none` discards the container's output at the daemon.
 `docker logs` returns an error, nothing reaches a log shipper, and an incident
 in that container leaves no record. Rotate instead of disabling:
@@ -596,118 +574,10 @@ logging:
 
 Rules: [CL-0014](rules/CL-0014.md).
 
-## Hardening compose-lint does not grade
-
-Each step above maps to a rule. The settings in this section do not, and that
-is a decision in every case, not an oversight; each one says why. They can
-still be worth setting. The first two are in the hardened file below, which was
-run with them: both services started, served, and came back after a restart.
-
-### Cap the number of processes
-
-Optional when the memory limit from step 7 is set. That limit, not this one,
-is what protects the host from a fork bomb. A process limit changes how the
-failure ends: further forks are refused and the container stays up, where
-without one the container is killed when it reaches its memory limit. The
-[CL-0026](rules/CL-0026.md#what-it-detects) page has the measurement. Without
-a memory limit, do not skip this one.
-
-CIS Docker Benchmark v1.9.0 (5.29, a Level 1 control) and OWASP's Docker
-Security Cheat Sheet
-([Rule 7](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-7-limit-resources-memory-cpu-file-descriptors-processes-restarts))
-both ask for it, so a file audited against either should set it.
-
-```yaml
-deploy:
-  resources:
-    limits:
-      memory: 512M
-      cpus: '1.0'
-      pids: 200
-```
-
-Put it beside the limits from step 7. The service-level `pids_limit:` key next
-to a `deploy.resources.limits` block that sets no `pids` was refused
-(`can't set distinct values on 'pids_limit' and
-'deploy.resources.limits.pids'`, Compose 5.6.1). Size it from what the service
-runs, read with `docker stats --no-stream --format '{{.Name}} {{.PIDs}}'`:
-nginx ran one master and one worker per CPU, 5 processes on a 4-CPU host, and
-postgres idled at 6 and forks one backend per client connection, so its limit
-has to clear `max_connections`.
-
-Why no rule: compose-lint retired its rule for this, CL-0012. Memory is the
-dominant exhaustion vector, and a file that leaves it unbounded is flagged by
-[CL-0026](rules/CL-0026.md)
-([ADR-020](adr/020-severity-scoping-and-overrides.md)).
-
-### Separate the networks
-
-Compose puts every service of a project on one network, so `web` and `db`
-reach each other and both reach the internet. Two networks, with the
-database's marked `internal`, narrow that:
-
-```yaml
-services:
-  web:
-    networks:
-      - frontend
-      - backend
-  db:
-    networks:
-      - backend
-
-networks:
-  frontend:
-  backend:
-    internal: true
-```
-
-Measured on the hardened file: `web` still served its published port and
-reached `db:5432`, and a client on `backend` authenticated with the secret
-from step 1. A container attached only to an `internal` network had no default
-route and could not resolve or reach an outside host; attached to both
-networks, it could.
-
-Why no rule: which services of one project should reach each other is a design
-decision the file does not settle, so no rule grades it
-([CL-0008](rules/CL-0008.md#what-it-detects)).
-
-### Start without root
-
-Both services in the hardened file start as root, and the capabilities from
-step 5 are what that costs: the nginx master process stays root for its
-lifetime, and postgres starts as root before it switches user. Two alternatives
-were measured, each with `cap_drop: [ALL]`, no `cap_add`, `read_only: true`
-and `no-new-privileges`:
-
-- **`nginxinc/nginx-unprivileged:1.30-alpine`** ran as uid 101 and served,
-  with one `tmpfs` at `/tmp`; without it the container exited at startup. It
-  listens on 8080, so the mapping becomes `"127.0.0.1:8080:8080"`.
-- **`postgres:16` with `user: "999:999"`**, the image's `postgres` user, ran on
-  a fresh named volume through a first start and a restart, with the same
-  `/run/postgresql` tmpfs. The cost moves to the secret. With no
-  `DAC_OVERRIDE`, uid 999 has to be allowed to read the file by its mode: at
-  `0600` and owned by another user the entrypoint stopped with
-  `/run/secrets/db_password: Permission denied`, and at `0644` it started.
-  Giving the file to uid 999 on the host keeps it at `0600`; that was not run
-  here.
-
-Why no rule: the image's `USER` is not in the Compose file, so compose-lint
-cannot tell a root default from a non-root one and does not guess. It flags
-`user: root` when it is written ([CL-0018](rules/CL-0018.md)).
-
-### Leave the other host namespaces unset
-
-`uts: host`, `userns_mode: host` and `cgroup: host` are not graded. The
-[CL-0010](rules/CL-0010.md#what-it-detects) page records what each does under
-Docker's defaults and why none has a rule. The one that matters most is
-`userns_mode: host` on a daemon that runs with `--userns-remap`, where it opts
-the service out of the remapping.
-
 ## The hardened file
 
 The starting file with every step applied, plus the process limits and
-networks from the section above. With real digests in place of the
+networks from the section below. With real digests in place of the
 shortened ones, `compose-lint check --fail-on low` reports no findings on it:
 the twelve findings at the top of the page become none.
 
@@ -799,9 +669,117 @@ secrets:
 Both capability lists are measured ones: `web` is the set the
 [CL-0006](rules/CL-0006.md) page verifies for `nginx:1.27-alpine`, measured again for `nginx:1.30-alpine` in step 5, and `db`
 is the `postgres:16` example in step 5. Without the `/run/postgresql`
-tmpfs, postgres cannot create its lock file and exits under `read_only`;
-step 6's `docker diff` pass is there to predict paths like that one. Measure again for the
+tmpfs, postgres cannot create its lock file and exits under `read_only`.
+Step 6's `docker diff` pass is there to predict paths like that one. Measure again for the
 versions you run.
+
+## Hardening compose-lint does not grade
+
+Each step above maps to a rule. The settings in this section do not, and that
+is a decision in every case, not an oversight. Each one says why. They can
+still be worth setting. The first two are in the hardened file above, which was
+run with them: both services started, served, and came back after a restart.
+
+### Cap the number of processes
+
+Optional when the memory limit from step 7 is set. That limit, not this one,
+is what protects the host from a fork bomb. A process limit changes how the
+failure ends: further forks are refused and the container stays up, where
+without one the container is killed when it reaches its memory limit. The
+[CL-0026](rules/CL-0026.md#what-it-detects) page has the measurement. Without
+a memory limit, do not skip this one.
+
+CIS Docker Benchmark v1.9.0 (5.29, a Level 1 control) and OWASP's Docker
+Security Cheat Sheet
+([Rule 7](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-7-limit-resources-memory-cpu-file-descriptors-processes-restarts))
+both ask for it, so a file audited against either should set it.
+
+```yaml
+deploy:
+  resources:
+    limits:
+      memory: 512M
+      cpus: '1.0'
+      pids: 200
+```
+
+Put it beside the limits from step 7. The service-level `pids_limit:` key next
+to a `deploy.resources.limits` block that sets no `pids` was refused
+(`can't set distinct values on 'pids_limit' and
+'deploy.resources.limits.pids'`, Compose 5.6.1). Size it from what the service
+runs, read with `docker stats --no-stream --format '{{.Name}} {{.PIDs}}'`:
+nginx ran one master and one worker per CPU, 5 processes on a 4-CPU host, and
+postgres idled at 6 and forks one backend per client connection, so its limit
+has to clear `max_connections`.
+
+Why no rule: compose-lint retired its rule for this, CL-0012. Memory is the
+dominant exhaustion vector, and a file that leaves it unbounded is flagged by
+[CL-0026](rules/CL-0026.md)
+([ADR-020](adr/020-severity-scoping-and-overrides.md)).
+
+### Separate the networks
+
+Compose puts every service of a project on one network, so `web` and `db`
+reach each other and both reach the internet. Two networks, with the
+database's marked `internal`, narrow that:
+
+```yaml
+services:
+  web:
+    networks:
+      - frontend
+      - backend
+  db:
+    networks:
+      - backend
+
+networks:
+  frontend:
+  backend:
+    internal: true
+```
+
+Measured on the hardened file: `web` still served its published port and
+reached `db:5432`, and a client on `backend` authenticated with the secret
+from step 1. A container attached only to an `internal` network had no default
+route and could not resolve or reach an outside host. Attached to both
+networks, it could.
+
+Why no rule: which services of one project should reach each other is a design
+decision the file does not settle, so no rule grades it
+([CL-0008](rules/CL-0008.md#what-it-detects)).
+
+### Start without root
+
+Both services in the hardened file start as root, and the capabilities from
+step 5 are what that costs: the nginx master process stays root for its
+lifetime, and postgres starts as root before it switches user. Two alternatives
+were measured, each with `cap_drop: [ALL]`, no `cap_add`, `read_only: true`
+and `no-new-privileges`:
+
+- **`nginxinc/nginx-unprivileged:1.30-alpine`** ran as uid 101 and served,
+  with one `tmpfs` at `/tmp`. Without it the container exited at startup. It
+  listens on 8080, so the mapping becomes `"127.0.0.1:8080:8080"`.
+- **`postgres:16` with `user: "999:999"`**, the image's `postgres` user, ran on
+  a fresh named volume through a first start and a restart, with the same
+  `/run/postgresql` tmpfs. The cost moves to the secret. With no
+  `DAC_OVERRIDE`, uid 999 has to be allowed to read the file by its mode: at
+  `0600` and owned by another user the entrypoint stopped with
+  `/run/secrets/db_password: Permission denied`, and at `0644` it started.
+  Giving the file to uid 999 on the host keeps it at `0600`, but that was not run
+  here.
+
+Why no rule: the image's `USER` is not in the Compose file, so compose-lint
+cannot tell a root default from a non-root one and does not guess. It flags
+`user: root` when it is written ([CL-0018](rules/CL-0018.md)).
+
+### Leave the other host namespaces unset
+
+`uts: host`, `userns_mode: host` and `cgroup: host` are not graded. The
+[CL-0010](rules/CL-0010.md#what-it-detects) page records what each does under
+Docker's defaults and why none has a rule. The one that matters most is
+`userns_mode: host` on a daemon that runs with `--userns-remap`, where it opts
+the service out of the remapping.
 
 ## Checklist
 
@@ -812,31 +790,31 @@ versions you run.
 | Image pinned to a digest | [CL-0019](rules/CL-0019.md) | 50.2% |
 | Published ports bound to an address | [CL-0005](rules/CL-0005.md) | 72.1% |
 | `no-new-privileges:true` | [CL-0003](rules/CL-0003.md) | 97.3% |
-| Seccomp, AppArmor and SELinux labelling left on | [CL-0009](rules/CL-0009.md) | — |
+| Seccomp, AppArmor and SELinux labelling left on | [CL-0009](rules/CL-0009.md) | under 2% |
 | `cap_drop: [ALL]`, image-specific `cap_add` | [CL-0006](rules/CL-0006.md) | 98.6% |
 | Added capabilities limited to what the image needs | [CL-0011](rules/CL-0011.md), [CL-0024](rules/CL-0024.md), [CL-0027](rules/CL-0027.md) to [CL-0030](rules/CL-0030.md) | 3.5% / under 2% |
 | `read_only: true` with `tmpfs` for writable paths | [CL-0007](rules/CL-0007.md) | 98.7% |
-| No `:exec` or `:suid` on `tmpfs` | [CL-0022](rules/CL-0022.md) | — |
+| No `:exec` or `:suid` on `tmpfs` | [CL-0022](rules/CL-0022.md) | under 2% |
 | Memory and CPU limits | [CL-0026](rules/CL-0026.md) | 97.4% |
-| No explicit `user: root` | [CL-0018](rules/CL-0018.md) | — |
+| No explicit `user: root` | [CL-0018](rules/CL-0018.md) | under 2% |
 | No Docker socket mount | [CL-0001](rules/CL-0001.md) | 7.8% |
 | No `privileged: true` | [CL-0002](rules/CL-0002.md) | 2.4% |
 | No `network_mode: host`, `pid: host`, `ipc: host` | [CL-0008](rules/CL-0008.md), [CL-0010](rules/CL-0010.md) | 2.8% / under 2% |
 | Host paths mounted only when needed, `:ro` where possible | [CL-0013](rules/CL-0013.md), [CL-0025](rules/CL-0025.md) | 2.5% / under 2% |
-| No host devices, no `shared` mount propagation | [CL-0016](rules/CL-0016.md), [CL-0017](rules/CL-0017.md) | — |
-| Logging driver not `none` | [CL-0014](rules/CL-0014.md) | — |
+| No host devices, no `shared` mount propagation | [CL-0016](rules/CL-0016.md), [CL-0017](rules/CL-0017.md) | under 2% |
+| Logging driver not `none` | [CL-0014](rules/CL-0014.md) | under 2% |
 | Process limit, optional with a memory limit | not graded | — |
 | Database on an `internal` network | not graded | — |
 | No root at start, where the image allows it | not graded | — |
 
 Run `compose-lint check --fail-on low compose.yaml` to check the file against
-all of it at once; `compose-lint fix` applies the steps that can be applied
+all of it at once. `compose-lint fix` applies the steps that can be applied
 mechanically and shows the diff before writing anything.
 
 ## Questions that come up
 
 **Does binding to 127.0.0.1 fix the firewall problem?** For that port, yes:
-nothing off the host can reach it. For the host as a whole, no; any other
+nothing off the host can reach it. For the host as a whole, no. Any other
 service that publishes on `0.0.0.0` still bypasses UFW or firewalld. The `DOCKER-USER`
 chain is the host-wide answer. See [CL-0005](rules/CL-0005.md).
 
@@ -861,7 +839,7 @@ the Dockerfile linter's jobs. [The comparison page](compare.md) sets out what
 each tool reads.
 
 **Where do I start if I can only do one thing?** Step 1 if any credential is in
-`environment:`; otherwise step 4, `no-new-privileges`, because it is one line
+`environment:`. Otherwise step 4, `no-new-privileges`, because it is one line
 and rarely changes what a service does (step 4 says what it quietly breaks
 when it does), and then step 5.
 
