@@ -40,7 +40,7 @@ permissions: {}
 
 jobs:
   test:
-    name: pytest (${{ matrix.os }}, py${{ matrix.python-version }})
+    name: pytest (${{ matrix.os }}, py${{ matrix.python-version }}, ${{ matrix.part }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     permissions:
@@ -56,11 +56,29 @@ jobs:
     # the ubuntu matrix runs: the versions in between differ from their
     # neighbours far less than either end differs from the other, so they
     # would buy little for 6 more jobs on two of the slowest runners.
+    #
+    # Each leg runs as two jobs, because these were the slowest jobs in the
+    # merge gate (135-197 s) once ci.yml's own were split. The split is by
+    # file name, not ci.yml's oracle-against-the-rest: the oracle harness
+    # needs Docker and skips whole on both of these platforms.
+    #
+    # On a pull request the macOS 3.11 leg does not run. An account gets
+    # five concurrent macOS jobs on every plan below Enterprise, and a PR
+    # run routinely overlaps the run of the merge before it. Two macOS
+    # versions in two parts each, plus the pre-commit job, would be five
+    # per run and ten per overlap, with half of them queued. Leaving 3.11
+    # out keeps a PR at three, which is what it was before the split. The
+    # leg still runs on every push to main, on the weekly cron and on
+    # dispatch, and 3.11 stays in the PR gate on Linux and Windows, so
+    # what a PR can no longer catch is a fault that needs macOS and 3.11
+    # together. That one reaches main and reddens its run.
     strategy:
       fail-fast: false
       matrix:
         os: [macos-26, windows-2025]
         python-version: ["3.11", "3.13"]
+        part: [a-e, rest]
+        exclude: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-26","python-version":"3.11"}]' || '[]') }}
     defaults:
       run:
         shell: bash
@@ -89,7 +107,23 @@ jobs:
           uv pip install --python "${py}" --require-hashes -r requirements-dev.lock
           uv pip install --python "${py}" --no-deps --no-build-isolation -e .
       # -n auto as in ci.yml's test job: one pytest-xdist worker per core.
-      - run: pytest -n auto
+      # `rest` is `tests` minus the files `a-e` names, so a new test file
+      # always lands in a part.
+      - name: Run this part of the suite
+        env:
+          PART: ${{ matrix.part }}
+        run: |
+          set -euo pipefail
+          first=(tests/test_[a-e]*.py)
+          case "${PART}" in
+            a-e) selection=("${first[@]}") ;;
+            rest)
+              selection=(tests)
+              for f in "${first[@]}"; do selection+=("--ignore=${f}"); done
+              ;;
+            *) echo "::error::unknown part ${PART}"; exit 1 ;;
+          esac
+          pytest -n auto "${selection[@]}"
 
   # Stays on one Python: what this leg exercises is pre-commit's
   # hook-environment build and the OS's path/console handling, neither of
