@@ -606,30 +606,16 @@ run with them: both services started, served, and came back after a restart.
 ### Cap the number of processes
 
 Optional when the memory limit from step 7 is set. That limit, not this one,
-is what protects the host from a fork bomb; a process limit changes how the
-failure ends. Measured with a fork bomb in a container held to 128M and half a
-CPU (Docker 29.9.3, 8 CPUs):
+is what protects the host from a fork bomb. A process limit changes how the
+failure ends: further forks are refused and the container stays up, where
+without one the container is killed when it reaches its memory limit. The
+[CL-0026](rules/CL-0026.md#what-it-detects) page has the measurement. Without
+a memory limit, do not skip this one.
 
-| Process limit | Processes reached | Outcome | Host |
-|---|---|---|---|
-| none (host ceiling 9046) | about 1,200 in five seconds | memory limit reached, OOM killer fired, container exited | responsive |
-| 100 | 100 | further forks refused, about 10M used, container stayed up | responsive |
-
-Neither ending is healthy. A killed container under a restart policy comes
-back to the same attack, and a service at its process ceiling cannot start new
-work: postgres there cannot fork a backend for a new connection. A refused fork
-reads `sh: can't fork: Resource temporarily unavailable`. Without a memory
-limit, do not skip this one.
-
-Who asks for it: CIS Docker Benchmark v1.9.0 (5.29, a Level 1 control), and
-OWASP's Docker Security Cheat Sheet, which lists the number of processes among
-the resources to limit
-([Rule 7](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-7-limit-resources-memory-cpu-file-descriptors-processes-restarts)).
-A file audited against either should set it. The benchmark describes the
-default as no restriction, which is Docker's own default. Where Docker uses the
-systemd cgroup driver the host supplies a ceiling, its `DefaultTasksMax`
-(`pids.max` read 18751 on one host and 9046 on another with no limit set),
-which is too high to matter once memory is limited.
+CIS Docker Benchmark v1.9.0 (5.29, a Level 1 control) and OWASP's Docker
+Security Cheat Sheet
+([Rule 7](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-7-limit-resources-memory-cpu-file-descriptors-processes-restarts))
+both ask for it, so a file audited against either should set it.
 
 ```yaml
 deploy:
