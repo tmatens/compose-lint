@@ -29,7 +29,7 @@ theme:
         name: Switch to light mode
 
 # Not built at all: the Docker Hub overview (a third copy of the README intro
-# that exists only to be synced to Hub) and the dev.to/Hashnode cross-post
+# that exists only to be synced to Hub) and the dev.to article
 # drafts, which would otherwise publish self-canonical duplicates of
 # state-of-compose.md under their own URLs.
 exclude_docs: |
