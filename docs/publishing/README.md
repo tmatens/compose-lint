@@ -28,9 +28,14 @@ shows a number the report does not.
 
 ## Canonical URL
 
-The dev.to article's canonical URL is itself. Raw GitHub Markdown does not
+The study article's canonical URL is itself. Raw GitHub Markdown does not
 rank in search, so the article is the search-facing copy and the report is
 the one to cite.
+
+The hardening article's canonical URL is the guide on the docs site,
+`https://tmatens.github.io/compose-lint/hardening/`. The guide is a built page
+that search engines index, so it is the search-facing copy and the article
+points at it.
 
 The article is published in one place. A Hashnode cross-post existed until
 November 2026 and was deleted: it had to be updated by hand after every edit,

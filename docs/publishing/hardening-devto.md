@@ -3,7 +3,7 @@ title: "Docker Compose security: hardening one file, from 12 findings to none"
 published: false
 description: An ordinary two-service Compose file, hardened one setting at a time, with the share of public files that skip each step.
 tags: docker, security, devops, selfhosted
-canonical_url:
+canonical_url: https://tmatens.github.io/compose-lint/hardening/
 ---
 
 > **Source for the dev.to article.** A shorter, first-person version of the
