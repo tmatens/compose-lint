@@ -1,0 +1,58 @@
+# Bake-off fixture: one deliberate misconfiguration per service, each named
+# for the compose-lint rule it should trip. Never run this file.
+services:
+  socket:            # CL-0001 Docker socket mounted
+    image: portainer/portainer-ce:2.21.4
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+  privileged:        # CL-0002 privileged: true
+    image: busybox:1.36.1
+    privileged: true
+  nnp:               # CL-0003 no-new-privileges missing (nothing else wrong)
+    image: nginx:1.27.2-alpine
+    cap_drop: [ALL]
+    read_only: true
+  latest:            # CL-0004 unpinned tag
+    image: redis:latest
+  ports:             # CL-0005 published on 0.0.0.0
+    image: nginx:1.27.2-alpine
+    ports:
+      - "8080:80"
+  caps:              # CL-0006 no cap_drop ALL
+    image: nginx:1.27.2-alpine
+    read_only: true
+    security_opt: [no-new-privileges:true]
+  rootfs:            # CL-0007 writable root filesystem
+    image: nginx:1.27.2-alpine
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  hostnet:           # CL-0008 network_mode: host
+    image: nginx:1.27.2-alpine
+    network_mode: host
+  seccomp:           # CL-0009 seccomp unconfined
+    image: nginx:1.27.2-alpine
+    security_opt:
+      - seccomp:unconfined
+  pidhost:           # CL-0010 host PID/IPC namespace
+    image: nginx:1.27.2-alpine
+    pid: host
+    ipc: host
+  hostpath:          # CL-0013 sensitive host path
+    image: busybox:1.36.1
+    volumes:
+      - /etc:/host-etc
+  nolog:             # CL-0014 logging driver none
+    image: nginx:1.27.2-alpine
+    logging:
+      driver: none
+  root:              # CL-0018 user: root
+    image: nginx:1.27.2-alpine
+    user: root
+  nodigest:          # CL-0019 tag without digest (otherwise pinned)
+    image: nginx:1.27.2-alpine
+  secret:            # CL-0020 plaintext credential in environment
+    image: postgres:16.4
+    environment:
+      POSTGRES_PASSWORD: hunter2
+  nolimits:          # CL-0026 no memory/cpu limits
+    image: nginx:1.27.2-alpine

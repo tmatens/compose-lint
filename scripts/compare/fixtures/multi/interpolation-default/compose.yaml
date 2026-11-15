@@ -1,0 +1,6 @@
+services:
+  app:
+    image: nginx:1.27.2-alpine
+    privileged: ${PRIV:-true}
+    ports: ["${BIND:-0.0.0.0}:8080:80"]
+    volumes: ["${SOCK:-/var/run/docker.sock}:/sock"]

@@ -1,0 +1,6 @@
+services:
+  app:
+    image: nginx:1.27.2-alpine
+    privileged: true
+    ports: ["8080:80"]
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]

@@ -1,0 +1,3 @@
+PRIV=true
+BIND=0.0.0.0
+SOCK=/var/run/docker.sock

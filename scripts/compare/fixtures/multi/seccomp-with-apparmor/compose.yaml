@@ -1,0 +1,4 @@
+services:
+  app:
+    image: nginx:1.27.2-alpine
+    security_opt: ["seccomp:unconfined", "apparmor:unconfined"]

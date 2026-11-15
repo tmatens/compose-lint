@@ -36,7 +36,7 @@ Documentation describes what a tool is meant to check. A run shows what it
 checked. The fixture has sixteen services, each with one deliberate
 misconfiguration, written to the Compose Specification, so without the
 obsolete `version:` key. Each tool was run from its published image on
-2026-10-09. The fixture and the exact commands are in
+2026-11-15. The fixture and the exact commands are in
 [Reproduce it](#reproduce-it).
 
 | Misconfiguration | compose-lint | KICS | DockSec | Semgrep | DCLint |
@@ -79,8 +79,8 @@ Checkov, Trivy and Hadolint were run on the same file too and, as their
 documentation says, none of them read it as a Compose file. Their sections
 below say what each one checks instead.
 
-Versions, as each tool reported them: compose-lint 0.34.0, DCLint 3.1.0,
-KICS 2.1.20, DockSec 2026.8.19, Semgrep 1.179.0, Checkov 3.3.26, Trivy 0.75.0,
+Versions, as each tool reported them: compose-lint 1.6.0, DCLint 3.1.0,
+KICS 2.2.1, DockSec 2026.8.19, Semgrep 1.185.0, Checkov 3.4.5, Trivy 0.76.2,
 Hadolint 2.15.1. DockSec's image tag is 2026.9.21. The release declares that
 version but the tool still reports the older string.
 
@@ -127,8 +127,7 @@ file. That covers Rules 1 to 8, 12 and 13. Rules 0, 9, 10 and 11 concern the
 host, the CI pipeline and the daemon.
 
 It has twenty-one services and no `version:` key, and the same tools ran it.
-Twenty services were run on 2026-10-09, and the SELinux row was added on
-2026-10-14 against the same image digests. This fixture shows where
+It was run on 2026-11-15 with the versions above. This fixture shows where
 compose-lint has no rule.
 
 | OWASP rule — violation | compose-lint | KICS | DockSec | Semgrep | DCLint |
@@ -201,7 +200,7 @@ Every scenario was run once as written and once with `version: "3.9"`
 prepended. KICS, Semgrep and DCLint were given the whole directory, so a base, included
 or override file was in front of them as a file of its own. compose-lint and
 DockSec were given `compose.yaml`, the file `docker compose` starts from. The
-run is from 2026-10-17, with every image pinned by digest. The fixtures and
+run is from 2026-11-15, with the same versions as the first run. The fixtures and
 commands are in [Reproduce it](#reproduce-it).
 
 The results are one table per setting.
@@ -314,8 +313,8 @@ KICS reports the anchored settings at the anchor's lines and DockSec on the
 service. Compose profiles, several `-f` files and `COMPOSE_FILE` were not
 tested.
 
-Versions: compose-lint 0.36.0, KICS 2.1.20, DockSec image 2026.9.21,
-Semgrep 1.180.0, DCLint 3.1.0.
+Versions: compose-lint 1.6.0, KICS 2.2.1, DockSec image 2026.9.21,
+Semgrep 1.185.0, DCLint 3.1.0.
 
 ## Does Checkov scan docker-compose.yml?
 
@@ -328,7 +327,7 @@ that show `checkov --framework docker_compose` describe a flag that does not
 exist.
 
 If you already run Checkov for Terraform or Kubernetes, keep running it and
-add compose-lint for the Compose files it skips. As of 2026-10-09 there is no
+add compose-lint for the Compose files it skips. As of 2026-11-15 there is no
 open request for Compose support on Checkov's tracker.
 
 ## Does Trivy lint Docker Compose files?
@@ -476,7 +475,7 @@ its auto-fix works on the Compose file. A suppression given an `expires:` date
 is the one input that reads the date, and `--as-of` pins it. Which matters
 more depends on whether the linter is a CI gate or an advisor.
 
-The explicit `user: root` gap was not on DockSec's tracker as of 2026-10-09.
+The explicit `user: root` gap was not on DockSec's tracker as of 2026-11-15.
 
 Its results on a stack spread across files are in
 [the third run](#run-on-a-stack-spread-across-files).
@@ -559,7 +558,18 @@ compose-lint has no rule for:
 
 ## Reproduce it
 
-The fixture is sixteen services with one deliberate misconfiguration each,
+Everything needed to repeat the three runs is in
+[`scripts/compare`](https://github.com/tmatens/compose-lint/tree/main/scripts/compare): the fixtures, `run.sh`, which runs every tool at the
+versions listed above, and `score.py`, which prints these tables from what the
+tools reported. The image digest each version resolved to is in
+[`last-run/versions.txt`](https://github.com/tmatens/compose-lint/tree/main/scripts/compare/last-run/versions.txt).
+
+```bash
+scripts/compare/run.sh /tmp/compare-out
+python scripts/compare/score.py /tmp/compare-out
+```
+
+The first fixture is sixteen services with one deliberate misconfiguration each,
 named for the compose-lint rule it targets. Do not run it.
 
 ```yaml
@@ -641,181 +651,24 @@ caught. Its 85 findings are the 16 intended ones plus the baseline hardening
 misses on every service that lacks them.
 
 The OWASP-framed fixture has the same shape, one service per row of its
-table, named `rule<N>-<violation>`, with the same images. It was run with
-the same commands, once as written and once with `version: "3.9"` prepended.
-The SELinux service (`security_opt: [label:disable]`) was run the same way
-on 2026-10-14, with each image pinned to the digest the 2026-10-09 run had
-recorded.
+table, named `rule<N>-<violation>`, with the same images. The multi-file
+scenarios are one directory each, and every image in them is
+`nginx:1.27.2-alpine`. Both are under
+[`scripts/compare/fixtures`](https://github.com/tmatens/compose-lint/tree/main/scripts/compare/fixtures). None of them is meant to be
+started.
 
-### The stack spread across files
-
-Each scenario is its own directory. Every image is `nginx:1.27.2-alpine`,
-and none of the scenarios is meant to be started.
-
-```yaml
-# inline/compose.yaml (control)
-services:
-  app:
-    image: nginx:1.27.2-alpine
-    privileged: true
-    ports: ["8080:80"]
-    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
-
-# extends-same-file/compose.yaml
-services:
-  base:
-    image: nginx:1.27.2-alpine
-    privileged: true
-    ports: ["8080:80"]
-    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
-  app:
-    extends: base
-
-# extends-other-file/common.yml holds the base service above;
-# extends-other-file/compose.yaml
-services:
-  app:
-    extends:
-      file: common.yml
-      service: base
-
-# include/sub/stack.yml holds the inline app service;
-# include/compose.yaml
-include:
-  - sub/stack.yml
-services:
-  web:
-    image: nginx:1.27.2-alpine
-
-# override/compose.yaml
-services:
-  app:
-    image: nginx:1.27.2-alpine
-# override/compose.override.yml
-services:
-  app:
-    privileged: true
-    ports: ["8080:80"]
-    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
-
-# anchor/compose.yaml
-x-danger: &danger
-  privileged: true
-  ports: ["8080:80"]
-  volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
-services:
-  app:
-    <<: *danger
-    image: nginx:1.27.2-alpine
-
-# interpolation-default/compose.yaml
-services:
-  app:
-    image: nginx:1.27.2-alpine
-    privileged: ${PRIV:-true}
-    ports: ["${BIND:-0.0.0.0}:8080:80"]
-    volumes: ["${SOCK:-/var/run/docker.sock}:/sock"]
-
-# dotenv/compose.yaml, with dotenv/.env holding
-# PRIV=true, BIND=0.0.0.0 and SOCK=/var/run/docker.sock
-services:
-  app:
-    image: nginx:1.27.2-alpine
-    privileged: ${PRIV}
-    ports: ["${BIND}:8080:80"]
-    volumes: ["${SOCK}:/sock"]
-
-# long-syntax/compose.yaml
-services:
-  app:
-    image: nginx:1.27.2-alpine
-    ports:
-      - target: 80
-        published: "8080"
-    volumes:
-      - type: bind
-        source: /var/run/docker.sock
-        target: /var/run/docker.sock
-
-# secret-file/compose.yaml
-services:
-  app:
-    image: nginx:1.27.2-alpine
-    secrets: [sock]
-secrets:
-  sock:
-    file: /var/run/docker.sock
-
-# seccomp-equals/compose.yaml; seccomp-colon is the same with seccomp:unconfined
-services:
-  app:
-    image: nginx:1.27.2-alpine
-    security_opt: ["seccomp=unconfined"]
-
-# socket-elsewhere/compose.yaml (the Semgrep socket-rule probe)
-services:
-  app:
-    image: nginx:1.27.2-alpine
-    volumes: ["/var/run/docker.sock:/sock"]
-```
-
-The four that deploy safely:
-
-```yaml
-# safe-override/compose.yaml
-services:
-  app:
-    image: nginx:1.27.2-alpine
-    privileged: true
-# safe-override/compose.override.yml
-services:
-  app:
-    privileged: false
-
-# safe-default/compose.yaml
-services:
-  app:
-    image: nginx:1.27.2-alpine
-    ports: ["${BIND:-127.0.0.1}:8080:80"]
-
-# safe-nnp-equals/compose.yaml
-services:
-  app:
-    image: nginx:1.27.2-alpine
-    cap_drop: [ALL]
-    read_only: true
-    security_opt: ["no-new-privileges=true"]
-
-# safe-dotenv/ is dotenv/ with .env holding
-# PRIV=false, BIND=127.0.0.1 and SOCK=/srv/data
-```
-
-Each scenario directory was mounted read-only at `/src`. compose-lint runs
-with `/src` as its working directory, so the scenario directory is the
-boundary it reads within:
-
-```bash
-docker run --rm -w /src -v "$PWD:/src:ro" composelint/compose-lint:0.36.0@sha256:b6742a7ff80a1a75e824a8aa1c6579946fdd48c771f7085a046a18f95c3fe19d check --format json /src/compose.yaml
-docker run --rm -v "$PWD:/src:ro" -v "$PWD/out:/out" checkmarx/kics:v2.1.20@sha256:3e5a268eb8adda2e5a483c9359ddfc4cd520ab856a7076dc0b1d8784a37e2602 scan -p /src -o /out --report-formats json -t DockerCompose --disable-secrets
-docker run --rm -v "$PWD:/src:ro" -v "$PWD/out:/root/.docksec/results" owasp/docksec:2026.9.21@sha256:646e8250e2dc98ac4c8fd5f9a5d37f9aecae149a468271b5b1dc04092f927be4 --compose /src/compose.yaml --format json --scan-only
-docker run --rm -v "$PWD:/src:ro" semgrep/semgrep:1.180.0@sha256:529ee8a277ec8adc5b534d7c74eea0a47e9de21d62852b6ba7ac6ba9566845c3 semgrep --metrics=off --config p/docker-compose --json /src
-docker run --rm -v "$PWD:/src:ro" zavoloklom/dclint:3.1.0@sha256:dd6e0faa9fa8856a643a1e55476077d555b8e9c946cc481f8fbee203662c3e77 -f json -r /src
-```
-
-`docker compose config` in each directory is the ground truth for what
-deploys. A finding counts for a row only when it comes from that tool's own
-rule for the setting.
+Every fixture was run once as written and once with `version: "3.9"` added at
+the top of each YAML file. What Compose renders for each multi-file scenario
+is the ground truth for what deploys. A finding counts for a row only when it
+comes from that tool's own rule for the setting and is reported on the service
+the row is about.
 
 ## Corrections
 
 The summary table was checked against each tool's documentation on
-2026-10-08. The next day all eight tools were run against the same
-deliberately broken Compose file. On 2026-10-17 the five tools that read
-Compose were run again on stacks spread across several files. The versions are
-listed under each run.
-
-compose-lint's rule count in the summary table is the current one. The runs
-used the older versions listed under each.
+2026-10-08. The three runs were first made on 2026-10-09 and 2026-10-17, on
+compose-lint 0.34.0 and 0.36.0. They were repeated on 2026-11-15 at the
+versions listed under each run, and every cell came out the same.
 
 Tools change. If a row is out of date, [open an
 issue](https://github.com/tmatens/compose-lint/issues) with the link or the

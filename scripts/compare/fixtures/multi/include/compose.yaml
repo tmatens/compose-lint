@@ -1,0 +1,5 @@
+include:
+  - sub/stack.yml
+services:
+  web:
+    image: nginx:1.27.2-alpine
