@@ -16,9 +16,11 @@ canonical_url:
 
 I maintain [compose-lint](https://github.com/tmatens/compose-lint), a security linter for Docker Compose files, and I ran it over **11,111 public `docker-compose.yml` and `compose.yaml` files from GitHub**.
 
+6,666 of those are ordinary Compose files. The rest are override files, test fixtures and deliberately vulnerable labs, which the study reports separately and I leave out here. Of the 6,666, compose-lint could lint 5,907, and every percentage below is a share of those 5,907.
+
 Three things stood out:
 
-- **99%** of the files that lint have at least one security finding.
+- **99%** have at least one security finding.
 - **96%** set none of the four basic hardening flags.
 - The same four findings lead every group of files I looked at, including the official vendor examples people are told to copy.
 
@@ -34,7 +36,7 @@ I wanted a linter with no configuration, grounded in OWASP and CIS guidance, tha
 
 ## What I measured
 
-The files come from GitHub and are sorted by where they came from, because one number for "all Compose files" would average a vendor's polished example with someone's first attempt:
+The 6,666 files are sorted by where they came from, because one number for "all Compose files" would average a vendor's polished example with someone's first attempt:
 
 - **Vendor examples** (249 files): awesome-compose, Bitnami, Grafana, Vaultwarden and others. This is what a README tells you to copy.
 - **App-store templates** (596): CasaOS, runtipi, Dockge. They are written for a home LAN.
@@ -42,9 +44,7 @@ The files come from GitHub and are sorted by where they came from, because one n
 - **Popular projects** (1,231): the Compose files that projects with 50 or more stars use themselves.
 - **Long tail** (3,105): a sweep of GitHub code search. These are ordinary repos that few people look at.
 
-That is 6,666 files. Another 4,445 are override files, test fixtures and deliberately vulnerable labs, which the study reports separately and I leave out here.
-
-Of the 6,666, compose-lint could lint 5,907. Every percentage below is a share of those. Each of the 28 rules cites the [OWASP Docker Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html), the CIS Docker Benchmark or Docker's own documentation. The full method is in the [report](https://tmatens.github.io/compose-lint/state-of-compose/).
+Each of compose-lint's 28 rules cites the [OWASP Docker Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html), the CIS Docker Benchmark or Docker's own documentation. The full method is in the [report](https://tmatens.github.io/compose-lint/state-of-compose/).
 
 ## Finding 1: the hardening flags are almost never set
 
@@ -100,7 +100,7 @@ If you run a homelab, your threat model matters here. A box behind a firewall wi
 
 ## Finding 3: one in nine files never gets linted
 
-This is the one I didn't expect. 759 of the 6,666 files produced no lint result at all:
+This is the one I didn't expect. 759 of the 6,666 files produced no lint result at all, which is why the percentages above are out of 5,907:
 
 ![One in nine files was never linted. In the long tail it is 16%: 247 skipped and 240 parse errors.](https://raw.githubusercontent.com/tmatens/compose-lint/main/docs/publishing/assets/never-linted.png)
 
