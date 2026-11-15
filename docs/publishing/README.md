@@ -11,29 +11,29 @@ so an article never shows a number the report does not.
 | --- | --- |
 | `docs/state-of-compose.md` (this repo and the docs site) | The report. Its URL is permanent and the README links to it. |
 | [dev.to](https://dev.to/tmatens/9-in-10-docker-compose-files-skip-the-basic-security-flags-2dpf) | The article, a shorter read that links back to the report. |
-| [Hashnode](https://hashnode.com) | A cross-post of the dev.to article, with its canonical URL set to dev.to. |
 
 ## Files
 
 - [`state-of-compose-devto.md`](state-of-compose-devto.md): the dev.to
   article. It carries the headline findings and links to the report for the
   tables, the method and the caveats.
-- [`state-of-compose-hashnode.md`](state-of-compose-hashnode.md): the Hashnode
-  publish settings. The body is the dev.to body.
-- `assets/*.png`: raster copies of the report's charts for the articles.
-- `assets/cover.png`: the cover image for both articles, drawn from the run.
+- `assets/*.png`: raster copies of the report's charts for the article.
+- `assets/cover.png`: the article's cover image, drawn from the run.
 
-## Canonical URLs
+## Canonical URL
 
-- **dev.to**: its canonical URL is itself. Raw GitHub Markdown does not rank
-  in search, so the article is the search-facing copy and the report is the
-  one to cite.
-- **Hashnode**: the canonical URL is the live dev.to post.
+The dev.to article's canonical URL is itself. Raw GitHub Markdown does not
+rank in search, so the article is the search-facing copy and the report is
+the one to cite.
+
+The article is published in one place. A Hashnode cross-post existed until
+November 2026 and was deleted: it had to be updated by hand after every edit,
+and its canonical URL pointed at dev.to, so it could not rank on its own.
 
 ## Why the article charts are PNG
 
 The report embeds SVG (`docs/assets/*.svg`), which is sharp and diffs well.
-dev.to and Hashnode load images from another origin, and
+dev.to loads images from another origin, and
 `raw.githubusercontent.com` serves `.svg` as `text/plain`, so an SVG shows as
 a broken image there. A PNG is served as `image/png` and renders. The article
 links the PNGs in `assets/` by their raw GitHub URL, so nothing is uploaded by
@@ -64,6 +64,5 @@ so it names the compose-lint version that produced the run (for example
    the new charts.
 3. Update the dev.to article from `state-of-compose-devto.md`: title, body and
    cover. The slug does not change.
-4. Update the Hashnode post as `state-of-compose-hashnode.md` describes.
-5. Note both updates on the tracking issue
+4. Note the update on the tracking issue
    ([#186](https://github.com/tmatens/compose-lint/issues/186)).
