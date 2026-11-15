@@ -3,9 +3,9 @@
 
 Reads a finished corpus run (`results.jsonl` + `index.jsonl`) and emits one
 SVG per figure embedded in `docs/state-of-compose.md`. Every number is
-computed from the run — a chart can never disagree with the tables.
+computed from the run, so a chart can never disagree with the tables.
 
-The figures follow an editorial identity (third edition, 2026-08-27),
+The figures follow an editorial identity (set in the third edition),
 built from the data-visualization research tracked in #759's thread:
 one claim per chart stated in the title, at most ~10% of the visual
 highlighted, no legends (direct labels), exactly two in-chart text
@@ -24,8 +24,8 @@ Charts produced (docs/assets/<name>.svg):
   never-linted          skips (v1/fragments) + parse errors by tier
 
 With `--png`, raster copies land in docs/publishing/assets/ under the
-same names (the pre-third-edition PNGs there are hot-linked by the live
-dev.to post and keep their old names — do not delete them). With
+same names. `top-findings.png` is hot-linked by the live dev.to post, so
+writing it changes that post's chart as soon as it reaches `main`. With
 `--cover`, emits the blog cover banner (`cover.png`).
 
 matplotlib is an optional dependency: `pip install -e '.[corpus]'`. It
@@ -55,6 +55,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from make_tier_summary import resolve_run  # noqa: E402
 from run import (  # noqa: E402
     EXCLUDED_FROM_PREVALENCE,
+    SNAPSHOT_DATE,
     aggregate_tiers,
     get_cl_version,
     load_index,
@@ -79,10 +80,15 @@ SANDTEXT = "#7d7260"
 WORDMARK = "#b9b0a0"
 BODY = 12    # data labels, axis labels, annotations
 SMALL = 10   # secondary labels, in-chart captions
-KICKER = "STATE OF DOCKER COMPOSE SECURITY · THIRD EDITION"
+KICKER = "STATE OF DOCKER COMPOSE SECURITY · FOURTH EDITION"
 FIGSIZE = (11.8, 6.4)
 
 TIER_ORDER = ("canonical", "selfhosted", "collections", "popular", "longtail")
+# What a reader who has not seen the report's tier table needs on a chart.
+NUMBER_WORD = {5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten"}
+TIER_LABEL = {"canonical": "vendor examples", "selfhosted": "app-store templates",
+              "collections": "template collections", "popular": "popular projects",
+              "longtail": "long tail"}
 
 
 def _style() -> None:
@@ -146,9 +152,6 @@ class Data:
         self.by_tier, self.rule_severity = aggregate_tiers(results, index)
         self.corpus_total = sum(b["total"] for b in self.by_tier.values())
         res = {r["content_hash"]: r for r in results}
-        # run date anchors the age buckets (deterministic, from the run name)
-        run_date = datetime.datetime.strptime(
-            run_dir.name[:8], "%Y%m%d").replace(tzinfo=datetime.UTC)
 
         sev_rank = {"critical": 3, "high": 2, "medium": 1, "low": 0}
         self.svc = defaultdict(int)          # tier -> services
@@ -202,7 +205,7 @@ class Data:
                 self.worst["clean"] += 1
             iso = e.get("blob_authored_at")
             if iso:
-                days = (run_date - datetime.datetime.fromisoformat(
+                days = (SNAPSHOT_DATE - datetime.datetime.fromisoformat(
                     iso.replace("Z", "+00:00"))).days
                 age = "<1y" if days < 365 else "1-3y" if days < 1095 else ">=3y"
                 a = self.age_svc[tier][age]
@@ -239,35 +242,50 @@ def chart_not_improving(d: Data) -> tuple[plt.Figure, str]:
         allrow.append(f / s)
     ax.plot(range(3), allrow, "-", color=RED, lw=3.4, zorder=4, solid_capstyle="round")
     ax.scatter(range(3), allrow, s=52, color=RED, zorder=5)
-    for x, v in zip(range(3), allrow, strict=True):
-        ax.annotate(f"{v:.2f}", (x, v), xytext=(0, 12), textcoords="offset points",
-                    ha="center", fontsize=BODY, fontweight="bold", color=RED)
-    # end labels, spread to avoid pileup (order by value, fixed spacing)
-    for rank, (tier, (x, v)) in enumerate(
-            sorted(endlab, key=lambda kv: -kv[1][1])):
-        y = max(v, 0.2)
-        ax.text(x + 0.05, 6.55 - rank * 0.33 if x == 2 else y + 0.12, tier,
-                fontsize=SMALL, color=MUTE, va="center")
-    ax.annotate("a service written last month ships with the same\n"
-                "missing hardening as one written four years ago",
-                xy=(0.55, allrow[0] - 0.05), xytext=(0.32, 3.35), fontsize=BODY,
+    # value labels sit above the whole bundle of lines at each age, so a
+    # tier line never runs through a number
+    tops = [max([allrow[i]] + [a[1] / a[0] for t in TIER_ORDER
+                               for a in [d.age_svc[t][age]] if a[0]])
+            for i, age in enumerate(ages)]
+    for x, v, top in zip(range(3), allrow, tops, strict=True):
+        ax.text(x, top + 0.42, f"{v:.2f}", ha="center", fontsize=BODY,
+                fontweight="bold", color=RED)
+    # tier names in one column right of the last point, kept in value order
+    # and spread so they cannot overlap; a tier with no old files is labelled
+    # under its last point
+    full = sorted((kv for kv in endlab if kv[1][0] == 2), key=lambda kv: -kv[1][1])
+    mid = sum(v for _, (_, v) in full) / len(full)
+    for rank, (tier, (x, v)) in enumerate(full):
+        y = mid + ((len(full) - 1) / 2 - rank) * 0.36
+        ax.plot([x + 0.02, x + 0.075], [v, y], color=FAINT, lw=0.8, zorder=1)
+        ax.text(x + 0.085, y, TIER_LABEL[tier], fontsize=SMALL, color=MUTE,
+                va="center")
+    for tier, (x, v) in endlab:
+        if x != 2:
+            low = min(a[1] / a[0] for t in TIER_ORDER
+                      for a in [d.age_svc[t][ages[x]]] if a[0])
+            ax.text(x, low - 0.42, f"{TIER_LABEL[tier]} (none 3+ years old)",
+                    fontsize=SMALL, color=MUTE, va="center", ha="center")
+    ax.annotate("a service written in the last year has the same missing\n"
+                "hardening as one written three or more years ago",
+                xy=(0.5, allrow[0] - 0.08), xytext=(0.2, 3.35), fontsize=BODY,
                 color=INK, arrowprops=dict(arrowstyle="-", color=MUTE, lw=1,
                                            connectionstyle="arc3,rad=-0.16"))
-    ax.set_xlim(-0.15, 2.45)
-    ax.set_ylim(0, 7.4)
+    ax.set_xlim(-0.15, 2.62)
+    ax.set_ylim(0, 7.9)
     ax.set_xticks(range(3),
-                  ["written in the last year", "1–3 years ago", "3+ years ago"],
+                  ["written in the last year", "1 to 3 years ago", "3+ years ago"],
                   fontsize=BODY)
     ax.set_yticks([0, 2, 4, 6])
     ax.yaxis.grid(True, color=GRID, lw=0.9)
     ax.set_axisbelow(True)
     ax.tick_params(length=0)
-    ax.text(-0.15, 7.05, "security findings per service — "
-                         "grey: individual tiers · red: all files",
+    ax.text(-0.15, 7.6, "security findings per service · "
+                         "grey: each group of files · red: all files",
             fontsize=SMALL, color=MUTE)
-    _masthead(fig, "Four years of Compose files. Zero improvement.",
-              "Files written last year miss hardening at the same per-service rate "
-              "as files written years ago — in every tier")
+    _masthead(fig, "Compose hardening is not improving over time",
+              "Files written in the last year miss hardening at the same rate per "
+              "service as files written years ago")
     _footer(fig, d, "y-axis starts at zero · replicated on files fetched after "
                     "the claim was first made")
     return fig, "not-improving"
@@ -276,7 +294,7 @@ def chart_not_improving(d: Data) -> tuple[plt.Figure, str]:
 def chart_bigger_not_sloppier(d: Data) -> tuple[plt.Figure, str]:
     order = sorted(TIER_ORDER, key=lambda t: -d.per_file(t))
     fig = plt.figure(figsize=FIGSIZE)
-    axL = fig.add_axes((0.115, 0.135, 0.46, 0.50))
+    axL = fig.add_axes((0.175, 0.135, 0.42, 0.50))
     axR = fig.add_axes((0.685, 0.135, 0.27, 0.50))
     ys = list(range(len(order)))[::-1]
     hero = order[0]
@@ -285,7 +303,8 @@ def chart_bigger_not_sloppier(d: Data) -> tuple[plt.Figure, str]:
         axL.barh(y, d.per_file(t), color=c, height=0.56)
         axL.text(d.per_file(t) + 0.35, y, f"{d.per_file(t):.1f}", va="center",
                  fontsize=BODY, fontweight="bold", color=c if t == hero else INK)
-        axL.text(-0.5, y, t, va="center", ha="right", fontsize=BODY, color=INK)
+        axL.text(-0.5, y, TIER_LABEL[t], va="center", ha="right", fontsize=BODY,
+                 color=INK)
         axR.barh(y, d.per_svc(t), color=BLUE, height=0.56)
         axR.text(d.per_svc(t) + 0.18, y, f"{d.per_svc(t):.1f}", va="center",
                  fontsize=BODY, fontweight="bold", color=INK)
@@ -300,16 +319,18 @@ def chart_bigger_not_sloppier(d: Data) -> tuple[plt.Figure, str]:
         ax.spines.bottom.set_visible(False)
     axR.axvspan(lo, hi, color=BLUE, alpha=0.10)
     axL.text(0, 5.35, "findings per FILE", fontsize=BODY, fontweight="bold", color=INK)
-    axL.text(0, 4.88, f"{hero} files average {d.svc_per_file(hero):.1f} services "
-                      "— twice the templates", fontsize=SMALL, color=RED)
+    axL.text(0, 4.88, f"{TIER_LABEL[hero]} average {d.svc_per_file(hero):.1f} services "
+                      "per file, about twice the templates", fontsize=SMALL,
+             color=RED)
     axR.text(0, 5.35, "findings per SERVICE", fontsize=BODY,
              fontweight="bold", color=INK)
-    axR.text(0, 4.88, f"every tier lands in {lo:.1f}–{hi:.1f}",
+    axR.text(0, 4.88, f"every group lands in {lo:.1f} to {hi:.1f}",
              fontsize=SMALL, color=BLUE)
-    _masthead(fig, "Bigger, not sloppier",
-              "Popular projects' files carry twice the findings of templates — but "
-              "per service, every tier misses hardening at the same rate")
-    _footer(fig, d, "parsed files, prevalence tiers")
+    _masthead(fig, "Popular projects' files are bigger, with the same findings "
+                   "per service",
+              "A file with more services has more findings. Per service, every "
+              "group of files misses hardening at the same rate")
+    _footer(fig, d, "linted files in the five compared groups")
     return fig, "bigger-not-sloppier"
 
 
@@ -336,24 +357,24 @@ def chart_file_severity(d: Data) -> tuple[plt.Figure, str]:
     tx = 0.60
     fig.text(tx, 0.640, f"{crit} in 100 files", fontsize=19, fontweight="bold",
              color=RED, fontfamily="Inter Display")
-    fig.text(tx, 0.556, "carries a CRITICAL finding — a mounted control\n"
+    fig.text(tx, 0.556, "carries a CRITICAL finding: a mounted control\n"
                         "socket, privileged mode, a root-equivalent path",
              fontsize=BODY, color=INK)
     fig.text(tx, 0.462, f"another {high} in 100", fontsize=19, fontweight="bold",
              color=ORANGE, fontfamily="Inter Display")
-    fig.text(tx, 0.378, "top out at HIGH — most often a literal\n"
+    fig.text(tx, 0.378, "top out at HIGH, most often a literal\n"
                         "credential in the environment",
              fontsize=BODY, color=INK)
     fig.text(tx, 0.284, f"{med} in 100", fontsize=19, fontweight="bold",
              color=SANDTEXT, fontfamily="Inter Display")
-    fig.text(tx, 0.200, "carry only MEDIUM or LOW findings —\n"
+    fig.text(tx, 0.200, "carry only MEDIUM or LOW findings:\n"
                         "the missing hardening flags",
              fontsize=BODY, color=INK)
     fig.text(tx, 0.125,
-             f"fewer than 1 in 100 is clean — {d.worst['clean']} files of {n:,}",
+             f"fewer than 1 in 100 is clean: {d.worst['clean']} files of {n:,}",
              fontsize=SMALL, color=MUTE)
     _masthead(fig, "What a Compose file is carrying",
-              f"Each square is 1 in 100 of the {n:,} parsed real-world files, "
+              f"Each square is 1 in 100 of the {n:,} linted files, "
               "colored by the worst finding in the file")
     _footer(fig, d)
     return fig, "file-severity"
@@ -375,20 +396,23 @@ def chart_overlay_credentials(d: Data) -> tuple[plt.Figure, str]:
         ax.text(-0.7, y, f"*.{v}.*", va="center", ha="right", fontsize=BODY,
                 color=INK, fontfamily="JetBrains Mono")
     ax.axvline(base, color=INK, lw=1.3, ls=(0, (4, 3)))
-    ax.text(base + 0.6, len(rows) - 0.38, f"ordinary compose files: {base:.1f}%",
+    ax.text(base + 0.6, len(rows) - 0.38, f"main Compose files: {base:.1f}%",
             fontsize=SMALL, color=INK)
     ax.set_xlim(0, 44)
     ax.set_yticks([])
     ax.set_xticks([])
     ax.spines.bottom.set_visible(False)
     ax.text(0, len(rows) + 0.35,
-            "share of overlay files with a literal credential (CL-0020/21)",
+            "share of overlay files with a literal credential, by filename",
             fontsize=SMALL, color=MUTE)
-    _masthead(fig, '"It\'s just dev" is a measurable habit',
-              "Dev and local overlay files hardcode credentials at 1.7× the ordinary "
-              "rate — and prod overlays are no better than baseline")
-    _footer(fig, d, f"{sum(c[1] for c in d.cred_by_variant.values()):,} parsed "
-                    "overlay files, by filename variant")
+    by_variant = dict(rows)
+    top = max(by_variant[v] for v in ("local", "dev"))
+    prod = max(by_variant[v] for v in ("prod", "production", "override"))
+    _masthead(fig, "Local and dev overlay files hardcode more credentials",
+              f"Up to {top / base:.1f} times the rate of main Compose files. "
+              f"Production overlays are at {prod:.0f}% or lower")
+    _footer(fig, d, f"{sum(c[1] for c in d.cred_by_variant.values()):,} linted "
+                    "overlay files · rules CL-0020 and CL-0021")
     return fig, "overlay-credentials"
 
 
@@ -396,16 +420,16 @@ def chart_overlay_credentials(d: Data) -> tuple[plt.Figure, str]:
 # groups in docs/state-of-compose.md §Top findings; short names are the
 # chart-facing phrasings of the rule titles.
 TOP_GROUPS = [
-    ("THE HARDENING NOBODY FLIPS",
+    ("HARDENING FLAGS LEFT UNSET",
      [("CL-0007", "read-only filesystem not set"),
       ("CL-0006", "no capability restrictions"),
       ("CL-0026", "no resource limits"),
       ("CL-0003", "privilege escalation not blocked")]),
-    ("SUPPLY-CHAIN SHORTCUTS",
+    ("NETWORK AND SUPPLY-CHAIN SHORTCUTS",
      [("CL-0005", "ports published on 0.0.0.0"),
       ("CL-0019", "image not pinned to a digest"),
       ("CL-0004", "image tag unpinned or :latest")]),
-    ("THE ACUTE CLIFF",
+    ("ACUTE PRIVILEGE GRANTS",
      [("CL-0020", "literal credential in environment"),
       ("CL-0001", "host control socket mounted"),
       ("CL-0021", "credential in connection string")]),
@@ -442,16 +466,16 @@ def chart_top_findings(d: Data) -> tuple[plt.Figure, str]:
     ax.set_yticks([])
     ax.set_xticks([])
     ax.spines.bottom.set_visible(False)
-    _masthead(fig, "Ten findings are 98% of the problem",
-              "Share of parsed files affected — sand: missing defaults (MEDIUM/LOW) "
-              "· orange: HIGH · red: CRITICAL")
+    _masthead(fig, "Ten rules account for 98% of all findings",
+              "Share of linted files with each finding. Orange is rated HIGH "
+              "and red is CRITICAL")
     _footer(fig, d)
     return fig, "top-findings"
 
 
 def chart_never_linted(d: Data) -> tuple[plt.Figure, str]:
     fig = plt.figure(figsize=FIGSIZE)
-    ax = fig.add_axes((0.135, 0.155, 0.82, 0.56))
+    ax = fig.add_axes((0.185, 0.155, 0.77, 0.56))
     ys = list(range(len(TIER_ORDER)))[::-1]
     tot_bad = tot_all = 0
     for y, t in zip(ys, TIER_ORDER, strict=False):
@@ -462,14 +486,16 @@ def chart_never_linted(d: Data) -> tuple[plt.Figure, str]:
         tot_all += b["total"]
         ax.barh(y, s, color=BLUE, height=0.58)
         ax.barh(y, p, left=s, color=ORANGE, height=0.58)
-        lab = (f"{b['skipped']} relics + {b['parse_errors']} broken  ({s + p:.0f}%)"
-               if b["skipped"] + b["parse_errors"] else "0 — every file linted")
+        lab = (f"{b['skipped']} skipped + {b['parse_errors']} parse errors  "
+               f"({s + p:.0f}%)"
+               if b["skipped"] + b["parse_errors"] else "0 · every file linted")
         ax.text(s + p + 0.35, y, lab, va="center", fontsize=BODY, color=INK)
-        ax.text(-0.35, y, t, va="center", ha="right", fontsize=BODY, color=INK)
-    ax.annotate("Compose v1 relics & fragments —\nlinted nothing, exited \"clean\"",
+        ax.text(-0.35, y, TIER_LABEL[t], va="center", ha="right", fontsize=BODY,
+                color=INK)
+    ax.annotate("skipped: old Compose v1 files and\nfragments, with nothing to lint",
                 xy=(10.8, 3.72), xytext=(13.2, 2.85), fontsize=SMALL, color=BLUE,
                 arrowprops=dict(arrowstyle="-", color=BLUE, lw=1))
-    ax.annotate("failed to parse", xy=(12.0, 0.38), xytext=(16.4, 1.05),
+    ax.annotate("not valid Compose", xy=(12.0, 0.38), xytext=(16.4, 1.05),
                 fontsize=SMALL, color=ORANGE,
                 arrowprops=dict(arrowstyle="-", color=ORANGE, lw=1))
     ax.set_xlim(0, 33)
@@ -477,11 +503,12 @@ def chart_never_linted(d: Data) -> tuple[plt.Figure, str]:
     ax.set_xticks([])
     ax.spines.bottom.set_visible(False)
     share = 100 * tot_bad / tot_all
-    _masthead(fig, "The files that never got linted",
-              f"{share:.0f}% of real-world files produced no lint result: obsolete "
-              "Compose v1 layouts that pass silently, fragments, and files that "
-              "fail to parse")
-    _footer(fig, d, f"{tot_bad:,} of {tot_all:,} prevalence-tier files ({share:.1f}%)")
+    n_in = round(100 / share)
+    _masthead(fig, f"One in {NUMBER_WORD.get(n_in, str(n_in))} files was never linted",
+              "Old Compose v1 files and fragments are skipped, and some files are "
+              "not valid Compose. None of them counts as clean")
+    _footer(fig, d, f"{tot_bad:,} of {tot_all:,} files in the five compared groups "
+                    f"({share:.1f}%)")
     return fig, "never-linted"
 
 
@@ -490,6 +517,7 @@ def chart_cover(d: Data) -> tuple[plt.Figure, str]:
     bg, fg, mute, blue = "#0f172a", "#e2e8f0", "#94a3b8", "#3b82f6"
     triple = [("CL-0007", "read-only filesystem"),
               ("CL-0006", "drop capabilities"),
+              ("CL-0026", "resource limits"),
               ("CL-0003", "no-new-privileges")]
     files_per_rule: Counter[str] = Counter()
     for t in TIER_ORDER:
@@ -503,7 +531,7 @@ def chart_cover(d: Data) -> tuple[plt.Figure, str]:
     fig.text(0.055, 0.50,
              f"An empirical scan of {d.corpus_total:,} public Compose files",
              fontsize=13.5, color=mute, va="top")
-    fig.text(0.055, 0.36, "9 in 10 files skip all three of the\nbasic hardening flags.",
+    fig.text(0.055, 0.36, "More than 9 in 10 files skip the\nbasic hardening flags.",
              fontsize=14, color=fg, va="top", linespacing=1.4)
     fig.text(0.055, 0.085, "compose-lint   ·   OWASP / CIS-grounded   ·   MIT",
              fontsize=10.5, color=mute, va="bottom")
