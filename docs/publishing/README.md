@@ -39,11 +39,9 @@ a broken image there. A PNG is served as `image/png` and renders. The article
 links the PNGs in `assets/` by their raw GitHub URL, so nothing is uploaded by
 hand once they are on `main`.
 
-Because the articles link the files on `main`, replacing a PNG changes the
-live article as soon as the change merges. `top-findings.png` has kept its
-name since the first edition for that reason. `findings-by-tier.png`,
-`parse-error-rate.png` and `severity-distribution.png` are first-edition
-charts. Delete them only after no live article links them.
+dev.to copies each image to its own storage when an article is saved. A live
+article keeps the charts it was saved with, and replacing a PNG on `main` does
+not change it until the article is saved again.
 
 ## Regenerating the charts
 
