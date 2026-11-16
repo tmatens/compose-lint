@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The docs say that the GitHub Action trusts the job it runs in.** The
+  action's steps run in the calling job with that job's environment (`PATH`,
+  `HOME`, Python and pip settings, values earlier steps wrote to
+  `GITHUB_ENV`), so a step that runs untrusted code before the action can
+  change what it installs and runs. This was always so and is now stated in
+  the [action reference](docs/github-action.md#the-action-trusts-the-job-it-runs-in)
+  and in the security expectations. The action is unchanged. No advisory:
+  it needs code already running in the job, which the workflow's author
+  controls.
+
 ## [1.6.0] - 2026-11-14
 
 ### Added
