@@ -37,6 +37,8 @@ observe and are listed as intentionally out of scope.
 
 from __future__ import annotations
 
+import base64
+import json
 import os
 import re
 import shutil
@@ -1042,17 +1044,145 @@ def _cl0001_ro_socket() -> tuple[bool, str]:
     return ("200 OK" in out), f"ro-mounted socket answered: {out!r}"
 
 
+def _cl0001_nonroot_socket() -> tuple[bool | None, str]:
+    """A non-root uid reaches the mounted socket only through its group.
+
+    The socket keeps its host ownership and mode inside the container
+    (``root:docker``, 660, at Docker's defaults), so a service running as a uid
+    outside that group cannot open it, and adding the group is what turns the
+    mount into a working API endpoint. This is the scoping assumption CL-0001
+    and CL-0031 state: the Direct precondition holds for root, which is what a
+    service is unless the file or the image says otherwise, and for any uid
+    given the socket's group.
+
+    Not measurable where the socket's group is root, since every non-root uid
+    is then refused whatever its groups.
+    """
+    mount = ["-v", "/var/run/docker.sock:/var/run/docker.sock"]
+    _, gid = _run(
+        mount,
+        ["python", "-c", "import os;print(os.stat('/var/run/docker.sock').st_gid)"],
+        image=PY_IMAGE,
+    )
+    if not gid.isdigit() or gid == "0":
+        return None, f"socket group is {gid!r}: no non-root group to grant"
+    probe = (
+        "import socket\n"
+        "s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)\n"
+        "try:\n"
+        "    s.connect('/var/run/docker.sock')\n"
+        "    s.sendall(b'GET /_ping HTTP/1.1\\r\\nHost: docker\\r\\n\\r\\n')\n"
+        "    print(s.recv(64).split(b'\\r\\n')[0].decode())\n"
+        "except PermissionError:\n"
+        "    print('REFUSED')\n"
+    )
+    _, outside = _run(
+        [*mount, "--user", "65534:65534"], ["python", "-c", probe], image=PY_IMAGE
+    )
+    _, inside = _run(
+        [*mount, "--user", "65534:65534", "--group-add", gid],
+        ["python", "-c", probe],
+        image=PY_IMAGE,
+    )
+    return (
+        outside == "REFUSED" and "200 OK" in inside,
+        f"uid 65534 outside the socket group: {outside!r}; "
+        f"with the group added: {inside!r}",
+    )
+
+
+# A registry no one can log in to (RFC 2606 reserves .invalid), so the fixture
+# login below can never be a real one, whatever a reader makes of its bytes.
+_FIXTURE_REGISTRY = "registry.example.invalid"
+
+
+def _host_docker_config_dir() -> Path:
+    """The directory the docker CLI reads its config from on this host."""
+    return Path(os.environ.get("DOCKER_CONFIG") or Path.home() / ".docker")
+
+
+def _host_registry_logins() -> str:
+    """Name the registries the deploying user's Docker config holds logins for.
+
+    Printed once per run, as a note. ``use_api_socket`` copies those logins
+    into the service, so a reader of this log should be able to see that the
+    host had some and that the CL-0031 check ran on a fixture config instead.
+    Registry names only: the file's values are never read out.
+    """
+    path = _host_docker_config_dir() / "config.json"
+    try:
+        config = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return "no readable Docker config"
+    if not isinstance(config, dict):
+        return "no readable Docker config"
+    hosts: set[str] = set()
+    for key in ("auths", "credHelpers"):
+        entries = config.get(key)
+        if isinstance(entries, dict):
+            hosts.update(str(name) for name in entries)
+    store = config.get("credsStore")
+    parts = [f"{len(hosts)} registry entries"]
+    if hosts:
+        parts.append(", ".join(sorted(hosts)))
+    if isinstance(store, str) and store:
+        parts.append(f"credential store {store!r} (its entries are not listed)")
+    return "; ".join(parts)
+
+
+def _fixture_docker_config(target: Path, *, login: bool) -> dict[str, str]:
+    """Build a throwaway Docker config and return the env that selects it.
+
+    Compose resolves what ``use_api_socket`` copies from the config the *host*
+    ``DOCKER_CONFIG`` names. Pointing it at a fixture makes the check the same
+    on every host, with or without logins, and means the host user's real
+    logins are never the thing copied into a probe. The fixture login is
+    built here rather than written as a literal so no credential-shaped string
+    sits in the repository.
+
+    The docker CLI also looks for plugins and contexts under that directory,
+    so both are linked in from the real one and the current context is carried
+    over. Nothing else is read from the real config.
+    """
+    target.mkdir()
+    real = _host_docker_config_dir()
+    config: dict[str, object] = {}
+    try:
+        current = json.loads((real / "config.json").read_text()).get("currentContext")
+    except (OSError, ValueError, AttributeError):
+        current = None
+    if isinstance(current, str):
+        config["currentContext"] = current
+    for name in ("cli-plugins", "contexts"):
+        if (real / name).is_dir():
+            (target / name).symlink_to(real / name)
+    if login:
+        token = base64.b64encode(b"fixture-user:fixture-not-a-secret").decode()
+        config["auths"] = {_FIXTURE_REGISTRY: {"auth": token}}
+    (target / "config.json").write_text(json.dumps(config))
+    return {**os.environ, "DOCKER_CONFIG": str(target)}
+
+
 def _cl0031_api_socket() -> tuple[bool | None, str]:
-    """``use_api_socket: true`` mounts the socket rw and places the user's logins.
+    """``use_api_socket: true`` mounts the socket rw and copies the user's logins.
 
     Compose (not the daemon) implements the key, so this drives ``docker
-    compose`` like the secrets-route check above. Four observations, each the
-    grant CL-0031 describes: the socket is bind-mounted read-write, the daemon
-    answers through it, ``DOCKER_CONFIG`` points the client at the placed
-    config, and ``/run/secrets/docker/config.json`` exists. The probe prints
-    tokens only. It never reads that file, which holds whatever registry
-    logins the host user has, so this check must run before any ``docker
-    login`` in the job, and the file's size and contents stay out of the log.
+    compose`` like the secrets-route check above, under a fixture Docker
+    config (``_fixture_docker_config``) so the logins copied are never real.
+
+    Asserted on every Compose that knows the key, from a root service on a
+    host config holding one login: the socket is bind-mounted read-write, the
+    daemon answers through it, ``DOCKER_CONFIG`` points at the placed config,
+    ``/run/secrets/docker/config.json`` exists, and it names the fixture
+    registry, which is the copy itself.
+
+    Asserted from Compose 5.7.0, which narrowed the copy (docker/compose
+    #14402): the placed file is mode 600; a service that sets its own
+    ``DOCKER_CONFIG`` keeps the socket and receives no file; a host config with
+    no logins places nothing; and a service running as uid 65534, outside the
+    socket's group, can read neither the file nor the socket. On an older
+    Compose those four are reported in the detail and not asserted.
+
     Skipped, not failed, where the compose plugin is absent or predates the
     key (2.37.1).
     """
@@ -1061,29 +1191,71 @@ def _cl0031_api_socket() -> tuple[bool | None, str]:
     )
     if version.returncode:
         return None, "docker compose plugin not available"
-    # No double quotes in the probe: it is embedded through repr() into a
+    # No double quotes in the probes: each is embedded through repr() into a
     # YAML flow sequence, and a string holding both quote kinds comes out
     # single-quoted with backslash escapes YAML does not read.
-    probe = (
-        "grep docker.sock /proc/self/mountinfo | grep -q ' rw,' && echo RW || echo RO; "
+    # `$$`: Compose interpolates `$VAR` in the file against the host env at
+    # parse time; the doubled form reaches the container shell as `$VAR`.
+    live = (
         "docker version --format '{{.Server.Version}}' >/dev/null 2>&1 "
-        "&& echo LIVE || echo DEAD; "
-        # `$$`: Compose interpolates `$VAR` in the file against the host env at
-        # parse time; the doubled form reaches the container shell as `$VAR`.
+        "&& echo LIVE || echo DEAD"
+    )
+    placed = "/run/secrets/docker/config.json"
+    root_probe = (
+        "grep docker.sock /proc/self/mountinfo | grep -q ' rw,' && echo RW || echo RO; "
+        f"{live}; "
         "case $$DOCKER_CONFIG in /run/secrets/docker) echo CFG;; *) echo NOCFG;; esac; "
-        "[ -f /run/secrets/docker/config.json ] && echo FILE || echo NOFILE"
+        f"[ -f {placed} ] && echo FILE || echo NOFILE; "
+        f"grep -q {_FIXTURE_REGISTRY} {placed} 2>/dev/null "
+        "&& echo COPIED || echo NOTCOPIED; "
+        f"echo M$$(stat -c %a {placed} 2>/dev/null || echo none)"
+    )
+    own_probe = f"[ -e {placed} ] && echo FILE || echo NOFILE; {live}"
+    nonroot_probe = (
+        f"cat {placed} >/dev/null 2>&1 && echo READABLE || echo DENIED; {live}"
     )
     compose = (
-        "services:\n  probe:\n    image: docker:cli\n    use_api_socket: true\n"
-        f"    command: ['sh', '-c', {probe!r}]\n"
+        "services:\n"
+        "  probe:\n    image: docker:cli\n    use_api_socket: true\n"
+        f"    command: ['sh', '-c', {root_probe!r}]\n"
+        "  owncfg:\n    image: docker:cli\n    use_api_socket: true\n"
+        "    environment:\n      DOCKER_CONFIG: /nonexistent\n"
+        f"    command: ['sh', '-c', {own_probe!r}]\n"
+        "  nonroot:\n    image: docker:cli\n    use_api_socket: true\n"
+        "    user: '65534:65534'\n"
+        f"    command: ['sh', '-c', {nonroot_probe!r}]\n"
     )
     with tempfile.TemporaryDirectory() as tmp:
         Path(tmp, "compose.yml").write_text(compose)
-        proc = subprocess.run(
-            ["docker", "compose", "-f", f"{tmp}/compose.yml", "run", "--rm", "probe"],
-            capture_output=True,
-            text=True,
-            timeout=180,
+        with_login = _fixture_docker_config(Path(tmp, "login"), login=True)
+        no_login = _fixture_docker_config(Path(tmp, "nologin"), login=False)
+
+        def run(service: str, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                [
+                    "docker",
+                    "compose",
+                    "-f",
+                    f"{tmp}/compose.yml",
+                    "run",
+                    "--rm",
+                    service,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=180,
+                env=env,
+            )
+
+        root = run("probe", with_login)
+        legs = (
+            None
+            if root.returncode and "use_api_socket" in root.stderr
+            else [
+                run("owncfg", with_login),
+                run("nonroot", with_login),
+                run("probe", no_login),
+            ]
         )
         subprocess.run(
             [
@@ -1096,15 +1268,31 @@ def _cl0031_api_socket() -> tuple[bool | None, str]:
             ],
             capture_output=True,
             timeout=60,
+            env=with_login,
         )
-    if proc.returncode and "use_api_socket" in proc.stderr:
+    if legs is None:
         # The loader rejected the key: this Compose predates it.
         return None, f"compose predates use_api_socket: {version.stdout.strip()}"
-    out = proc.stdout.split()
-    ok = out[-4:] == ["RW", "LIVE", "CFG", "FILE"]
+    grant = root.stdout.split()[-6:]
+    own, nonroot, empty = (leg.stdout.split() for leg in legs)
+    ok = grant[:5] == ["RW", "LIVE", "CFG", "FILE", "COPIED"]
+    narrowed = _compose_at_least(5, 7)
+    if narrowed:
+        ok = (
+            ok
+            and grant[5:] == ["M600"]
+            and own[-2:] == ["NOFILE", "LIVE"]
+            and nonroot[-2:] == ["DENIED", "DEAD"]
+            and empty[-6:-2] == ["RW", "LIVE", "NOCFG", "NOFILE"]
+        )
     return (
         ok,
-        f"use_api_socket: {' '.join(out[-4:]) or proc.stderr.strip()[:120]!r}",
+        f"use_api_socket, root with one fixture login: "
+        f"{' '.join(grant) or root.stderr.strip()[:120]!r}; "
+        f"own DOCKER_CONFIG: {' '.join(own[-2:])!r}; "
+        f"uid 65534: {' '.join(nonroot[-2:])!r}; "
+        f"no logins: {' '.join(empty[-6:-2])!r}"
+        + ("" if narrowed else " (pre-5.7.0 Compose: last three not asserted)"),
     )
 
 
@@ -2124,8 +2312,13 @@ CHECKS: list[tuple[str, str, Callable[[], tuple[bool | None, str]]]] = [
         _cl0001_secret_socket,
     ),
     (
+        "CL-0001",
+        "premise: a non-root uid reaches the socket only through its group",
+        _cl0001_nonroot_socket,
+    ),
+    (
         "CL-0031",
-        "premise: use_api_socket mounts the socket rw and places the user's logins",
+        "premise: use_api_socket mounts the socket rw and copies the user's logins",
         _cl0031_api_socket,
     ),
     (
@@ -2232,6 +2425,10 @@ def main() -> int:
         )
     else:
         print(f"  [PASS] posture  daemon is at Docker defaults — {opts}")
+    print(
+        f"  [NOTE] logins   host Docker config: {_host_registry_logins()}. "
+        "CL-0031 runs on a fixture config and copies none of them."
+    )
 
     failures = []
     skipped = []
