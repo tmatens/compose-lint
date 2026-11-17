@@ -139,6 +139,15 @@ following a policy it should not have (P6).
    only the latest minor release receives security fixes. Pin to a
    recent version and bump on a regular cadence.
 
+8. **The GitHub Action does not isolate itself from the job that calls
+   it.** Its steps run in your job with that job's environment: `PATH`,
+   `HOME`, Python and pip settings, and whatever earlier steps wrote to
+   `GITHUB_ENV` or `GITHUB_PATH`. A step that runs untrusted code before
+   the action can change what the action installs and runs. The security
+   properties above cover content compose-lint reads, not code already
+   running in the same job. See
+   [The action trusts the job it runs in](github-action.md#the-action-trusts-the-job-it-runs-in).
+
 ## When you should NOT rely on compose-lint alone
 
 - **Defense-in-depth missing.** If compose-lint is the only static

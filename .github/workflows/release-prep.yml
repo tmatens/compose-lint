@@ -126,7 +126,7 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
         run: |
-          python - <<'PY'
+          python -P - <<'PY'
           import os, pathlib, re, sys
 
           version = os.environ["VERSION"]

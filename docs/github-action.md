@@ -103,6 +103,24 @@ keeps a compromised dependency in this job from reaching anything else.
 
 Drop `security-events: write` if you are not uploading SARIF.
 
+## The action trusts the job it runs in
+
+The action is a composite action: its steps run in your job, as the same
+user, with the environment your job gives them. It installs compose-lint
+with the job's `pip` and runs it with the job's `PATH`, `HOME`, Python and
+pip settings, and anything an earlier step wrote to `GITHUB_ENV` or
+`GITHUB_PATH`. That is what lets it work behind a proxy or a private package
+index, and it means the action does not defend itself against the steps that
+ran before it. A step that runs code from a pull request (a build, a test
+run, an install script) can change what every later step in that job does,
+this action included.
+
+The files of a pull request are a different matter: reading them is what the
+action is for, and the
+[security properties](SECURITY-EXPECTATIONS.md#security-properties) cover
+them. If a workflow also runs a pull request's code, put that in a separate
+job from the one that runs compose-lint.
+
 ## Problem matchers still read the output
 
 compose-lint's output quotes text from the files it grades, so the action

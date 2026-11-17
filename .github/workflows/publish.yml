@@ -333,7 +333,7 @@ jobs:
         env:
           VERSION: ${{ github.ref_name }}
         run: |
-          python - <<'PY'
+          python -P - <<'PY'
           import json, os, sys, time, urllib.error, urllib.request
 
           version = os.environ["VERSION"].lstrip("v")
