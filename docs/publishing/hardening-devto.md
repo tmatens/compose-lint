@@ -310,7 +310,7 @@ The right fix depends on why the socket is there. In order of preference:
 
 A proxy still holds the real socket, so it has to be at least as hardened as anything else in the stack. Its own CL-0001 finding is suppressed for that one service with the reason written down, which keeps the rule active for everything else. If its allowlist includes the inspect endpoint, `containers/<id>/json`, the consumer can read each container's environment, and that is the case step 1 is about.
 
-There's also a newer key that grants the socket without a `volumes:` line. `use_api_socket: true` (Compose 2.37.1 and later) bind-mounts the socket read-write and also copies the registry logins of whoever runs `docker compose up` into the container. The same four answers apply. The [CL-0031](https://tmatens.github.io/compose-lint/rules/CL-0031/) page covers the credential half.
+There's also a newer key that grants the socket without a `volumes:` line. `use_api_socket: true` (Compose 2.37.1 and later) bind-mounts the socket read-write and also copies the registry logins of whoever runs `docker compose up` into the container. The same four answers apply. From Compose 5.7.0, a service that sets its own `DOCKER_CONFIG` doesn't get the logins, but the socket is still mounted (tested on 5.7.0 and 5.7.1). The [CL-0031](https://tmatens.github.io/compose-lint/rules/CL-0031/) page covers the credential half.
 
 Rules: [CL-0001](https://tmatens.github.io/compose-lint/rules/CL-0001/), [CL-0031](https://tmatens.github.io/compose-lint/rules/CL-0031/).
 
