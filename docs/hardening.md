@@ -461,9 +461,11 @@ well, so the service can push and pull as that person.
 
 Engine-management
 tools such as Docker's MCP gateway ask for it. The same four answers apply,
-with one more consideration for the credential half: it can only be narrowed
-on the host, by running the stack from a deploy identity whose Docker config
-holds no logins the stack does not need.
+with one more consideration for the credential half. On any Compose it can
+be narrowed on the host, by running the stack from a deploy identity whose
+Docker config holds no logins the stack does not need. From Compose 5.7.0 a
+service that sets its own `DOCKER_CONFIG` receives no logins at all; the
+socket is still mounted.
 
 Rules: [CL-0001](rules/CL-0001.md), [CL-0031](rules/CL-0031.md).
 

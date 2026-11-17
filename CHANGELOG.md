@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The CL-0031 page describes `use_api_socket` as Compose 5.7.0 makes it.**
+  Compose 5.7.0 narrowed the credential copy: nothing is copied when the
+  deploying user holds no logins, the placed file is mode 600 and no longer
+  readable by every uid, and a service that sets its own `DOCKER_CONFIG`
+  keeps the socket and receives no file. The page said the opposite on each
+  point, from measurements on Compose 5.0.0. It now gives both behaviours,
+  with the version each was measured on, and shows the service-level
+  `DOCKER_CONFIG` line as a way to drop the credential half on 5.7.0 and
+  later. The rule, its severity and what it fires on are unchanged: the
+  socket is still mounted read-write, and a service that reaches the daemon
+  reads the file through it whatever its mode.
+- **CL-0001 and CL-0031 state the non-root case as a scoping assumption.**
+  A service running as a non-root uid outside the socket's group cannot open
+  the mounted socket. Both rules still fire on it, because the score does
+  not branch on `user:` or on the uid an image sets. A new premise check
+  measures it on every CI run.
+- **The CL-0031 premise check runs on a fixture Docker config.** It used to
+  depend on whether the host user had registry logins, and on a host that
+  had some it copied them into the probe container. It now points Compose at
+  a throwaway config with one login for a registry that does not exist, so
+  the result is the same on every host and CI proves the copy itself, the
+  file mode, and the two cases where Compose 5.7.0 copies nothing.
+
 ### Security
 
 - **The docs say that the GitHub Action trusts the job it runs in.** The
