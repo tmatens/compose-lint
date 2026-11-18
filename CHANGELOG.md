@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-11-18
+
 ### Changed
 
 - **The CL-0031 page describes `use_api_socket` as Compose 5.7.0 makes it.**
@@ -5112,7 +5114,8 @@ First public release.
   inputs through `env:` rather than direct `${{ }}` interpolation to prevent
   shell injection.
 
-[Unreleased]: https://github.com/tmatens/compose-lint/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/tmatens/compose-lint/compare/v1.6.1...HEAD
+[1.6.1]: https://github.com/tmatens/compose-lint/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/tmatens/compose-lint/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/tmatens/compose-lint/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/tmatens/compose-lint/compare/v1.4.0...v1.4.1
