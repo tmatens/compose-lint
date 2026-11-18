@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a throwaway config with one login for a registry that does not exist, so
   the result is the same on every host and CI proves the copy itself, the
   file mode, and the two cases where Compose 5.7.0 copies nothing.
+- **The published image moves to a newer distroless base.**
+  `gcr.io/distroless/python3-debian13:nonroot` is repinned from
+  `sha256:c3ed2b61…` to `sha256:6c4cb3bf…`, picking up the base image's own
+  updates.
 
 ### Security
 
