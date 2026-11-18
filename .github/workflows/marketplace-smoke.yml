@@ -61,7 +61,7 @@ permissions: {}
 # bump-marketplace-smoke-pin seds this literal line, which does not care
 # where in the file it lives.
 env:
-  CL_RELEASE_TAG: v1.6.0
+  CL_RELEASE_TAG: v1.6.1
 
 jobs:
   # This workflow's whole point is to run moments after a publish — the
@@ -123,7 +123,7 @@ jobs:
           persist-credentials: false
 
       - name: Clean fixture should pass
-        uses: tmatens/compose-lint@ad1d18f46b594e89658acc08fbc73e04011829d9 # v1.6.0
+        uses: tmatens/compose-lint@a6689c40dc419086077e6ca7d001302c818f0b33 # v1.6.1
         with:
           files: tests/smoke/clean.yml
           fail-on: high
@@ -131,7 +131,7 @@ jobs:
       - name: Insecure fixture should fail
         id: insecure
         continue-on-error: true
-        uses: tmatens/compose-lint@ad1d18f46b594e89658acc08fbc73e04011829d9 # v1.6.0
+        uses: tmatens/compose-lint@a6689c40dc419086077e6ca7d001302c818f0b33 # v1.6.1
         with:
           files: tests/smoke/insecure.yml
           fail-on: high
