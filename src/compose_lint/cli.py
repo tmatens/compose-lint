@@ -612,11 +612,19 @@ class _Parser(argparse.ArgumentParser):
     the prefix would turn a working invocation into an "ambiguous option"
     error. They also let a path that happens to start like a flag be read as
     one, which is what the ``--`` terminator in the hook and Action guards.
+
+    argparse's own colour is off. From Python 3.14 it styles help and usage
+    with escape sequences on a terminal, and the sanitizer this class routes
+    them through printed each one as a literal ``\\u001b[...m`` (#1317).
     """
+
+    # Declared here because argparse only has the attribute from 3.14.
+    color: bool
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         kwargs.setdefault("allow_abbrev", False)
         super().__init__(*args, **kwargs)
+        self.color = False
 
     def print_usage(self, file: SupportsWrite[str] | None = None) -> None:
         self._emit(self.format_usage(), file)

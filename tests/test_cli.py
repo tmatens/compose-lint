@@ -116,6 +116,20 @@ class TestCLI:
         assert result.returncode == 0
         assert "check" in result.stdout
 
+    @pytest.mark.parametrize(
+        "args",
+        [("--help",), ("check", "--help"), ("fix", "--help"), ("fix", "--foo")],
+    )
+    def test_help_and_usage_carry_no_colour_codes(self, args: tuple[str, ...]) -> None:
+        # #1317: from Python 3.14 argparse colours help and usage itself, and
+        # the sanitizer printed each escape as a literal `\u001b[...m`.
+        # FORCE_COLOR stands in for the terminal that turns the colour on.
+        result = run_cli(*args, env_extra={"FORCE_COLOR": "1", "NO_COLOR": ""})
+        output = result.stdout + result.stderr
+        assert "usage: compose-lint" in output
+        assert "\\u001b" not in output
+        assert "\x1b" not in output
+
     def test_explicit_check_subcommand_lints(self) -> None:
         result = run_cli("check", str(FIXTURES / "insecure_privileged.yml"))
         assert result.returncode == 1

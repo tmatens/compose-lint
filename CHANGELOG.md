@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Help and usage text no longer show escaped colour codes on Python 3.14.**
+  From 3.14, `argparse` colours its help and usage on a terminal.
+  compose-lint sanitizes that text before printing it, so each colour code
+  came out as a literal `\u001b[...m`. `--help` and the usage line above an
+  argument error were affected. Findings were not, and `NO_COLOR=1` avoided
+  it. Help and usage are now plain on every Python version. Reported in
+  [#1218](https://github.com/tmatens/compose-lint/discussions/1218).
+
 ## [1.6.1] - 2026-11-18
 
 ### Changed
