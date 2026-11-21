@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **"What a run reads" says what changes when you lint `docker compose
+  config` output.** The docs recommend it to cover a gap, and did not say
+  that the output leaves out a service behind an inactive profile, or that
+  it holds resolved values which CL-0020 and CL-0021 then report and the
+  text report quotes. The page now covers both, with the `--profile '*'`
+  render that keeps every service
+  ([#1316](https://github.com/tmatens/compose-lint/issues/1316)).
+
 ## [1.7.0] - 2026-11-21
 
 ### Added

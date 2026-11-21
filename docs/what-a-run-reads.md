@@ -222,6 +222,34 @@ the message says which condition it hit, and what to do about it:
   `include:` whose target is missing or that loops, there is no merged output
   to lint. The message says so: correct the reference.
 
+### Linting `docker compose config` output
+
+The rendered output is one document with every reference already followed,
+which is why it covers a gap. It is not the same input as your source files,
+and a lint of it differs in two ways (measured on Compose 5.5.0):
+
+- **A service behind an inactive profile is left out.** `docker compose
+  config` renders only the services Compose would start, so a profiled
+  service and its findings are missing. Render with every profile on:
+
+  ```bash
+  docker compose --profile '*' config > rendered.yaml
+  compose-lint rendered.yaml
+  ```
+
+- **Values are resolved, and the text report quotes them.** Compose fills in
+  each `${VAR}` from the shell and `.env`, and copies `env_file` values in
+  under `environment:`. A credential that was a reference in your source is
+  a literal in the output, so CL-0020 and CL-0021 report it, and the text
+  report prints the line it is on. JSON and SARIF do not print the value.
+  Treat the rendered file and a text report of it as you would the secrets
+  themselves.
+
+Line numbers are those of the rendered file, and `fix` has no source file to
+write to. Where the reason for rendering is several files that make one
+project, name them with `-f` instead
+([Several files as one project](#several-files-as-one-project)).
+
 Either way, `--allow-partial-coverage` accepts the gap and grades what is
 visible.
 
@@ -286,7 +314,8 @@ read.
 - **More than one document in a file**: a `---` line followed by a second
   document. Compose merges the documents, later ones winning; compose-lint
   expects exactly one. Split them into files and lint them together, or lint
-  `docker compose config` output.
+  `docker compose config` output
+  ([what changes when you do](#linting-docker-compose-config-output)).
 - **A bare `=` as a value**: `A: =`. Compose reads it as the string `"="`;
   PyYAML resolves it to a YAML 1.1 type it cannot construct. Quote it:
   `A: "="`.
