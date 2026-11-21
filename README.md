@@ -224,6 +224,10 @@ an `include:`-only root. Compose v1 files (services at the top level, retired
 by Docker in 2023) and structural fragments with no services are skipped with
 a stderr note rather than failed.
 
+Files given on the command line are separate projects. To lint a base file and
+its overlays as the one project `docker compose -f` runs, name them with `-f`:
+`compose-lint -f compose.yaml -f a.yaml`.
+
 Full detail, including the merge order and the flags that switch each source
 off (`--no-merge-overrides`, `--no-env`):
 [What a run reads](https://tmatens.github.io/compose-lint/what-a-run-reads/).

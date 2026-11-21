@@ -11,6 +11,8 @@ The authoritative help is `compose-lint --help` (and `fix --help` /
 compose-lint [check] [OPTIONS] [FILE ...]   Lint files (default; bare invocation works)
 compose-lint fix [OPTIONS] [FILE ...]       Auto-remediate auto-fixable findings
 compose-lint init [OPTIONS] FILE            Generate a starter .compose-lint.yml
+compose-lint [check|fix|init] -f FILE [-f FILE ...]
+                                            Treat the files as one project
 compose-lint --version                      Show version and exit (top level only)
 
 check options:
@@ -25,6 +27,9 @@ check options:
   --allow-partial-coverage     Grade what could be linted when part of the stack
                                could not be (a coverage gap), instead of failing
                                (exit 2)
+  -f, --file FILE              A file of one project, as `docker compose -f` takes
+                               it. Repeat for each file, in merge order. Cannot be
+                               combined with a FILE argument
   --no-merge-overrides         Lint each file alone instead of merging the
                                `compose.override.yml` Compose merges beside it
   --no-env                     Ignore the env files beside the Compose file: the
@@ -48,6 +53,9 @@ check options:
 fix options:
   --apply                      Write fixes in place (default: print a dry-run diff)
   --only CL-XXXX               Restrict fixes to the named rule(s); repeatable
+  -f, --file FILE              A file of one project, as `docker compose -f` takes
+                               it. Repeat for each file, in merge order. Cannot be
+                               combined with a FILE argument
   --no-merge-overrides         Fix each file alone instead of merging the
                                `compose.override.yml` Compose merges beside it
   --no-env                     Ignore the sibling `.env` and every `env_file:`
@@ -61,6 +69,9 @@ init options:
   -o, --output PATH            Where to write the config (default: .compose-lint.yml
                                beside FILE, where check looks for it first)
   --force                      Overwrite an existing config file
+  -f, --file FILE              A file of one project, as `docker compose -f` takes
+                               it. Repeat for each file, in merge order. Takes the
+                               place of FILE
   --no-merge-overrides         Baseline the file alone instead of merging the
                                `compose.override.yml` Compose merges beside it
   --no-env                     Ignore the sibling `.env` and every `env_file:`
@@ -71,6 +82,11 @@ merged, the `.env` consulted for `COMPOSE_FILE`, every `env_file:` read — so
 the suppressions it writes are the findings `check` will report. Baseline
 with the same `--no-merge-overrides` / `--no-env` you gate with, or the two
 disagree.
+
+`-f a.yaml -f b.yaml` names the files of one project, the way
+`docker compose -f` does. They are merged in that order and linted as the one
+configuration Compose runs. Without `-f`, each `FILE` is a project of its own.
+See [Several files as one project](what-a-run-reads.md#several-files-as-one-project).
 
 `--explain CL-XXXX` prints one rule's documentation and exits. It refuses a
 `FILE` argument and `--format json` or `--format sarif` (exit 2): there is

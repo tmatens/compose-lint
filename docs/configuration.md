@@ -67,7 +67,7 @@ rules:
 - **It refuses to overwrite an existing `.compose-lint.yml`** without `--force`, so a generated file can't clobber suppressions you've already triaged.
 - **It grades what `check` grades.** The sibling `compose.override.yml` is merged, the `.env` beside the file is consulted for `COMPOSE_FILE`, and every `env_file:` a service names is read — exactly as `check` does — so the baseline covers the findings the gate will actually see. `--no-merge-overrides` and `--no-env` narrow `init` the same way they narrow `check`; baseline with whichever flags you gate with.
 - **A clean file writes nothing** — `init` reports that there is nothing to suppress and exits 0.
-- Status goes to stderr; `init` takes a single `FILE` (no directory discovery).
+- Status goes to stderr; `init` takes a single `FILE` (no directory discovery), or one project named with `-f`, in which case the config is written beside the first file.
 
 The generated file is a starting point. Replace each `TODO` reason with a real justification (`enabled: false` plus a `reason` is the right shape if a rule is universally inapplicable), or delete entries you intend to fix.
 

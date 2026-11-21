@@ -189,7 +189,9 @@ the repository, or into its `.git` directory, which is never read.
   the project directory, is a symlink out of reach, or is missing refuses the
   whole list.
 - **A Compose file or `compose.override.yml` that is a symlink out of
-  reach**, whether it was discovered or named on the command line.
+  reach**, whether it was discovered or named on the command line. One named
+  with `-f` stops its whole project, so nothing in that project is graded
+  ([ADR-044](adr/044-name-a-project-with-f.md)).
 - **A document that reaches the 20,000-findings limit**: grading stops there.
   The findings graded before the stop are still reported.
 - **A value too long or too deep to interpolate**: one carrying `${...}`
