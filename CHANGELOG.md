@@ -22,6 +22,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Compose 5.5.0 and 5.8.0
   ([ADR-044](docs/adr/044-name-a-project-with-f.md),
   [#1315](https://github.com/tmatens/compose-lint/issues/1315)).
+  Thanks [@mprokopiev](https://github.com/mprokopiev) for the report
+  ([#1218](https://github.com/tmatens/compose-lint/discussions/1218)).
+
+### Changed
+
+- **The CL-0026 page says why `cpu_count` and `cpu_percent` are not CPU
+  limits.** Both apply to Windows containers only. On a Linux daemon Compose
+  accepts them and sets nothing, so a service with `cpu_count: 2` is as
+  unbounded as one with no CPU key (measured on Docker 29.9.3 with Compose
+  5.5.0). The page now says so and points to `cpus`. It also covers
+  `cpu_period` set without `cpu_quota`, and `cpuset`. What the rule flags is
+  unchanged
+  ([#1314](https://github.com/tmatens/compose-lint/issues/1314)).
+  Thanks [@mprokopiev](https://github.com/mprokopiev) for the report
+  ([#1218](https://github.com/tmatens/compose-lint/discussions/1218)).
 
 ### Fixed
 
@@ -30,8 +45,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compose-lint sanitizes that text before printing it, so each colour code
   came out as a literal `\u001b[...m`. `--help` and the usage line above an
   argument error were affected. Findings were not, and `NO_COLOR=1` avoided
-  it. Help and usage are now plain on every Python version. Reported in
-  [#1218](https://github.com/tmatens/compose-lint/discussions/1218).
+  it. Help and usage are now plain on every Python version.
+  Thanks [@mprokopiev](https://github.com/mprokopiev) for the report
+  ([#1218](https://github.com/tmatens/compose-lint/discussions/1218)).
 
 ## [1.6.1] - 2026-11-18
 
