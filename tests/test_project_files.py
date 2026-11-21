@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -339,6 +340,59 @@ class TestCheck:
         )
         location = hit["locations"][0]["physicalLocation"]["artifactLocation"]
         assert location["uri"] == "svc/a.yaml"
+
+    def test_a_service_header_gives_a_line_only_for_the_first_file(
+        self, project: Path
+    ) -> None:
+        """The header's line belongs to the file the report is headed by. A
+        service with a finding written elsewhere gets no line there, because
+        the first line in its group can be another file's."""
+        write(
+            project / "compose.yaml",
+            "services:\n  reverse-proxy:\n    image: traefik:v3\n"
+            "  base-only:\n    image: example/base:1\n",
+        )
+        # The overlay gives reverse-proxy a finding of its own (the port) and
+        # declares service-a, which the base never mentions.
+        write(
+            project / "svc" / "a.yaml",
+            'services:\n  reverse-proxy:\n    ports:\n      - "81:81"\n'
+            "  service-a:\n    image: example/a:1\n",
+        )
+        argv = ["-f", "compose.yaml", "-f", "svc/a.yaml"]
+        text = run_cli(*argv, cwd=project).stdout
+        headers = {
+            line.strip().split("  ")[0]: line.strip()
+            for line in text.splitlines()
+            if line.strip().startswith("service:")
+        }
+        assert headers["service: reverse-proxy"] == "service: reverse-proxy"
+        assert headers["service: service-a"] == "service: service-a"
+
+        # base-only has every finding in the first file, so its header keeps a
+        # line, and it is one of that service's own lines in that file.
+        findings = json.loads(run_cli("--format", "json", *argv, cwd=project).stdout)[
+            "findings"
+        ]
+        base_only = [f for f in findings if f["service"] == "base-only"]
+        assert base_only
+        assert {f["file"] for f in base_only} == {"compose.yaml"}
+        match = re.fullmatch(
+            r"service: base-only  \(line (\d+)\)", headers["service: base-only"]
+        )
+        assert match is not None
+        assert int(match.group(1)) in {f["line"] for f in base_only}
+        # The split service really does have findings in both files.
+        assert {f["file"] for f in findings if f["service"] == "reverse-proxy"} == {
+            "compose.yaml",
+            "svc/a.yaml",
+        }
+
+    def test_a_service_header_keeps_its_line_in_a_single_file(
+        self, project: Path
+    ) -> None:
+        text = run_cli("compose.yaml", cwd=project).stdout
+        assert re.search(r"service: reverse-proxy  \(line \d+\)", text)
 
     def test_the_last_file_wins(self, project: Path) -> None:
         write(project / "on.yaml", PRIVILEGED)

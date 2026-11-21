@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   relative one for the same file. `fix` now uses the same spelling as
   `check`: relative to the working directory, with `/` separators, and
   absolute only for a file outside it.
+- **A service header in the text report no longer gives a line that
+  belongs to another file.** The report is headed by the first file, and
+  each service header gave the line of that service's first finding. When
+  the finding was merged in from an overlay or an `extends:` base, the
+  number was a line of that other file. The header now gives a line only
+  when every finding for the service is written in the first file. Each
+  finding still names its own file and line. JSON, SARIF and single-file
+  text output are unchanged.
 
 ## [1.7.0] - 2026-11-21
 
