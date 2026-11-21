@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **CL-0026's fix text names `cpu_count` or `cpu_percent` when the service
+  sets one.** A service with `cpu_count: 2` was told it had no CPU limit and
+  nothing more. The fix now adds that the key applies to Windows containers
+  only and to use `cpus`. What the rule flags is unchanged, and so is the fix
+  text for a service that sets neither key
+  ([#1314](https://github.com/tmatens/compose-lint/issues/1314)).
+  Thanks [@mprokopiev](https://github.com/mprokopiev) for the report
+  ([#1218](https://github.com/tmatens/compose-lint/discussions/1218)).
 - **The CL-0026 page says why `cpu_count` and `cpu_percent` are not CPU
   limits.** Both apply to Windows containers only. On a Linux daemon Compose
   accepts them and sets nothing, so a service with `cpu_count: 2` is as

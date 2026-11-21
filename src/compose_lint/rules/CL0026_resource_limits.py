@@ -132,6 +132,29 @@ def _is_set(value: Any) -> bool:
     return True
 
 
+# Keys Docker applies to Windows containers only. On a Linux daemon Compose
+# accepts them and sets nothing: `cpu_count: 2` left `cpu.max` at `max 100000`
+# with every host CPU visible (measured on Docker 29.9.3 with Compose 5.5.0).
+_WINDOWS_ONLY_CPU_KEYS = ("cpu_count", "cpu_percent")
+
+# What the fix adds when a service sets one. Whole sentences per case, so no
+# name is formatted into fix text: nothing here comes from the document.
+_WINDOWS_ONLY_NOTES = {
+    ("cpu_count",): (
+        "cpu_count applies to Windows containers only. Compose sets\n"
+        "nothing for it on Linux, so it is not a CPU limit. Use cpus.\n"
+    ),
+    ("cpu_percent",): (
+        "cpu_percent applies to Windows containers only. Compose sets\n"
+        "nothing for it on Linux, so it is not a CPU limit. Use cpus.\n"
+    ),
+    ("cpu_count", "cpu_percent"): (
+        "cpu_count and cpu_percent apply to Windows containers only.\n"
+        "Compose sets nothing for them on Linux, so they are not CPU\n"
+        "limits. Use cpus.\n"
+    ),
+}
+
 # Binary multipliers, as go-units' RAMInBytes scales them (`0.5k` is 512).
 _SCALE = {"": 1, "k": 1 << 10, "m": 1 << 20, "g": 1 << 30, "t": 1 << 40, "p": 1 << 50}
 
@@ -220,6 +243,16 @@ class ResourceLimitsRule(BaseRule):
         else:
             missing = "no CPU limit"
 
+        # The two keys that read like a CPU limit and are not one. Named in
+        # the fix when the service sets one, because the finding otherwise
+        # says "no CPU limit" to someone looking at their `cpu_count: 2`.
+        windows_only = [
+            key
+            for key in _WINDOWS_ONLY_CPU_KEYS
+            if not has_cpu and service_config.get(key) is not None
+        ]
+        windows_note = _WINDOWS_ONLY_NOTES.get(tuple(windows_only), "")
+
         yield Finding(
             rule_id="CL-0026",
             severity=Severity.MEDIUM,
@@ -242,7 +275,8 @@ class ResourceLimitsRule(BaseRule):
                 "Reservations are not limits: mem_reservation and\n"
                 "cpu_shares express priority under contention and leave the\n"
                 "hard ceiling unbounded.\n"
-                "Full guide: compose-lint --explain CL-0026"
-            ),
+            )
+            + windows_note
+            + "Full guide: compose-lint --explain CL-0026",
             references=REFERENCES,
         )
