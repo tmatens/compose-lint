@@ -230,7 +230,7 @@ jobs:
     name: Smoke test the advertised one-shot runners
     needs: pypi-propagated
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: read
     strategy:
@@ -240,11 +240,18 @@ jobs:
         # `uv tool install` are not tested because they are not offered —
         # testing an install method we do not document would assert a
         # contract with nobody on the other end.
+        #
+        # `refresh` is the same form told to skip its own cache. Both runners
+        # keep the environment they built, so re-running `command` after a
+        # stale answer replays that answer without asking PyPI again. Only
+        # the retries below use it; the first attempt is the advertised form.
         include:
           - runner: uvx
             command: uvx compose-lint
+            refresh: uvx --refresh compose-lint
           - runner: pipx
             command: pipx run compose-lint
+            refresh: pipx run --no-cache compose-lint
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -259,19 +266,42 @@ jobs:
       # between releases: a yanked release, or a resolver that starts
       # preferring something older, shows up here as a mismatch rather than
       # as a silent pass on the wrong version.
+      #
+      # pypi-propagated passing does not mean this runner sees the release.
+      # PyPI's CDN caches /simple/ for ten minutes per edge location and per
+      # response encoding, and each job lands on its own runner in its own
+      # region. The gate's curl proves one of those copies; pip here can be
+      # handed another that still ends at the previous release. That happened
+      # on the 1.7.0 run: the gate saw 1.7.0, and eight seconds later pipx
+      # resolved 1.6.1 (#1326). So a mismatch is retried from this runner
+      # until the cached copy has had time to expire. A real mismatch, such
+      # as a yanked release, still fails; it only takes longer to say so.
       - name: Resolves the current release
         env:
           CL_RUN: ${{ matrix.command }}
+          CL_REFRESH: ${{ matrix.refresh }}
         run: |
           set -euo pipefail
           expected="compose-lint ${CL_RELEASE_TAG#v}"
-          actual="$(${CL_RUN} --version)"
-          echo "Expected: ${expected}"
-          echo "Actual:   ${actual}"
-          if [ "${actual}" != "${expected}" ]; then
-            echo "::error::${CL_RUN} resolved '${actual}', expected '${expected}'"
-            exit 1
-          fi
+          # ~11 min in total, past the index's ten-minute cache lifetime.
+          delays=(15 30 60 120 180 240)
+          run="${CL_RUN}"
+          for attempt in 1 2 3 4 5 6 7; do
+            actual="$(${run} --version)"
+            echo "Expected: ${expected}"
+            echo "Actual:   ${actual}"
+            if [ "${actual}" = "${expected}" ]; then
+              exit 0
+            fi
+            if [ "${attempt}" = 7 ]; then
+              echo "::error::${CL_RUN} resolved '${actual}', expected '${expected}', and still did after 7 attempts over ~11 min. That is longer than PyPI's index cache lives, so this is not propagation lag."
+              exit 1
+            fi
+            delay="${delays[attempt-1]}"
+            echo "Attempt ${attempt}: resolved '${actual}'; sleeping ${delay}s in case this runner was served a stale copy of the index..."
+            sleep "${delay}"
+            run="${CL_REFRESH}"
+          done
 
       - name: Clean fixture exits 0
         env:
