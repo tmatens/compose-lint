@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   render that keeps every service
   ([#1316](https://github.com/tmatens/compose-lint/issues/1316)).
 
+### Fixed
+
+- **`fix` names a file reached through `extends:` or `include:` by its
+  relative path.** The "findings come from" line and the list under it
+  printed the absolute path of such a file, while `check` printed the
+  relative one for the same file. `fix` now uses the same spelling as
+  `check`: relative to the working directory, with `/` separators, and
+  absolute only for a file outside it.
+
 ## [1.7.0] - 2026-11-21
 
 ### Added

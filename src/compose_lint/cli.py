@@ -35,6 +35,7 @@ from compose_lint._output import (
     emit_styled,
     sanitize,
 )
+from compose_lint._report_path import report_path
 from compose_lint._safe_read import containment_root, out_of_reach
 from compose_lint._selection import (
     DocumentGroup,
@@ -1825,6 +1826,12 @@ def _line_after_edits(line: int, edits: list[TextEdit]) -> int:
     return line + shift
 
 
+def _origin(finding: Finding) -> str:
+    """The document ``finding`` is written in, as a report names it."""
+    source = getattr(finding.line, "source", None)
+    return report_path(str(source)) if source else ""
+
+
 def _by_hand_entries(
     findings: list[Finding],
     edits: list[TextEdit] | None = None,
@@ -1849,7 +1856,7 @@ def _by_hand_entries(
             line = _line_after_edits(line, edits)
         where = f"line {line}" if line is not None else "line ?"
         if with_source:
-            where = f"{getattr(f.line, 'source', '')} {where}"
+            where = f"{_origin(f)} {where}"
         return (line or 0, f.rule_id, where, _fix_summary(f))
 
     parts: list[tuple[str, str | None]] = []
@@ -2036,7 +2043,10 @@ def _run_fix(args: argparse.Namespace) -> NoReturn:
             # rather than from an overlay merged beside it, and the overlay
             # list is empty in that case — which printed the sentence with a
             # blank where the file should be.
-            origins = sorted({str(getattr(f.line, "source", "")) for f in deferred})
+            # Spelled as `check` spells the same file (#887): an `extends:`
+            # or `include:` document is held by its absolute path, and printing
+            # that put the lint host's directory in the message.
+            origins = sorted({_origin(f) for f in deferred})
             emit_styled(
                 [
                     (f"{filepath}: {len(deferred)} finding(s) come from ", None),

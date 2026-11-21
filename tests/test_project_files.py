@@ -499,6 +499,26 @@ class TestFix:
         assert result.returncode == 0, result.stderr
         assert (project / "compose.yaml").read_text() != before
 
+    def test_other_files_are_named_relative_to_the_working_directory(
+        self, project: Path
+    ) -> None:
+        """A document reached through `extends:` is held by its absolute path,
+        and `fix` printed that path while `check` printed the relative one
+        for the same file."""
+        write(project / "common.yaml", "services:\n  db:\n    image: example/db:1\n")
+        write(
+            project / "compose.yaml",
+            "services:\n  reverse-proxy:\n    image: traefik:v3\n"
+            "  db:\n    extends:\n      file: ./common.yaml\n      service: db\n",
+        )
+        write(project / "svc" / "a.yaml", FIXABLE_OVERLAY)
+        result = run_cli("fix", "-f", "compose.yaml", "-f", "svc/a.yaml", cwd=project)
+        assert result.returncode == 0, result.stderr
+        assert "come from common.yaml, svc/a.yaml; fix by hand there" in result.stderr
+        assert "\n  common.yaml line " in result.stderr
+        assert "\n  svc/a.yaml line " in result.stderr
+        assert str(project) not in result.stderr
+
 
 class TestInit:
     def test_the_baseline_describes_the_merged_project(self, project: Path) -> None:
