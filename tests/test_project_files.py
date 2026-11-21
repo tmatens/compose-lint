@@ -249,7 +249,11 @@ class TestMergeMatchesCompose:
         assert "inc_proj" in services
         assert "inc_other" not in services
         (volume,) = services["web"]["volumes"]
-        assert volume == f"{project / 'proj' / 'data'}:/data"
+        # The engine spells a resolved source in POSIX notation on every
+        # platform, so compare the tail rather than this host's own spelling.
+        source = volume.removesuffix(":/data")
+        assert source.endswith("/proj/data")
+        assert "/other/" not in source
         assert not merged.gaps
 
     @requires_docker
