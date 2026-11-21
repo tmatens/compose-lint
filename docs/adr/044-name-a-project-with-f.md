@@ -105,8 +105,11 @@ or takes from it, so the scope of the run is exactly what was asked for.
 **Where a `-f` run differs from Compose, on purpose:**
 
 - The shell environment is not read (ADR-026 section 3). A `${VAR}` whose
-  value arrives only at deploy time is graded as written. Whether a run
-  should say so is tracked in #1319.
+  value arrives only at deploy time is graded as written. A note for that
+  was considered in #1319 and not built. In the 11,111-file corpus, 2 of the
+  10,324 files that parse leave a whole value a high or critical rule reads
+  to such a variable, apart from a whole bind source, which already gets a
+  note.
 - A file that links outside the repository is refused where Compose follows
   it (ADR-038).
 - A service behind a profile is graded whether or not the profile is active.
