@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`-f FILE` names several files as one project.** `compose-lint -f
+  compose.yaml -f a.yaml` merges the files in that order and lints the one
+  configuration `docker compose -f` runs. Until now each file on the command
+  line was its own project, so an overlay that only added a network to a
+  shared service was graded as a whole service, once per overlay. The flag is
+  on `check`, `fix` and `init`, and cannot be combined with a positional
+  file. A `COMPOSE_FILE` in the sibling `.env` and the `compose.override.yml`
+  beside the first file are not merged, as Compose does not merge them under
+  `-f`. A file that is missing or links outside the repository stops the
+  whole project (exit 2). `fix` edits the first file only. Measured against
+  Compose 5.5.0 and 5.8.0
+  ([ADR-044](docs/adr/044-name-a-project-with-f.md),
+  [#1315](https://github.com/tmatens/compose-lint/issues/1315)).
+
 ### Fixed
 
 - **Help and usage text no longer show escaped colour codes on Python 3.14.**

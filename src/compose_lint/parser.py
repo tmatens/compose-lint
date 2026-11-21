@@ -3024,27 +3024,37 @@ def merge_patched(
     ever changes, the guard belongs here too.
     """
     base_dir = Path(base_path).absolute().parent
-    data, lines, resets, overrides, _ = _loads_full(
-        patched,
-        base_dir=base_dir,
-        merging=True,
-        use_env=use_env,
-        project_dir=containment_root(base_dir),
-        document_path=Path(base_path).absolute(),
-    )
-    candidate = Document(
-        path=str(base_path),
-        data=data,
-        lines=lines,
-        resets=resets,
-        overrides=overrides,
-        sources=_carried_sources(lines),
-    )
+
+    def candidate() -> Document:
+        data, lines, resets, overrides, _ = _loads_full(
+            patched,
+            base_dir=base_dir,
+            merging=True,
+            use_env=use_env,
+            project_dir=containment_root(base_dir),
+            document_path=Path(base_path).absolute(),
+        )
+        return Document(
+            path=str(base_path),
+            data=data,
+            lines=lines,
+            resets=resets,
+            overrides=overrides,
+            sources=_carried_sources(lines),
+        )
+
+    # A `-f` list may name the base again later (`-f a -f b -f a`), and Compose
+    # merges it again. That later copy is the same file the patch rewrites, so
+    # it is the candidate too. Read from disk it would put the unpatched text
+    # back over the fix and every fix to a repeated base would look undone.
+    base_key = os.path.normpath(Path(base_path).absolute())
     merged = merge_documents(
         [
-            candidate,
+            candidate(),
             *(
-                load_document(p, use_env=use_env, project_dir=base_dir)
+                candidate()
+                if os.path.normpath(Path(p).absolute()) == base_key
+                else load_document(p, use_env=use_env, project_dir=base_dir)
                 for p in overlays
             ),
         ]

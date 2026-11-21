@@ -36,7 +36,12 @@ from compose_lint._output import (
     sanitize,
 )
 from compose_lint._safe_read import containment_root, out_of_reach
-from compose_lint._selection import DocumentGroup, Selection, plan_documents
+from compose_lint._selection import (
+    DocumentGroup,
+    MergeReason,
+    Selection,
+    plan_documents,
+)
 from compose_lint._service_env import (
     MACHINE_READABLE,
     describe_unread,
@@ -142,9 +147,21 @@ def _plan(args: argparse.Namespace, files: list[str] | None = None) -> Selection
     ``files`` defaults to ``args.files``; ``init`` passes its single ``FILE``
     so the one document it baselines is planned exactly as ``check`` would
     plan it (ADR-011 amendment).
+
+    ``-f`` names one project and positional paths name one project each, so
+    the two together have no single reading and are refused (ADR-044).
     """
+    positional = args.files if files is None else files
+    project_files = args.project_files or []
+    if project_files and positional:
+        _exit_2_with_envelope(
+            args,
+            "-f/--file names the files of one project, and a FILE argument "
+            "names a project of its own; pass one or the other",
+        )
     selection = plan_documents(
-        args.files if files is None else files,
+        positional,
+        project_files=project_files,
         read_env_files=not args.no_env,
         merge_overrides=not args.no_merge_overrides,
     )
@@ -178,16 +195,19 @@ def _note_env_not_read(selection: Selection) -> None:
         )
 
 
-def _why_merged(overlays: list[str], *, selected_by_env: bool) -> str:
+def _why_merged(overlays: list[str], reason: MergeReason) -> str:
     """The reason a run merged ``overlays``, for the note that announces it.
 
     The reason is not decoration. "Compose merges it automatically" is true
     of a discovered override and false of a COMPOSE_FILE list, and stating the
     wrong one is how the pre-ADR-026 report justified reading a file Compose
-    never loaded.
+    never loaded. A ``-f`` list is the third reason: nothing was found or
+    selected for the user, who named every file.
     """
-    if selected_by_env:
+    if reason is MergeReason.ENV:
         return f"because COMPOSE_FILE in {ENV_FILENAME} selects them"
+    if reason is MergeReason.FLAG:
+        return "because -f names them as one project, in that order"
     return (
         "because Compose merges "
         + ("them" if len(overlays) > 1 else "it")
@@ -297,13 +317,29 @@ def _subcommands() -> set[str]:
 
 
 def _add_document_selection_flags(parser: argparse.ArgumentParser) -> None:
-    """Add the two flags that change *which documents* a command grades.
+    """Add the flags that change *which documents* a command grades.
 
     One definition for ``check``, ``fix`` and ``init``, because the three must
     agree: a baseline written by ``init`` is only useful if it describes the
     document ``check`` grades, so whatever narrows one must narrow the other
     the same way and under the same name.
     """
+    parser.add_argument(
+        "-f",
+        "--file",
+        action="append",
+        dest="project_files",
+        metavar="FILE",
+        default=None,
+        help=(
+            "a file of one project, as 'docker compose -f' takes it; repeat "
+            "for each file, in merge order. The files are merged into the "
+            "first and linted as the one configuration Compose runs. Nothing "
+            "else selects a document: a COMPOSE_FILE in the sibling '.env' "
+            "and the 'compose.override.yml' beside the first file are not "
+            "merged. Cannot be combined with a FILE argument"
+        ),
+    )
     parser.add_argument(
         "--no-merge-overrides",
         action="store_true",
@@ -575,8 +611,10 @@ def _add_init_subparser(
     )
     init.add_argument(
         "file",
+        nargs="?",
+        default=None,
         metavar="FILE",
-        help="Docker Compose file to analyze",
+        help="Docker Compose file to analyze (or name a project with -f)",
     )
     _add_document_selection_flags(init)
     init.add_argument(
@@ -1314,9 +1352,7 @@ def _check(args: argparse.Namespace, read: set[str] | None = None) -> NoReturn:
         if group.overlays
     }
     merge_reason = {
-        group.primary: group.selected_by_env
-        for group in selection.groups
-        if group.overlays
+        group.primary: group.reason for group in selection.groups if group.overlays
     }
 
     # Print branded header in text mode before scanning begins. flush=True here
@@ -1380,9 +1416,7 @@ def _check(args: argparse.Namespace, read: set[str] | None = None) -> NoReturn:
                 # this warns without touching the exit code. What it must never
                 # do is stay silent: the findings below describe a document that
                 # is not the file named in the report.
-                why = _why_merged(
-                    overlays, selected_by_env=bool(merge_reason.get(filepath))
-                )
+                why = _why_merged(overlays, merge_reason[filepath])
                 emit(
                     f"warning: {filepath}: merged {', '.join(overlays)} before "
                     f"linting, {why}. Findings describe the combined "
@@ -2244,11 +2278,16 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
     # A named file is never dropped (ADR-026 §4), so the plan has exactly one
     # group; its primary may differ from FILE when COMPOSE_FILE orders the
     # project differently, in which case the note above says so.
-    selection = _plan(args, [args.file])
+    if args.file is None and not args.project_files:
+        emit("Error: init needs a Compose file: pass FILE, or -f for each file")
+        sys.exit(2)
+    selection = _plan(args, [args.file] if args.file is not None else [])
+    # What the user named, for messages about it: FILE, or the first -f file.
+    named = args.file if args.file is not None else args.project_files[0]
     if not selection.groups:
         # FILE was refused (a link leaving its own directory), so there is
         # nothing to baseline; say why, and exit as `check` would.
-        _exit_2_with_envelope(args, f"{args.file} was not linted", gaps=selection.gaps)
+        _exit_2_with_envelope(args, f"{named} was not linted", gaps=selection.gaps)
     (group,) = selection.groups
     for env_path, message in selection.gaps:
         _report_coverage_gaps(
@@ -2261,7 +2300,7 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
             data, lines, gaps = merged.data, merged.lines, merged.gaps
             env_values = merged.env_values
             overlays = list(group.overlays)
-            why = _why_merged(overlays, selected_by_env=group.selected_by_env)
+            why = _why_merged(overlays, group.reason)
             emit(
                 f"note: {group.primary}: merged {', '.join(overlays)} before "
                 f"linting, {why}. Suppressions describe the combined configuration."
@@ -2274,10 +2313,10 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
         # v1 / fragment file: skipped, not an error (ADR-013). Nothing to lint,
         # so nothing to bootstrap. Must precede the ComposeError clause below —
         # it is a subclass.
-        emit(f"{args.file}: {e}")
+        emit(f"{named}: {e}")
         sys.exit(0)
     except (FileNotFoundError, ComposeError) as e:
-        _report_parse_error(args.file, e)
+        _report_parse_error(named, e)
         sys.exit(2)
 
     # Not the gate (that is `check`), so a gap is reported and not fatal, as
@@ -2316,7 +2355,7 @@ def _run_init(args: argparse.Namespace) -> NoReturn:
         Path(args.output) if args.output is not None else _init_default_output(group)
     )
     if not findings:
-        emit(f"{args.file}: no findings; nothing to suppress, not writing {out_path}")
+        emit(f"{named}: no findings; nothing to suppress, not writing {out_path}")
         sys.exit(0)
 
     if _is_an_input(out_path, group.paths, lines):

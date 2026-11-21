@@ -26,12 +26,23 @@ file lists — pre-commit appends filenames, ``action.yml`` passes
 ``TARGET_FILES`` — so without this rule a contributor could shrink a CI gate by
 committing one file. In bare discovery there is no named file to protect and
 ``COMPOSE_FILE`` replaces discovery exactly as Compose does.
+
+**``-f`` names one project, and wins.** ``-f a.yaml -f b.yaml`` is the first of
+the three paths, so it is planned before either of the others is consulted
+([ADR-044](../../docs/adr/044-name-a-project-with-f.md)). The list is merged in
+the order given and nothing is taken out of it or added to it: a file named
+twice is merged twice, because Compose merges it twice and the result differs
+(measured), a ``COMPOSE_FILE`` in the sibling ``.env`` is not read for
+selection, and the ``compose.override.yml`` beside the first file is not
+merged. One file the run will not open stops the whole project, because every
+smaller set is a project Compose never loads.
 """
 
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field, replace
+from enum import Enum
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
@@ -44,6 +55,7 @@ if TYPE_CHECKING:
 __all__ = [
     "COMPOSE_FILE_KEYS",
     "DocumentGroup",
+    "MergeReason",
     "Selection",
     "plan_documents",
 ]
@@ -95,6 +107,24 @@ _OUTSIDE_NOT_MERGED = (
     "not merged because it links to a file outside the repository (refused "
     "rather than read), so what Compose would merge from it was not graded."
 )
+# A `-f` file that is such a link. Compose loads every file it is given or
+# refuses the project, so there is no smaller set to grade in its place.
+_OUTSIDE_STOPS_PROJECT = (
+    "not read because it links to a file outside the repository (refused "
+    "rather than read). Compose merges every file named with -f, so the "
+    "project was not linted without it."
+)
+
+
+class MergeReason(Enum):
+    """Why a group's overlays are merged into its primary."""
+
+    # Compose found the override beside the base file and merges it unasked.
+    OVERRIDE = "override"
+    # A COMPOSE_FILE list in the sibling `.env` names them.
+    ENV = "env"
+    # The user named them with `-f`, in this order.
+    FLAG = "flag"
 
 
 @dataclass(frozen=True)
@@ -103,11 +133,16 @@ class DocumentGroup:
 
     primary: str
     overlays: tuple[str, ...] = ()
-    # Why the overlays are being merged. The report has to say, and the two
+    # Why the overlays are being merged. The report has to say, and the
     # reasons are not interchangeable: a discovered override is merged
     # "because Compose merges it automatically", which is exactly the sentence
     # that was false when a COMPOSE_FILE was in play.
-    selected_by_env: bool = False
+    reason: MergeReason = MergeReason.OVERRIDE
+
+    @property
+    def selected_by_env(self) -> bool:
+        """Whether a ``COMPOSE_FILE`` list chose this group's documents."""
+        return self.reason is MergeReason.ENV
 
     @property
     def paths(self) -> list[str]:
@@ -155,6 +190,7 @@ def _key(path: str | Path) -> str:
 def plan_documents(
     files: Iterable[str],
     *,
+    project_files: Iterable[str] = (),
     read_env_files: bool = True,
     merge_overrides: bool = True,
 ) -> Selection:
@@ -163,7 +199,15 @@ def plan_documents(
     ``files`` empty means discovery, which is the bare ``compose-lint check``
     case. ``read_env_files=False`` is ``--no-env`` and reproduces the previous
     behaviour exactly; ``merge_overrides=False`` is ``--no-merge-overrides``.
+
+    ``project_files`` is the ``-f`` list: one project, merged in that order.
+    It is Compose's first selection path, so when it is given nothing else
+    selects a document and ``merge_overrides`` has nothing to act on. The
+    caller refuses ``files`` alongside it.
     """
+    project = list(project_files)
+    if project:
+        return _plan_project(project, read_env_files=read_env_files)
     named = list(files)
     if not named:
         return _plan_discovered(
@@ -171,6 +215,58 @@ def plan_documents(
         )
     return _plan_named(
         named, read_env_files=read_env_files, merge_overrides=merge_overrides
+    )
+
+
+def _plan_project(project: list[str], *, read_env_files: bool) -> Selection:
+    """``-f``: the files as given are the project, and the first is its base.
+
+    Nothing is deduplicated. ``-f a -f b -f a`` applies ``a`` again over ``b``
+    in Compose, so the repeat is part of what was asked for.
+
+    A file that links outside the repository is refused like any other
+    (:func:`_links_outside`), and then no group is planned at all. Merging the
+    rest would grade a project Compose never loads, and promoting the second
+    file to base would also move the project directory, and with it the
+    ``.env`` that is read and where every relative path resolves. A file that
+    is missing is left for the load to report, as it is for a positional path.
+    """
+    first = project[0]
+    directory = Path(first).parent
+    gaps: list[tuple[str, str]] = []
+    for path in project:
+        gap = (path, _OUTSIDE_STOPS_PROJECT)
+        if _links_outside(Path(path)) and gap not in gaps:
+            gaps.append(gap)
+    if gaps:
+        return Selection(gaps=tuple(gaps))
+
+    notes: list[str] = []
+    if read_env_files:
+        parsed = read_env(directory, COMPOSE_FILE_KEYS, within=directory)
+        if parsed is None:
+            gaps.extend(_unreadable_env(directory))
+        elif parsed.values.get("COMPOSE_FILE"):
+            # Only that the key is set. The list is not resolved, so one that
+            # would have been refused cannot fail a run that never uses it.
+            notes.append(
+                f"{directory / ENV_FILENAME}: COMPOSE_FILE was not used to "
+                "select documents, because -f names them and Compose gives -f "
+                "precedence."
+            )
+    override = _override_beside(Path(first))
+    if override is not None:
+        notes.append(
+            f"{override}: not merged, because -f names the documents and "
+            "Compose merges an override only when it finds the files itself."
+        )
+    env_file = env_file_for(directory, read_env_files=read_env_files)
+    return Selection(
+        groups=(DocumentGroup(first, tuple(project[1:]), MergeReason.FLAG),),
+        consumed=frozenset(_key(path) for path in project[1:]),
+        notes=tuple(notes),
+        env_files=(env_file,) if env_file else (),
+        gaps=tuple(gaps),
     )
 
 
@@ -191,9 +287,7 @@ def _plan_discovered(
     env_files = (env_file,) if env_file else ()
     if selected is not None:
         return Selection(
-            groups=(
-                DocumentGroup(selected[0], tuple(selected[1:]), selected_by_env=True),
-            ),
+            groups=(DocumentGroup(selected[0], tuple(selected[1:]), MergeReason.ENV),),
             consumed=frozenset(_key(path) for path in selected[1:]),
             notes=tuple(notes),
             env_files=env_files,
@@ -252,9 +346,7 @@ def _plan_named(
             # The project the .env describes contains this file, so grade the
             # project. Merge order is COMPOSE_FILE's, not the order the paths
             # happened to arrive in.
-            group = DocumentGroup(
-                selected[0], tuple(selected[1:]), selected_by_env=True
-            )
+            group = DocumentGroup(selected[0], tuple(selected[1:]), MergeReason.ENV)
         else:
             # ADR-026 §4: the named file is not in the project's own list, so
             # something disagrees. Grade what was asked for, and say so rather
@@ -337,21 +429,38 @@ def _with_override(
     """
     if not merge_overrides:
         return DocumentGroup(path)
-    base = Path(path)
-    if base.name not in COMPOSE_FILENAMES:
+    candidate = _override_beside(Path(path))
+    if candidate is None:
         return DocumentGroup(path)
-    present = [
-        base.parent / name for name in OVERRIDE_SEARCH if (base.parent / name).is_file()
-    ]
-    if not present:
-        return DocumentGroup(path)
-    candidate = present[0]
     if _links_outside(candidate):
         gap = (str(candidate), _OUTSIDE_NOT_MERGED)
         if gap not in gaps:
             gaps.append(gap)
         return DocumentGroup(path)
     return DocumentGroup(path, (str(candidate),))
+
+
+def _override_beside(base: Path) -> Path | None:
+    """The override Compose's own discovery would merge into ``base``, if any."""
+    if base.name not in COMPOSE_FILENAMES:
+        return None
+    present = [
+        base.parent / name for name in OVERRIDE_SEARCH if (base.parent / name).is_file()
+    ]
+    return present[0] if present else None
+
+
+def _unreadable_env(directory: Path) -> list[tuple[str, str]]:
+    """The gap for a ``.env`` in ``directory`` that exists and was not read."""
+    failure = env_read_failure(directory, within=directory)
+    if failure is None:
+        return []
+    message = (
+        f"not read because {failure}, so it selected no "
+        "documents and supplied no values. Compose reads it anyway, so any "
+        "value it sets was not graded."
+    )
+    return [(str(directory / ENV_FILENAME), message)]
 
 
 def env_file_for(directory: Path, *, read_env_files: bool) -> str | None:
@@ -381,15 +490,7 @@ def _compose_file_entries(
         return None, [], []
     parsed = read_env(directory, COMPOSE_FILE_KEYS, within=directory)
     if parsed is None:
-        failure = env_read_failure(directory, within=directory)
-        if failure is None:
-            return None, [], []
-        message = (
-            f"not read because {failure}, so it selected no "
-            "documents and supplied no values. Compose reads it anyway, so any "
-            "value it sets was not graded."
-        )
-        return None, [], [(str(directory / ENV_FILENAME), message)]
+        return None, [], _unreadable_env(directory)
     raw = parsed.values.get("COMPOSE_FILE")
     if not raw:
         return None, [], []

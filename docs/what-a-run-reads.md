@@ -73,6 +73,51 @@ it takes the first of `compose.override.yml`, `compose.override.yaml`,
 `docker-compose.override.yml`, `docker-compose.override.yaml` (measured on
 Compose 5.5.0). compose-lint pairs them the same way.
 
+## Several files as one project
+
+`docker compose -f compose.yaml -f a.yaml up` merges the files it is given.
+Name them the same way and compose-lint grades that merged project
+([ADR-044](adr/044-name-a-project-with-f.md)):
+
+```bash
+compose-lint -f compose.yaml -f a.yaml
+```
+
+Without `-f`, each file on the command line is its own project. That is right
+for `compose-lint **/compose.yml` and wrong for a base file with overlays,
+where an overlay that only adds a network to a shared service is graded as a
+whole service.
+
+The list is used exactly as written, measured against Compose 5.5.0 and
+5.8.0:
+
+- The files merge in the order given, and a later file wins. A file named
+  twice is merged twice.
+- The first file's directory is the project directory. Its `.env` supplies
+  values, and a relative mount, `env_file`, `extends: {file:}` or `include:`
+  written in any of the files resolves from there.
+- Nothing else selects a document. A `COMPOSE_FILE` in the sibling `.env` is
+  not used, and the `compose.override.yml` beside the first file is not
+  merged. The run says so in a note when either is there.
+- `-f` cannot be combined with a positional file.
+
+A file that is missing, or that is a symlink out of the repository, stops the
+whole project and the run exits 2. Merging the rest would grade a project
+Compose never loads.
+
+`fix` edits the first file only and lists findings written in the other files
+to fix by hand. `init -f ...` writes the config beside the first file.
+
+Four things differ from what Compose does with the same list, on purpose:
+
+- The shell environment is not read. A `${VAR}` supplied only at deploy time,
+  by a recipe or a secrets tool, is graded as written.
+- A service behind a profile is graded whether or not the profile is active.
+- A file that links outside the repository is refused.
+- `--project-directory` and `--env-file` have no equivalent. If your recipe
+  passes either to Compose, the project directory or the values compose-lint
+  uses will differ from the ones Compose uses.
+
 ## A sibling `.env` is read, because Compose reads it
 
 ([ADR-026](adr/026-read-the-sibling-env-file.md)). Its `COMPOSE_FILE`
