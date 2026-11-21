@@ -365,7 +365,17 @@ def format_findings(
     seen_fixes: set[tuple[str, str, tuple[str, ...]]] = set()
 
     for service, group in services_in_order:
-        svc_line = next((f.line for f in group if f.line is not None), None)
+        # The header's line is a line of the file this report is headed by.
+        # A finding merged in from another document carries a line of that
+        # document, so once any of the service's findings is one, the first
+        # line in the group may not be this file's at all: `(line 3)` under
+        # `compose.yaml` pointed at line 3 of an overlay. Each finding names
+        # its own file and line below, so the header says nothing instead.
+        svc_line = (
+            None
+            if any(f.source_file for f in group)
+            else next((f.line for f in group if f.line is not None), None)
+        )
         header_suffix = f"  ({_colorize('line', _DIM)} {svc_line})" if svc_line else ""
         out.append(
             f"  {_colorize('service:', _DIM)} {_sanitize_line(service)}{header_suffix}"
