@@ -240,3 +240,33 @@ class TestSubByteMemory:
 
     def test_a_fractional_cpu_still_counts(self) -> None:
         assert not _findings(_svc('    mem_limit: 512m\n    cpus: "0.5"\n'))
+
+
+class TestWindowsOnlyCpuKeys:
+    """`cpu_count` and `cpu_percent` read like a CPU limit and set nothing on
+    Linux, so the rule still fires and the fix says why."""
+
+    @pytest.mark.parametrize("key", ["cpu_count: 2", "cpu_percent: 50"])
+    def test_the_key_does_not_satisfy_the_rule(self, key: str) -> None:
+        (finding,) = _findings(_svc(f"    mem_limit: 512m\n    {key}\n"))
+        assert "no CPU limit" in finding.message
+
+    @pytest.mark.parametrize("key", ["cpu_count", "cpu_percent"])
+    def test_the_fix_names_the_key_the_service_set(self, key: str) -> None:
+        (finding,) = _findings(_svc(f"    mem_limit: 512m\n    {key}: 2\n"))
+        assert f"{key} applies to Windows containers only" in finding.fix
+        assert "Use cpus." in finding.fix
+
+    def test_both_keys_are_named_together(self) -> None:
+        (finding,) = _findings(_svc("    cpu_count: 2\n    cpu_percent: 50\n"))
+        assert "cpu_count and cpu_percent apply to Windows" in finding.fix
+
+    def test_the_fix_is_unchanged_without_the_key(self) -> None:
+        (finding,) = _findings(_svc("    mem_limit: 512m\n"))
+        assert "Windows" not in finding.fix
+
+    def test_a_real_cpu_limit_beside_it_is_not_explained(self) -> None:
+        """Only memory is missing, so the CPU key is not what the finding is about."""
+        (finding,) = _findings(_svc("    cpus: 0.5\n    cpu_count: 2\n"))
+        assert "no memory limit" in finding.message
+        assert "Windows" not in finding.fix
