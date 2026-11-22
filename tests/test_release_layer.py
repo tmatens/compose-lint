@@ -429,7 +429,7 @@ def test_the_shared_docker_smoke_checks_out_the_run_ref() -> None:
 
 
 def test_the_shared_docker_smoke_runs_the_documented_hardened_flags() -> None:
-    """The smoke runs README.md's copy-paste recipe, so a broken one fails CI.
+    """The smoke runs the documented copy-paste recipe, so a broken one fails CI.
 
     These flags exist to prove the hardening users are told to apply still
     works against the shipped image. A smoke that quietly dropped, say,
@@ -448,7 +448,7 @@ def test_the_shared_docker_smoke_runs_the_documented_hardened_flags() -> None:
         assert raw.count(flag) == docker_runs, (
             f"{_SHARED_DOCKER_SMOKE}: '{flag}' appears {raw.count(flag)} times "
             f"across {docker_runs} `docker run` invocations — every smoke step "
-            "runs the fully-hardened flag set documented in README.md"
+            "runs the fully-hardened flag set documented in docs/running-hardened.md"
         )
 
 

@@ -1,13 +1,14 @@
 # README demo GIFs
 
-Source for the two animated demos embedded in the project README. Both
-recordings are deterministic — they re-render identically from these files, so
+Source for the three animated demos embedded in the project README. All
+three recordings are deterministic — they re-render identically from these files, so
 they can be refreshed against any release.
 
 | Cast       | Asset                     | Shows                                       |
 | ---------- | ------------------------- | ------------------------------------------- |
 | `demo.tape` | `docs/assets/demo.gif`     | `check` on a small file, then `--explain`   |
 | `fix.tape`  | `docs/assets/demo-fix.gif` | `fix` dry-run diff, `--apply`, then re-lint |
+| `stack.tape` | `docs/assets/demo-stack.gif` | An override and `.env` merged as Compose merges them |
 
 ## Files
 
@@ -16,8 +17,10 @@ they can be refreshed against any release.
 | `render.sh`          | One-command regenerate (build + record + compact)             |
 | `demo.tape`          | [VHS](https://github.com/charmbracelet/vhs) script, hero cast |
 | `fix.tape`           | VHS script, fix cast                                          |
+| `stack.tape`         | VHS script, stack cast                                        |
 | `docker-compose.yml` | The ordinary-looking file the hero cast lints                 |
 | `fix-compose.yml`    | The file the fix cast remediates                              |
+| `stack/`             | The stack cast's project; `env` is copied to `.env` at record time |
 | `Dockerfile`         | Toolchain: VHS + ttyd + ffmpeg + compose-lint + Pillow        |
 | `requirements.in`    | Toolchain Python deps (compose-lint pin = recorded version)   |
 | `requirements.lock`  | uv-compiled, hash-pinned resolve of `requirements.in`         |
@@ -48,7 +51,17 @@ three edits and re-lints: `FAIL` becomes `PASS`, with the leftover MEDIUM still
 reported rather than silently dropped. The cast copies the fixture to `/tmp`
 before running, because `--apply` rewrites the file in place.
 
-`tests/test_demo_fixture.py` pins both stories — the hero's finding set, and
+**Stack** (`stack.tape`) shows a project as Compose reads it. `compose.yaml`
+is hardened as written; `compose.override.yml` beside it turns on
+`privileged`, and `.env` moves the published port from its default
+`127.0.0.1` to all interfaces. The first screen prints the three files; the
+second runs `compose-lint` with no arguments, which merges the override and
+reads `.env` the way `docker compose up` does, and reports a CRITICAL written
+in `compose.override.yml` and a MEDIUM port opened by `.env`. The fixture's
+`.env` is committed as `stack/env`, because `.env` is gitignored repo-wide;
+the tape's hidden setup copies the project to `/tmp/stack` and names it there.
+
+`tests/test_demo_fixture.py` pins all three stories — the hero's finding set, and
 the fix cast's auto-fixed/manual split and its FAIL→PASS flip — so a rule or
 fixture change that would silently invalidate a GIF fails CI instead.
 
@@ -58,7 +71,7 @@ fixture change that would silently invalidate a GIF fails CI instead.
 `rerecord-demos` job runs the commands the tapes type against the released
 wheel, compares the text with `expected-output.txt` (the version banner
 masked), and if anything differs — or when dispatched with `force: true` —
-renders both casts, moves the pin and lock, rewrites the snapshot and opens a
+renders every cast, moves the pin and lock, rewrites the snapshot and opens a
 PR with the recordings embedded for a human to look at and merge. The
 snapshot is written only as part of a re-record, by that job or by the steps
 below; it records what the GIFs show, not what the source tree prints today.
@@ -67,7 +80,7 @@ By hand, Docker is the only requirement (the toolchain image bundles
 everything else):
 
 ```bash
-scripts/demo/render.sh          # both casts
+scripts/demo/render.sh          # all three casts
 scripts/demo/render.sh fix      # just one
 ```
 

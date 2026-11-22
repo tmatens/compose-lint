@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Print, write or check the terminal text the README demo casts show.
 
-The two tapes in this directory type a fixed set of commands at a released
+The three tapes in this directory type a fixed set of commands at a released
 compose-lint. This script runs the same commands at whichever compose-lint it
 is pointed at and prints what they produce, with the version banner masked,
 so two releases can be compared on what the GIFs would *show* rather than on
@@ -55,6 +55,22 @@ def mask(text: str) -> str:
 # top of the recording, which nothing but eyes caught before this.
 HERO_ROWS = 32
 
+# The stack tape uses the same terminal, and its lint step is the second
+# screen, so it has the same 32 rows to fit in (see stack.tape).
+STACK_ROWS = 32
+STACK_TITLE = "stack.tape: compose-lint"
+
+
+def _rows_needed(text: str, title: str) -> int:
+    """Rows a cast's lint step takes: command + output + prompt."""
+    for section in text.split("=== ")[1:]:
+        head, _, body = section.partition("\n")
+        if head == title:
+            lines = body.rstrip("\n").splitlines()
+            output = [ln for ln in lines if not ln.startswith("[exit ")]
+            return 1 + len(output) + 1
+    raise ValueError(f"no section titled {title!r}")
+
 
 def hero_rows_needed(text: str) -> int:
     """Rows the hero cast's lint step takes: command + output + prompt."""
@@ -62,6 +78,11 @@ def hero_rows_needed(text: str) -> int:
     lines = section.splitlines()[1:]  # drop the "demo.tape: ..." title
     output = [ln for ln in lines if not ln.startswith("[exit ")]
     return 1 + len(output) + 1
+
+
+def stack_rows_needed(text: str) -> int:
+    """Rows the stack cast's lint step takes: command + output + prompt."""
+    return _rows_needed(text, STACK_TITLE)
 
 
 def _run(binary: str, args: list[str], cwd: pathlib.Path) -> str:
@@ -85,7 +106,7 @@ def _run(binary: str, args: list[str], cwd: pathlib.Path) -> str:
 
 
 def render(binary: str) -> str:
-    """The text both casts produce, in cast order, banners masked."""
+    """The text the casts produce, in cast order, banners masked."""
     sections: list[tuple[str, str]] = []
     # Hero cast (demo.tape): `check` on the two-service fixture.
     hero = _run(binary, ["docker-compose.yml"], HERE)
@@ -104,6 +125,15 @@ def render(binary: str) -> str:
             ("fix.tape: compose-lint fix-compose.yml", ["fix-compose.yml"]),
         ):
             sections.append((title, _run(binary, args, work)))
+    # Stack cast (stack.tape): no arguments, in a copy of the stack, with
+    # stack/env named .env there, exactly as the tape's hidden setup does.
+    with tempfile.TemporaryDirectory() as tmp:
+        work = pathlib.Path(tmp)
+        stack = HERE / "stack"
+        shutil.copy(stack / "compose.yaml", work / "compose.yaml")
+        shutil.copy(stack / "compose.override.yml", work / "compose.override.yml")
+        shutil.copy(stack / "env", work / ".env")
+        sections.append((STACK_TITLE, _run(binary, [], work)))
     out = []
     for title, text in sections:
         out.append(f"=== {title}\n{text}")
@@ -132,6 +162,16 @@ def main(argv: list[str] | None = None) -> int:
             f"::error::the hero cast's lint step needs {needed} rows but demo.tape's "
             f"terminal shows {HERO_ROWS}; the banner would scroll off. Raise "
             "`Set Height` in scripts/demo/demo.tape (and HERO_ROWS here) first.",
+            file=sys.stderr,
+        )
+        return 2
+    needed = stack_rows_needed(text)
+    if needed > STACK_ROWS:
+        print(
+            f"::error::the stack cast's lint step needs {needed} rows but "
+            f"stack.tape's terminal shows {STACK_ROWS}; the banner would scroll "
+            "off. Raise `Set Height` in scripts/demo/stack.tape (and STACK_ROWS "
+            "here) first.",
             file=sys.stderr,
         )
         return 2

@@ -90,3 +90,33 @@ files: fix-compose.yml  [2m·[0m  config: none  [2m·[0m  fail-on: high
 [2mDetails on any rule: compose-lint --explain <RULE-ID>  (e.g. compose-lint --explain CL-0019)[0m
 [32m✓ PASS[0m  [2m·[0m  threshold: high  [2m·[0m  below: [33m1 medium[0m
 [exit 0]
+
+=== stack.tape: compose-lint
+[1mcompose-lint <version>[0m
+files: compose.yaml + compose.override.yml  [2m·[0m  env: .env  [2m·[0m  config: none  [2m·[0m  fail-on: high
+
+[1mcompose.yaml[0m
+
+  [2mservice:[0m web
+[2m    line  severity    rule     message[0m
+       3  [1;31mCRITICAL  [0m  [2mCL-0002[0m  Service runs in privileged mode. This disables nearly all container isolation — the container gets all Linux capabilities and host device access, and is trivially escapable to host root.
+          [2min:[0m compose.override.yml (merged into this run)
+          [2m3[0m [2m│[0m     privileged: true
+          [2mfix:[0m Remove 'privileged: true' and grant only the specific capabilities needed:
+                 cap_drop:
+                   - ALL
+                 cap_add:
+                   - <SPECIFIC_CAP>
+               Devices need explicit devices: entries; to determine the
+               capability set, see: compose-lint --explain CL-0006
+          [2mref:[0m https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-3-limit-capabilities-grant-only-specific-capabilities-needed-by-a-container
+      17  [33mMEDIUM    [0m  [2mCL-0005[0m  Port '0.0.0.0:8080:8080' is bound to all interfaces. Docker bypasses host firewalls (UFW/firewalld), potentially exposing this port to the public internet.
+          [2m17[0m [2m│[0m       - "${BIND:-127.0.0.1}:8080:8080"
+          [2mfix:[0m Bind to localhost: 127.0.0.1:8080:8080
+               If public access is needed, use a reverse proxy with TLS.
+          [2mref:[0m https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-5a-be-careful-when-mapping-container-ports-to-the-host-with-firewalls-like-ufw
+[1mcompose.yaml[0m: [1;31m1 critical[0m, [33m1 medium[0m
+[2mDetails on any rule: compose-lint --explain <RULE-ID>  (e.g. compose-lint --explain CL-0002)[0m
+[31m✗ FAIL[0m  [2m·[0m  1 finding at or above high
+warning: compose.yaml: merged compose.override.yml before linting, because Compose merges it automatically. Findings describe the combined configuration.
+[exit 1]

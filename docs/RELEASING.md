@@ -374,13 +374,14 @@ five before opening the bump PR.
       It was omitted from this list when #554 introduced it, and
       `release-prep.yml` did not bump it either — so the 0.18.0 prep PR
       failed its own required check and needed a hand-pushed commit.
-- [ ] `README.md` + `docs/running-hardened.md` — version references in
-      copy-paste integration snippets. All need bumping each release;
-      otherwise users land on a stale version (v0.14.0 shipped with all
-      of them stale). Four forms exist:
+- [ ] `README.md`, `docs/verifying.md` + `docs/running-hardened.md` — version
+      references in copy-paste integration snippets. All need bumping each
+      release; otherwise users land on a stale version (v0.14.0 shipped with
+      all of them stale). Four forms exist:
       - `tmatens/compose-lint@<sha> # v0.X.Y` (README — GitHub Action snippet)
       - `rev: v0.X.Y` (README — pre-commit snippet)
-      - `compose-lint==0.X.Y` (README — Forgejo Actions snippet, pip pin)
+      - `compose-lint==0.X.Y` and `compose-lint/v0.X.Y/requirements.lock`
+        (docs/verifying.md — reproducible install)
       - `:0.X.Y` image tags (docs/running-hardened.md — hardened `docker run`
         snippet, plus the digest-lookup prose below it; NOT in README)
 
@@ -535,16 +536,16 @@ After approval, `publish` and `docker-publish` run in parallel.
       current overview file.
 - [ ] **README demo GIFs** — automated, with a review. When the pin PR
       merges, `marketplace-smoke.yml`'s `rerecord-demos` job compares what
-      the two casts would show on the new release with what the committed
+      the three casts would show on the new release with what the committed
       GIFs show (`scripts/demo/expected-output.txt`, banner masked). If
       nothing changed it says so in its summary and the demos stay. If
-      the output changed it renders both casts, moves the toolchain pin
-      and lock, and opens `Re-record the README demos on X.Y.Z` with both
-      recordings embedded. **That PR is not auto-merged**: look at both
+      the output changed it renders every cast, moves the toolchain pin
+      and lock, and opens `Re-record the README demos on X.Y.Z` with every
+      recording embedded. **That PR is not auto-merged**: look at the
       GIFs — the banner reads the new version and did not scroll off, the
       `--explain` page shows its status line, the fix cast still ends on
-      PASS — fix the README alt texts on the branch if the story changed,
-      then merge. To refresh the banner on a release that changed no
+      PASS, the stack cast still shows the override's CRITICAL — fix the
+      README alt texts on the branch if the story changed, then merge. To refresh the banner on a release that changed no
       output, dispatch the workflow with `force: true`. The by-hand route
       is unchanged (`scripts/demo/README.md`) and is what to use if the
       job itself is broken.

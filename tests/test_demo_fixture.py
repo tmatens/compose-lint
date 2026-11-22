@@ -1,6 +1,6 @@
 """Guard the README demo fixtures against silent drift (#404).
 
-Two GIFs are recorded from fixtures in ``scripts/demo/``, and what each one
+Three GIFs are recorded from fixtures in ``scripts/demo/``, and what each one
 shows is described in three more places: the demo README, the tape's comments,
 and the main README's alt text. Nothing else re-runs those fixtures, so a rule
 change (new rule firing, severity reclassification, a fixer gaining or losing
@@ -16,16 +16,24 @@ changed: re-render the GIF and update the descriptions (see
 from __future__ import annotations
 
 import importlib.util
+import json
+import shutil
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from compose_lint.engine import run_rules
 from compose_lint.fix import apply_edits, collect_edits
 from compose_lint.models import Severity
 from compose_lint.parser import load_compose
+from tests.test_cli import run_cli
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 DEMO_DIR = Path(__file__).parent.parent / "scripts" / "demo"
 HERO_FIXTURE = DEMO_DIR / "docker-compose.yml"
 FIX_FIXTURE = DEMO_DIR / "fix-compose.yml"
+STACK_DIR = DEMO_DIR / "stack"
 
 # What the hero GIF (demo.tape) and its descriptions show: one finding per tier
 # across two services, so the cast demonstrates the report's per-service
@@ -52,6 +60,16 @@ HERO_EXPECTED = {
 # and stopped crossing the default gate on its own.
 FIX_AUTOFIXED = {"CL-0003", "CL-0005", "CL-0007", "CL-0009"}
 FIX_MANUAL = {"CL-0019"}
+
+# What the stack GIF (stack.tape) shows. compose.yaml is hardened as written,
+# so every finding comes from a file Compose reads without being asked: the
+# CRITICAL from compose.override.yml, which turns on `privileged`, and the
+# MEDIUM from .env, which moves the published port's default 127.0.0.1 to all
+# interfaces. The pairs are (rule, severity, file the finding is written in).
+STACK_EXPECTED = {
+    ("CL-0002", "critical", "compose.override.yml"),
+    ("CL-0005", "medium", "compose.yaml"),
+}
 
 
 def test_hero_fixture_findings_match_the_recorded_gif() -> None:
@@ -135,3 +153,59 @@ def test_the_recorded_hero_cast_fits_its_terminal() -> None:
     rows = expected_output.HERO_ROWS
     assert needed <= rows, f"hero lint step needs {needed} rows, demo.tape shows {rows}"
     assert needed == 32  # command + 30 output lines + prompt, as demo.tape says
+
+
+def _load_expected_output_module() -> ModuleType:
+    spec = importlib.util.spec_from_file_location(
+        "expected_output", DEMO_DIR / "expected_output.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _stack_copy(tmp_path: Path) -> Path:
+    """The stack as the tape's hidden setup lays it out, stack/env as .env."""
+    shutil.copy(STACK_DIR / "compose.yaml", tmp_path / "compose.yaml")
+    shutil.copy(STACK_DIR / "compose.override.yml", tmp_path / "compose.override.yml")
+    shutil.copy(STACK_DIR / "env", tmp_path / ".env")
+    return tmp_path
+
+
+def test_stack_fixture_findings_match_the_recorded_gif(tmp_path: Path) -> None:
+    result = run_cli("check", "--format", "json", cwd=_stack_copy(tmp_path))
+    findings = json.loads(result.stdout)["findings"]
+    assert {(f["rule_id"], f["severity"], f["file"]) for f in findings} == (
+        STACK_EXPECTED
+    ), (
+        "The stack demo fixture's findings no longer match what the stack GIF "
+        "shows. Re-render the demo and update its descriptions (see "
+        "scripts/demo/README.md), then update STACK_EXPECTED here."
+    )
+    # The story is that the port is opened by .env: without it the default
+    # 127.0.0.1 applies and the port finding is gone.
+    (tmp_path / ".env").unlink()
+    result = run_cli("check", "--format", "json", cwd=tmp_path)
+    rule_ids = {f["rule_id"] for f in json.loads(result.stdout)["findings"]}
+    assert "CL-0005" not in rule_ids
+
+
+def test_stack_compose_file_is_clean_on_its_own(tmp_path: Path) -> None:
+    """compose.yaml alone has no findings, so everything the GIF shows comes
+    from the override and .env."""
+    shutil.copy(STACK_DIR / "compose.yaml", tmp_path / "compose.yaml")
+    result = run_cli("check", "--format", "json", "--fail-on", "low", cwd=tmp_path)
+    assert json.loads(result.stdout)["findings"] == []
+    assert result.returncode == 0
+
+
+def test_the_recorded_stack_cast_fits_its_terminal() -> None:
+    """Same check as the hero cast's, for the stack cast's lint screen, once
+    the snapshot holds it (a re-record writes it)."""
+    expected_output = _load_expected_output_module()
+    text = (DEMO_DIR / "expected-output.txt").read_text(encoding="utf-8")
+    if f"=== {expected_output.STACK_TITLE}\n" not in text:
+        return  # not recorded yet
+    needed = expected_output.stack_rows_needed(text)
+    assert needed <= expected_output.STACK_ROWS

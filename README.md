@@ -12,10 +12,10 @@
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12472/badge)](https://www.bestpractices.dev/projects/12472)
 [![Mentioned in Awesome Docker](https://awesome.re/mentioned-badge-flat.svg)](https://github.com/veggiemonk/awesome-docker#security)
 
-In a study of 11,111 public Compose files on GitHub with compose-lint 1.6.0, **99% of the 5,907 ordinary files that lint had at least one security finding**, 96% set none of the four basic hardening flags, and more than one in four carried a literal credential. **[Read the *State of Docker Compose Security* report →](https://tmatens.github.io/compose-lint/state-of-compose/)**
-
 <!-- Demo GIF. Regenerate with scripts/demo/ — see scripts/demo/README.md. -->
 ![compose-lint scanning a docker-compose.yml with two services: under `service: watchtower`, a CRITICAL mounted Docker socket (CL-0001) with a box-drawing underline, fix block and reference URL, above a MEDIUM image pinned to a tag but not a digest (CL-0019); then under `service: db`, a HIGH plaintext credential (CL-0020) with `POSTGRES_PASSWORD: hunter2` underlined — then the per-file summary, the `Details on any rule: compose-lint --explain <RULE-ID>` hint, and the FAIL verdict; then `compose-lint --explain CL-0001` reading the offline rule docs in its built-in pager: the title, severity derivation and references hold on the first page, the status line naming the controls — `CL-0001 · Space next · b back · q quit` — then a page-down continues into the doc, prompt still in place.](https://raw.githubusercontent.com/tmatens/compose-lint/main/docs/assets/demo.gif)
+
+In a study of 11,111 public Compose files on GitHub, **99% of the 5,907 ordinary files that lint had at least one security finding**. **[Read the *State of Docker Compose Security* report →](https://tmatens.github.io/compose-lint/state-of-compose/)**
 
 **What it catches:**
 
@@ -24,7 +24,20 @@ In a study of 11,111 public Compose files on GitHub with compose-lint 1.6.0, **9
 - Supply-chain — unpinned images, missing digest pins
 - Filesystem and credential leaks — Docker socket mounts, sensitive host paths, plaintext credentials in `environment:`
 
-Zero config, sub-second whether you lint one file or a hundred, and grounded in the [OWASP Docker Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html) and [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker). Full rule docs at **[tmatens.github.io/compose-lint](https://tmatens.github.io/compose-lint/)** — the same pages `--explain` prints offline.
+It grades the stack Compose would build, not only the file you name: a
+sibling `compose.override.yml` is merged in, `.env` fills `${VAR}`
+references, and `include:` and `extends:` are followed, so a
+`privileged: true` set in an override is caught like one in the main file.
+See [Grades what actually deploys](#grades-what-actually-deploys).
+
+Use it on a self-hosted stack before `docker compose up`, or as a gate on
+Compose changes in CI. Zero config, sub-second whether you lint one file or
+a hundred, and grounded in the [OWASP Docker Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html)
+and [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker).
+Full rule docs are at **[tmatens.github.io/compose-lint](https://tmatens.github.io/compose-lint/)**, the
+same pages `--explain` prints offline, and the
+[hardening guide](https://tmatens.github.io/compose-lint/hardening/) takes a Compose file from defaults to
+hardened one setting at a time.
 
 ## Installation
 
@@ -40,13 +53,8 @@ Or run it ad hoc without installing anything:
 uvx compose-lint docker-compose.yml        # or: pipx run compose-lint docker-compose.yml
 ```
 
-That resolves the newest release at install time. For a reproducible install (CI, production tooling), pin the version and install the dependency set from the repo's hash-pinned lockfile, which release automation keeps current:
-
-```bash
-curl -fsSLO https://raw.githubusercontent.com/tmatens/compose-lint/v1.7.1/requirements.lock
-pip install --require-hashes -r requirements.lock   # dependencies, hash-pinned
-pip install --no-deps compose-lint==1.7.1          # the tool, version-pinned
-```
+That resolves the newest release at install time. For a reproducible,
+hash-pinned install, see [Reproducible install](https://tmatens.github.io/compose-lint/verifying/#reproducible-install).
 
 Every pip path needs Python 3.11+; the Docker image is self-contained.
 
@@ -56,11 +64,10 @@ Every pip path needs Python 3.11+; the Docker image is self-contained.
 docker run --rm -v "$(pwd):/src" composelint/compose-lint:1.7.1
 ```
 
-The Docker image is distroless, multi-arch, and runs nonroot — see [Security posture](#security-posture) below for SLSA, Sigstore, and OpenVEX details.
-
-### Running with full hardening
-
-Want to dogfood compose-lint's own rules against the container that runs it? See [Running compose-lint hardened](https://tmatens.github.io/compose-lint/running-hardened/) for the fully-hardened `docker run` invocation, the flag-to-rule mapping, and digest-pinning instructions. To harden your own Compose files, follow [the hardening guide](https://tmatens.github.io/compose-lint/hardening/).
+The Docker image is distroless, multi-arch, and runs nonroot; see
+[Security posture](#security-posture). To run it with every hardening flag
+compose-lint's own rules ask for, see
+[Running compose-lint hardened](https://tmatens.github.io/compose-lint/running-hardened/).
 
 ## Quick Start
 
@@ -95,26 +102,8 @@ Docker equivalent:
 docker run --rm -v "$(pwd):/src" composelint/compose-lint:1.7.1 docker-compose.prod.yml
 ```
 
-## Adopting on an existing repo
-
-Most established stacks don't start clean. `compose-lint init` turns a stack's
-current findings — the same merged view `check` grades, override and env files
-included — into a `.compose-lint.yml` baseline, so the gate can go in today and
-you triage afterwards:
-
-```bash
-compose-lint init docker-compose.yml          # writes ./.compose-lint.yml
-compose-lint init docker-compose.yml -o ci.yml # write somewhere else
-compose-lint init docker-compose.yml --force   # overwrite an existing config
-```
-
-Each finding becomes a per-service `exclude_services` entry with a `TODO`
-reason — never a global `enabled: false`, so a service you add later still
-trips the rule. Replace each reason with a real justification, or delete the
-entry and fix the issue. Details:
-[generating a starter config](https://github.com/tmatens/compose-lint/blob/main/docs/configuration.md#generating-a-starter-config).
-
-## Example Output
+<details>
+<summary>Example output as text</summary>
 
 Given this `docker-compose.yml`:
 
@@ -195,11 +184,16 @@ threshold. Suppressed findings are shown but not counted. That file is
 synthetic; for worked remediations of real stacks, see the
 [examples gallery](https://tmatens.github.io/compose-lint/examples/).
 
+</details>
+
 ## Grades what actually deploys
 
 For a single Compose file with no siblings, a run reads that file and nothing
 else. When there is more, compose-lint grades the configuration Compose would
 actually run, not just the file you named:
+
+<!-- Demo GIF. Regenerate with scripts/demo/ — see scripts/demo/README.md. -->
+![compose-lint on a project of three files: `cat compose.yaml` shows a `web` service hardened as written (read_only, cap_drop ALL, no-new-privileges, memory and CPU limits, an image pinned by digest) publishing `"${BIND:-127.0.0.1}:8080:8080"`; `cat compose.override.yml` shows the override setting `privileged: true`, and `cat .env` shows `BIND=0.0.0.0`. Then `compose-lint` with no arguments: the header reads `files: compose.yaml + compose.override.yml · env: .env`, a warning says the override was merged because Compose merges it automatically, and the report shows a CRITICAL privileged-mode finding (CL-0002) marked `in: compose.override.yml (merged into this run)` and a MEDIUM port finding (CL-0005) for `0.0.0.0:8080:8080`, quoting the `${BIND:-127.0.0.1}` line it came from, above the FAIL verdict.](https://raw.githubusercontent.com/tmatens/compose-lint/main/docs/assets/demo-stack.gif)
 
 - **It merges what Compose merges.** The sibling `compose.override.yml`, the
   sibling `.env` (for `${VAR}` references and `COMPOSE_FILE`, never for
@@ -219,18 +213,182 @@ actually run, not just the file you named:
   output to cover it, or pass `--allow-partial-coverage` to grade what is
   visible.
 
-Any Compose Specification file works: one with a top-level `services:` key, or
-an `include:`-only root. Compose v1 files (services at the top level, retired
-by Docker in 2023) and structural fragments with no services are skipped with
-a stderr note rather than failed.
-
-Files given on the command line are separate projects. To lint a base file and
-its overlays as the one project `docker compose -f` runs, name them with `-f`:
-`compose-lint -f compose.yaml -f a.yaml`.
-
-Full detail, including the merge order and the flags that switch each source
-off (`--no-merge-overrides`, `--no-env`):
+To lint a base file and its overlays as the one project `docker compose -f`
+runs, name them with `-f`: `compose-lint -f compose.yaml -f a.yaml`. The
+merge order, the flags that switch each source off (`--no-merge-overrides`,
+`--no-env`), and how Compose v1 files and fragments are handled are in
 [What a run reads](https://tmatens.github.io/compose-lint/what-a-run-reads/).
+
+## Fixing findings
+
+`compose-lint fix` auto-remediates the findings whose edit is **mechanically
+unambiguous** — one correct value, in one place, with no collateral change to
+the rest of the file: adding `read_only: true` or `no-new-privileges:true`,
+binding a published port to `127.0.0.1`, restoring a disabled logging driver
+or seccomp profile, and similar. It is **dry-run by default**: it
+prints a unified diff and writes nothing.
+
+<!-- Fix demo GIF. Regenerate with scripts/demo/ — see scripts/demo/README.md. -->
+![compose-lint fix on a docker-compose.yml: the dry-run prints three `behavior-changing` caveat lines (CL-0009's re-applied seccomp profile, CL-0007's read_only, CL-0005's rebind to 127.0.0.1) above a unified diff adding `read_only: true`, replacing `seccomp:unconfined` with `no-new-privileges:true`, and rebinding `"8080:8080"` to `"127.0.0.1:8080:8080"`, summarised as 3 fixes available with the tag-only image pin (CL-0019) listed to fix by hand, with its digest-pin instruction — then `fix --apply` writes the same three edits and `compose-lint check` re-lints to a PASS verdict, the un-auto-fixable tag-only image pin (CL-0019) still reported below the threshold and named by the `--explain` hint above the verdict.](https://raw.githubusercontent.com/tmatens/compose-lint/main/docs/assets/demo-fix.gif)
+
+> **Auto-fixable does not mean harmless.** `fix` will not corrupt or reflow
+> your file, but it will change how your stack behaves: `read_only: true`
+> breaks a container that writes to its root filesystem, and rebinding a port
+> to `127.0.0.1` cuts off remote clients. Each such edit is labelled
+> `⚠ behavior-changing` in the diff with the breakage named. Read those lines
+> before `--apply`, and roll out to staging first.
+
+```bash
+compose-lint fix docker-compose.yml            # preview the diff, write nothing
+compose-lint fix --apply docker-compose.yml    # write the fixes in place
+compose-lint fix --only CL-0007 --apply docker-compose.yml  # one rule only
+```
+
+Context-dependent findings (capability lists, socket mounts) are listed with
+the fix to make by hand, and a region using YAML anchors, merge keys, or `${VAR}`
+interpolation is refused rather than guessed. The full contract is in the
+[fix guide](https://tmatens.github.io/compose-lint/fix/).
+
+## CI Integration
+
+### GitHub Actions
+
+Runs compose-lint and uploads findings to GitHub Code Scanning:
+
+```yaml
+# .github/workflows/lint.yml
+name: Compose Lint
+on: [push, pull_request]
+
+permissions: {}
+
+jobs:
+  compose-lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read          # checkout
+      security-events: write  # upload the SARIF to Code Scanning
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: tmatens/compose-lint@8afed8beaa6a4de6047b02d5630285bb8cf91c0a # v1.7.1
+        with:
+          sarif-file: results.sarif
+```
+
+The SHA pin and the `permissions:` blocks are deliberate. The
+[GitHub Action guide](https://tmatens.github.io/compose-lint/github-action/) explains both, lists every
+input (including SARIF without the Code Scanning upload), and shows how to
+[run the PyPI package without the action](https://tmatens.github.io/compose-lint/github-action/#without-the-action).
+
+### Forgejo Actions
+
+compose-lint runs on Forgejo Actions too, with two practical differences
+(cross-instance action URLs and a checkout/node quirk in job containers). The
+recipe is in the [Forgejo guide](https://tmatens.github.io/compose-lint/forgejo/),
+and the weekly [forgejo-smoke workflow](https://github.com/tmatens/compose-lint/blob/main/.github/workflows/forgejo-smoke.yml)
+runs it against a live Forgejo.
+
+### Pre-commit
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/tmatens/compose-lint
+    rev: v1.7.1
+    hooks:
+      - id: compose-lint
+```
+
+If you set `args:`, end the list with `--`, as in
+`args: [--fail-on, low, --]`. Your `args:` replaces the hook's default, and
+the [CLI reference](https://tmatens.github.io/compose-lint/cli/#end-of-options) explains why the `--`
+matters and how the hook handles a Compose file committed as a symlink.
+
+### SARIF output
+
+```bash
+compose-lint --format sarif docker-compose.yml > results.sarif
+```
+
+In CI, `--output results.sarif` writes the same report without following a
+symlink or directory a pull request put at that path
+([CLI reference](https://tmatens.github.io/compose-lint/cli/#writing-the-report-to-a-file)). Each rule
+carries CIS Docker Benchmark, OWASP and MITRE ATT&CK tags, so Code Scanning
+alerts can be filtered by them; see the [standards mapping](https://tmatens.github.io/compose-lint/standards/).
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | No findings at or above the `--fail-on` threshold |
+| 1 | One or more findings at or above the `--fail-on` threshold |
+| 2 | compose-lint couldn't run, or couldn't see the whole stack (invalid args, file not found, invalid Compose file, a rule crashed, or a coverage gap — see [Grades what actually deploys](#grades-what-actually-deploys)) |
+
+The default threshold is `high` — medium and low findings don't fail CI unless you opt in:
+
+```bash
+compose-lint --fail-on low docker-compose.yml   # fail on everything
+compose-lint --fail-on critical docker-compose.yml  # only critical
+```
+
+### Agent-written Compose
+
+Compose a coding agent writes goes through the same pre-commit hook and
+Action as anyone else's. To drive compose-lint *from* an agent or script,
+parse `--format json` (a versioned envelope) and read
+[Automation and agent use](https://tmatens.github.io/compose-lint/cli/#automation-and-agent-use), which
+covers what agents get wrong: exit 2 is a coverage gap, `fix` is a dry run,
+there are no inline suppressions, and `--explain` works offline.
+
+## Adopting on an existing repo
+
+Most established stacks don't start clean. `compose-lint init` turns a stack's
+current findings — the same merged view `check` grades, override and env files
+included — into a `.compose-lint.yml` baseline, so the gate can go in today and
+you triage afterwards:
+
+```bash
+compose-lint init docker-compose.yml          # writes ./.compose-lint.yml
+compose-lint init docker-compose.yml -o ci.yml # write somewhere else
+compose-lint init docker-compose.yml --force   # overwrite an existing config
+```
+
+Each finding becomes a per-service `exclude_services` entry with a `TODO`
+reason — never a global `enabled: false`, so a service you add later still
+trips the rule. Replace each reason with a real justification, or delete the
+entry and fix the issue. Details:
+[generating a starter config](https://github.com/tmatens/compose-lint/blob/main/docs/configuration.md#generating-a-starter-config).
+
+## Configuration
+
+Create `.compose-lint.yml` (or `.compose-lint.yaml`) to disable rules, exclude specific services, or adjust severity:
+
+```yaml
+rules:
+  CL-0001:
+    enabled: false
+    reason: "SEC-1234 — approved 2026-07-01"
+  CL-0003:
+    exclude_services:
+      minecraft: "entrypoint switches users via su-exec"
+  CL-0005:
+    severity: medium
+```
+
+Suppressed findings still appear, marked **SUPPRESSED**, with the `reason`
+carried into JSON and SARIF; they do not affect the exit code, and
+`--skip-suppressed` hides them. A `severity:` override is reported as such.
+See [docs/configuration.md](https://github.com/tmatens/compose-lint/blob/main/docs/configuration.md)
+for per-service semantics, precedence, and the output-format mapping.
+
+## CLI Reference
+
+Three subcommands: `check` (the default — a bare `compose-lint` works), `fix`,
+and `init`. Every flag is described in `compose-lint --help` and the
+[CLI reference](https://tmatens.github.io/compose-lint/cli/), along with color
+control (`NO_COLOR` / `FORCE_COLOR`) and end-of-options semantics. Text
+output prints each rule's fix block once per file; `-v` repeats it on every
+finding, `-q` gives one line per finding.
 
 ## Rules
 
@@ -270,76 +428,9 @@ fix` applies for you, dry-run first — see [Fixing findings](#fixing-findings).
 Every other rule reports specific fix guidance for a change only you can
 choose, and is never auto-edited.
 
-The gaps in the numbering — CL-0012, CL-0015, CL-0023 — are retired ids kept
-fallow forever: reusing one would silently change the meaning of a suppression
-someone has already written
-([ADR-005](docs/adr/005-rule-id-scheme.md),
-[ADR-028](docs/adr/028-pre-1.0-rule-id-sweep.md)).
-
 ## Severity Levels
 
 Findings are rated **LOW**, **MEDIUM**, **HIGH**, or **CRITICAL**. Each rule's severity is derived from a two-axis matrix — the attacker precondition the misconfiguration creates, and the impact scope it reaches — under a stated attacker baseline and a stated Docker posture. See [docs/severity.md](https://github.com/tmatens/compose-lint/blob/main/docs/severity.md) for the full scoring matrix, the derivation of every rule, and the override mechanism.
-
-## Configuration
-
-Create `.compose-lint.yml` (or `.compose-lint.yaml`) to disable rules, exclude specific services, or adjust severity:
-
-```yaml
-rules:
-  CL-0001:
-    enabled: false
-    reason: "SEC-1234 — approved 2026-07-01"
-  CL-0003:
-    exclude_services:
-      minecraft: "entrypoint switches users via su-exec"
-  CL-0005:
-    severity: medium
-```
-
-Suppressed findings still appear, marked **SUPPRESSED**, with the `reason`
-carried into JSON and SARIF; they do not affect the exit code, and
-`--skip-suppressed` hides them. A `severity:` override is reported as such.
-See [docs/configuration.md](https://github.com/tmatens/compose-lint/blob/main/docs/configuration.md)
-for per-service semantics, precedence, and the output-format mapping.
-
-## CLI Reference
-
-Three subcommands: `check` (the default — a bare `compose-lint` works), `fix`,
-and `init`. Every flag is described in `compose-lint --help` and the
-[CLI reference](https://tmatens.github.io/compose-lint/cli/), along with color
-control (`NO_COLOR` / `FORCE_COLOR`) and end-of-options semantics. Text
-output prints each rule's fix block once per file; `-v` repeats it on every
-finding, `-q` gives one line per finding.
-
-## Fixing findings
-
-`compose-lint fix` auto-remediates the findings whose edit is **mechanically
-unambiguous** — one correct value, in one place, with no collateral change to
-the rest of the file: adding `read_only: true` or `no-new-privileges:true`,
-binding a published port to `127.0.0.1`, restoring a disabled logging driver
-or seccomp profile, and similar. It is **dry-run by default**: it
-prints a unified diff and writes nothing.
-
-<!-- Fix demo GIF. Regenerate with scripts/demo/ — see scripts/demo/README.md. -->
-![compose-lint fix on a docker-compose.yml: the dry-run prints three `behavior-changing` caveat lines (CL-0009's re-applied seccomp profile, CL-0007's read_only, CL-0005's rebind to 127.0.0.1) above a unified diff adding `read_only: true`, replacing `seccomp:unconfined` with `no-new-privileges:true`, and rebinding `"8080:8080"` to `"127.0.0.1:8080:8080"`, summarised as 3 fixes available with the tag-only image pin (CL-0019) listed to fix by hand, with its digest-pin instruction — then `fix --apply` writes the same three edits and `compose-lint check` re-lints to a PASS verdict, the un-auto-fixable tag-only image pin (CL-0019) still reported below the threshold and named by the `--explain` hint above the verdict.](https://raw.githubusercontent.com/tmatens/compose-lint/main/docs/assets/demo-fix.gif)
-
-> **Auto-fixable does not mean harmless.** `fix` will not corrupt or reflow
-> your file, but it will change how your stack behaves: `read_only: true`
-> breaks a container that writes to its root filesystem, and rebinding a port
-> to `127.0.0.1` cuts off remote clients. Each such edit is labelled
-> `⚠ behavior-changing` in the diff with the breakage named. Read those lines
-> before `--apply`, and roll out to staging first.
-
-```bash
-compose-lint fix docker-compose.yml            # preview the diff, write nothing
-compose-lint fix --apply docker-compose.yml    # write the fixes in place
-compose-lint fix --only CL-0007 --apply docker-compose.yml  # one rule only
-```
-
-Context-dependent findings (capability lists, socket mounts) are listed with
-the fix to make by hand, and a region using YAML anchors, merge keys, or `${VAR}`
-interpolation is refused rather than guessed. The full contract is in the
-[fix guide](https://tmatens.github.io/compose-lint/fix/).
 
 ## How it compares
 
@@ -363,137 +454,13 @@ none of the settings that look dangerous as written but deploy safely. How it
 does that is under
 [Grades what actually deploys](#grades-what-actually-deploys).
 
-*Rules checked against each tool's documentation in October 2026. The
+*Rules checked against each tool's documentation in October 2026, and the
+runs repeated on 2026-11-15. The
 [full comparison](https://tmatens.github.io/compose-lint/compare/) has the
 runs, fixtures, commands and versions behind every cell, and the
 OWASP cheat-sheet items compose-lint has no rule for.*
 
 **Not in scope**: compose-lint does not validate Compose schema, scan images for CVEs, or lint Dockerfiles. Pair it with [DCLint](https://github.com/zavoloklom/docker-compose-linter) for schema/structure, [Hadolint](https://github.com/hadolint/hadolint) for Dockerfiles, and [Trivy](https://github.com/aquasecurity/trivy) for image CVEs.
-
-## Versioning & stability
-
-compose-lint follows [Semantic Versioning](https://semver.org/). Since 1.0, the CLI, exit codes, config schema, and JSON/SARIF output are stable. New and tightened rules ship in MINOR releases, so pin a version or use `--fail-on` if you need deterministic CI. See [docs/compatibility.md](https://github.com/tmatens/compose-lint/blob/main/docs/compatibility.md) for the full stability promise and deprecation policy.
-Release-by-release changes are in
-[CHANGELOG.md](https://github.com/tmatens/compose-lint/blob/main/CHANGELOG.md);
-planned work is on the [roadmap](https://tmatens.github.io/compose-lint/ROADMAP/).
-
-## Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | No findings at or above the `--fail-on` threshold |
-| 1 | One or more findings at or above the `--fail-on` threshold |
-| 2 | compose-lint couldn't run, or couldn't see the whole stack (invalid args, file not found, invalid Compose file, a rule crashed, or a coverage gap — see [Grades what actually deploys](#grades-what-actually-deploys)) |
-
-The default threshold is `high` — medium and low findings don't fail CI unless you opt in:
-
-```bash
-compose-lint --fail-on low docker-compose.yml   # fail on everything
-compose-lint --fail-on critical docker-compose.yml  # only critical
-```
-
-## CI Integration
-
-### GitHub Actions
-
-Runs compose-lint and uploads findings to GitHub Code Scanning:
-
-```yaml
-# .github/workflows/lint.yml
-name: Compose Lint
-on: [push, pull_request]
-
-permissions: {}
-
-jobs:
-  compose-lint:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read          # checkout
-      security-events: write  # upload the SARIF to Code Scanning
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: tmatens/compose-lint@8afed8beaa6a4de6047b02d5630285bb8cf91c0a # v1.7.1
-        with:
-          sarif-file: results.sarif
-```
-
-The `uses:` line pins a commit SHA, which is what OpenSSF Scorecard grades
-for and what Renovate keeps fresh; since 1.0, `tmatens/compose-lint@v1` floats
-with releases instead. The `permissions:` blocks are part of the recipe: the
-job holds only the two scopes it uses. If you want the SARIF file without the
-Code Scanning upload, set `upload-sarif: "false"` and drop
-`security-events: write`. Every input, and the reasoning behind the pin and
-the permissions, is in the
-[GitHub Action guide](https://tmatens.github.io/compose-lint/github-action/).
-
-Or install from PyPI directly:
-
-```yaml
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
-      - run: pip install compose-lint
-      - run: compose-lint docker-compose.yml
-```
-
-### Forgejo Actions
-
-compose-lint runs on Forgejo Actions too, with two practical differences
-(cross-instance action URLs and a checkout/node quirk in job containers). The
-recipe is in the [Forgejo guide](https://tmatens.github.io/compose-lint/forgejo/),
-and the weekly [forgejo-smoke workflow](.github/workflows/forgejo-smoke.yml)
-runs it against a live Forgejo.
-
-### SARIF output
-
-```bash
-compose-lint --format sarif docker-compose.yml > results.sarif
-```
-
-In CI, `--output results.sarif` writes the same report without following a
-symlink or directory a pull request put at that path; see the
-[CLI reference](https://tmatens.github.io/compose-lint/cli/#writing-the-report-to-a-file).
-
-Each rule in the SARIF output is tagged with the CIS Docker Benchmark
-controls, OWASP Docker Security rules and MITRE ATT&CK techniques it relates
-to, so Code Scanning alerts can be filtered by them. The mapping and what a
-tag does and does not claim are on the
-[standards mapping](https://tmatens.github.io/compose-lint/standards/) page.
-
-## Pre-commit
-
-```yaml
-# .pre-commit-config.yaml
-repos:
-  - repo: https://github.com/tmatens/compose-lint
-    rev: v1.7.1
-    hooks:
-      - id: compose-lint
-```
-
-The hook ships `args: [--]`, and setting `args:` **replaces** that default.
-Keep `--` last if you pass flags, so a repository path can never be read as
-an option ([why](https://tmatens.github.io/compose-lint/cli/#end-of-options)):
-
-```yaml
-      - id: compose-lint
-        args: [--fail-on, low, --]
-```
-
-A Compose file committed as a symbolic link is linted like any other, and a
-link whose target is missing fails the hook. The hook sets `types: []` and
-`types_or: [yaml, symlink]` for this; a `types:` of your own replaces it.
-
-## Agent-written Compose
-
-If a coding agent writes Compose in your repo, the two gates above already
-cover it: the pre-commit hook catches it before the commit, the Action before
-the merge, on the same terms as anyone else's. If you are driving compose-lint
-*from* an agent or script, parse `--format json` (a versioned envelope) and
-read [Automation and agent use](https://tmatens.github.io/compose-lint/cli/#automation-and-agent-use),
-which covers what agents get wrong: exit 2 is a coverage gap, `fix` is a dry
-run, there are no inline suppressions, and `--explain` works offline.
 
 ## Security posture
 
@@ -503,7 +470,16 @@ compose-lint is built to be safe to depend on:
 - **Supply chain**: every release ships SLSA build provenance and Sigstore attestations. Published to PyPI via Trusted Publishers (OIDC) — no manual `twine upload`, no long-lived API tokens. To check a release yourself, see [Verifying a release](https://tmatens.github.io/compose-lint/verifying/).
 - **Vulnerability transparency**: each release ships an [OpenVEX](https://openvex.dev/) document declaring known pip CVEs `not_affected`: pip code is stripped from the runtime image.
 - **External audit**: tracked on [OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/tmatens/compose-lint) and [OpenSSF Best Practices Baseline 2](https://www.bestpractices.dev/projects/12472); CodeQL runs on every PR, ClusterFuzzLite fuzzes code-touching PRs, and Docker Scout scans the published image daily.
+- **Published advisories**: vulnerabilities found in compose-lint, including by its own adversarial reviews, are fixed and disclosed as [GitHub security advisories](https://github.com/tmatens/compose-lint/security/advisories), with a CVE ID requested for each.
 - **Reporting vulnerabilities**: see [SECURITY.md](https://github.com/tmatens/compose-lint/blob/main/.github/SECURITY.md).
+
+## Versioning & stability
+
+compose-lint follows [Semantic Versioning](https://semver.org/). Since 1.0, the CLI, exit codes, config schema, and JSON/SARIF output are stable. New and tightened rules ship in MINOR releases, so pin a version or use `--fail-on` if you need deterministic CI. See [docs/compatibility.md](https://github.com/tmatens/compose-lint/blob/main/docs/compatibility.md) for the full stability promise and deprecation policy.
+Release-by-release changes are in
+[CHANGELOG.md](https://github.com/tmatens/compose-lint/blob/main/CHANGELOG.md);
+planned work is on the [roadmap](https://tmatens.github.io/compose-lint/ROADMAP/).
+
 
 ## Questions and feedback
 

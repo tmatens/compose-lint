@@ -586,15 +586,15 @@ which stopped being a person when that PR started automerging. A manual
 
 The `rerecord-demos` job keeps the README's two demo GIFs current without
 a releaser remembering to. On the post-release push (and on a manual
-dispatch) it installs the just-released wheel, runs the commands the two
+dispatch) it installs the just-released wheel, runs the commands the three
 tapes type (`scripts/demo/expected_output.py`) and compares the text with
 `scripts/demo/expected-output.txt`, the text the committed GIFs were
 recorded from, with the version banner masked. Unchanged means the GIFs
 are still current and the job ends with a one-line summary. A difference,
 or `force: true` on a dispatch, moves the toolchain pin and lock to the
-release, renders both casts with `scripts/demo/render.sh` in the pinned
+release, renders every cast with `scripts/demo/render.sh` in the pinned
 VHS image, rewrites the snapshot, and opens a `Re-record the README demos
-on X.Y.Z` PR with both recordings embedded in its body. That PR is
+on X.Y.Z` PR with every recording embedded in its body. That PR is
 deliberately **not** auto-merged: whether a banner scrolled off or a pager
 page rendered is a question for eyes, and the embedded GIFs make it a
 one-glance review. The snapshot is written only by that job (or a hand
