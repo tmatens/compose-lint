@@ -65,10 +65,10 @@ class TestIntegration:
         assert result.returncode == 0
 
     def test_self_hosted_fixture_lints_clean_at_low_threshold(self) -> None:
-        # The hardened compose-lint-runs-compose-lint configuration in the
-        # README must produce zero findings across every rule. Asserting
-        # at --fail-on low makes any new rule that fires on it a release
-        # blocker — i.e. compose-lint must always be able to dogfood.
+        # The hardened compose-lint-runs-compose-lint configuration in
+        # docs/running-hardened.md must produce zero findings across every
+        # rule. Asserting at --fail-on low makes any new rule that fires on it
+        # a release blocker — i.e. compose-lint must always be able to dogfood.
         result = run_cli("--fail-on", "low", str(FIXTURES / "safe_self_hosted.yml"))
         assert result.returncode == 0, result.stdout + result.stderr
 

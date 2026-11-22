@@ -20,7 +20,7 @@ pipeline, this is the page to read.
 2. **It will not connect to the network.** The product code performs no
    network I/O — no DNS, no HTTP, no telemetry. You can prove this: the
    documented hardened `docker run` recipe in
-   [README.md](https://github.com/tmatens/compose-lint/blob/main/README.md#running-with-full-hardening) sets
+   [Running compose-lint hardened](running-hardened.md) sets
    `--network none`, and CI runs the full smoke battery under that flag
    set on every release.
 

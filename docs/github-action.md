@@ -196,7 +196,7 @@ The action is a thin wrapper over the PyPI package. Installing it directly
 works in any job that has Python:
 
 ```yaml
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@<sha> # vX.Y.Z
         with:
           python-version: "3.13"
       - run: pip install compose-lint

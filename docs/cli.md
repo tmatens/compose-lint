@@ -195,6 +195,10 @@ positional (`compose-lint init docker-compose.yml -o ci.yml`) are documented
 and must keep working, so placing `--` is the caller's job. If you set
 `args:` in your pre-commit config, keep `--` last.
 
+The hook also sets `types: []` and `types_or: [yaml, symlink]`, so a Compose
+file committed as a symbolic link is linted like any other, and a link whose
+target is missing fails the hook. A `types:` of your own replaces that.
+
 ## Automation and agent use
 
 Everything below is also true of a shell script; it is written out because a

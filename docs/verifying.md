@@ -66,6 +66,19 @@ gh attestation verify "compose_lint-${VERSION}-py3-none-any.whl" \
 
 Every release on PyPI, including the earliest, also has PyPI's own [PEP 740](https://peps.python.org/pep-0740/) attestations, shown under "Provenance" on the [project page](https://pypi.org/project/compose-lint/).
 
+## Reproducible install
+
+`pip install compose-lint` resolves the newest release, and whatever
+dependency versions its ranges allow, at install time. For CI or production
+tooling, pin the version and install the dependencies from that release's
+hash-pinned lockfile, which release automation keeps current:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/tmatens/compose-lint/v1.7.1/requirements.lock
+pip install --require-hashes -r requirements.lock   # dependencies, hash-pinned
+pip install --no-deps compose-lint==1.7.1          # the tool, version-pinned
+```
+
 ## What each release carries
 
 Every image listed here is signed, and every release on PyPI carries PyPI's attestations; a "no" means an additional artifact did not exist yet, not that the release is unsigned. Run against a release that lacks the artifact, a command fails without implying tampering: `cosign verify-attestation` reports "none of the attestations matched the predicate type", `gh attestation verify` returns HTTP 404, and `gh release download` finds no bundle.

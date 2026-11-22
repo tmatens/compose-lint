@@ -319,22 +319,22 @@ jobs:
             exit 1
           fi
 
-  # The README's two demo GIFs are recordings of a *released* compose-lint
+  # The README's three demo GIFs are recordings of a *released* compose-lint
   # (the toolchain installs from PyPI), so the moment to refresh them is the
   # same moment this workflow exists for: right after a release is pinned.
   # Whether to refresh is decided here, not by a releaser remembering the
-  # checklist item: the job runs the commands the two tapes type against the
+  # checklist item: the job runs the commands the three tapes type against the
   # just-released wheel and compares the text with
   # scripts/demo/expected-output.txt, the text the committed GIFs show, with
   # the version banner masked. Unchanged text means the GIFs are still
   # current and nothing happens; a difference (or `force` on a dispatch)
-  # renders both casts with scripts/demo/render.sh, moves the toolchain pin
+  # renders every cast with scripts/demo/render.sh, moves the toolchain pin
   # and lock, rewrites the snapshot, and opens a PR.
   #
   # That PR is deliberately NOT auto-merged, unlike the pin PR that triggers
   # this run. A GIF is reviewed by looking at it — did the banner scroll off,
   # did the pager page render — which no check here can do; the PR body
-  # embeds both recordings so the review is one glance. Masking the banner
+  # embeds every recording so the review is one glance. Masking the banner
   # is a trade: a release that changes nothing visible leaves the README
   # showing the previous version until output next changes, and saves ~1.6
   # MB of repository history per release.
@@ -433,17 +433,20 @@ jobs:
       # from the GIF header (bytes 6-9, little-endian width and height): the
       # runner image has neither ffprobe nor Pillow, and the proof dispatch
       # of this job died on exactly that assumption.
-      - name: Render both casts
+      - name: Render the casts
         if: steps.compare.outputs.rerecord == 'true'
         run: |
           set -euo pipefail
           dims() { python3 -c 'import struct,sys; w,h=struct.unpack("<HH", open(sys.argv[1],"rb").read(10)[6:10]); print(f"{w}x{h}")' "$1"; }
           before_demo=$(dims docs/assets/demo.gif); before_fix=$(dims docs/assets/demo-fix.gif)
+          before_stack=$(dims docs/assets/demo-stack.gif)
           scripts/demo/render.sh
           after_demo=$(dims docs/assets/demo.gif); after_fix=$(dims docs/assets/demo-fix.gif)
+          after_stack=$(dims docs/assets/demo-stack.gif)
           {
             echo "DIMS_DEMO=${before_demo} -> ${after_demo}"
             echo "DIMS_FIX=${before_fix} -> ${after_fix}"
+            echo "DIMS_STACK=${before_stack} -> ${after_stack}"
           } >> "$GITHUB_ENV"
 
       - name: Record the text the new GIFs show
@@ -466,7 +469,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "${branch}"
-          git add docs/assets/demo.gif docs/assets/demo-fix.gif \
+          git add docs/assets/demo.gif docs/assets/demo-fix.gif docs/assets/demo-stack.gif \
             scripts/demo/requirements.in scripts/demo/requirements.lock \
             scripts/demo/expected-output.txt
           git commit -m "Re-record the README demos on ${version}"
@@ -480,14 +483,15 @@ jobs:
           cat > "${RUNNER_TEMP}/pr-body.md" <<EOF
           **Post-release follow-up, opened by \`marketplace-smoke.yml\`'s \`rerecord-demos\` job.** ${reason}
 
-          Both casts were rendered by \`scripts/demo/render.sh\` in the pinned toolchain image, against the \`compose-lint==${version}\` wheel from PyPI. The toolchain pin, its lock and \`scripts/demo/expected-output.txt\` move with the recordings. The hero cast's lint step fits the tape's rows (checked before rendering). Pixel sizes, previous -> new: \`demo.gif\` ${DIMS_DEMO}, \`demo-fix.gif\` ${DIMS_FIX}.
+          All three casts were rendered by \`scripts/demo/render.sh\` in the pinned toolchain image, against the \`compose-lint==${version}\` wheel from PyPI. The toolchain pin, its lock and \`scripts/demo/expected-output.txt\` move with the recordings. The hero cast's lint step fits the tape's rows (checked before rendering). Pixel sizes, previous -> new: \`demo.gif\` ${DIMS_DEMO}, \`demo-fix.gif\` ${DIMS_FIX}, \`demo-stack.gif\` ${DIMS_STACK}.
 
           **Not auto-merged.** A recording is reviewed by looking at it. Check, then merge:
 
           - [ ] the banner reads \`compose-lint ${version}\` and did not scroll off the top of the hero cast
           - [ ] the \`--explain\` page renders with its \`CL-0001 · Space next · b back · q quit\` status line
           - [ ] the fix cast still ends on PASS with the one finding left to fix by hand
-          - [ ] \`README.md\`'s two alt texts still describe what is shown; if the diff below changed the story, edit them on this branch
+          - [ ] the stack cast's lint screen still shows the CRITICAL from \`compose.override.yml\` and the port opened by \`.env\`
+          - [ ] \`README.md\`'s three alt texts still describe what is shown; if the diff below changed the story, edit them on this branch
 
           ### Hero cast
 
@@ -496,6 +500,10 @@ jobs:
           ### Fix cast
 
           ![fix cast](${raw}/demo-fix.gif)
+
+          ### Stack cast
+
+          ![stack cast](${raw}/demo-stack.gif)
 
           <details><summary>Output diff against the previous recording</summary>
 
@@ -514,7 +522,7 @@ jobs:
           echo "Opened ${url}"
           {
             echo ""
-            echo "Opened ${url} for review. It is not auto-merged: look at both recordings, then merge."
+            echo "Opened ${url} for review. It is not auto-merged: look at the recordings, then merge."
           } >> "$GITHUB_STEP_SUMMARY"
 
   # Neither unattended trigger has a PR to go red on. Without this the only
