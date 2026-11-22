@@ -175,8 +175,8 @@ instead of staying accepted for good. Give the entry a mapping with a
 rules:
   CL-0001:
     exclude_services:
-      portainer:
-        reason: "Manages containers; moving behind a GET-only socket proxy"
+      dashboard:
+        reason: "Reads container status only; moving behind a GET-only socket proxy"
         expires: 2027-03-31
   CL-0007:
     enabled: false
