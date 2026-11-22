@@ -209,7 +209,10 @@ the test that enforces it, or says that a reviewer does.
 - **The README links to topics; it does not hold them.** A new procedure,
   command set or growing table gets its own page under `docs/` with a nav
   entry in `mkdocs.yml`, and the README gains at most a sentence linking to
-  it. Reviewed by hand.
+  it. What the README is for, its section order, and what earns a place
+  there are in AGENTS.md, "What the README is for". Absolute links and
+  SHA-pinned `uses:` lines are checked by `tests/test_readme.py`; the rest is
+  reviewed by hand.
 
 ## Adding a new rule
 
@@ -466,7 +469,9 @@ check fails on a commit you did not write.
   be covered (see "Local quality checks" for how to run the same check
   yourself).
 - **Update documentation** if you change behavior. Rule changes need
-  `docs/rules/CL-XXXX.md`; CLI changes need `README.md`. You do not need a
+  `docs/rules/CL-XXXX.md`; CLI changes need `docs/cli.md`, and `README.md`
+  only when they change how someone installs, first runs, or wires
+  compose-lint into CI. You do not need a
   `CHANGELOG.md` entry — see "You get credited" above, the releaser writes
   it. Adding one is welcome, not expected.
 - **Do not regenerate the corpus snapshot.** If your change touches rule
