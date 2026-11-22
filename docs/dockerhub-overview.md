@@ -13,6 +13,8 @@ In a study of 11,111 public Docker Compose files on GitHub, **99% of the 5,907 o
 - Supply-chain — unpinned images, missing digest pins
 - Filesystem and credential leaks — Docker socket mounts, sensitive host paths, plaintext credentials in `environment:`
 
+It grades the stack Compose would build, not only the file you name: a sibling `compose.override.yml` is merged in, `.env` fills `${VAR}` references, and `include:` and `extends:` are followed, so a `privileged: true` set in an override is caught like one in the main file. Details: [What a run reads](https://tmatens.github.io/compose-lint/what-a-run-reads/).
+
 ## Usage
 
 ```bash
@@ -29,7 +31,7 @@ Auto-detects `compose.yml` / `docker-compose.yml` variants; pass filenames to li
 |------|---------|
 | 0 | No findings at or above the `--fail-on` threshold (default: `high`) |
 | 1 | One or more findings at or above the threshold |
-| 2 | compose-lint couldn't run |
+| 2 | compose-lint couldn't run, or couldn't see the whole stack (a [coverage gap](https://tmatens.github.io/compose-lint/compatibility/#coverage-gaps-are-not-findings)) |
 
 Output formats: human `text` (default), `json`, and `sarif` — SARIF uploads render findings and suggested fixes directly on GitHub pull requests. Suppressions live in a reviewable `.compose-lint.yml` with per-service reasons and stay visible in output, marked SUPPRESSED. See [configuration](https://tmatens.github.io/compose-lint/configuration/), the [GitHub Action](https://tmatens.github.io/compose-lint/github-action/), and [CI integration recipes](https://github.com/tmatens/compose-lint#ci-integration) (GitHub Actions, GitLab, Forgejo/Gitea, pre-commit).
 

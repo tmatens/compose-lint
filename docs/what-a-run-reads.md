@@ -7,6 +7,8 @@ is merged, the sibling `.env` is resolved, `env_file:` targets are graded,
 `include:` and cross-file `extends:` are followed — and a part of the stack it
 *cannot* see is an error, never a silent pass.
 
+![compose-lint on a project of three files: `cat compose.yaml` shows a `web` service hardened as written (read_only, cap_drop ALL, no-new-privileges, memory and CPU limits, an image pinned by digest) publishing `"${BIND:-127.0.0.1}:8080:8080"`; `cat compose.override.yml` shows the override setting `privileged: true`, and `cat .env` shows `BIND=0.0.0.0`. Then `compose-lint` with no arguments: the header reads `files: compose.yaml + compose.override.yml · env: .env`, a warning says the override was merged because Compose merges it automatically, and the report shows a CRITICAL privileged-mode finding (CL-0002) marked `in: compose.override.yml (merged into this run)` and a MEDIUM port finding (CL-0005) for `0.0.0.0:8080:8080`, quoting the `${BIND:-127.0.0.1}` line it came from, above the FAIL verdict.](assets/demo-stack.gif)
+
 Everything it opens is a document the one you named routes it to, and every
 one of them has to resolve inside that file's own directory or, through a
 symlink, inside the checkout. Nothing outside either is read, no matter what
