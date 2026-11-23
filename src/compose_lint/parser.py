@@ -17,7 +17,7 @@ from compose_lint._env_file import (
     env_closure,
     env_read_failure,
     parse_env,
-    read_env,
+    read_env_text,
 )
 from compose_lint._env_quote import remember as remember_env_values
 from compose_lint._limits import (
@@ -1542,39 +1542,44 @@ def _layered_environment(
     inner one. A directory layer is that directory's ``.env``; an
     :class:`_EnvFiles` layer is the files an ``include:`` entry named instead.
 
-    An entry's files resolve their references against the layers outside them,
-    so those are read for ``wanted`` grown by what the files reference, and the
-    layers are read outermost first.
+    A layer resolves its references against the layers outside it, ahead of
+    its own definitions (measured on Compose 5.5.0 and 5.8.0 for an included
+    project's ``.env`` as for an entry's files: with ``P=proj`` in the
+    project's ``.env``, ``P=own`` then ``K=${P}`` in an included one ships
+    ``K=proj``). So the outer layers are read for ``wanted`` grown by what the
+    inner ones reference, and the layers are resolved outermost first.
     """
-    needed = set(wanted)
+    # Each layer's text, in the layer's own order: one `.env`, or an entry's
+    # files. A directory with no readable `.env` contributes nothing.
+    gaps: list[str] = []
+    texts: list[tuple[str, ...]] = []
     for layer in layers:
         if isinstance(layer, _EnvFiles):
-            for text in reversed(layer.texts):
-                needed = env_closure(text, needed)
+            texts.append(layer.texts)
+            continue
+        # Inside the project, not merely inside the directory: an included
+        # file's `.env` may link to one elsewhere in the same project, but
+        # never out of it.
+        text = read_env_text(layer, within=project_dir or layer)
+        if text is None:
+            gap = _unread_env_gap(layer, project_dir, own=own)
+            if gap is not None and gap not in gaps:
+                gaps.append(gap)
+        texts.append(() if text is None else (text,))
 
-    gaps: list[str] = []
+    needed = set(wanted)
+    for layer_texts in texts:
+        for text in reversed(layer_texts):
+            needed = env_closure(text, needed)
+
     environment: dict[str, str] = {}
-    for layer in reversed(layers):
+    for layer_texts in reversed(texts):
+        # What this layer has set so far: each file's keys over the earlier
+        # files', less any name a later one left unresolved.
         supplied: dict[str, str] = {}
-        if isinstance(layer, _EnvFiles):
-            for text in layer.texts:
-                parsed = parse_env(
-                    text, needed, environment=environment, earlier=supplied
-                )
-                # What the entry has set so far: this file's keys over the
-                # earlier files', less any name it left unresolved.
-                supplied = dict(parsed.values)
-        else:
-            # Inside the project, not merely inside the directory: an included
-            # file's `.env` may link to one elsewhere in the same project, but
-            # never out of it.
-            parsed_env = read_env(layer, needed, within=project_dir or layer)
-            if parsed_env is None:
-                gap = _unread_env_gap(layer, project_dir, own=own)
-                if gap is not None and gap not in gaps:
-                    gaps.append(gap)
-            else:
-                supplied = dict(parsed_env.values)
+        for text in layer_texts:
+            parsed = parse_env(text, needed, environment=environment, earlier=supplied)
+            supplied = dict(parsed.values)
         for name, value in supplied.items():
             environment.setdefault(name, value)
     return environment, gaps
