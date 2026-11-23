@@ -170,8 +170,17 @@ def _memory_is_set(value: Any) -> bool:
     such floor (``cpus: 0.5`` is half a CPU), so this applies to memory only.
     Values under Docker's 6 MB minimum are refused by the daemon and never
     deploy, so they still count as set.
+
+    Those figures are for a quoted value. An unquoted number with a fractional
+    part (``mem_limit: 1.5``, ``536870912.5``) is never a limit: measured on
+    Compose 5.5.0 and 5.7.1 it renders no ``mem_limit`` at all, whatever its
+    size, and 5.8.0 refuses the file ("must be a integer or string"). A whole
+    number written as a float (``2.0``) is a limit on 5.8.0, which is the
+    version followed, though 5.7.1 and earlier dropped it too.
     """
     if isinstance(value, bool) or not _is_set(value):
+        return False
+    if isinstance(value, float) and not value.is_integer():
         return False
     if isinstance(value, (int, float)):
         return int(value) >= 1

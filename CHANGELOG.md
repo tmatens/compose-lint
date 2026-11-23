@@ -33,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   beside the first file is not merged was printed next to the warning that
   it was. The note now appears only when `-f` does not name that file. The
   merge itself was always right.
+- **CL-0026 no longer credits `mem_limit: 1.5` as a memory limit.** An
+  unquoted number with a fractional part was counted as a limit once it
+  reached one byte. Compose 5.7.1 and earlier deploy no memory limit for it,
+  whatever its size, and 5.8.0 refuses the file. A quoted `"1.5g"` and a
+  whole number are unchanged.
 - **An `include:` entry's `env_file:` is read.** Compose reads the files an
   entry names in place of the included project's own `.env`, and compose-lint
   parsed the key without using it. It graded the `${VAR:-default}` fallback
