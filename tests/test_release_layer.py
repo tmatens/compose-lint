@@ -12,6 +12,7 @@ no workflow resolves dependencies from an index it does not pin.
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -834,23 +835,52 @@ def test_a_digest_pinned_image_tag_is_not_a_version_pin(line: str, moved: bool) 
     assert (re.search(image_check, line) is not None) is moved
 
 
-# --- The Scout action runs before the release does ----------------------
+# --- Release actions run on the PR before the release does ------------
 
-_SCOUT_PIN = re.compile(r"uses:\s*docker/scout-action@([0-9a-f]{40})")
+# The release actions ci.yml's release-actions-smoke job runs on every PR that
+# touches a workflow. That run only vouches for publish.yml if both name the
+# same commit. Renovate moves every copy in one group (renovate.json); this
+# catches a hand edit, or a rule change, that splits them.
+_SMOKED_RELEASE_ACTIONS = [
+    "sigstore/gh-action-sigstore-python",
+    "anchore/sbom-action",
+    "sigstore/cosign-installer",
+    "docker/scout-action",
+]
 
 
-def test_every_scout_action_pin_is_the_same() -> None:
-    # ci.yml's release-actions-smoke runs docker/scout-action on every PR
-    # that touches a workflow, and that run only vouches for publish.yml's
-    # release gate if both name the same commit. Renovate moves every copy
-    # in one group (renovate.json); this catches a hand edit that splits them.
+@pytest.mark.parametrize("action", _SMOKED_RELEASE_ACTIONS)
+def test_every_copy_of_a_smoked_release_action_pin_is_the_same(action: str) -> None:
+    pin = re.compile(rf"uses:\s*{re.escape(action)}@([0-9a-f]{{40}})")
     pins = {
-        path.name: set(_SCOUT_PIN.findall(path.read_text(encoding="utf-8")))
+        path.name: set(pin.findall(path.read_text(encoding="utf-8")))
         for path in sorted(WORKFLOWS.glob("*.yml"))
     }
     pins = {name: found for name, found in pins.items() if found}
     assert "publish.yml" in pins and "ci.yml" in pins, pins
     assert len(set().union(*pins.values())) == 1, pins
+
+
+def test_the_smoked_release_actions_share_one_renovate_group() -> None:
+    config = json.loads(
+        (REPO_ROOT / ".github" / "renovate.json").read_text(encoding="utf-8")
+    )
+    groups = [
+        rule
+        for rule in config["packageRules"]
+        if rule.get("groupName") == "release-actions-smoke"
+    ]
+    assert len(groups) == 1, groups
+    assert sorted(groups[0]["matchPackageNames"]) == sorted(_SMOKED_RELEASE_ACTIONS)
+    # Renovate applies packageRules in order and a later groupName wins, so
+    # no github-actions rule after this one may set a group.
+    rules = config["packageRules"]
+    later = rules[rules.index(groups[0]) + 1 :]
+    assert not [
+        r
+        for r in later
+        if "groupName" in r and "github-actions" in r.get("matchManagers", [])
+    ]
 
 
 def test_ci_reads_secrets_only_in_release_actions_smoke() -> None:

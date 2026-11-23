@@ -624,20 +624,18 @@ jobs:
   # sigstore-python signs them against Sigstore's *staging* instance (nothing
   # from a PR lands in the production transparency log), sbom-action writes
   # an SPDX document for dist/ and uploads nothing, and cosign-installer
-  # installs the CLI publish.yml attests with. Renovate keeps the two copies
-  # of each pin aligned: the ci.yml copy moves in the github-actions group
-  # and runs here, and the publish.yml copy then merges itself as an action
-  # already exercised on the CI path (renovate.json, docs/CI.md).
-  # actions/attest-build-provenance and pypa/gh-action-pypi-publish have no
+  # installs the CLI publish.yml attests with. Every copy of each pin moves
+  # in one Renovate group, release-actions-smoke, and
+  # tests/test_release_layer.py fails if two copies differ, so the PR that
+  # moves publish.yml's copy is the PR that runs it here (renovate.json,
+  # docs/CI.md). actions/attest-build-provenance and pypa/gh-action-pypi-publish have no
   # run that does not publish, so they are not here; they age instead.
   #
   # docker/scout-action runs here too, with the pre-seed step publish.yml's
   # docker-scout gate runs before it. Its first real run used to be that gate,
   # after the TestPyPI upload: on 1.8.0 a scout-action bump changed its
   # checksum file's format, the pre-seed could not parse it, and the version
-  # was lost. Unlike the three above, every copy of its pin moves in one
-  # Renovate group, and tests/test_release_layer.py fails if they differ, so
-  # the PR that moves publish.yml's copy is the PR that runs it here. The scan
+  # was lost. Its pins move in the same group as the three above. The scan
   # never fails on findings; CVE gating stays with publish.yml and
   # scout-scan.yml. It needs Docker Hub's read-only token, the one secret this
   # workflow references, and only in this job (tests/test_release_layer.py).
