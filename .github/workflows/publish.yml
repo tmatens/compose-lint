@@ -272,7 +272,12 @@ jobs:
           path: provenance/
 
   testpypi:
-    needs: build
+    # The upload is the one pre-gate step that consumes the version: neither
+    # TestPyPI nor PyPI accepts a filename twice, even after deletion. So it
+    # waits for the image checks, and a Docker or Scout failure that needs a
+    # fix on main leaves X.Y.Z free to re-tag (1.8.0 was lost to a Scout
+    # pre-seed failure that ran alongside a successful upload).
+    needs: [build, docker-smoke, docker-scout]
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment:
