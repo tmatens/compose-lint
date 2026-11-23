@@ -181,6 +181,17 @@ class TestSelection:
         (note,) = selection.notes
         assert note.startswith("compose.override.yml: not merged")
 
+    def test_an_override_that_f_names_is_merged_without_the_note(
+        self, project: Path
+    ) -> None:
+        """It is one of the project's files, so "not merged" would be false."""
+        write(project / "compose.override.yml", PRIVILEGED)
+        selection = plan_documents(
+            [], project_files=["compose.yaml", "compose.override.yml"]
+        )
+        assert selection.groups[0].paths == ["compose.yaml", "compose.override.yml"]
+        assert not selection.notes
+
     @pytest.mark.parametrize("position", [0, 1])
     def test_a_link_out_of_the_repository_stops_the_project(
         self, project: Path, tmp_path_factory: pytest.TempPathFactory, position: int

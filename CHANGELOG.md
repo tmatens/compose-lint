@@ -28,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`-f` no longer says an override it merged was "not merged".** With
+  `-f compose.yaml -f compose.override.yml`, the note that the override
+  beside the first file is not merged was printed next to the warning that
+  it was. The note now appears only when `-f` does not name that file. The
+  merge itself was always right.
 - **An `include:` entry's `env_file:` is read.** Compose reads the files an
   entry names in place of the included project's own `.env`, and compose-lint
   parsed the key without using it. It graded the `${VAR:-default}` fallback
