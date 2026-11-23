@@ -129,10 +129,19 @@ overlay listed as `ops/dev.yml` resolves `./data`, its `extends: {file:}` and
 its `${VAR}`s from there rather than from `ops/` — and `${VAR}`
 references resolve to what it supplies — `volumes: ["${MOUNT}:/data"]` with
 `MOUNT=/var/run/docker.sock` is graded as the control-socket mount it
-deploys. Two deliberate limits: values under `environment:` are never
-resolved from a `.env` (that is where secrets live), and the ambient shell
-environment is never read, so the same checkout lints the same on every
-machine. `--no-env` ignores env files entirely.
+deploys. `--no-env` ignores env files entirely.
+
+Two limits are deliberate:
+
+- **A `.env` value never fills in a value under `environment:`.** That is
+  where credentials are usually set, so the credential rules
+  ([CL-0020](rules/CL-0020.md), [CL-0021](rules/CL-0021.md)) grade what the
+  Compose file itself says there. `TOKEN: ${TOKEN}` is not reported, whatever
+  the `.env` holds, and `TOKEN: ${TOKEN:-changeme}` is, because the default is
+  written in the file.
+- **The shell environment is never read**, so the same checkout lints the
+  same on every machine. A value that a wrapper such as `sops exec-env` puts
+  in the environment is not seen.
 
 A value the `.env` supplies is graded but not printed: wherever a finding,
 its fix guidance or a note would quote it, the report shows the reference
