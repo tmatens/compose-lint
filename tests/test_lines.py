@@ -65,6 +65,7 @@ def _doc(sep: str) -> str:
 def _pyyaml_line(text: str, key: str) -> int:
     """The 1-indexed line PyYAML reports for ``key`` under ``services.web``."""
     node = yaml.compose(text)
+    assert node is not None
     for top_key, top_val in node.value:
         if top_key.value != "services":
             continue
