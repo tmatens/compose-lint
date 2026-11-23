@@ -14,7 +14,7 @@ jobs:
   compose-lint:
     runs-on: docker
     steps:
-      - uses: https://code.forgejo.org/actions/checkout@v4
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install compose-lint
         run: |
           apt-get update -qq

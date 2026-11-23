@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Move the Forgejo smoke harness to the newest Forgejo and runner releases.
+"""Move the Forgejo smoke harness to the newest Forgejo, runner and checkout.
 
 Codeberg garbage-collects a superseded Forgejo patch tag — pinned digest
 included — within days of the next patch shipping, so a pin nobody moves
@@ -23,6 +23,15 @@ So the bump is two files or nothing. This script:
    registry's own Docker-Content-Digest header — a per-architecture
    manifest digest would pin one platform and is refused;
 4. rewrites the pin and the claim together, in place.
+
+The guide's snippet also pins the checkout action it tells Forgejo users
+to run, `https://code.forgejo.org/actions/checkout@<sha> # vX.Y.Z`, and
+this script moves that pin too: to the newest plain vX.Y.Z tag on
+code.forgejo.org, at the commit the tag points to. Renovate cannot do it.
+Its custom manager for snippet actions reads only the `owner/repo@sha`
+form, and a Renovate PR that changes only docs/forgejo.md would merge
+without the smoke running it, which is the only review a change to the
+snippet has. A bump PR from here runs the smoke whichever pin moved.
 
 Policy: the newest stable release of each image, not the pinned minor.
 The claim in the guide is "verified on Forgejo X", and a claim about a
@@ -78,6 +87,18 @@ IMAGE_RE = re.compile(
 VERIFIED_RE = re.compile(r"Verified on Forgejo ([0-9.]+), runner ([0-9.]+)")
 STABLE_TAG_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 
+# The checkout action the guide's snippet pins, and the Forgejo instance
+# that serves it (a mirror of actions/checkout with the same commits).
+CHECKOUT_HOST = "code.forgejo.org"
+CHECKOUT_REPO = "actions/checkout"
+CHECKOUT_RE = re.compile(
+    r"uses: https://code\.forgejo\.org/actions/checkout@"
+    r"(?P<sha>[0-9a-f]{40}) # (?P<tag>v\d+\.\d+\.\d+)[ \t]*$",
+    re.MULTILINE,
+)
+CHECKOUT_TAG_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+CHECKOUT_PAGE_SIZE = 50
+
 INDEX_TYPES = (
     "application/vnd.oci.image.index.v1+json",
     "application/vnd.docker.distribution.manifest.list.v2+json",
@@ -110,6 +131,12 @@ class Pin:
     @property
     def name(self) -> str:
         return IMAGES[self.repo]
+
+
+@dataclasses.dataclass(frozen=True)
+class Checkout:
+    tag: str
+    sha: str
 
 
 # --- Pure: reading and rewriting the two files ----------------------------
@@ -147,11 +174,39 @@ def read_claim(docs_text: str) -> tuple[str, str]:
     return forgejo, runner
 
 
-def newest_stable(tags: list[str]) -> str | None:
-    """The highest plain X.Y.Z tag, or None when there is none."""
+def read_checkout(docs_text: str) -> Checkout:
+    """Return the snippet's checkout pin, or raise CannotAnswer.
+
+    Every `actions/checkout@` reference in the guide has to be the pinned
+    form: one left on a tag (`@v4`) would otherwise sit beside a pin this
+    script reports as current.
+    """
+    pins = list(CHECKOUT_RE.finditer(docs_text))
+    refs = docs_text.count("actions/checkout@")
+    if len(pins) != 1 or refs != 1:
+        raise CannotAnswer(
+            "expected exactly one checkout reference in docs/forgejo.md, as "
+            "`uses: https://code.forgejo.org/actions/checkout@<sha> # vX.Y.Z`; "
+            f"found {refs} reference(s), {len(pins)} in that form"
+        )
+    return Checkout(pins[0].group("tag"), pins[0].group("sha"))
+
+
+def rewrite_checkout(docs_text: str, old: Checkout, new: Checkout) -> str:
+    """Return the guide with the checkout pin moved from ``old`` to ``new``."""
+    old_ref = f"actions/checkout@{old.sha} # {old.tag}"
+    if docs_text.count(old_ref) != 1:
+        raise CannotAnswer(f"{old_ref} does not occur exactly once")
+    return docs_text.replace(old_ref, f"actions/checkout@{new.sha} # {new.tag}")
+
+
+def newest_stable(
+    tags: list[str], pattern: re.Pattern[str] = STABLE_TAG_RE
+) -> str | None:
+    """The highest tag ``pattern`` accepts (plain X.Y.Z), or None when none."""
     best: tuple[tuple[int, int, int], str] | None = None
     for tag in tags:
-        m = STABLE_TAG_RE.match(tag)
+        m = pattern.match(tag)
         if not m:
             continue
         key = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
@@ -182,9 +237,10 @@ def rewrite(
     return compose_text, docs_text
 
 
-def branch_name(targets: dict[str, Pin]) -> str:
+def branch_name(targets: dict[str, Pin], checkout: Checkout | None = None) -> str:
     forgejo, runner = targets["forgejo"].tag, targets["runner"].tag
-    return f"forgejo-smoke/forgejo-{forgejo}-runner-{runner}"
+    name = f"forgejo-smoke/forgejo-{forgejo}-runner-{runner}"
+    return f"{name}-checkout-{checkout.tag}" if checkout else name
 
 
 # --- Registry client (token dance, pagination, digest) -------------------
@@ -358,6 +414,47 @@ def _next_link(link: str) -> str | None:
     return None
 
 
+def checkout_tags(fetch_fn: Fetch = fetch) -> dict[str, str]:
+    """Every tag of the checkout action on code.forgejo.org, name to commit.
+
+    Forgejo's tags API reports ``commit.sha`` as the commit an annotated
+    tag points to, which is what a ``uses:`` pin has to name.
+    """
+    tags: dict[str, str] = {}
+    base = f"https://{CHECKOUT_HOST}/api/v1/repos/{CHECKOUT_REPO}/tags"
+    for page in range(1, MAX_TAG_PAGES + 1):
+        url = f"{base}?page={page}&limit={CHECKOUT_PAGE_SIZE}"
+        status, _, body = fetch_fn(url, "GET", {"Accept": "application/json"})
+        if status != 200:
+            raise CannotAnswer(f"{url}: {status}")
+        try:
+            entries = json.loads(body)
+            batch = {str(e["name"]): str(e["commit"]["sha"]) for e in entries}
+        except (ValueError, KeyError, TypeError) as exc:
+            raise CannotAnswer(f"{url}: tags unreadable") from exc
+        if not batch:
+            return tags
+        tags.update(batch)
+    raise CannotAnswer(
+        f"{CHECKOUT_HOST}/{CHECKOUT_REPO}: more than {MAX_TAG_PAGES} tag pages"
+    )
+
+
+def resolve_checkout(current: Checkout, tags: Mapping[str, str]) -> Checkout:
+    """The newest stable checkout release, at the commit its tag names."""
+    tag = newest_stable(list(tags), CHECKOUT_TAG_RE)
+    if tag is None:
+        raise CannotAnswer(f"{CHECKOUT_HOST}/{CHECKOUT_REPO} lists no vX.Y.Z tag")
+    if tag == current.tag:
+        # Same reasoning as the images: a tag that moved under an unchanged
+        # name is not a version bump, so the pinned commit stays.
+        return current
+    sha = tags[tag]
+    if not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise CannotAnswer(f"{CHECKOUT_REPO} {tag}: {sha!r} is not a commit SHA")
+    return Checkout(tag, sha)
+
+
 # --- Orchestration ---------------------------------------------------------
 
 
@@ -400,6 +497,7 @@ def main(argv: list[str] | None = None) -> int:
     docs_text = DOCS_FILE.read_text(encoding="utf-8")
     pins = read_pins(compose_text)
     claim = read_claim(docs_text)
+    checkout = read_checkout(docs_text)
     pinned = (pins["forgejo"].tag, pins["runner"].tag)
     if claim != pinned:
         raise CannotAnswer(
@@ -411,29 +509,41 @@ def main(argv: list[str] | None = None) -> int:
         host: Registry(host) for host in {pin.registry for pin in pins.values()}
     }
     targets = resolve_targets(pins, registries)
+    new_checkout = resolve_checkout(checkout, checkout_tags())
     moved = [name for name in ("forgejo", "runner") if targets[name] != pins[name]]
-    if not moved:
-        print(f"up to date: Forgejo {pinned[0]}, runner {pinned[1]}")
+    checkout_moved = new_checkout != checkout
+    if not moved and not checkout_moved:
+        print(
+            f"up to date: Forgejo {pinned[0]}, runner {pinned[1]}, "
+            f"checkout {checkout.tag}"
+        )
         return 0
 
     new_compose, new_docs = rewrite(compose_text, docs_text, pins, targets)
+    new_docs = rewrite_checkout(new_docs, checkout, new_checkout)
     for name in moved:
         new = targets[name]
         print(f"{name}: {pins[name].tag} -> {new.tag} ({new.digest})")
+    if checkout_moved:
+        print(f"checkout: {checkout.tag} -> {new_checkout.tag} ({new_checkout.sha})")
     if args.check:
         return 1
 
     COMPOSE_FILE.write_text(new_compose, encoding="utf-8")
     DOCS_FILE.write_text(new_docs, encoding="utf-8")
-    title = "Bump the Forgejo smoke harness to " + ", ".join(
+    parts = [
         f"{'Forgejo' if n == 'forgejo' else 'runner'} {targets[n].tag}" for n in moved
-    )
+    ]
+    if checkout_moved:
+        parts.append(f"checkout {new_checkout.tag}")
+    title = "Bump the Forgejo smoke harness to " + ", ".join(parts)
     if args.github_output:
         with args.github_output.open("a", encoding="utf-8") as out:
-            out.write(f"branch={branch_name(targets)}\n")
+            out.write(f"branch={branch_name(targets, new_checkout)}\n")
             out.write(f"title={title}\n")
             out.write(f"forgejo={targets['forgejo'].tag}\n")
             out.write(f"runner={targets['runner'].tag}\n")
+            out.write(f"checkout={new_checkout.tag}\n")
     return 1
 
 

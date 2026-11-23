@@ -19,7 +19,7 @@ per-channel publish contract see [`DISTRIBUTION.md`](DISTRIBUTION.md).
 | `release-prep.yml`        | Manual (`workflow_dispatch`, maintainer)   | Opens the "Prepare X.Y.Z release" PR                   |
 | `marketplace-smoke.yml`   | Push to `main` touching the file + manual + weekly cron | Verifies the published action, pre-commit hook, and the `uvx`/`pipx run` one-shot forms end-to-end; after a release, re-records the README demos if their output changed |
 | `forgejo-smoke.yml`       | PRs + pushes to `main` touching the harness + manual + weekly cron | Runs the Forgejo guide's snippet on a live containerized Forgejo |
-| `forgejo-smoke-bump.yml`  | Twice daily (05:17, 17:17 UTC) + manual    | Opens the PR that moves the harness to the newest Forgejo + runner, docs claim included |
+| `forgejo-smoke-bump.yml`  | Twice daily (05:17, 17:17 UTC) + manual    | Opens the PR that moves the harness to the newest Forgejo + runner, docs claim included, and the guide snippet's checkout pin |
 | `compose-spec-watch.yml`  | Weekly (Mon 05:41 UTC) + manual            | Opens an issue when the Compose spec adds a key or a container slot compose-lint has not triaged |
 | `digest-age-gate.yml`     | Hourly (:23) + manual (dry run by default) | Merges Renovate's gcr.io/ghcr.io digest PRs once they have aged 72h, the age gate Renovate cannot apply to them; flags ones that stall |
 | `os-smoke.yml`            | Called by `ci.yml` on PRs touching code and on every push to `main` + manual + weekly cron | pytest (3.11 and 3.13, each in two parts; macOS 3.11 not on PRs) + pre-commit hook on macOS and Windows — **gates via `ci-ok`** |
@@ -623,7 +623,11 @@ how each Forgejo release re-proves the snippet: the bump PR below carries
 this run as its check — and manually. Deliberately not on docs-only PRs:
 the release-prep PR bumps the snippet's `compose-lint==X.Y.Z` pin before
 that version exists on PyPI, which would fail spuriously; the weekly run
-covers the new pin after release instead.
+covers the new pin after release instead. The exception is
+`docs/forgejo.md` itself, the snippet under test: a PR touching it runs the
+smoke unless its branch is `release/*`, the release-prep PR that moves the
+compose-lint pin, so an edit to the snippet, by hand or by the bump below,
+is proven before it merges.
 
 ### `compose-spec-watch.yml`
 
@@ -666,6 +670,14 @@ obtaining docker token`) while a local `renovate --platform=local
 --dry-run=lookup` resolves both, so the failure is the hosted runner's
 egress. `renovate.json` disables the docker-compose manager on that file
 so two writers never race on one pin.
+
+The same PR moves the snippet's checkout pin,
+`https://code.forgejo.org/actions/checkout@<sha> # vX.Y.Z`, to the newest
+vX.Y.Z release on code.forgejo.org (Forgejo's mirror of
+`actions/checkout`, same commits), at the commit the tag names. Renovate's
+manager for snippet actions reads only the `owner/repo@sha` form, and its
+PR would touch `docs/forgejo.md` alone and merge on age. Here the smoke
+runs the new checkout in the snippet before anything merges.
 
 Twice daily rather than weekly because Codeberg deletes a superseded
 Forgejo patch tag — digest included — within days of the next patch
@@ -930,7 +942,7 @@ actions because there the age is the only review there is.
 | `pyyaml` majors | `manual-merge` | `pyproject.toml` allows `>=6.0.2,<7` for every user of the wheel; a major crosses that ceiling and is a compose-lint MAJOR after 1.0, a release decision rather than a bump. Minors move only the locks and merge themselves |
 | The demo `compose-lint` pin (`scripts/demo/`) | Disabled | It records which release the committed GIF was rendered on; it moves only when the demos are re-recorded, by `marketplace-smoke.yml`'s `rerecord-demos` job after a release that changed their output, or by hand ([`RELEASING.md`](RELEASING.md)) |
 | compose-lint's own action pin in the README snippet | Disabled | Has to name the release just published; `publish.yml`'s `bump-marketplace-smoke-pin` job moves it after each release. Other actions in README and docs snippets are Renovate's, through a custom manager, and ride the `github-actions` group so they move with the workflows that run the same version |
-| Forgejo smoke stack pins | Disabled | Owned by [`forgejo-smoke-bump.yml`](#forgejo-smoke-bumpyml), which also moves the docs claim Renovate cannot |
+| Forgejo smoke stack pins and the Forgejo guide's checkout pin | Disabled / not extracted | Owned by [`forgejo-smoke-bump.yml`](#forgejo-smoke-bumpyml), which also moves the docs claim Renovate cannot, and whose PR runs the snippet on a live Forgejo |
 | Tool-comparison fixtures and tool versions (`scripts/compare/`) | Disabled | The fixture images belong to deliberately broken Compose files that are never started, and the tool tags in `run.sh` record which versions [the comparison page](compare.md) was measured on. They move when the comparison is run again by hand |
 
 **Labels.** `manual-merge` means a person decides, and only a pyyaml major
