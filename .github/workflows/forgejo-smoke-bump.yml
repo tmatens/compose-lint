@@ -6,6 +6,13 @@ name: Forgejo smoke harness bump
 # Forgejo X, runner Y" claim in docs/forgejo.md, together, because
 # forgejo-smoke.yml asserts the two agree.
 #
+# It also moves the guide snippet's checkout pin
+# (`https://code.forgejo.org/actions/checkout@<sha> # vX.Y.Z`) to the newest
+# release on code.forgejo.org. Renovate's snippet-action manager reads only
+# the `owner/repo@sha` form, and a PR from it would change docs/forgejo.md
+# alone; this PR gets the smoke whichever pin moved, because
+# forgejo-smoke.yml runs on docs/forgejo.md too.
+#
 # Why not Renovate: the hosted runner cannot look up either registry
 # (Dependency Dashboard: "Failed to look up docker package
 # codeberg.org/forgejo/forgejo: no-result", the same for
@@ -93,6 +100,7 @@ jobs:
           TITLE: ${{ steps.bump.outputs.title }}
           FORGEJO: ${{ steps.bump.outputs.forgejo }}
           RUNNER: ${{ steps.bump.outputs.runner }}
+          CHECKOUT: ${{ steps.bump.outputs.checkout }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -108,15 +116,16 @@ jobs:
           git checkout -b "${BRANCH}"
           git add scripts/forgejo_smoke/compose-forgejo-smoke.yml docs/forgejo.md
           git commit -m "${TITLE}" -m "Opened by forgejo-smoke-bump.yml (${RUN_URL}).
-          Moves the harness image pins and the guide's verified-on claim
-          together; forgejo-smoke.yml runs on this PR and is the review."
+          Moves the harness image pins, the guide's verified-on claim and
+          the snippet's checkout pin; forgejo-smoke.yml runs on this PR and
+          is the review."
           # Force: the branch is generated from the target versions, so a
           # leftover from a run that pushed but never opened its PR is ours.
           git push --force -u origin "${BRANCH}"
           cat > /tmp/pr-body.md <<EOF
           **Automated harness bump.** Opened by [forgejo-smoke-bump.yml](${RUN_URL}); see \`docs/CI.md\`.
 
-          Moves \`scripts/forgejo_smoke/compose-forgejo-smoke.yml\` to Forgejo **${FORGEJO}** and runner **${RUNNER}** (manifest-list digests, taken from each registry's \`Docker-Content-Digest\`), and the "Verified on Forgejo ${FORGEJO}, runner ${RUNNER}" line in \`docs/forgejo.md\` with it, because the smoke asserts the two agree.
+          Moves \`scripts/forgejo_smoke/compose-forgejo-smoke.yml\` to Forgejo **${FORGEJO}** and runner **${RUNNER}** (manifest-list digests, taken from each registry's \`Docker-Content-Digest\`), and the "Verified on Forgejo ${FORGEJO}, runner ${RUNNER}" line in \`docs/forgejo.md\` with it, because the smoke asserts the two agree. The guide snippet's checkout pin is at **${CHECKOUT}** on code.forgejo.org.
 
           **The review is the \`Forgejo smoke test\` check on this PR**: it boots this exact stack and runs the guide's snippet on it. Green means the guide holds on the new release; red means the snippet or the guide needs a human before this merges. Codeberg deletes a superseded Forgejo patch tag within days of the next one, so a red run here still needs attention soon — the old pin is on the clock.
 

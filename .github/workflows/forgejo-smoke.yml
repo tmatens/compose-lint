@@ -16,8 +16,14 @@ name: Forgejo smoke test
 # in the same PR — and manually. Deliberately NOT on docs-only PRs: the
 # release-prep PR bumps the snippet's compose-lint pin to a version PyPI
 # does not have yet, which would fail here spuriously mid-release; the
-# post-release weekly run covers the new pin instead. (The bump PR also
-# touches docs/forgejo.md, but it is the harness path that triggers.)
+# post-release weekly run covers the new pin instead.
+#
+# The one docs file that does trigger it is docs/forgejo.md, the snippet
+# itself, on every PR except release-prep's release/* branch (the job's
+# `if:`), which is the one that moves the compose-lint pin ahead of PyPI.
+# That is how a change to the snippet gets its review: a bump PR that
+# moves only the snippet's checkout pin touches no harness file, and a
+# hand edit to the snippet is exactly what this run proves.
 on:
   workflow_dispatch:
   schedule:
@@ -27,6 +33,7 @@ on:
       - .github/workflows/forgejo-smoke.yml
       - scripts/forgejo_smoke/**
       - scripts/forgejo_smoke.py
+      - docs/forgejo.md
   push:
     branches: [main]
     paths:
@@ -39,6 +46,9 @@ permissions: {}
 jobs:
   forgejo-smoke:
     name: Forgejo guide snippet runs on a live Forgejo
+    # release-prep's PR pins compose-lint at a version PyPI does not have
+    # until the release publishes; see the trigger note at the top.
+    if: ${{ !startsWith(github.event.pull_request.head.ref, 'release/') }}
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:

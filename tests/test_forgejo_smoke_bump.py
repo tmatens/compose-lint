@@ -343,6 +343,110 @@ class TestResolveTargets:
             bump.resolve_targets(pins, _regs(fake))
 
 
+# --- The guide's checkout pin ----------------------------------------------
+
+SHA_OLD = "a" * 40
+SHA_NEW = "b" * 40
+CHECKOUT_DOCS = (
+    "```yaml\n"
+    f"      - uses: https://code.forgejo.org/actions/checkout@{SHA_OLD} # v6.0.2\n"
+    "```\n"
+)
+
+
+def _tags_api(pages: list[list[tuple[str, str]]], status: int = 200) -> Any:
+    calls: list[str] = []
+
+    def fetch(
+        url: str, method: str, headers: Mapping[str, str]
+    ) -> tuple[int, dict[str, str], bytes]:
+        calls.append(url)
+        assert url.startswith(
+            "https://code.forgejo.org/api/v1/repos/actions/checkout/tags?"
+        )
+        page = int(url.split("page=", 1)[1].split("&", 1)[0])
+        entries = pages[page - 1] if page <= len(pages) else []
+        body = [{"name": n, "commit": {"sha": sha}} for n, sha in entries]
+        return status, {}, json.dumps(body).encode()
+
+    fetch.calls = calls  # type: ignore[attr-defined]
+    return fetch
+
+
+class TestCheckout:
+    def test_reads_the_pin(self) -> None:
+        assert bump.read_checkout(CHECKOUT_DOCS) == bump.Checkout("v6.0.2", SHA_OLD)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "no snippet\n",
+            "      - uses: https://code.forgejo.org/actions/checkout@v4\n",
+            CHECKOUT_DOCS
+            + "      - uses: https://code.forgejo.org/actions/checkout@v4\n",
+            CHECKOUT_DOCS + CHECKOUT_DOCS,
+        ],
+    )
+    def test_anything_but_one_pinned_reference_fails(self, text: str) -> None:
+        """A reference left on a tag must not sit beside a pin read as current."""
+        with pytest.raises(bump.CannotAnswer, match="exactly one checkout"):
+            bump.read_checkout(text)
+
+    def test_rewrite_moves_sha_and_tag_together(self) -> None:
+        old = bump.Checkout("v6.0.2", SHA_OLD)
+        docs = bump.rewrite_checkout(
+            CHECKOUT_DOCS, old, bump.Checkout("v7.0.1", SHA_NEW)
+        )
+        assert bump.read_checkout(docs) == bump.Checkout("v7.0.1", SHA_NEW)
+
+    def test_only_plain_v_releases_are_candidates(self) -> None:
+        tags = ["v7", "v10", "v9.9.9", "v10.0.0-beta.1", "10.1.0", "v10.0.0"]
+        assert bump.newest_stable(tags, bump.CHECKOUT_TAG_RE) == "v10.0.0"
+        assert bump.newest_stable(["v7.0.1"]) is None
+
+    def test_tags_follow_pages_until_an_empty_one(self) -> None:
+        fetch = _tags_api(
+            [[("v7", SHA_NEW), ("v7.0.1", SHA_NEW)], [("v6.0.2", SHA_OLD)]]
+        )
+        tags = bump.checkout_tags(fetch)
+        assert tags == {"v7": SHA_NEW, "v7.0.1": SHA_NEW, "v6.0.2": SHA_OLD}
+        assert len(fetch.calls) == 3
+
+    def test_a_failed_tags_request_cannot_answer(self) -> None:
+        with pytest.raises(bump.CannotAnswer, match="404"):
+            bump.checkout_tags(_tags_api([], status=404))
+
+    def test_unreadable_tags_cannot_answer(self) -> None:
+        def fetch(
+            url: str, method: str, headers: Mapping[str, str]
+        ) -> tuple[int, dict[str, str], bytes]:
+            return 200, {}, b'[{"name": "v7.0.1"}]'
+
+        with pytest.raises(bump.CannotAnswer, match="unreadable"):
+            bump.checkout_tags(fetch)
+
+    def test_newer_release_resolves_to_its_commit(self) -> None:
+        current = bump.Checkout("v6.0.2", SHA_OLD)
+        tags = {"v6.0.2": SHA_OLD, "v7.0.1": SHA_NEW, "v7": SHA_NEW}
+        assert bump.resolve_checkout(current, tags) == bump.Checkout("v7.0.1", SHA_NEW)
+
+    def test_same_release_keeps_the_pinned_commit(self) -> None:
+        current = bump.Checkout("v7.0.1", SHA_OLD)
+        assert bump.resolve_checkout(current, {"v7.0.1": SHA_NEW}) == current
+
+    def test_no_release_or_a_bad_sha_cannot_answer(self) -> None:
+        current = bump.Checkout("v6.0.2", SHA_OLD)
+        with pytest.raises(bump.CannotAnswer, match="no vX.Y.Z tag"):
+            bump.resolve_checkout(current, {"v7": SHA_NEW})
+        with pytest.raises(bump.CannotAnswer, match="not a commit SHA"):
+            bump.resolve_checkout(current, {"v7.0.1": "abc"})
+
+    def test_branch_name_carries_the_checkout_release(self) -> None:
+        pins = bump.read_pins(COMPOSE)
+        name = bump.branch_name(pins, bump.Checkout("v7.0.1", SHA_NEW))
+        assert name == "forgejo-smoke/forgejo-16.0.3-runner-13.1.0-checkout-v7.0.1"
+
+
 # --- The anchors this script relies on exist in the repository -------------
 
 
@@ -351,3 +455,4 @@ def test_the_live_anchors_parse() -> None:
     pins = bump.read_pins(bump.COMPOSE_FILE.read_text(encoding="utf-8"))
     claim = bump.read_claim(bump.DOCS_FILE.read_text(encoding="utf-8"))
     assert claim == (pins["forgejo"].tag, pins["runner"].tag)
+    bump.read_checkout(bump.DOCS_FILE.read_text(encoding="utf-8"))
