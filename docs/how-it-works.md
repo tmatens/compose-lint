@@ -41,8 +41,11 @@ flowchart TB
    everything `docker compose up` would read with it: the sibling override, the
    sibling `.env`, `include:` and cross-file `extends:` targets, and `env_file:`
    targets. Each must resolve inside the project. No registry, Docker daemon or
-   image is ever contacted. [What a run reads](what-a-run-reads.md) has the full
-   list and the flags that switch each source off.
+   image is ever contacted. The `.env` settles what is deployed: ports, mounts,
+   images. It is never used to fill in `environment:` values, so
+   `TOKEN: ${TOKEN}` is not reported, whatever the `.env` holds.
+   [What a run reads](what-a-run-reads.md) has the full list, the limits and
+   the flags that switch each source off.
 2. **Merge and parse.** Overlays are merged in the order Compose uses, and
    `${VAR:-default}` resolves to what Compose would deploy. Line numbers are
    kept so every finding points at the line to change.
