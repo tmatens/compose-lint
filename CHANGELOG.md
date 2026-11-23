@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-11-23
+
 ### Changed
 
 - **A job's `extends:` follows Compose 5.8.0.** Compose 5.8.0 resolves a
@@ -5252,7 +5254,8 @@ First public release.
   inputs through `env:` rather than direct `${{ }}` interpolation to prevent
   shell injection.
 
-[Unreleased]: https://github.com/tmatens/compose-lint/compare/v1.7.1...HEAD
+[Unreleased]: https://github.com/tmatens/compose-lint/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/tmatens/compose-lint/compare/v1.7.1...v1.8.0
 [1.7.1]: https://github.com/tmatens/compose-lint/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/tmatens/compose-lint/compare/v1.6.1...v1.7.0
 [1.6.1]: https://github.com/tmatens/compose-lint/compare/v1.6.0...v1.6.1
