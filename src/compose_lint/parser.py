@@ -11,7 +11,14 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from compose_lint._env_file import ENV_FILENAME, env_read_failure, read_env
+from compose_lint._env_file import (
+    ENV_FILENAME,
+    MAX_ENV_BYTES,
+    env_closure,
+    env_read_failure,
+    parse_env,
+    read_env,
+)
 from compose_lint._env_quote import remember as remember_env_values
 from compose_lint._limits import (
     MAX_LINE_KEY_CHARS,
@@ -1321,6 +1328,57 @@ class _IncludeEntry:
 
     references: tuple[str, ...]
     project_directory: str | None = None
+    # The entry's `env_file:` paths, or None when it names none and the
+    # sub-project's own `.env` is read. See :class:`_EnvFiles`.
+    env_files: tuple[str, ...] | None = None
+    # An `env_file:` that is neither a path nor a list of paths. Compose
+    # refuses the project ("invalid type ... for string list").
+    env_file_invalid: bool = False
+
+
+@dataclass(frozen=True)
+class _EnvFiles:
+    """An ``include:`` entry's ``env_file:`` list, read in place of its ``.env``.
+
+    One layer of a document's environment, where a plain directory is the layer
+    "that directory's ``.env``". Measured on Compose 5.5.0, 5.7.1 and 5.8.0:
+
+    - The listed files **replace** the sub-project's own ``.env``. With
+      ``A=own`` in ``sub/.env`` and an entry ``{path: sub/i.yml, env_file:
+      m.env}``, ``${A:-d}`` in ``sub/i.yml`` ships ``d`` unless ``m.env`` sets
+      it. ``env_file: []`` and a null value name nothing, and the ``.env`` is
+      read as usual.
+    - Later files win, and a value may reference a name an earlier file set.
+    - The including project's environment still wins every name they share,
+      and a reference inside a listed file reads that environment ahead of the
+      file's own definition (:func:`~compose_lint._env_file.parse_env`).
+    - The values reach every document the entry pulls in, nested includes and
+      ``extends:`` bases alike, as a directory layer's do.
+    - ``/dev/null`` is read as an empty file, so an entry naming only it has no
+      env file at all.
+
+    ``texts`` holds what was read, in the entry's order. It is read once, when
+    the entry is resolved, so a file that cannot be read is one coverage gap
+    and one spend against the file budget however many documents sit under it.
+    """
+
+    directory: Path
+    texts: tuple[str, ...]
+
+
+def _entry_env_files(value: Any) -> tuple[tuple[str, ...] | None, bool]:
+    """An entry's ``env_file:`` as paths, and whether Compose refuses the value."""
+    if value is None:
+        return None, False
+    if isinstance(value, str):
+        # An empty path is refused: Compose resolves it to the project
+        # directory and reports "is not a file".
+        return ((value,), False) if value else (None, True)
+    if isinstance(value, list):
+        if not all(isinstance(item, str) and item for item in value):
+            return None, True
+        return (tuple(value) or None), False
+    return None, True
 
 
 def _include_entries(data: dict[str, Any]) -> list[_IncludeEntry]:
@@ -1343,12 +1401,13 @@ def _include_entries(data: dict[str, Any]) -> list[_IncludeEntry]:
             path = entry.get("path")
             directory = entry.get("project_directory")
             directory = directory if isinstance(directory, str) and directory else None
+            env_files, invalid = _entry_env_files(entry.get("env_file"))
             if isinstance(path, str) and path:
-                entries.append(_IncludeEntry((path,), directory))
+                entries.append(_IncludeEntry((path,), directory, env_files, invalid))
             elif isinstance(path, list):
                 found = tuple(item for item in path if isinstance(item, str) and item)
                 if found:
-                    entries.append(_IncludeEntry(found, directory))
+                    entries.append(_IncludeEntry(found, directory, env_files, invalid))
     return entries
 
 
@@ -1392,6 +1451,135 @@ def _entry_directory(
     return (None if located is None else located.absolute().parent), ""
 
 
+# Compose's spelling of "no env file": read as an empty one, on every platform.
+_NO_ENV_FILE = "/dev/null"
+
+
+def _read_entry_env_files(
+    entry: _IncludeEntry,
+    *,
+    project_dir: Path,
+    prefix: tuple[str, ...],
+    budget: _ExtendsBudget,
+) -> tuple[tuple[str, ...] | None, list[str]]:
+    """The text of each ``env_file:`` an entry names, and a gap per file unread.
+
+    ``None`` means the entry names none, and its own ``.env`` is read instead.
+    A path is relative to the project directory of the document that *wrote*
+    the entry, which ``prefix`` spells: measured on Compose 5.8.0 at every
+    depth of an include tree, and with a ``project_directory:`` on the entry
+    that included the writing document. (Before 5.8.0 a nested entry's path was
+    looked up from the working directory of the process, compose-go #996.)
+
+    Every read passes the gates every other reference passes: the lexical one
+    in :func:`_locate_reference`, and the link rule and size cap of the bounded
+    read. A file that fails one is a coverage gap, and the entry is graded
+    with the files that were read, because what this one supplies is unknown.
+    Compose refuses a missing file, a directory and a value of the wrong type.
+    """
+    gaps: list[str] = []
+    shown = entry.references[0]
+
+    def _gap(what: str, reason: str, *, compose_refuses: bool = False) -> None:
+        message = (
+            f"'include: {shown}' names {what}, which was not read because "
+            f"{reason}, so the values it supplies to the included files were "
+            "not graded."
+        )
+        gaps.append(ComposeRefusesGap(message) if compose_refuses else message)
+
+    if entry.env_file_invalid:
+        _gap(
+            "an env_file:",
+            "it is not a path or a list of paths",
+            compose_refuses=True,
+        )
+        return (), gaps
+    if entry.env_files is None:
+        return None, gaps
+
+    texts: list[str] = []
+    for reference in entry.env_files:
+        if reference == _NO_ENV_FILE:
+            continue
+        what = f"env_file '{reference}'"
+        target, why = _locate_reference(reference, project_dir, prefix)
+        if target is None:
+            _gap(what, why)
+            continue
+        if target.is_dir():
+            _gap(what, "it is a directory", compose_refuses=True)
+            continue
+        if not budget.spend_file():
+            _gap(what, f"the document opens more than {MAX_REFERENCE_FILES} files")
+            continue
+        try:
+            texts.append(
+                read_text_bounded(target, max_bytes=MAX_ENV_BYTES, within=project_dir)
+            )
+        except OutsideProjectError:
+            _gap(what, f"it {OUT_OF_REACH}")
+        except FileNotFoundError:
+            _gap(what, "the file was not found", compose_refuses=True)
+        except UnicodeDecodeError as exc:
+            _gap(what, f"it is not valid UTF-8 (byte {exc.start})")
+        except (UnsafeFileError, OSError) as exc:
+            _gap(what, f"it could not be read safely ({exc})")
+    return tuple(texts), gaps
+
+
+def _layered_environment(
+    layers: tuple[Path | _EnvFiles, ...],
+    wanted: set[str],
+    *,
+    project_dir: Path | None,
+    own: Path,
+) -> tuple[dict[str, str], list[str]]:
+    """What a document's layers supply for ``wanted``, and a gap per ``.env`` unread.
+
+    ``layers`` runs from the document's own sub-project out to the project the
+    run was pointed at, and an outer layer wins every name it shares with an
+    inner one. A directory layer is that directory's ``.env``; an
+    :class:`_EnvFiles` layer is the files an ``include:`` entry named instead.
+
+    An entry's files resolve their references against the layers outside them,
+    so those are read for ``wanted`` grown by what the files reference, and the
+    layers are read outermost first.
+    """
+    needed = set(wanted)
+    for layer in layers:
+        if isinstance(layer, _EnvFiles):
+            for text in reversed(layer.texts):
+                needed = env_closure(text, needed)
+
+    gaps: list[str] = []
+    environment: dict[str, str] = {}
+    for layer in reversed(layers):
+        supplied: dict[str, str] = {}
+        if isinstance(layer, _EnvFiles):
+            for text in layer.texts:
+                parsed = parse_env(
+                    text, needed, environment=environment, earlier=supplied
+                )
+                # What the entry has set so far: this file's keys over the
+                # earlier files', less any name it left unresolved.
+                supplied = dict(parsed.values)
+        else:
+            # Inside the project, not merely inside the directory: an included
+            # file's `.env` may link to one elsewhere in the same project, but
+            # never out of it.
+            parsed_env = read_env(layer, needed, within=project_dir or layer)
+            if parsed_env is None:
+                gap = _unread_env_gap(layer, project_dir, own=own)
+                if gap is not None and gap not in gaps:
+                    gaps.append(gap)
+            else:
+                supplied = dict(parsed_env.values)
+        for name, value in supplied.items():
+            environment.setdefault(name, value)
+    return environment, gaps
+
+
 def _resolve_includes(  # noqa: PLR0913
     data: dict[str, Any],
     lines: dict[str, int],
@@ -1399,7 +1587,7 @@ def _resolve_includes(  # noqa: PLR0913
     document_path: Path,
     base_dir: Path,
     project_dir: Path,
-    env_dirs: tuple[Path, ...],
+    env_dirs: tuple[Path | _EnvFiles, ...],
     use_env: bool,
     budget: _ExtendsBudget,
     repeats: _RepeatBudget | None = None,
@@ -1453,7 +1641,7 @@ def _resolve_includes(  # noqa: PLR0913
     # (keyed entries replace, appended ones deduplicate, scalars are equal), so
     # the repeat is skipped. Listing one 100 KB file 64 times — inside both
     # reference caps — re-parsed and re-merged it 64 times: 45 s.
-    folded: set[tuple[str, str]] = set()
+    folded: set[tuple[str, str, tuple[str, ...] | None]] = set()
 
     for entry in entries:
         documents: list[Document] = []
@@ -1461,6 +1649,15 @@ def _resolve_includes(  # noqa: PLR0913
         # file in it resolves its relative paths against the same place — not
         # against its own directory. See :class:`_IncludeEntry`.
         entry_dir, unplaced = _entry_directory(entry, project_dir, prefix)
+        # Read once for the entry, and only when its files will be: an entry
+        # that cannot be placed is a gap already, and `--no-env` reads no
+        # environment file of any kind.
+        env_texts: tuple[str, ...] | None = None
+        if use_env and not unplaced:
+            env_texts, env_gaps = _read_entry_env_files(
+                entry, project_dir=project_dir, prefix=prefix, budget=budget
+            )
+            gaps.extend(env_gaps)
         for reference in entry.references:
 
             def _gap(
@@ -1498,7 +1695,7 @@ def _resolve_includes(  # noqa: PLR0913
                     compose_refuses=True,
                 )
                 continue
-            identity = (step, str(entry_dir))
+            identity = (step, str(entry_dir), entry.env_files)
             if identity in folded:
                 continue
             folded.add(identity)
@@ -1525,6 +1722,9 @@ def _resolve_includes(  # noqa: PLR0913
                 continue
 
             target_dir = target.absolute().parent
+            own_layer: Path | _EnvFiles = entry_dir or target_dir
+            if env_texts is not None:
+                own_layer = _EnvFiles(entry_dir or target_dir, env_texts)
             try:
                 inc_data, inc_lines, inc_resets, inc_overrides, inc_gaps = _loads_full(
                     content,
@@ -1546,8 +1746,10 @@ def _resolve_includes(  # noqa: PLR0913
                     # define, and loses every name they share. Read from the
                     # entry's directory, not the file's — they differ only
                     # inside an object-form `path:` list, and there it is the
-                    # entry's that Compose reads (see `_IncludeEntry`).
-                    env_dirs=(entry_dir or target_dir, *(env_dirs or (base_dir,))),
+                    # entry's that Compose reads (see `_IncludeEntry`). An entry
+                    # that names an `env_file:` supplies those files in the
+                    # `.env`'s place (see `_EnvFiles`).
+                    env_dirs=(own_layer, *(env_dirs or (base_dir,))),
                     budget=budget,
                     repeats=repeats,
                     env_seen=env_seen,
@@ -1643,7 +1845,7 @@ def _resolve_cross_file_extends(
     *,
     document_path: Path,
     project_dir: Path,
-    env_dirs: tuple[Path, ...],
+    env_dirs: tuple[Path | _EnvFiles, ...],
     use_env: bool,
     budget: _ExtendsBudget,
     repeats: _RepeatBudget | None = None,
@@ -2377,7 +2579,7 @@ def _loads_full(  # noqa: PLR0913
     empty_ok: bool = False,
     use_env: bool = True,
     project_dir: Path | None = None,
-    env_dirs: tuple[Path, ...] = (),
+    env_dirs: tuple[Path | _EnvFiles, ...] = (),
     budget: _ExtendsBudget | None = None,
     repeats: _RepeatBudget | None = None,
     env_seen: dict[str, dict[str, str]] | None = None,
@@ -2528,25 +2730,21 @@ def _loads_full(  # noqa: PLR0913
         # project's own `.env` sits and the frame `env_file:` paths are read
         # in. An included document prepends its own directory to `env_dirs`,
         # so the last entry is always the primary's.
-        own_dir: Path | None = env_dirs[-1] if env_dirs else base_dir
+        outermost = env_dirs[-1] if env_dirs else base_dir
+        own_dir: Path | None = (
+            outermost.directory if isinstance(outermost, _EnvFiles) else outermost
+        )
         supplied: Mapping[str, str] | None = None
         if use_env and base_dir is not None and own_dir is not None:
             wanted = _referenced_names(data)
             if wanted:
-                layered: dict[str, str] = {}
-                for directory in env_dirs or (base_dir,):
-                    # Inside the project, not merely inside `directory`: an
-                    # included file's `.env` may link to one elsewhere in the
-                    # same project, but never out of it.
-                    parsed_env = read_env(
-                        directory, wanted, within=project_dir or directory
-                    )
-                    if parsed_env is None:
-                        gap = _unread_env_gap(directory, project_dir, own=own_dir)
-                        if gap is not None and gap not in gaps:
-                            gaps.append(gap)
-                    elif parsed_env.values:
-                        layered.update(parsed_env.values)
+                layered, env_gaps = _layered_environment(
+                    env_dirs or (base_dir,),
+                    set(wanted),
+                    project_dir=project_dir,
+                    own=own_dir,
+                )
+                gaps.extend(gap for gap in env_gaps if gap not in gaps)
                 supplied = layered or None
         starved: list[str] = []
         oversized: list[str] = []

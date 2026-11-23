@@ -88,6 +88,7 @@ for three reasons, each derived from the binary the same way:
 from __future__ import annotations
 
 import re
+from collections import ChainMap
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -268,7 +269,13 @@ def env_read_failure(directory: Path, *, within: Path | None = None) -> str | No
     return None
 
 
-def parse_env(text: str, wanted: Iterable[str] | None = None) -> EnvFile:
+def parse_env(
+    text: str,
+    wanted: Iterable[str] | None = None,
+    *,
+    environment: Mapping[str, str] | None = None,
+    earlier: Mapping[str, str] | None = None,
+) -> EnvFile:
     """Parse ``.env`` text, resolving only what ``wanted`` needs.
 
     ``wanted`` is the set of names the run will actually look up. ``None`` means
@@ -278,10 +285,25 @@ def parse_env(text: str, wanted: Iterable[str] | None = None) -> EnvFile:
     references first, because a wanted value may be built from an unwanted one
     (``WANTED=${BASE}/docker.sock`` needs ``BASE``), and a filter applied before
     that closure would silently unresolve it.
+
+    ``environment`` is what the file is read *under*: the names an including
+    project already defines when this is the env file of an ``include:`` entry.
+    A reference resolves to the environment's value ahead of the file's own
+    (measured on Compose 5.8.0: with ``P=proj`` in the project's ``.env``, an
+    entry's env file holding ``P=file`` then ``A=${P}`` ships ``A=proj``). The
+    environment's names are not returned.
+
+    ``earlier`` is what the files listed before this one in the same entry
+    set. A reference may read those too, but this file's own definition of a
+    name replaces theirs (measured: ``X=one`` in the first file, then ``X=two``
+    and ``A=${X}`` in the second, ships ``A=two``). They are returned along
+    with this file's keys, which is the entry's environment so far.
     """
     entries, skipped = _scan(text)
     needed = _closure(entries, wanted)
-    values, unresolved = _resolve(entries, needed)
+    values, unresolved = _resolve(
+        entries, needed, initial=earlier, environment=environment
+    )
     return EnvFile(
         values=values,
         unresolved=frozenset(unresolved),
@@ -551,6 +573,7 @@ def _resolve(
     *,
     initial: Mapping[str, str] | None = None,
     bare_is_empty: bool = True,
+    environment: Mapping[str, str] | None = None,
 ) -> tuple[dict[str, str], set[str]]:
     """Expand entries in file order, which is the order Compose expands them.
 
@@ -566,6 +589,10 @@ def _resolve(
     """
     values: dict[str, str] = dict(initial or {})
     unresolved: set[str] = set()
+    # A reference reads the environment ahead of what the file has defined.
+    scope: Mapping[str, str] = (
+        ChainMap(dict(environment), values) if environment else values
+    )
     for entry in entries:
         if needed is not None and entry.key not in needed:
             # Outside the closure of what the document asks for, so nothing
@@ -580,7 +607,7 @@ def _resolve(
             unresolved.add(entry.key)
             values.pop(entry.key, None)
             continue
-        resolved = entry.raw if not entry.expands else _expand(entry.raw, values)
+        resolved = entry.raw if not entry.expands else _expand(entry.raw, scope)
         if resolved is None:
             unresolved.add(entry.key)
             values.pop(entry.key, None)
@@ -726,6 +753,18 @@ def parse_env_file(
         skipped_lines=tuple(skipped),
         lines=lines,
     )
+
+
+def env_closure(text: str, wanted: Iterable[str]) -> set[str]:
+    """``wanted`` grown by every name a ``.env``-grammar text needs to resolve it.
+
+    The names may be defined in the text or outside it: an ``include:`` entry's
+    env file resolves a reference against the files listed before it and the
+    including project's environment, so those have to be read for the grown set
+    rather than for ``wanted`` alone. Nothing is resolved here.
+    """
+    entries, _ = _scan(text)
+    return _closure(entries, wanted) or set()
 
 
 def env_file_references(text: str, *, raw: bool = False) -> set[str]:

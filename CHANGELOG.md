@@ -26,6 +26,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   both. Before it, Compose read each as a variable with an empty name. Nothing
   compose-lint reports changes.
 
+### Fixed
+
+- **An `include:` entry's `env_file:` is read.** Compose reads the files an
+  entry names in place of the included project's own `.env`, and compose-lint
+  parsed the key without using it. It graded the `${VAR:-default}` fallback
+  instead: `privileged: ${PRIV:-false}` passed as `false` when the entry's
+  env file set `PRIV=true`, and a value from a `.env` Compose no longer reads
+  could raise a finding that does not deploy. The files are now read as
+  Compose 5.8.0 reads them, through the same containment and size limits as
+  every other reference. One that cannot be read is a coverage gap (exit 2),
+  listed in `docs/compatibility.md`, so a project whose entry names a missing
+  or out-of-repository env file now exits 2 where it exited 0 or 1. See the
+  amendment to
+  [ADR-036](docs/adr/036-resolve-references-that-stay-inside-the-project.md)
+  ([#1348](https://github.com/tmatens/compose-lint/issues/1348)).
+
 ## [1.7.1] - 2026-11-22
 
 ### Changed
