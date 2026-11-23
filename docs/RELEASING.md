@@ -469,11 +469,13 @@ git push origin vX.Y.Z
 
 After the tag push, `publish.yml` runs automatically:
 
-1. Builds the wheel and publishes to TestPyPI.
-2. Runs PyPI smoke tests (version check, clean/insecure fixtures) against
+1. Builds the wheel.
+2. Runs Docker smoke tests (version check, clean/insecure fixtures, SARIF)
+   against a local image build, and the Docker Scout scan.
+3. Publishes to TestPyPI, only once step 2 is green, because the upload is
+   what consumes the version number.
+4. Runs PyPI smoke tests (version check, clean/insecure fixtures) against
    the TestPyPI artifact.
-3. Runs Docker smoke tests (version check, clean/insecure fixtures, SARIF)
-   against a local image build.
 
 No manual action needed here. Wait for all smoke jobs to go green.
 
@@ -617,8 +619,9 @@ entry. The steps for one that does:
 - **TestPyPI publish fails**: fix forward. Delete the tag locally and on
   origin (`git tag -d vX.Y.Z && git push origin :refs/tags/vX.Y.Z`),
   land the fix via PR, re-tag with the **same** version number, and push
-  again. TestPyPI allows overwriting a yanked version on retry; real
-  PyPI does not, so always retry on TestPyPI first. The `release tags`
+  again. This works only because the failed upload never stored the
+  file: neither TestPyPI nor PyPI accepts a filename twice, even after it
+  is deleted or yanked. The `release tags`
   ruleset blocks deleting or moving any `vX.Y.Z` tag; a repository admin
   bypasses it, and the push is refused with the ruleset's name for anyone
   else. Rewriting a release tag is deliberately an admin act, so if the
@@ -633,9 +636,13 @@ entry. The steps for one that does:
   duplicate upload — so the intuitive action is the one that fails, and it
   fails in a way that looks like a second, unrelated problem. Nothing is
   published either way: a pre-gate failure skips `release-gate` and everything
-  after it, so the tag stays valid and no version number is burned. Delete and
-  re-cut the tag only once you have established the failure is *not*
-  transient — re-running the job is the cheap test for that.
+  after it. Once `testpypi` has succeeded, though, a failure that needs a
+  change on `main` (a fix to the tree or a workflow) costs the version: a
+  re-tag rebuilds X.Y.Z, TestPyPI refuses it, and the release becomes
+  X.Y.(Z+1). The Docker and Scout checks run before the upload so that this
+  can only happen in `testpypi-smoke`. Delete and re-cut the tag only once
+  you have established the failure is *not* transient — re-running the job
+  is the cheap test for that.
 - **Real PyPI publish fails after TestPyPI succeeded**: do **not** reuse
   the version number. Bump to `X.Y.Z+1` (usually a patch), land the fix,
   and cut a new release. PyPI treats deleted versions as permanently

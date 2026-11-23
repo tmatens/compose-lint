@@ -330,8 +330,8 @@ Tag-triggered, plus a manual Docker-only republish (below). Full detail in
 [`RELEASING.md`](RELEASING.md) and the per-channel contract in
 [`DISTRIBUTION.md`](DISTRIBUTION.md). Summary:
 
-`verify-tag` → `build` → `testpypi` → `testpypi-smoke` + `docker-smoke`
-+ `docker-scout` → **`release-gate` (manual approval)** → `publish` +
+`verify-tag` → `build` → `docker-smoke` + `docker-scout` → `testpypi` →
+`testpypi-smoke` → **`release-gate` (manual approval)** → `publish` +
 `docker-publish` in parallel → `create-release` →
 `bump-marketplace-smoke-pin`.
 
