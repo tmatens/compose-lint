@@ -255,7 +255,10 @@ def _plan_project(project: list[str], *, read_env_files: bool) -> Selection:
                 "precedence."
             )
     override = _override_beside(Path(first))
-    if override is not None:
+    # An override that -f names itself is merged, as one of the project's
+    # files, so the note would contradict the merge warning beside it.
+    named = {_key(path) for path in project}
+    if override is not None and _key(override) not in named:
         notes.append(
             f"{override}: not merged, because -f names the documents and "
             "Compose merges an override only when it finds the files itself."
