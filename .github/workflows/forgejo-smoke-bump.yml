@@ -148,6 +148,20 @@ jobs:
           gh pr edit "${BRANCH}" --add-label manual-merge \
             || echo "::warning::could not apply the manual-merge label -- the PR is open but will not show in the manual-merge query"
 
+      # After the bump, so a Node mismatch never holds back an image pin
+      # that Codeberg is about to garbage-collect. The smoke's runner maps
+      # `docker` to the image a default-labelled runner uses; when that
+      # default (node:lts) moves to a new Node major, this fails the run and
+      # the failure path below opens the issue. Moving the label is by hand.
+      - name: Check the smoke runs a default runner's Node
+        run: |
+          rc=0
+          python3 scripts/forgejo_smoke_bump.py --runner-node || rc=$?
+          if [ "${rc}" -ne 0 ]; then
+            echo "::error::forgejo_smoke_bump.py --runner-node exit ${rc}: the smoke's runner image no longer matches a default runner's Node (message above)"
+            exit "${rc}"
+          fi
+
   # Scheduled runs have no PR to go red on. Without this the only signal
   # for a daily failure is an email to the workflow author, which is how a
   # watcher stays broken — and a broken watcher here means the next Forgejo
