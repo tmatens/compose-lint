@@ -51,6 +51,23 @@ def _compose_cli_works() -> bool:
         return False
 
 
+def _compose_version() -> tuple[int, int] | None:
+    """The ``(major, minor)`` of the ``docker compose`` that answers, if any."""
+    try:
+        result = subprocess.run(
+            ["docker", "compose", "version", "--short"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        major, minor = (
+            int(part) for part in result.stdout.strip().lstrip("v").split(".")[:2]
+        )
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+    return (major, minor) if result.returncode == 0 else None
+
+
 pytestmark = pytest.mark.skipif(
     not _compose_cli_works(),
     reason="differential env_file: test needs a working docker compose CLI",
@@ -147,6 +164,11 @@ DIVERGENT = {
     ),
 }
 
+# Divergences that hold from Compose 5.8.0 (compose-go 2.17.0). An older
+# Compose reads each as a variable with an empty name, which no rule grades,
+# so CI's pinned plugin checks them and a runner image's older one skips them.
+_SINCE_5_8 = frozenset({"K", "=v\nK=v"})
+
 # The one name a divergence needs present in the process environment, so that
 # Compose has something to import and the disagreement is observable at all.
 _HOST_VALUE = "from-the-lint-host"
@@ -215,6 +237,8 @@ def test_divergences_are_still_divergences(env_text: str, tmp_path: Path) -> Non
     ``AGREED`` — a divergence that no longer exists is a comment claiming a
     difference the code no longer makes.
     """
+    if env_text in _SINCE_5_8 and (_compose_version() or (0, 0)) < (5, 8):
+        pytest.skip("Compose before 5.8.0 reads this as an empty-named variable")
     host_env = {**os.environ, "K": _HOST_VALUE}
     theirs = _compose_environment(tmp_path, env_text, host_env=host_env)
     parsed = parse_env_file(env_text)
