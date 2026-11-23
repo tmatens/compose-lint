@@ -89,10 +89,10 @@
       "groupName": "github-actions-release"
     },
     {
-      "description": "Every copy of the docker/scout-action pin (publish.yml's release gate, scout-scan.yml, vuln-report.yml and ci.yml's release-actions-smoke) moves in one PR, so the PR that moves the release gate's copy runs the new version in release-actions-smoke first. Split across the github-actions and github-actions-release groups, the publish.yml copy merged on a CI run that never used it, and its first run was the 1.8.0 release, which it failed after TestPyPI had taken the version. tests/test_release_layer.py fails if the copies differ.",
+      "description": "Every copy of the pin of each action ci.yml's release-actions-smoke job runs (gh-action-sigstore-python, sbom-action, cosign-installer and scout-action) moves in one PR, so the PR that moves publish.yml's copy runs the new version in release-actions-smoke. In the github-actions and github-actions-release groups the copies moved in separate PRs, and the one moving publish.yml's copy merged on a CI run that never used it: that is how a scout-action bump reached the 1.8.0 release untested and failed it after TestPyPI had taken the version. The update policy is unchanged: these merge under the defaults, because their PR runs them. tests/test_release_layer.py fails if two copies differ.",
       "matchManagers": ["github-actions"],
-      "matchPackageNames": ["docker/scout-action"],
-      "groupName": "docker-scout-action"
+      "matchPackageNames": ["sigstore/gh-action-sigstore-python", "anchore/sbom-action", "sigstore/cosign-installer", "docker/scout-action"],
+      "groupName": "release-actions-smoke"
     },
     {
       "description": "README and docs snippet actions join the weekly github-actions group, so a snippet moves in the same PR as the workflows that use the same action, and that PR's CI runs the new version in the repo's own workflows: the review the repo-wide default asks for. When the workflows moved in an earlier PR, the snippet is catching up to a version main already runs. Nothing in CI runs the snippet itself.",
