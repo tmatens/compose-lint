@@ -69,7 +69,7 @@ before merging, so `main`'s own run is what proves the merged result.
 | `actionlint`              | Lints every workflow under `.github/workflows/`: actionlint (embeds shellcheck for `run:` blocks) and zizmor (template injection, cache poisoning, kept tokens, unpinned uses; exceptions in `.github/zizmor.yml`), run with the job token so its online audits run too: published advisories against a pinned action, impostor commits, ref confusion |
 | `hadolint`                | Lints the Dockerfile with hadolint (when the Dockerfile or `ci.yml`, which carries the hadolint pin, changes) |
 | `dist-check`              | `python -m build` + `twine check --strict` + the wheel/sdist content guards from `publish.yml`, on PRs touching code or the locks — a packaging regression fails here, not after the tag |
-| `release-actions-smoke`   | Runs `publish.yml`'s three non-publishing release actions on the PR's own dists when a workflow changes: `gh-action-sigstore-python` signs them against Sigstore's staging instance, `sbom-action` writes an SPDX SBOM for `dist/`, `cosign-installer` installs the CLI. Same pins as `publish.yml`, so a bump of any of them has run before the tag (PRs from this repository only: keyless signing needs the job's OIDC token) |
+| `release-actions-smoke`   | Runs `publish.yml`'s three non-publishing release actions on the PR's own dists when a workflow changes: `gh-action-sigstore-python` signs them against Sigstore's staging instance, `sbom-action` writes an SPDX SBOM for `dist/`, `cosign-installer` installs the CLI. It also runs the Scout pre-seed and one non-gating `docker/scout-action` scan of the published image, with Docker Hub's read-only token. Same pins as `publish.yml`, so a bump of any of them has run before the tag (PRs from this repository only: keyless signing needs the job's OIDC token) |
 | `demo-lock`               | Installs `scripts/demo/requirements.lock` from its hashes and imports what `retime.py` uses, when that lock changes — the only run a Renovate bump of the demo toolchain gets |
 | `suite-size`              | On a PR that changes a lock, collects the suite on the head and on the base, each with its own pinned dev env, and fails if the head collects fewer tests without the PR touching `tests/` or `src/` — a dependency bump cannot pass by shrinking what the other jobs check |
 | `dockerfile-digests`      | Fails if any `FROM @sha256:` in the Dockerfile is a per-arch manifest instead of an index |
@@ -259,8 +259,9 @@ Scheduled CVE scans need no action unless a high-severity alert appears —
 at that point the fix is usually a Renovate PR bumping the base image
 digest, which ships in the next patch release.
 
-Every job that runs `docker/scout-action` (this one, `vuln-report.yml` and
-`publish.yml`'s `docker-scout`) first runs the local
+Every job that runs `docker/scout-action` (this one, `vuln-report.yml`,
+`publish.yml`'s `docker-scout` and `ci.yml`'s `release-actions-smoke`) first
+runs the local
 `.github/actions/preseed-scout-cli` action. The Scout action downloads its
 ~180 MB CLI from its GitHub release anonymously
 ([docker/scout-action#116](https://github.com/docker/scout-action/issues/116)),
@@ -945,7 +946,7 @@ actions because there the age is the only review there is.
 
 | Update | Outcome | Why |
 | --- | --- | --- |
-| Everything not listed below: patches, minors, digests, pins, lock maintenance, action inputs, the Compose, actionlint and hadolint pins, Docker Hub digests and tag moves, the demo toolchain lock | Automerge after 3 days | The PR runs it. The full suite installs the locks; the bumped action runs in the PR's own workflows; `release-actions-smoke` runs the three release-only actions that can run without publishing; each downloaded binary runs over what it lints or grades; `dockerfile-digests`, `docker-smoke` and `rule-premises` run the images; `demo-lock` installs the demo toolchain. A busybox or python release line whose error wordings changed goes red in `rule-premises`, which asserts them verbatim |
+| Everything not listed below: patches, minors, digests, pins, lock maintenance, action inputs, the Compose, actionlint and hadolint pins, Docker Hub digests and tag moves, the demo toolchain lock | Automerge after 3 days | The PR runs it. The full suite installs the locks; the bumped action runs in the PR's own workflows; `release-actions-smoke` runs the three release-only actions that can run without publishing, and the Scout action, whose pins all move in one group so the release gate's copy is the one exercised; each downloaded binary runs over what it lints or grades; `dockerfile-digests`, `docker-smoke` and `rule-premises` run the images; `demo-lock` installs the demo toolchain. A busybox or python release line whose error wordings changed goes red in `rule-premises`, which asserts them verbatim |
 | Majors of anything except `pyyaml` | Automerge after 7 days | Same review as a minor, plus `suite-size`, which fails a bump that passes by collecting fewer tests. The extra days let the x.0.1 land first |
 | Minors of `attest-build-provenance` and `gh-action-pypi-publish` | Automerge after 7 days | Neither has a run that does not publish, so the age is the only review. A bad minor fails the release run before the release-gate approval and is recovered by re-running; a compromised one is what the SHA pin and the age are for |
 | gcr.io / ghcr.io digests (distroless, oss-fuzz builder, vhs) | `age-gated`, merged by `digest-age-gate.yml` | Same review as a Docker Hub digest, but those registries give Renovate no timestamp; the gate waits 72h from the registry's upload time or first sight instead (see [`digest-age-gate.yml`](#digest-age-gateyml)) |

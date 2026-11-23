@@ -631,11 +631,22 @@ jobs:
   # actions/attest-build-provenance and pypa/gh-action-pypi-publish have no
   # run that does not publish, so they are not here; they age instead.
   #
+  # docker/scout-action runs here too, with the pre-seed step publish.yml's
+  # docker-scout gate runs before it. Its first real run used to be that gate,
+  # after the TestPyPI upload: on 1.8.0 a scout-action bump changed its
+  # checksum file's format, the pre-seed could not parse it, and the version
+  # was lost. Unlike the three above, every copy of its pin moves in one
+  # Renovate group, and tests/test_release_layer.py fails if they differ, so
+  # the PR that moves publish.yml's copy is the PR that runs it here. The scan
+  # never fails on findings; CVE gating stays with publish.yml and
+  # scout-scan.yml. It needs Docker Hub's read-only token, the one secret this
+  # workflow references, and only in this job (tests/test_release_layer.py).
+  #
   # PRs only, and never from a fork: keyless signing needs the job's OIDC
   # token, which GitHub does not issue to fork PRs, and a push to main has
   # nothing to prove that the PR run did not.
   release-actions-smoke:
-    name: Release signing and SBOM actions on the PR's dists
+    name: Release signing, SBOM and Scout actions on the PR's dists
     needs: changes
     if: >-
       github.event_name == 'pull_request'
@@ -712,6 +723,20 @@ jobs:
           done
       - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
       - run: cosign version
+      # Same login, pre-seed and action pin as publish.yml's docker-scout.
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_READ_TOKEN }}
+      - name: Pre-seed the Scout CLI
+        uses: $/.github/actions/preseed-scout-cli
+      - name: Scan the published image (never fails on findings)
+        uses: docker/scout-action@e7e2a72bf1485d10a58f30696b6c513b261ce4fa # v1.29.0
+        with:
+          command: cves
+          image: composelint/compose-lint:latest
+          only-severities: critical
+          exit-code: false
 
   # The demo toolchain's Python deps, installed the way scripts/demo's
   # Dockerfile installs them. No other job touches scripts/demo/requirements
