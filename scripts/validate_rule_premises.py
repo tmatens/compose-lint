@@ -68,7 +68,7 @@ IMAGE = (
 # staging (python keeps its effective uid; busybox re-drops it).
 # renovate: datasource=docker depName=python
 PY_IMAGE = (
-    "python:3.13-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e"
+    "python:3.15-alpine@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd"
 )
 # Rules with nothing to observe in a live container — grounded by source only.
 _NON_RUNTIME = ["CL-0004", "CL-0014", "CL-0019", "CL-0020", "CL-0021"]
