@@ -73,10 +73,12 @@ runs:
         gh release download "${version}" --repo docker/scout-action \
           --pattern "${asset}" --pattern '*_checksums.txt' --dir "${tmp}"
 
-        # Checksum lines name the asset as <asset>_<version>_<os>_<arch>.
+        # Checksum lines name the asset as <asset>_<version>_<os>_<arch> up
+        # to v1.28.x, and as the bare <asset> from v1.29.0. Accept either.
         sums=("${tmp}"/*_checksums.txt)
         [ "${#sums[@]}" -eq 1 ] || fail "expected one checksums file in ${version}"
-        mapfile -t expected < <(awk -v p="${asset}_${version#v}_" 'index($2, p) == 1 { print $1 }' "${sums[0]}")
+        mapfile -t expected < <(awk -v a="${asset}" -v p="${asset}_${version#v}_" \
+          '$2 == a || index($2, p) == 1 { print $1 }' "${sums[0]}")
         [ "${#expected[@]}" -eq 1 ] \
           || fail "expected one checksum for ${asset} in ${version}, found ${#expected[@]}"
         (cd "${tmp}" && echo "${expected[0]}  ${asset}" | sha256sum --check --strict)
