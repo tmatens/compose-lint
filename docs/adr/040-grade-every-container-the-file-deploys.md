@@ -264,3 +264,28 @@ does not lift it, because it is a refusal and not a coverage gap. The
 services-only fallback and its `unread_input` warning are removed. The
 largest unit count in the 11,111-file corpus is 64, so no corpus file
 changes.
+
+**Amendment (2026-11-22): a job extends a job, as Compose 5.8.0 does.**
+Compose 5.8.0 (compose-go 2.17.0; the cross-file lookup is compose-go #959) changed two of
+the three behaviours the 2026-11-10 amendment recorded from 5.7.0. Measured on
+5.8.0, a job's `extends:` now behaves as a service's does, within `jobs:`:
+
+- A cross-file `extends: {file: f, service: x}` takes `x` from `f`'s **jobs**.
+  It does so when `f` also declares a service `x`, and fails with "no jobs
+  section" when `f` declares only services, or "job 'x' not found" when its
+  jobs do not include `x`.
+- The base job's own chain is followed, in its file and on into another, and
+  the base file's other jobs and all of its services are left unresolved, as a
+  service base's siblings are.
+- **`!reset` and `!override` apply** to the merge, in either form. A job with
+  `cap_drop: !reset []` extending one with `cap_drop: [ALL]` deploys no
+  `cap_drop`, and `cap_add: !override [CHOWN]` deploys `[CHOWN]`.
+- An in-file `extends:` still names another job; naming a service is refused
+  ("job 'web' not found").
+
+compose-lint follows 5.8.0, the version CI pins. A job whose cross-file base
+is a service now resolves as a coverage gap that Compose refuses too, and a
+job carrying either tag is graded with the tag applied. Under Compose 5.7 or
+earlier such a project deploys differently from what compose-lint grades; the
+old behaviour took a service where a job was named, which compose-go fixed
+as a loader bug. No file in the 11,111-file corpus declares `jobs:`.

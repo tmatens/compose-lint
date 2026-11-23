@@ -51,6 +51,23 @@ def _compose_cli_works() -> bool:
         return False
 
 
+def _compose_version() -> tuple[int, int] | None:
+    """The ``(major, minor)`` of the ``docker compose`` that answers, if any."""
+    try:
+        result = subprocess.run(
+            ["docker", "compose", "version", "--short"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        major, minor = (
+            int(part) for part in result.stdout.strip().lstrip("v").split(".")[:2]
+        )
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+    return (major, minor) if result.returncode == 0 else None
+
+
 pytestmark = pytest.mark.skipif(
     not _compose_cli_works(),
     reason="differential env_file: test needs a working docker compose CLI",
@@ -126,12 +143,31 @@ DIVERGENT = {
         "A bare key is purely a process-environment lookup. Compose imports the "
         "lint host's value; we report it unresolved."
     ),
+    # The same key on the last line with no final newline. Compose before 5.8.0
+    # (compose-go before 2.17.0) read it as a variable with an empty name and
+    # the key text as its value; it is now a lookup like any other bare line.
+    "K": (
+        "A bare key is purely a process-environment lookup, with or without a "
+        "final newline. Compose imports the lint host's value; we report it "
+        "unresolved."
+    ),
     "not a pair\nK=v": (
         "Compose refuses the whole file and starts nothing; a lint run skips the "
         "line and grades the rest, because the env file is not the artifact "
         "under lint."
     ),
+    # Compose before 5.8.0 accepted this line as a variable with an empty name,
+    # which only failed later, when the engine created the container.
+    "=v\nK=v": (
+        "A line with no name is refused (`key cannot be empty`), so Compose "
+        "refuses the whole file; a lint run skips the line and grades the rest."
+    ),
 }
+
+# Divergences that hold from Compose 5.8.0 (compose-go 2.17.0). An older
+# Compose reads each as a variable with an empty name, which no rule grades,
+# so CI's pinned plugin checks them and a runner image's older one skips them.
+_SINCE_5_8 = frozenset({"K", "=v\nK=v"})
 
 # The one name a divergence needs present in the process environment, so that
 # Compose has something to import and the disagreement is observable at all.
@@ -201,6 +237,8 @@ def test_divergences_are_still_divergences(env_text: str, tmp_path: Path) -> Non
     ``AGREED`` — a divergence that no longer exists is a comment claiming a
     difference the code no longer makes.
     """
+    if env_text in _SINCE_5_8 and (_compose_version() or (0, 0)) < (5, 8):
+        pytest.skip("Compose before 5.8.0 reads this as an empty-named variable")
     host_env = {**os.environ, "K": _HOST_VALUE}
     theirs = _compose_environment(tmp_path, env_text, host_env=host_env)
     parsed = parse_env_file(env_text)
@@ -269,30 +307,3 @@ def test_resolution_scope_spans_the_sibling_env_and_earlier_files(
     assert dict(second.values) == {"P": "/opt/p"}, (
         "an earlier file's name must be in scope, and must not be returned twice"
     )
-
-
-def test_a_bare_key_at_eof_without_a_newline_is_a_compose_defect(
-    tmp_path: Path,
-) -> None:
-    """Compose reads a trailing bare key as an *unnamed* variable. We do not.
-
-    ``K`` followed by a newline yields ``K: <host value>``; the same byte
-    without the newline yields ``"": K`` — an environment entry with an empty
-    name, holding the key text as its value. Reproduced across both spellings
-    and with a preceding pair, so it is the missing newline and not the file
-    length. Only the bare form is affected: ``K=v`` at EOF is read correctly.
-
-    Not reproduced, and deliberately: an empty-named variable is not a
-    configuration any rule can grade, and matching the defect would mean
-    inventing a key name no author wrote. Recorded as a test so that a Compose
-    release which fixes it is noticed here rather than in a user's report.
-    """
-    host_env = {**os.environ, "K": _HOST_VALUE}
-    assert _compose_environment(tmp_path, "K\n", host_env=host_env) == {
-        "K": _HOST_VALUE
-    }
-    assert _compose_environment(tmp_path, "K", host_env=host_env) == {"": "K"}
-
-    parsed = parse_env_file("K")
-    assert parsed.values == {}
-    assert parsed.unresolved == frozenset({"K"})

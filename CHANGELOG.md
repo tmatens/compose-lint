@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A job's `extends:` follows Compose 5.8.0.** Compose 5.8.0 resolves a
+  job's `extends:` as it does a service's, within `jobs:`, and compose-lint
+  now does the same. A cross-file `extends: {file:}` on a job inherits the
+  other file's *job* rather than its service, so a job pointing at a file with
+  no such job is a coverage gap (exit 2) that Compose refuses too. `!reset`
+  and `!override` now apply to a job's merge, so `cap_drop: !reset []` removes
+  the base's `cap_drop` and the absence rules report it. Earlier Compose
+  releases took the service and ignored both tags. No file in the
+  11,111-file corpus declares `jobs:`. See the second amendment to
+  [ADR-040](docs/adr/040-grade-every-container-the-file-deploys.md).
+- **The `env_file:` notes now match Compose 5.8.0.** compose-lint already
+  read a bare `KEY` on a file's last line, with no final newline, as a lookup
+  like any other bare line, and already skipped a line with no name
+  (`=value`) and said that Compose refuses the file. Compose 5.8.0 now does
+  both. Before it, Compose read each as a variable with an empty name. Nothing
+  compose-lint reports changes.
+
 ## [1.7.1] - 2026-11-22
 
 ### Changed

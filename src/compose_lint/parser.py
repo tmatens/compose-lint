@@ -999,10 +999,10 @@ def _resolve_in_file_extends(
     the base's size times the children: ``repeats`` bounds it. A child past
     the budget keeps its own lines, and what it inherits has none.
 
-    ``section`` is ``"jobs"`` for the job pass. Measured on Compose 5.7.0, a
-    job's in-file ``extends:`` names another *job*, never a service ("service
-    'web' not found" for a job extending a service), and merges exactly as a
-    service's does, chains and cycle refusal included.
+    ``section`` is ``"jobs"`` for the job pass. A job's in-file ``extends:``
+    names another *job*, never a service (Compose 5.8.0: "job 'web' not
+    found" for a job extending a service), and merges exactly as a service's
+    does, chains, cycle refusal, ``!reset`` and ``!override`` included.
     """
     services = data.get(section)
     if not isinstance(services, dict):
@@ -1155,13 +1155,15 @@ class _ExtendsBudget:
         return self.files <= MAX_REFERENCE_FILES
 
 
-def _unwanted_services(data: dict[str, Any], wanted: str) -> frozenset[str]:
-    """Services of a base document that ``wanted`` does not inherit from.
+def _unwanted_services(
+    data: dict[str, Any], wanted: str, section: str = "services"
+) -> frozenset[str]:
+    """Units of a base document's ``section`` that ``wanted`` does not inherit.
 
     ``wanted`` and the chain of in-file bases it extends are kept; everything
     else is left as written by both ``extends:`` passes.
     """
-    services = data.get("services")
+    services = data.get(section)
     if not isinstance(services, dict):
         return frozenset()
     keep: set[str] = set()
@@ -1170,6 +1172,14 @@ def _unwanted_services(data: dict[str, Any], wanted: str) -> frozenset[str]:
         keep.add(name)
         name = _in_file_target(services[name])
     return frozenset(n for n in services if n is not _LINES and n not in keep)
+
+
+def _all_units(data: dict[str, Any], section: str) -> frozenset[str]:
+    """Every unit name in a document's ``section``, for a pass to leave alone."""
+    units = data.get(section)
+    if not isinstance(units, dict):
+        return frozenset()
+    return frozenset(n for n in units if n is not _LINES)
 
 
 def _extends_file_ref(config: Any) -> tuple[str, Any] | None:
@@ -1672,16 +1682,17 @@ def _resolve_cross_file_extends(
     root of the file the run was pointed at — never against the base's own
     directory, which a chain could otherwise walk outwards one hop at a time.
 
-    ``section`` is ``"jobs"`` for the job pass. The base is looked up among the
-    other file's *services* either way: measured on Compose 5.7.0, a job's
-    ``extends: {file: base.yml, service: x}`` takes ``services.x`` from
-    ``base.yml`` even when that file also declares a job ``x``, and fails with
-    "no services section" when the file declares only jobs. The spec describes
-    the key as naming a job; the implementation is what deploys.
+    ``section`` is ``"jobs"`` for the job pass, and the base is looked up in
+    the same section of the other file: measured on Compose 5.8.0, a job's
+    ``extends: {file: base.yml, service: x}`` takes ``jobs.x`` from
+    ``base.yml`` even when that file also declares a service ``x``, and fails
+    with "no jobs section" when the file declares only services. (Compose
+    before 5.8.0 took ``services.x`` instead; compose-go 2.17.0 changed it.)
     """
     services = data.get(section)
     if not isinstance(services, dict):
         return []
+    noun = "job" if section == "jobs" else "service"
     gaps: list[str] = []
     # Grouped by the reference and the reason it failed, not emitted per
     # service: a monorepo root where nine services extend the same absent file
@@ -1777,14 +1788,15 @@ def _resolve_cross_file_extends(
                 chain=(*chain, step),
                 document_path=target,
                 extends_service=base_service,
+                extends_section=section,
             )
         except ComposeError as exc:
             _gap(f"it is not a Compose document compose-lint can read ({exc})")
             continue
 
-        base_services = base_data.get("services")
-        if not isinstance(base_services, dict) or base_service not in base_services:
-            _gap(f"it declares no service '{base_service}'", compose_refuses=True)
+        base_units = base_data.get(section)
+        if not isinstance(base_units, dict) or base_service not in base_units:
+            _gap(f"it declares no {noun} '{base_service}'", compose_refuses=True)
             continue
 
         gaps.extend(base_gaps)
@@ -1803,7 +1815,7 @@ def _resolve_cross_file_extends(
             sources=inherited or None,
         )
         merged, merged_lines, _ = merge_service_from(
-            base_doc, base_service, child_doc, name, child_section=section
+            base_doc, base_service, child_doc, name, section=section
         )
         services[name] = merged
         lines.update(merged_lines)
@@ -2374,6 +2386,7 @@ def _loads_full(  # noqa: PLR0913
     include_chain: tuple[str, ...] = (),
     document_path: Path | None = None,
     extends_service: str | None = None,
+    extends_section: str = "services",
 ) -> tuple[
     dict[str, Any], dict[str, int], frozenset[str], frozenset[str], tuple[str, ...]
 ]:
@@ -2609,15 +2622,23 @@ def _loads_full(  # noqa: PLR0913
             jobs_resolved = from_includes.get("jobs", frozenset())
             gaps.extend(include_gaps)
             _check_service_count(data, folded=True)
-        # A document opened as an `extends:` base resolves only the service it
-        # was opened for and the in-file bases that service inherits from, as
-        # Compose 5.5.0 does: a sibling's own `extends:` is never followed, so
-        # one that points at a missing file, or back into this file, is no gap
-        # in the project that extends a different service here.
+        # A document opened as an `extends:` base resolves only the unit it
+        # was opened for and the in-file bases that unit inherits from, as
+        # Compose 5.5.0 does for a service and 5.8.0 for a job: a sibling's own
+        # `extends:` is never followed, so one that points at a missing file,
+        # or back into this file, is no gap in the project that extends a
+        # different unit here. The other section is not resolved at all.
         if extends_service is not None:
-            already_resolved = already_resolved | _unwanted_services(
-                data, extends_service
-            )
+            if extends_section == "jobs":
+                already_resolved = already_resolved | _all_units(data, "services")
+                jobs_resolved = jobs_resolved | _unwanted_services(
+                    data, extends_service, "jobs"
+                )
+            else:
+                already_resolved = already_resolved | _unwanted_services(
+                    data, extends_service
+                )
+                jobs_resolved = jobs_resolved | _all_units(data, "jobs")
         # One allowance for every cross-file base this document opens, jobs'
         # and services' alike, as `_ExtendsBudget` intends.
         extends_budget = budget if budget is not None else _ExtendsBudget()
@@ -2655,49 +2676,46 @@ def _loads_full(  # noqa: PLR0913
                 repeats=repeats,
             )
         )
-        # Jobs (Compose 5.6) extend jobs in the file, and services in another
-        # file (ADR-040 §5, amended). In the same order as services: the
-        # cross-file bases first, so a job inheriting another job inherits
-        # what that one pulled in. A document opened as a service's
-        # `extends:` base resolves none of its jobs, as it resolves none of
-        # the services the wanted one does not inherit from.
-        #
-        # No `resets` or `overrides`: measured on Compose 5.7.0, a job's
-        # `extends:` merge ignores `!reset` and `!override` in either form.
-        # `cap_drop: !reset []` on a job extending one with `cap_drop: [ALL]`
-        # deploys `[ALL]`, and `cap_add: !override [CHOWN]` appends to the
-        # base's list, where a service gets `CHOWN` alone and no `cap_drop`.
-        # Applying the tags here would grade hardening the job does not have
-        # as removed, and a grant it does have as replaced.
-        if extends_service is None:
-            if base_dir is not None and project_dir is not None:
-                gaps.extend(
-                    _resolve_cross_file_extends(
-                        data,
-                        lines,
-                        document_path=document_path or base_dir,
-                        project_dir=project_dir,
-                        env_dirs=env_dirs or (base_dir,),
-                        use_env=use_env,
-                        budget=extends_budget,
-                        repeats=repeats,
-                        env_seen=env_seen,
-                        depth=depth,
-                        chain=chain,
-                        prefix=prefix,
-                        skip=jobs_resolved,
-                        section="jobs",
-                    )
-                )
+        # Jobs (Compose 5.6) extend jobs, in this file or another (ADR-040 §5,
+        # amended twice). In the same order as services, with the same tags:
+        # the cross-file bases first, so a job inheriting another job inherits
+        # what that one pulled in, and `!reset` / `!override` apply as they do
+        # to a service (measured on Compose 5.8.0; before it, a job's merge
+        # ignored both tags and took a cross-file base from `services:`).
+        # A document opened as a service's `extends:` base resolves none of
+        # its jobs: `jobs_resolved` names them all above.
+        if base_dir is not None and project_dir is not None:
             gaps.extend(
-                _resolve_in_file_extends(
+                _resolve_cross_file_extends(
                     data,
                     lines,
-                    skip=jobs_resolved,
+                    document_path=document_path or base_dir,
+                    project_dir=project_dir,
+                    env_dirs=env_dirs or (base_dir,),
+                    use_env=use_env,
+                    budget=extends_budget,
                     repeats=repeats,
+                    env_seen=env_seen,
+                    depth=depth,
+                    chain=chain,
+                    prefix=prefix,
+                    resets=reset_paths,
+                    overrides=override_paths,
+                    skip=jobs_resolved,
                     section="jobs",
                 )
             )
+        gaps.extend(
+            _resolve_in_file_extends(
+                data,
+                lines,
+                resets=reset_paths,
+                overrides=override_paths,
+                skip=jobs_resolved,
+                repeats=repeats,
+                section="jobs",
+            )
+        )
         if "include" in data and "services" not in data and "jobs" not in data:
             # Deferred from `_validate_compose`, and only for the document that
             # deferral applied to: an include-only file whose references could

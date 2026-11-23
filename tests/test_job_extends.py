@@ -2,17 +2,23 @@
 
 1.2.0 graded no job that used ``extends:`` and warned that the next minor
 would make it a coverage gap. Resolving it retires the gap instead. Measured
-on Compose 5.7.0, the version CI pins:
+on Compose 5.8.0, the version CI pins, a job extends a job the way a service
+extends a service:
 
 - an in-file ``extends: x`` or ``{service: x}`` names another **job** and
   merges as a service's does: lists append, mappings merge, chains follow,
-  and a cycle or a missing target is refused;
-- a job cannot extend a service in the same file ("service 'web' not found");
-- a cross-file ``{file: f, service: x}`` takes ``services.x`` from ``f``, even
-  when ``f`` also declares a job ``x``, and fails when ``f`` has only jobs.
+  ``!reset`` and ``!override`` apply, and a cycle or a missing target is
+  refused;
+- a job cannot extend a service in the same file ("job 'web' not found");
+- a cross-file ``{file: f, service: x}`` takes ``jobs.x`` from ``f``, even
+  when ``f`` also declares a service ``x``, and fails when ``f`` has no jobs.
+
+Compose before 5.8.0 (compose-go before 2.17.0) ignored both tags on a job
+and took a cross-file base from ``services:``; ADR-040's second amendment
+records the change.
 
 The behaviour tests below hold each of those. The differential test at the
-end asks a real Compose (5.6 or later, skipped without one) to resolve the
+end asks a real Compose (5.8 or later, skipped without one) to resolve the
 same fixtures and compares its jobs with compose-lint's.
 """
 
@@ -90,12 +96,11 @@ class TestInFile:
         c = _job(tmp_path, {"compose.yml": text}, "c")
         assert (c["privileged"], c["user"]) == (True, "root")
 
-    def test_reset_and_override_do_not_apply(self, tmp_path: Path) -> None:
-        """Compose 5.7.0 ignores both tags in a job's `extends:` merge.
+    def test_reset_and_override_apply(self, tmp_path: Path) -> None:
+        """As they do to a service, since Compose 5.8.0.
 
-        A service child would get `cap_add: [CHOWN]` and no `cap_drop`; the
-        job keeps the base's hardening and appends to its grant, and that is
-        what deploys.
+        Before it, the job kept the base's `cap_drop` and appended `CHOWN` to
+        the base's grant.
         """
         text = (
             "jobs:\n"
@@ -105,8 +110,20 @@ class TestInFile:
             "    cap_add: !override [CHOWN]\n"
         )
         child = _job(tmp_path, {"compose.yml": text})
-        assert child["cap_add"] == ["NET_ADMIN", "CHOWN"]
-        assert child["cap_drop"] == ["ALL"]
+        assert child["cap_add"] == ["CHOWN"]
+        assert "cap_drop" not in child
+
+    def test_tags_apply_down_a_chain(self, tmp_path: Path) -> None:
+        text = (
+            "jobs:\n"
+            "  a: {image: a:1, cap_add: [A], cap_drop: [ALL], "
+            "triggers: {manual: true}}\n"
+            "  b: {extends: a, cap_add: !override [B]}\n"
+            "  c: {extends: b, cap_drop: !reset []}\n"
+        )
+        c = _job(tmp_path, {"compose.yml": text}, "c")
+        assert c["cap_add"] == ["B"]
+        assert "cap_drop" not in c
 
     def test_a_service_and_a_job_are_resolved_independently(
         self, tmp_path: Path
@@ -175,8 +192,8 @@ class TestRefusals:
 
 
 class TestCrossFile:
-    def test_the_base_is_the_other_file_s_service(self, tmp_path: Path) -> None:
-        """Even when that file also declares a job of the same name."""
+    def test_the_base_is_the_other_file_s_job(self, tmp_path: Path) -> None:
+        """Even when that file also declares a service of the same name."""
         child = _job(
             tmp_path,
             {
@@ -189,34 +206,34 @@ class TestCrossFile:
                 "    triggers: {manual: true}\n",
             },
         )
-        assert child["image"] == "nginx:1.27"
-        assert child["read_only"] is True
-        assert "privileged" not in child
+        assert child["image"] == "alpine:3.20"
+        assert child["privileged"] is True
+        assert "read_only" not in child
 
-    def test_a_file_with_only_jobs_is_a_gap(self, tmp_path: Path) -> None:
+    def test_a_file_with_only_services_is_a_gap(self, tmp_path: Path) -> None:
+        """Compose refuses it ("no jobs section"), so the gap is Compose's too."""
         loaded = load_compose_full(
             _write(
                 tmp_path,
                 {
-                    "base.yml": "jobs:\n"
-                    "  remote: {image: a:1, triggers: {manual: true}}\n",
+                    "base.yml": "services:\n  remote: {image: nginx:1.27}\n",
                     "compose.yml": "jobs:\n  child:\n"
                     "    extends: {file: base.yml, service: remote}\n"
                     "    triggers: {manual: true}\n",
                 },
             )
         )
-        assert any("declares no service 'remote'" in gap for gap in loaded.gaps)
+        assert any("declares no job 'remote'" in gap for gap in loaded.gaps)
 
     def test_a_job_can_extend_a_job_that_extends_across_files(
         self, tmp_path: Path
     ) -> None:
         """Cross-file first, then in-file, the order services resolve in."""
         files = {
-            "base.yml": "services:\n  remote: {image: nginx:1.27, privileged: true}\n",
+            "base.yml": "jobs:\n  remote: {image: nginx:1.27, privileged: true, "
+            "triggers: {manual: true}}\n",
             "compose.yml": "jobs:\n"
             "  mid:\n    extends: {file: base.yml, service: remote}\n"
-            "    triggers: {manual: true}\n"
             "  child: {extends: mid, user: root}\n",
         }
         child = _job(tmp_path, files)
@@ -225,6 +242,40 @@ class TestCrossFile:
             True,
             "root",
         )
+
+    def test_the_base_s_own_chain_is_followed(self, tmp_path: Path) -> None:
+        """In the base file, and on into a third file."""
+        child = _job(
+            tmp_path,
+            {
+                "deep.yml": "jobs:\n  root: {image: a:1, privileged: true, "
+                "cap_add: [X1], triggers: {manual: true}}\n",
+                "base.yml": "jobs:\n"
+                "  mid: {extends: {file: deep.yml, service: root}, cap_add: [X2]}\n"
+                "  remote: {extends: mid, user: root}\n",
+                "compose.yml": "jobs:\n  child:\n"
+                "    extends: {file: base.yml, service: remote}\n"
+                "    cap_add: [X3]\n",
+            },
+        )
+        assert child["privileged"] is True
+        assert child["user"] == "root"
+        assert child["cap_add"] == ["X1", "X2", "X3"]
+
+    def test_tags_apply_across_files(self, tmp_path: Path) -> None:
+        child = _job(
+            tmp_path,
+            {
+                "base.yml": "jobs:\n  remote:\n    image: alpine:3.20\n"
+                "    cap_add: [NET_ADMIN]\n    cap_drop: [ALL]\n"
+                "    triggers: {manual: true}\n",
+                "compose.yml": "jobs:\n  child:\n"
+                "    extends: {file: base.yml, service: remote}\n"
+                "    cap_drop: !reset []\n    cap_add: !override [CHOWN]\n",
+            },
+        )
+        assert child["cap_add"] == ["CHOWN"]
+        assert "cap_drop" not in child
 
     def test_a_base_file_s_own_jobs_are_not_resolved(self, tmp_path: Path) -> None:
         """Opened as a service's base, a file resolves only what is inherited.
@@ -244,6 +295,41 @@ class TestCrossFile:
             )
         )
         assert loaded.gaps == ()
+
+    @pytest.mark.parametrize(
+        "sibling",
+        [
+            pytest.param(
+                "services:\n  broken: {extends: {file: missing.yml, service: x}}\n",
+                id="a-service",
+            ),
+            pytest.param(
+                "jobs:\n  broken: {extends: nope, triggers: {manual: true}}\n",
+                id="another-job",
+            ),
+        ],
+    )
+    def test_a_job_base_file_resolves_only_the_inherited_job(
+        self, tmp_path: Path, sibling: str
+    ) -> None:
+        """The mirror of the test above, for a file opened as a job's base."""
+        base = sibling + (
+            "  remote: {image: a:1, triggers: {manual: true}}\n"
+            if sibling.startswith("jobs:")
+            else "jobs:\n  remote: {image: a:1, triggers: {manual: true}}\n"
+        )
+        loaded = load_compose_full(
+            _write(
+                tmp_path,
+                {
+                    "base.yml": base,
+                    "compose.yml": "jobs:\n  child:\n"
+                    "    extends: {file: base.yml, service: remote}\n",
+                },
+            )
+        )
+        assert loaded.gaps == ()
+        assert loaded.data["jobs"]["child"]["image"] == "a:1"
 
 
 # --- include: a job resolved by the included file is not merged twice -------
@@ -274,8 +360,8 @@ def test_an_included_job_s_file_reference_stays_its_own(tmp_path: Path) -> None:
         _write(
             tmp_path,
             {
-                "inc/base.yml": "services:\n  remote: {image: nginx:1.27, "
-                "privileged: true}\n",
+                "inc/base.yml": "jobs:\n  remote: {image: nginx:1.27, "
+                "privileged: true, triggers: {manual: true}}\n",
                 "inc/jobs.yml": "jobs:\n  child:\n"
                 "    extends: {file: base.yml, service: remote}\n"
                 "    triggers: {manual: true}\n",
@@ -383,7 +469,10 @@ def _jobs_capable() -> bool:
         major, minor = (int(part) for part in result.stdout.strip().split(".")[:2])
     except (OSError, subprocess.SubprocessError, ValueError):
         return False
-    return result.returncode == 0 and (major, minor) >= (5, 6)
+    # 5.8: the cases record how 5.8.0 resolves a job's `extends:`. An older
+    # Compose resolves several of them differently (ADR-040, second amendment)
+    # and would fail them for that reason, not for a defect here.
+    return result.returncode == 0 and (major, minor) >= (5, 8)
 
 
 # Each case is a project. Every one Compose accepts must resolve every job to
@@ -482,6 +571,67 @@ CASES: dict[str, dict[str, str]] = {
         "  b: {extends: a, environment: {B: '3', C: '4'}}\n"
         "  c: {extends: b, environment: [D=5]}\n"
     },
+    "cross-file-job": {
+        "base.yml": "services:\n  remote: {image: nginx:1.27, user: root}\n"
+        "jobs:\n  remote: {image: alpine:3.20, privileged: true, "
+        "triggers: {manual: true}}\n",
+        "compose.yml": "jobs:\n  child:\n"
+        "    extends: {file: base.yml, service: remote}\n"
+        "    environment: {B: '2'}\n",
+    },
+    "cross-file-job-tags": {
+        "base.yml": "jobs:\n  remote:\n    image: alpine:3.20\n"
+        "    cap_add: [NET_ADMIN]\n    cap_drop: [ALL]\n"
+        "    triggers: {manual: true}\n",
+        "compose.yml": "jobs:\n  child:\n"
+        "    extends: {file: base.yml, service: remote}\n"
+        "    cap_drop: !reset []\n    cap_add: !override [CHOWN]\n",
+    },
+    "cross-file-job-base-chain": {
+        "deep.yml": "jobs:\n  root: {image: a:1, privileged: true, cap_add: [X1], "
+        "triggers: {manual: true}}\n",
+        "base.yml": "jobs:\n"
+        "  mid: {extends: {file: deep.yml, service: root}, cap_add: [X2]}\n"
+        "  remote: {extends: mid, user: root, cap_drop: !reset []}\n",
+        "compose.yml": "jobs:\n  child:\n"
+        "    extends: {file: base.yml, service: remote}\n    cap_add: [X3]\n",
+    },
+    "cross-file-job-base-siblings": {
+        "base.yml": "services:\n  broken: {extends: {file: missing.yml, "
+        "service: x}}\n"
+        "jobs:\n  remote: {image: a:1, triggers: {manual: true}}\n"
+        "  other: {extends: nope, triggers: {manual: true}}\n",
+        "compose.yml": "jobs:\n  child:\n"
+        "    extends: {file: base.yml, service: remote}\n",
+    },
+    "cross-file-job-other-name": {
+        "base.yml": "services:\n  remote: {image: n:1}\n"
+        "jobs:\n  other: {image: a:1, triggers: {manual: true}}\n",
+        "compose.yml": "jobs:\n  child:\n"
+        "    extends: {file: base.yml, service: remote}\n"
+        "    triggers: {manual: true}\n",
+    },
+    "bind-in-cross-file-job-base": {
+        "shared/base.yml": "jobs:\n  remote:\n    image: alpine:3.20\n"
+        "    volumes: ['./cfg:/cfg:ro', '/var/run/docker.sock:/var/run/docker.sock']\n"
+        "    triggers: {manual: true}\n",
+        "compose.yml": "jobs:\n  child:\n"
+        "    extends: {file: shared/base.yml, service: remote}\n"
+        "    volumes: ['./data:/data']\n",
+    },
+    "included-cross-file-job": {
+        "inc/base.yml": "jobs:\n  remote: {image: nginx:1.27, privileged: true, "
+        "triggers: {manual: true}}\n",
+        "inc/jobs.yml": "jobs:\n  child:\n"
+        "    extends: {file: base.yml, service: remote}\n",
+        "compose.yml": "include: [inc/jobs.yml]\n",
+    },
+    "tags-down-a-chain": {
+        "compose.yml": "jobs:\n"
+        "  a: {image: a:1, cap_add: [A], cap_drop: [ALL], triggers: {manual: true}}\n"
+        "  b: {extends: a, cap_add: !override [B]}\n"
+        "  c: {extends: b, cap_drop: !reset []}\n"
+    },
     "cross-file-only-jobs": {
         "base.yml": "jobs:\n  remote: {image: a:1, triggers: {manual: true}}\n",
         "compose.yml": "jobs:\n  child:\n"
@@ -520,7 +670,7 @@ def _graded(job: dict[str, Any]) -> dict[str, Any]:
 
 
 @pytest.mark.skipif(
-    not _jobs_capable(), reason="needs a Compose that knows jobs (5.6 or later)"
+    not _jobs_capable(), reason="needs a Compose that resolves jobs as 5.8.0 does"
 )
 @pytest.mark.parametrize("case", sorted(CASES))
 def test_agrees_with_compose(tmp_path: Path, case: str) -> None:
