@@ -900,7 +900,7 @@ def merge_service_from(
     child: Document,
     child_service: str,
     *,
-    child_section: str = "services",
+    section: str = "services",
 ) -> tuple[Any, dict[str, int], dict[str, str]]:
     """Merge a service written in another document under ``child_service``.
 
@@ -915,14 +915,14 @@ def merge_service_from(
     The caller folds those into the document's own maps; keys the child
     supplies keep the child's lines, which is what the merge already records.
 
-    ``child_section`` is ``"jobs"`` when the child is a job. The base is always
-    a service: Compose resolves a job's cross-file ``extends:`` against the
-    other file's ``services:`` (measured on 5.7.0).
+    ``section`` is ``"jobs"`` when the child is a job, and the base is then a
+    job too: Compose 5.8.0 resolves a job's cross-file ``extends:`` against the
+    other file's ``jobs:``.
     """
-    base_path = f"services.{base_service}"
-    child_path = f"{child_section}.{child_service}"
-    base_value = base.data.get("services", {}).get(base_service)
-    child_value = child.data.get(child_section, {}).get(child_service)
+    base_path = f"{section}.{base_service}"
+    child_path = f"{section}.{child_service}"
+    base_value = base.data.get(section, {}).get(base_service)
+    child_value = child.data.get(section, {}).get(child_service)
     rec = _Recorder()
     merged = merge_values(
         base_value,

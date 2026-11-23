@@ -127,10 +127,10 @@ the keys whose value the hook deploys and its service does not. `privileged: tru
 device cgroup in place, which is not the grant CL-0002 describes. A file with
 `jobs:` and no `services:` is a Compose file and is linted.
 
-A job's `extends:` is resolved as a service's is. Compose differs in two
-ways that compose-lint follows: a cross-file `extends: {file:}` on a job
-inherits the other file's *service*, and `!reset` and `!override` do not
-apply to a job's `extends:` merge
+A job's `extends:` is resolved as a service's is, within `jobs:`: a
+cross-file `extends: {file:}` on a job inherits the other file's *job*, and
+`!reset` and `!override` apply to the merge. That is what Compose 5.8.0 does;
+earlier 5.x releases took the other file's service and ignored both tags
 ([ADR-040](adr/040-grade-every-container-the-file-deploys.md), amended).
 1.2.0 did not grade such a job and warned that it would exit 2; it is graded
 instead.
