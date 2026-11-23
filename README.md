@@ -269,7 +269,7 @@ jobs:
       contents: read          # checkout
       security-events: write  # upload the SARIF to Code Scanning
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: tmatens/compose-lint@8afed8beaa6a4de6047b02d5630285bb8cf91c0a # v1.7.1
         with:
           sarif-file: results.sarif

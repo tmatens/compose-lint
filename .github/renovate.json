@@ -64,6 +64,15 @@
       "matchStrings": [
         "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)\\n[A-Z_]+ = \\(\\n\\s+\"[^\":]+:(?<currentValue>[^@\"]+)@(?<currentDigest>sha256:[0-9a-f]{64})\""
       ]
+    },
+    {
+      "customType": "regex",
+      "description": "Actions named in the copy-paste workflow snippets in README.md and docs/*.md. The github-actions manager reads only workflow and action files, so before this manager the README's actions/checkout pin sat at v6.0.2 while every workflow here had moved to v7.0.1, and the page that tells users to pin was handing them a release this project had already left. The snippets use the workflows' own form, `uses: owner/repo@<40-hex sha> # vX.Y.Z`, so Renovate moves the SHA and the comment together as it does there. Placeholders such as `@<sha> # vX.Y.Z` in docs/github-action.md do not match and are left alone. tmatens/compose-lint's own snippet pin matches too and is disabled in packageRules, because publish.yml owns it.",
+      "managerFilePatterns": ["/^README\\.md$/", "/^docs/.+\\.md$/"],
+      "matchStrings": [
+        "uses: (?<depName>[\\w.-]+/[\\w.-]+)@(?<currentDigest>[0-9a-f]{40}) # (?<currentValue>v\\S+)"
+      ],
+      "datasourceTemplate": "github-tags"
     }
   ],
   "packageRules": [
@@ -78,6 +87,12 @@
       "matchManagers": ["github-actions"],
       "matchFileNames": [".github/workflows/publish.yml", ".github/workflows/verify-tag.yml", ".github/workflows/release-docker-smoke.yml"],
       "groupName": "github-actions-release"
+    },
+    {
+      "description": "README and docs snippet actions join the weekly github-actions group, so a snippet moves in the same PR as the workflows that use the same action, and that PR's CI runs the new version in the repo's own workflows: the review the repo-wide default asks for. When the workflows moved in an earlier PR, the snippet is catching up to a version main already runs. Nothing in CI runs the snippet itself.",
+      "matchManagers": ["custom.regex"],
+      "matchFileNames": ["README.md", "docs/**/*.md"],
+      "groupName": "github-actions"
     },
     {
       "description": "Python runtime + dev deps batched into one PR. pip-compile tracks the uv-generated requirements*.lock files: their .lock extension is matched by no pip-family manager by default, leaving transitive pins (e.g. urllib3) invisible to Renovate and weekly lockFileMaintenance a no-op for these files.",
@@ -136,6 +151,13 @@
       "description": "Demo toolchain: the compose-lint pin in scripts/demo records which release the committed GIF was rendered on, so it moves only when the demos are re-recorded (marketplace-smoke.yml's rerecord-demos job after a release that changed their output, or by hand per docs/RELEASING.md), never via Renovate. pillow/numpy and transitives in the same lock stay managed; ci.yml's demo-lock job installs that lock on the PR.",
       "matchFileNames": ["scripts/demo/requirements.in", "scripts/demo/requirements.lock"],
       "matchPackageNames": ["compose-lint"],
+      "enabled": false
+    },
+    {
+      "description": "compose-lint's own action pin in the README snippet: NOT Renovate's. It has to name the release just published, and publish.yml's bump-marketplace-smoke-pin job moves it after each release, together with marketplace-smoke.yml's pin. A Renovate PR would race that job on the same line.",
+      "matchManagers": ["custom.regex"],
+      "matchFileNames": ["README.md", "docs/**/*.md"],
+      "matchPackageNames": ["tmatens/compose-lint"],
       "enabled": false
     },
     {
