@@ -28,7 +28,7 @@ jobs:
 
       # Read-only PAT: this job pulls and scans, never pushes. The write
       # token is referenced only by the jobs that push or sync.
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_READ_TOKEN }}
@@ -42,7 +42,7 @@ jobs:
       # Full-severity sweep for the Security tab. `exit-code: false`, so
       # it never fails on findings; the gate below does that.
       - name: Scan all severities for SARIF upload
-        uses: docker/scout-action@221e7f4860634eeb1579e3bd7ca232e577bd1864 # v1.26.0
+        uses: docker/scout-action@e7e2a72bf1485d10a58f30696b6c513b261ce4fa # v1.29.0
         with:
           command: cves
           image: composelint/compose-lint:latest
@@ -67,7 +67,7 @@ jobs:
       # on schedule. High-severity stays warning-only — still uploaded to
       # the Security tab by the sweep above, just doesn't page.
       - name: Scan for critical CVEs (fails the run)
-        uses: docker/scout-action@221e7f4860634eeb1579e3bd7ca232e577bd1864 # v1.26.0
+        uses: docker/scout-action@e7e2a72bf1485d10a58f30696b6c513b261ce4fa # v1.29.0
         with:
           command: cves
           image: composelint/compose-lint:latest
@@ -88,7 +88,7 @@ jobs:
       # step fails on a genuine critical (the sweep wrote the file
       # already) and skips only when no scan produced one.
       - name: Upload Scout results to GitHub Security
-        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         if: always() && hashFiles('scout-results.sarif') != ''
         with:
           sarif_file: scout-results.sarif
