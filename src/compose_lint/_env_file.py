@@ -23,7 +23,7 @@ written                     Compose ships               note
 ``K=v # trail``             ``v``                       unquoted: comment
 ``K="v # trail"``           ``v # trail``               quoted: literal
 ``K=``                      empty
-``K``                       empty                       key with no ``=``
+``K``                       *the environment's value*   key with no ``=``
 ``K=a=b``                   ``a=b``                     first ``=`` splits
 ``K=first`` then ``K=…``    last one wins
 ``K="a\\nb"``                ``a``/newline/``b``          double: escapes
@@ -72,10 +72,14 @@ The grammar is godotenv's both times, which is why one scanner serves both, but
 the two readers are not interchangeable and :func:`parse_env_file` is separate
 for three reasons, each derived from the binary the same way:
 
-1. **A bare ``KEY`` means different things.** A ``.env`` ships it empty; an
-   ``env_file:`` treats it as a lookup in Compose's own process environment and
-   omits the key when that is unset. So it is reported unresolved rather than
-   empty — claiming the empty string would be claiming a lint-host fact.
+1. **Its keys are the answer, not a filter.** Every key an ``env_file:``
+   writes is returned, where a ``.env`` is read for the names a run needs. (A
+   bare ``KEY`` is the same in both: a lookup in the environment the file is
+   read under, reported unresolved. A ``.env`` was once read as shipping it
+   empty, which Compose does not do: measured on 5.5.0 and 5.8.0,
+   ``${K-d}`` ships ``d`` and ``${K+p}`` ships nothing after a bare ``K``,
+   exactly as with no line at all, and both follow the host's ``K`` when it
+   has one.)
 2. **``format: raw`` exists only here**, and is a different grammar rather than
    a relaxed one: no ``export`` prefix, no trimming, no quote or comment
    processing, no interpolation.
@@ -234,14 +238,23 @@ def read_env(
     process environment. One that resolves outside is treated as absent, like
     any other unreadable ``.env``.
     """
+    text = read_env_text(directory, within=within)
+    return None if text is None else parse_env(text, wanted)
+
+
+def read_env_text(directory: Path, *, within: Path | None = None) -> str | None:
+    """The text of ``directory/.env``, or ``None`` where :func:`read_env` has none.
+
+    For a caller that parses it under an environment (:func:`parse_env`) and
+    needs its references before it reads the layers around it.
+    """
     path = directory / ENV_FILENAME
     try:
-        text = read_text_bounded(
+        return read_text_bounded(
             path, max_bytes=MAX_ENV_BYTES, within=within or directory
         )
     except (FileNotFoundError, UnsafeFileError, UnicodeDecodeError, OSError):
         return None
-    return parse_env(text, wanted)
 
 
 def env_read_failure(directory: Path, *, within: Path | None = None) -> str | None:
@@ -277,6 +290,12 @@ def parse_env(
     earlier: Mapping[str, str] | None = None,
 ) -> EnvFile:
     """Parse ``.env`` text, resolving only what ``wanted`` needs.
+
+    A bare ``KEY`` line sets nothing. Compose reads it as "take this name
+    from the environment", so the value is the host's, or the including
+    project's when ``environment`` carries one, and never the file's. It is
+    reported unresolved, like any value this module declines to build from
+    the lint host (divergence 1).
 
     ``wanted`` is the set of names the run will actually look up. ``None`` means
     all of them, which is what a test or an exploratory caller wants; a real run
@@ -572,7 +591,6 @@ def _resolve(
     needed: set[str] | None,
     *,
     initial: Mapping[str, str] | None = None,
-    bare_is_empty: bool = True,
     environment: Mapping[str, str] | None = None,
 ) -> tuple[dict[str, str], set[str]]:
     """Expand entries in file order, which is the order Compose expands them.
@@ -600,10 +618,11 @@ def _resolve(
             # parsed into the run" holds for the expansion as well as the
             # result. A value no document uses cost its full expansion.
             continue
-        if entry.bare and not bare_is_empty:
-            # An `env_file:` bare key is a process-environment lookup and
-            # nothing else, so there is no file value to ship. Left unresolved
-            # rather than guessed at, for the reason in divergence 1.
+        if entry.bare:
+            # A bare key is an environment lookup and nothing else, in a
+            # `.env` and an `env_file:` alike, so there is no file value to
+            # ship. Left unresolved rather than guessed at, for the reason in
+            # divergence 1.
             unresolved.add(entry.key)
             values.pop(entry.key, None)
             continue
@@ -744,7 +763,7 @@ def parse_env_file(
     """
     entries, skipped = _scan(text, raw=raw)
     own = {entry.key for entry in entries}
-    values, unresolved = _resolve(entries, own, initial=defined, bare_is_empty=False)
+    values, unresolved = _resolve(entries, own, initial=defined)
     # Last definition wins, so the line recorded is the one whose value shipped.
     lines = {entry.key: entry.line for entry in entries if entry.key in values}
     return EnvFile(

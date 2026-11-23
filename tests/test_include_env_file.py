@@ -215,6 +215,34 @@ CASES: dict[str, dict[str, str]] = {
         "b.yml": _svc("b"),
         "m.env": "A=m\n",
     },
+    # An included project's own `.env` is read under the including project's
+    # environment in the same way.
+    "own-env-references-the-project": {
+        "compose.yml": "include: [sub/i.yml]\n",
+        ".env": "P=proj\n",
+        "sub/i.yml": _svc(),
+        "sub/.env": "A=${P}-own\n",
+    },
+    "own-env-reference-reads-the-project-first": {
+        "compose.yml": "include: [sub/i.yml]\n",
+        ".env": "P=proj\n",
+        "sub/i.yml": _svc(),
+        "sub/.env": "P=own\nA=${P}-k\n",
+    },
+    "own-env-references-a-grandparent": {
+        "compose.yml": "include: [a/b.yml]\n",
+        ".env": "P=proj\n",
+        "a/b.yml": "include: [c/i.yml]\n",
+        "a/.env": "Q=${P}-a\n",
+        "a/c/i.yml": _svc(),
+        "a/c/.env": "A=${Q}-c\n",
+    },
+    "own-env-bare-key-takes-the-project-s-value": {
+        "compose.yml": "include: [sub/i.yml]\n",
+        ".env": "A=parent\n",
+        "sub/i.yml": _svc(),
+        "sub/.env": "A\nB\n",
+    },
     # Compose refuses each of these, and each is a coverage gap here.
     "refused-missing": {
         "compose.yml": _entry("i.yml", "nope.env"),

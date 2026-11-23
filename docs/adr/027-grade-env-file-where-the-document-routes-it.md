@@ -303,3 +303,12 @@ announced read satisfies, and clause 3 still governs anything judged to be
 lint-host context, which a file named in the document is not. Out of scope, as in
 ADR-026: the ambient shell environment, `COMPOSE_ENV_FILES`, `--env-file`, and
 `--project-directory`.
+
+**Amendment (2026-11-23): a bare `KEY` is a lookup in a `.env` too.** The
+table above says a `.env` ships a bare `KEY` empty, and that this is where
+the two files differ. It is not. Measured on Compose 5.5.0 and 5.8.0, a bare
+`K` in a `.env` behaves exactly as no line at all: `${K-d}` ships `d` and
+`${K+p}` ships nothing, where `K=` ships empty and `p`, and all of them
+follow the host's `K` when it has one. The `.env` reader now reports the key
+unresolved, as the `env_file:` reader does, so a document's `${K}` is left
+as written rather than graded as the empty string.

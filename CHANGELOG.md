@@ -38,6 +38,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reached one byte. Compose 5.7.1 and earlier deploy no memory limit for it,
   whatever its size, and 5.8.0 refuses the file. A quoted `"1.5g"` and a
   whole number are unchanged.
+- **A bare `KEY` line in a `.env` is no longer read as an empty value.**
+  Compose takes the name from its own environment, so the line sets nothing
+  and `${KEY-default}` ships the default. compose-lint read it as `KEY=`. A
+  document's `${KEY}` is now left as written, as it is when the `.env` does
+  not mention the name, and a value the `.env` builds from it is unknown
+  rather than built from an empty string. A rule that graded the empty
+  string can change its answer.
+- **An included project's `.env` resolves its references against the
+  including project.** With `P=proj` in the project's `.env`, an included
+  `.env` holding `K=${P}/data` ships `proj/data`, and the project's value is
+  read ahead of the file's own definition of `P`. compose-lint left the value
+  unresolved, or built it from the file's own name.
 - **An `include:` entry's `env_file:` is read.** Compose reads the files an
   entry names in place of the included project's own `.env`, and compose-lint
   parsed the key without using it. It graded the `${VAR:-default}` fallback

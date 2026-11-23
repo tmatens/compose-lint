@@ -21,6 +21,7 @@ in environments without it.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from typing import TYPE_CHECKING
@@ -82,7 +83,6 @@ AGREED = [
     pytest.param('K="v # trail"', id="quoted-hash-is-literal"),
     pytest.param("# note\nK=v", id="leading-comment"),
     pytest.param("K=", id="empty-value"),
-    pytest.param("K", id="no-equals"),
     pytest.param("K=a=b", id="first-equals-splits"),
     pytest.param("K=first\nK=second", id="last-duplicate-wins"),
     pytest.param('K="a\\nb"', id="double-quote-escapes"),
@@ -115,6 +115,10 @@ DIVERGENT = {
     "K=${LATER}\nLATER=x": (
         "Compose ships empty for a forward reference; we report it unresolved "
         "rather than claim a value the file does not build."
+    ),
+    "K": (
+        "A key with no `=` is a lookup in the process environment, which is "
+        "the lint host's. See test_a_bare_key_is_an_environment_lookup."
     ),
     "this is not a pair\nK=v": (
         "Compose refuses the whole file; a lint run skips the line and "
@@ -195,3 +199,59 @@ def test_divergences_are_still_divergences(env_text: str, tmp_path: Path) -> Non
     assert theirs == "", reason
     assert "K" not in parsed.values, f"{reason} -- but we shipped a value"
     assert parsed.unresolved == {"K"}, reason
+
+
+_FORMS = """\
+services:
+  s:
+    image: i
+    labels:
+      plain: "x${K}x"
+      dash: "x${K-d}x"
+      plus: "x${K+p}x"
+"""
+
+
+def _labels(directory: Path, env_text: str, host: str | None) -> dict[str, str]:
+    (directory / "compose.yml").write_text(_FORMS, encoding="utf-8", newline="")
+    (directory / ".env").write_text(env_text, encoding="utf-8", newline="")
+    env = {name: value for name, value in os.environ.items() if name != "K"}
+    if host is not None:
+        env["K"] = host
+    result = subprocess.run(
+        [*compose_argv(env), "config"],
+        cwd=directory,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    return dict(yaml.safe_load(result.stdout)["services"]["s"]["labels"])
+
+
+def test_a_bare_key_is_an_environment_lookup(tmp_path: Path) -> None:
+    """``K`` alone sets nothing: Compose reads it exactly as it reads no line.
+
+    The forms that tell empty from unset show it. ``K=`` ships ``${K-d}`` empty
+    and ``${K+p}`` as ``p``; a bare ``K`` ships ``d`` and nothing, as an absent
+    key does, and follows the host's ``K`` when there is one. So this reader
+    reports it unresolved, where it once claimed the empty string.
+    """
+    unset = {"plain": "xx", "dash": "xdx", "plus": "xx"}
+    assert _labels(tmp_path, "K\n", None) == unset
+    assert _labels(tmp_path, "J=1\n", None) == unset
+    assert _labels(tmp_path, "K=\n", None) == {
+        "plain": "xx",
+        "dash": "xx",
+        "plus": "xpx",
+    }
+    assert _labels(tmp_path, "K\n", "host") == {
+        "plain": "xhostx",
+        "dash": "xhostx",
+        "plus": "xpx",
+    }
+
+    parsed = parse_env("K\n", ["K"])
+    assert parsed.values == {}
+    assert parsed.unresolved == frozenset({"K"})

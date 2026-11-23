@@ -297,3 +297,14 @@ nothing defines leaves the key unsupplied where Compose ships it empty, and a
 bare `KEY` line is read as it is in a `.env`.
 `tests/test_include_env_file.py` holds the behaviour and compares it with
 Compose on each shape.
+
+**Amendment (2026-11-23): an included project's `.env` is read under the
+including project's.** Decision 5 layers the two files' values. A reference
+*inside* the included `.env` also resolves against the including project,
+and ahead of the file's own definition: with `P=proj` in the project's
+`.env`, an included `.env` holding `P=own` then `K=${P}` ships `K=proj`
+(Compose 5.5.0 and 5.8.0), and the chain runs through every level of an
+include tree. compose-lint left such a value unresolved, or built it from
+the file's own name. It now resolves each layer under the ones outside it,
+the rule the first amendment of this date already applies to an entry's
+`env_file:`.

@@ -53,9 +53,15 @@ class TestGrammar:
     def test_first_equals_splits(self) -> None:
         assert values("K=a=b") == {"K": "a=b"}
 
-    def test_key_without_equals_is_empty(self) -> None:
-        """Compose ships this as empty rather than leaving the key unset."""
-        assert values("K") == {"K": ""}
+    def test_key_without_equals_sets_nothing(self) -> None:
+        """Compose takes the name from the environment, so the file sets no value.
+
+        ``tests/test_env_semantics.py`` measures it: ``${K-d}`` ships ``d``
+        after a bare ``K``, where ``K=`` ships empty.
+        """
+        assert values("K") == {}
+        assert parse_env("K").unresolved == frozenset({"K"})
+        assert values("K\nR=${K}-r") == {}, "a value built from it is unknown too"
 
     def test_empty_value(self) -> None:
         assert values("K=") == {"K": ""}
@@ -360,7 +366,7 @@ class TestParseEnvFile:
         assert parsed.values == {"PW": "hunter2", "UNRELATED": "1"}
 
     def test_a_bare_key_is_unresolved_rather_than_empty(self) -> None:
-        """The sharpest divergence from ``parse_env``, which ships it empty.
+        """As in a ``.env``, which was once read as shipping it empty.
 
         Compose treats ``KEY`` with no ``=`` as a lookup in its own process
         environment and omits the key when that is unset. Claiming an empty
@@ -369,7 +375,7 @@ class TestParseEnvFile:
         parsed = parse_env_file("K\n")
         assert parsed.values == {}
         assert parsed.unresolved == frozenset({"K"})
-        assert parse_env("K\n").values == {"K": ""}, "the .env reader is unchanged"
+        assert parse_env("K\n").unresolved == frozenset({"K"})
 
     def test_defined_names_are_in_scope_but_are_not_returned(self) -> None:
         parsed = parse_env_file("P=${BASE}/p\n", defined={"BASE": "/opt"})
