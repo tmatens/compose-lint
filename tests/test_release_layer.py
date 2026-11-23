@@ -832,3 +832,38 @@ def test_a_digest_pinned_image_tag_is_not_a_version_pin(line: str, moved: bool) 
     bumped = re.sub(image_bump, r"\g<1>9.9.9", line)
     assert (bumped != line) is moved
     assert (re.search(image_check, line) is not None) is moved
+
+
+# --- The Scout action runs before the release does ----------------------
+
+_SCOUT_PIN = re.compile(r"uses:\s*docker/scout-action@([0-9a-f]{40})")
+
+
+def test_every_scout_action_pin_is_the_same() -> None:
+    # ci.yml's release-actions-smoke runs docker/scout-action on every PR
+    # that touches a workflow, and that run only vouches for publish.yml's
+    # release gate if both name the same commit. Renovate moves every copy
+    # in one group (renovate.json); this catches a hand edit that splits them.
+    pins = {
+        path.name: set(_SCOUT_PIN.findall(path.read_text(encoding="utf-8")))
+        for path in sorted(WORKFLOWS.glob("*.yml"))
+    }
+    pins = {name: found for name, found in pins.items() if found}
+    assert "publish.yml" in pins and "ci.yml" in pins, pins
+    assert len(set().union(*pins.values())) == 1, pins
+
+
+def test_ci_reads_secrets_only_in_release_actions_smoke() -> None:
+    # The Docker Hub read token is the one secret ci.yml uses, for the Scout
+    # scan above. Keep it from spreading to other jobs by copy and paste.
+    doc = _load("ci.yml")
+    raw = (WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
+    readers = []
+    for job_name in doc["jobs"]:
+        match = re.search(rf"^  {re.escape(job_name)}:$", raw, re.MULTILINE)
+        assert match, job_name
+        nxt = re.search(r"^  [A-Za-z0-9_-]+:$", raw[match.end() :], re.MULTILINE)
+        end = match.end() + nxt.start() if nxt else len(raw)
+        if "secrets." in raw[match.start() : end]:
+            readers.append(job_name)
+    assert readers == ["release-actions-smoke"], readers
