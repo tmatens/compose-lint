@@ -152,7 +152,9 @@ could pass a stack whose real configuration it never saw. It is a coverage
 gap: exit 2, a JSON `errors[]` entry of kind `coverage_gap`, and a SARIF
 notification with `executionSuccessful: false`. `--allow-partial-coverage`
 accepts it and grades the rest. The same holds for an included file's own
-`.env`, which Compose reads for that file.
+`.env`, which Compose reads for that file. When an `include:` entry names an
+`env_file:`, Compose reads those files in the `.env`'s place and so does
+compose-lint; one it cannot read is the same coverage gap.
 
 A `.env` that resolves outside the repository — a committed symlink to a
 file elsewhere on the machine — is not read at all, the same containment

@@ -185,6 +185,13 @@ the repository, or into its `.git` directory, which is never read.
 - **A `.env` Compose reads that compose-lint could not**: the project's, or
   an included file's own, that exists but is not valid UTF-8, is larger than
   the 256 KiB read cap, or is a symlink out of reach.
+- **An `include:` entry's `env_file:` that could not be read**: a path
+  written out of the repository (with `..` or as an absolute path, other than
+  `/dev/null`), interpolated with no shipped value, a symlink out of reach,
+  not valid UTF-8, larger than the 256 KiB read cap, or one that would take
+  the document past 64 opened files. Compose refuses a missing file, a
+  directory, and a value that is not a path or a list of paths. The entry's
+  files are still graded, with the env files that were read.
 - **A refused `COMPOSE_FILE` list**: one entry that is absolute, climbs out of
   the project directory, is a symlink out of reach, or is missing refuses the
   whole list.

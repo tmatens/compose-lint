@@ -259,3 +259,41 @@ entry), the run directory when there is none and it contains the project, and
 the project directory otherwise. Decision 7's "outside the project directory"
 residual reads "outside the repository"; a `.git` directory is never read.
 Everything else in this ADR stands.
+
+**Amendment (2026-11-23, issue #1348): an `include:` entry's `env_file:` is
+acted on.** Decision 5 says that adding `env_file:` to the object form
+"redirected neither" value on Compose 5.5.0, so the key is read and not acted
+on. That measurement does not reproduce. On 5.5.0, 5.7.1 and 5.8.0, with
+synthetic fixtures:
+
+- The listed files are read **in place of** the sub-project's own `.env`.
+  `env_file: []` and a null value name nothing, and the `.env` is read as
+  before. `/dev/null` is read as an empty file.
+- Later files win, and a value may reference a name an earlier file set.
+- The including project's environment wins every name they share, as it does
+  over the sub-project's `.env`. A reference inside a listed file reads that
+  environment ahead of the file's own definition of the name.
+- The values reach every document under the entry: nested includes and
+  `extends:` bases.
+- A relative path resolves against the project directory of the document
+  that wrote the entry. For an entry written in an included file this is
+  5.8.0's behaviour (compose-go #996); earlier releases looked the path up
+  from the working directory of the process.
+- Compose refuses a missing file, a directory, an empty path, and a value
+  that is not a string or a list of strings.
+
+compose-lint follows these. Ignoring the key graded
+`privileged: ${PRIV:-false}` as `false` where Compose deploys `true`, and
+graded a value from a `.env` Compose no longer reads. Each listed file passes
+the gates of decision 2 and the 256 KiB env read cap, and counts against the
+64-file allowance. One that fails is a coverage gap, and the entry is graded
+with the files that were read. `--no-env` reads none of them. A path out of
+the repository or absolute is refused where Compose reads it, the same policy
+divergence as every other reference. `project_directory:` on an entry is
+already acted on, so that half of decision 5's sentence was out of date too.
+
+Two divergences the `.env` reader already has are kept: a reference to a name
+nothing defines leaves the key unsupplied where Compose ships it empty, and a
+bare `KEY` line is read as it is in a `.env`.
+`tests/test_include_env_file.py` holds the behaviour and compares it with
+Compose on each shape.
