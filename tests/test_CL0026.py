@@ -238,6 +238,16 @@ class TestSubByteMemory:
     def test_a_limit_of_a_byte_or_more_counts(self, value: str) -> None:
         assert not _findings(_svc(f"    mem_limit: {value}\n    cpus: 1\n"))
 
+    @pytest.mark.parametrize("value", ["1.5", "536870912.5", "0.75"])
+    def test_an_unquoted_fraction_is_no_memory_limit(self, value: str) -> None:
+        """Whatever its size: Compose 5.7.1 renders none, and 5.8.0 refuses it."""
+        (finding,) = _findings(_svc(f"    mem_limit: {value}\n    cpus: 1\n"))
+        assert "no memory limit" in finding.message
+
+    @pytest.mark.parametrize("value", ["2.0", "1024.0", "536870912"])
+    def test_an_unquoted_whole_number_counts(self, value: str) -> None:
+        assert not _findings(_svc(f"    mem_limit: {value}\n    cpus: 1\n"))
+
     def test_a_fractional_cpu_still_counts(self) -> None:
         assert not _findings(_svc('    mem_limit: 512m\n    cpus: "0.5"\n'))
 
