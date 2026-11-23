@@ -632,6 +632,25 @@ CASES: dict[str, dict[str, str]] = {
         "  b: {extends: a, cap_add: !override [B]}\n"
         "  c: {extends: b, cap_drop: !reset []}\n"
     },
+    # One entry per mount target and per port, as for a service: the child's
+    # replaces the base's. Compose before 5.8.0 kept both on a job (compose-go
+    # #967); compose-lint already merged a job this way.
+    "same-mount-target-replaces": {
+        "compose.yml": "jobs:\n"
+        "  base:\n    image: alpine:3.20\n    cap_add: [NET_ADMIN]\n"
+        "    volumes: ['/var/run/docker.sock:/data']\n"
+        "    triggers: {manual: true}\n"
+        "  child:\n    extends: base\n    cap_add: [NET_ADMIN]\n"
+        "    volumes: ['./b:/data']\n",
+    },
+    "same-mount-target-replaces-across-files": {
+        "base.yml": "jobs:\n  remote:\n    image: alpine:3.20\n"
+        "    volumes: ['/var/run/docker.sock:/data', './keep:/keep']\n"
+        "    triggers: {manual: true}\n",
+        "compose.yml": "jobs:\n  child:\n"
+        "    extends: {file: base.yml, service: remote}\n"
+        "    volumes: ['./b:/data']\n",
+    },
     "cross-file-only-jobs": {
         "base.yml": "jobs:\n  remote: {image: a:1, triggers: {manual: true}}\n",
         "compose.yml": "jobs:\n  child:\n"
