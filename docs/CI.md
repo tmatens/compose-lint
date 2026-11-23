@@ -679,6 +679,16 @@ manager for snippet actions reads only the `owner/repo@sha` form, and its
 PR would touch `docs/forgejo.md` alone and merge on age. Here the smoke
 runs the new checkout in the snippet before anything merges.
 
+After the bump, the same run checks the smoke's runner image. The smoke maps
+`runs-on: docker` to the image a runner registered with default labels uses,
+which the pinned runner's `register.go` names as
+`data.forgejo.org/oci/node:lts`, under a fixed tag of the same image
+(`node:26-trixie`). `forgejo_smoke_bump.py --runner-node` reads that default
+label from the runner's source and `NODE_VERSION` from the image, and fails
+the run when its Node major differs from the smoke's, which happens when
+`lts` moves, about once a year. The label is moved by hand: a new Node major
+is worth a look, and the PR that moves it runs the smoke.
+
 Twice daily rather than weekly because Codeberg deletes a superseded
 Forgejo patch tag — digest included — within days of the next patch
 ([#746]); the old pin is on the clock from the moment a release ships.

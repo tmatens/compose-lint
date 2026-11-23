@@ -447,6 +447,118 @@ class TestCheckout:
         assert name == "forgejo-smoke/forgejo-16.0.3-runner-13.1.0-checkout-v7.0.1"
 
 
+# --- The smoke runner's Node against a default runner's -------------------
+
+REGISTER_GO = """
+var defaultLabels = []string{
+\t"docker:docker://data.forgejo.org/oci/node:lts",
+}
+"""
+LABEL = '--labels "docker:docker://node:26-trixie";'
+
+
+def _node_registry(node_version: str) -> Any:
+    index = {
+        "manifests": [
+            {
+                "digest": "sha256:arm",
+                "platform": {"os": "linux", "architecture": "arm64"},
+            },
+            {
+                "digest": "sha256:amd",
+                "platform": {"os": "linux", "architecture": "amd64"},
+            },
+        ]
+    }
+    bodies = {
+        "/v2/oci/node/manifests/lts": index,
+        "/v2/oci/node/manifests/sha256:amd": {"config": {"digest": "sha256:cfg"}},
+        "/v2/oci/node/blobs/sha256:cfg": {
+            "config": {"Env": ["PATH=/usr/bin", f"NODE_VERSION={node_version}"]}
+        },
+    }
+
+    def fetch(
+        url: str, method: str, headers: Mapping[str, str]
+    ) -> tuple[int, dict[str, str], bytes]:
+        path = url.split("https://data.forgejo.org", 1)[1]
+        if path not in bodies:
+            return 404, {}, b""
+        return 200, {}, json.dumps(bodies[path]).encode()
+
+    return lambda host: bump.Registry(host, fetch_fn=fetch)
+
+
+def _register_fetch(status: int = 200, body: str = REGISTER_GO) -> Any:
+    def fetch(
+        url: str, method: str, headers: Mapping[str, str]
+    ) -> tuple[int, dict[str, str], bytes]:
+        assert url == (
+            "https://code.forgejo.org/forgejo/runner/raw/tag/v13.1.0"
+            "/internal/app/cmd/register.go"
+        )
+        return status, {}, body.encode()
+
+    return fetch
+
+
+class TestRunnerNode:
+    def test_reads_the_smoke_label(self) -> None:
+        assert bump.smoke_node_major(COMPOSE + LABEL) == 26
+
+    @pytest.mark.parametrize("text", [COMPOSE, COMPOSE + LABEL + LABEL])
+    def test_label_must_occur_exactly_once(self, text: str) -> None:
+        with pytest.raises(bump.CannotAnswer, match="exactly one runner label"):
+            bump.smoke_node_major(text)
+
+    def test_reads_the_default_label_image(self) -> None:
+        assert bump.default_label_image(REGISTER_GO) == (
+            "data.forgejo.org",
+            "oci/node",
+            "lts",
+        )
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "var defaultLabels = []string{}\n",
+            'var defaultLabels = []string{\n\t"docker:docker://node:lts",\n}\n',
+        ],
+    )
+    def test_an_unreadable_default_label_cannot_answer(self, text: str) -> None:
+        with pytest.raises(bump.CannotAnswer):
+            bump.default_label_image(text)
+
+    def test_node_major_comes_from_node_version(self) -> None:
+        assert bump.node_major(["A=1", "NODE_VERSION=26.13.1"]) == 26
+        with pytest.raises(bump.CannotAnswer, match="no NODE_VERSION"):
+            bump.node_major(["A=1"])
+        with pytest.raises(bump.CannotAnswer, match="not a version"):
+            bump.node_major(["NODE_VERSION=lts"])
+
+    def test_config_env_follows_index_to_the_amd64_config(self) -> None:
+        reg = _node_registry("26.13.1")("data.forgejo.org")
+        assert "NODE_VERSION=26.13.1" in reg.config_env("oci/node", "lts")
+
+    def test_a_missing_manifest_cannot_answer(self) -> None:
+        reg = _node_registry("26.13.1")("data.forgejo.org")
+        with pytest.raises(bump.CannotAnswer, match="404"):
+            reg.config_env("oci/node", "missing")
+
+    @pytest.mark.parametrize(("version", "default"), [("26.13.1", 26), ("28.0.0", 28)])
+    def test_reports_both_majors(self, version: str, default: int) -> None:
+        result = bump.check_runner_node(
+            COMPOSE + LABEL, _register_fetch(), _node_registry(version)
+        )
+        assert result == (26, default, "data.forgejo.org/oci/node:lts")
+
+    def test_an_unreachable_runner_source_cannot_answer(self) -> None:
+        with pytest.raises(bump.CannotAnswer, match="404"):
+            bump.check_runner_node(
+                COMPOSE + LABEL, _register_fetch(status=404), _node_registry("26.1.0")
+            )
+
+
 # --- The anchors this script relies on exist in the repository -------------
 
 
@@ -456,3 +568,4 @@ def test_the_live_anchors_parse() -> None:
     claim = bump.read_claim(bump.DOCS_FILE.read_text(encoding="utf-8"))
     assert claim == (pins["forgejo"].tag, pins["runner"].tag)
     bump.read_checkout(bump.DOCS_FILE.read_text(encoding="utf-8"))
+    bump.smoke_node_major(bump.COMPOSE_FILE.read_text(encoding="utf-8"))

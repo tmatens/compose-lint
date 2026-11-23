@@ -40,11 +40,23 @@ breaks the snippet surfaces as a red smoke on the bump PR, which is the
 review. forgejo-smoke-bump.yml opens the PR; forgejo-smoke.yml arms
 auto-merge when the smoke is green, and a red run stays open for a human.
 
+`--runner-node` is a separate check, run after the bump. The smoke's
+runner maps `runs-on: docker` to a fixed `node:<major>-<distro>` image,
+chosen to be the image a runner registered with default labels uses. That
+default is `data.forgejo.org/oci/node:lts` in the pinned runner's
+register.go, and `lts` moves to a new Node major about once a year. The
+check reads the default label from the pinned runner's source, reads
+NODE_VERSION from that image, and exits 3 when its major is not the
+smoke's, so the smoke cannot quietly fall behind what users run. It does
+not move the label itself: a new Node major is worth a person's look, and
+it happens about once a year.
+
 Exit codes: 0 = nothing to do, both pins current. 1 = files rewritten
 (summary on stdout, ready for a commit). 2 = the script could not produce
 a trustworthy answer (a registry still unreachable after three tries, parse,
-stale anchor, a digest that is not a manifest list). The workflow turns 1
-into a PR and 2 into a failure.
+stale anchor, a digest that is not a manifest list). 3 = `--runner-node` only: the
+smoke runs a different Node major than a default runner. The workflow
+turns 1 into a PR and 2 or 3 into a failure.
 
 Offline by design in tests: everything except ``_fetch_once()`` and
 ``main()`` takes its inputs as parameters; ``Registry`` accepts a fetch
@@ -64,6 +76,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping
+from typing import Any
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 COMPOSE_FILE = REPO / "scripts" / "forgejo_smoke" / "compose-forgejo-smoke.yml"
@@ -98,6 +111,27 @@ CHECKOUT_RE = re.compile(
 )
 CHECKOUT_TAG_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 CHECKOUT_PAGE_SIZE = 50
+
+# The image the smoke's runner maps `docker` to, and where the pinned
+# runner release keeps the label it registers by default.
+SMOKE_LABEL_RE = re.compile(
+    r'--labels "docker:docker://node:(?P<major>\d+)-(?P<distro>[a-z]+)"'
+)
+RUNNER_REGISTER_URL = (
+    "https://code.forgejo.org/forgejo/runner/raw/tag/v{version}"
+    "/internal/app/cmd/register.go"
+)
+DEFAULT_LABEL_RE = re.compile(
+    r'var defaultLabels = \[\]string\{\s*"docker:docker://(?P<image>[^"]+)"'
+)
+IMAGE_REF_RE = re.compile(
+    r"^(?P<host>[a-z0-9-]+(?:\.[a-z0-9-]+)+)/(?P<repo>[a-z0-9_./-]+)"
+    r":(?P<tag>[A-Za-z0-9._-]+)$"
+)
+MANIFEST_TYPES = (
+    "application/vnd.oci.image.manifest.v1+json",
+    "application/vnd.docker.distribution.manifest.v2+json",
+)
 
 INDEX_TYPES = (
     "application/vnd.oci.image.index.v1+json",
@@ -198,6 +232,46 @@ def rewrite_checkout(docs_text: str, old: Checkout, new: Checkout) -> str:
     if docs_text.count(old_ref) != 1:
         raise CannotAnswer(f"{old_ref} does not occur exactly once")
     return docs_text.replace(old_ref, f"actions/checkout@{new.sha} # {new.tag}")
+
+
+def smoke_node_major(compose_text: str) -> int:
+    """The Node major of the image the smoke's runner maps `docker` to."""
+    matches = SMOKE_LABEL_RE.findall(compose_text)
+    if len(matches) != 1:
+        raise CannotAnswer(
+            "expected exactly one runner label "
+            '`--labels "docker:docker://node:<major>-<distro>"` in the '
+            f"compose file, found {len(matches)}"
+        )
+    return int(matches[0][0])
+
+
+def default_label_image(register_go: str) -> tuple[str, str, str]:
+    """(host, repo, tag) of the image forgejo-runner registers `docker` with."""
+    m = DEFAULT_LABEL_RE.search(register_go)
+    if not m:
+        raise CannotAnswer(
+            "runner register.go has no `defaultLabels` entry starting "
+            '"docker:docker://<image>"'
+        )
+    ref = IMAGE_REF_RE.match(m.group("image"))
+    if not ref:
+        raise CannotAnswer(
+            f"default label image {m.group('image')!r} is not host/repo:tag"
+        )
+    return ref.group("host"), ref.group("repo"), ref.group("tag")
+
+
+def node_major(env: list[str]) -> int:
+    """The major version in an image config's NODE_VERSION."""
+    for entry in env:
+        name, _, value = entry.partition("=")
+        if name == "NODE_VERSION":
+            m = re.match(r"(\d+)\.", value)
+            if m:
+                return int(m.group(1))
+            raise CannotAnswer(f"NODE_VERSION={value!r} is not a version")
+    raise CannotAnswer("the image config sets no NODE_VERSION")
 
 
 def newest_stable(
@@ -374,6 +448,35 @@ class Registry:
             path = _next_link(_header(headers, "Link"))
         raise CannotAnswer(f"{self.host}/{repo}: more than {MAX_TAG_PAGES} tag pages")
 
+    def _json(self, repo: str, path: str, accept: str | None = None) -> Any:
+        status, _, body = self.request(repo, path, accept=accept)
+        if status != 200:
+            raise CannotAnswer(f"{self.host}{path}: {status}")
+        try:
+            return json.loads(body)
+        except ValueError as exc:
+            raise CannotAnswer(f"{self.host}{path}: not JSON") from exc
+
+    def config_env(self, repo: str, tag: str) -> list[str]:
+        """The linux/amd64 image config's Env for ``tag``."""
+        index = self._json(repo, f"/v2/{repo}/manifests/{tag}", ", ".join(INDEX_TYPES))
+        try:
+            digest = next(
+                m["digest"]
+                for m in index["manifests"]
+                if m.get("platform", {}).get("os") == "linux"
+                and m.get("platform", {}).get("architecture") == "amd64"
+            )
+            manifest = self._json(
+                repo, f"/v2/{repo}/manifests/{digest}", ", ".join(MANIFEST_TYPES)
+            )
+            config = self._json(
+                repo, f"/v2/{repo}/blobs/{manifest['config']['digest']}"
+            )
+            return [str(e) for e in config["config"]["Env"]]
+        except (KeyError, TypeError, StopIteration) as exc:
+            raise CannotAnswer(f"{self.host}/{repo}:{tag}: config unreadable") from exc
+
     def index_digest(self, repo: str, tag: str) -> str:
         """The manifest-list digest for ``tag`` — never a per-arch manifest."""
         status, headers, _ = self.request(
@@ -455,6 +558,23 @@ def resolve_checkout(current: Checkout, tags: Mapping[str, str]) -> Checkout:
     return Checkout(tag, sha)
 
 
+def check_runner_node(
+    compose_text: str,
+    fetch_fn: Fetch = fetch,
+    registry_for: Callable[[str], Registry] = Registry,
+) -> tuple[int, int, str]:
+    """(smoke major, default major, default image) for the pinned runner."""
+    smoke = smoke_node_major(compose_text)
+    runner = read_pins(compose_text)["runner"].tag
+    url = RUNNER_REGISTER_URL.format(version=runner)
+    status, _, body = fetch_fn(url, "GET", {})
+    if status != 200:
+        raise CannotAnswer(f"{url}: {status}")
+    host, repo, tag = default_label_image(body.decode("utf-8", "replace"))
+    default = node_major(registry_for(host).config_env(repo, tag))
+    return smoke, default, f"{host}/{repo}:{tag}"
+
+
 # --- Orchestration ---------------------------------------------------------
 
 
@@ -491,9 +611,28 @@ def main(argv: list[str] | None = None) -> int:
         type=pathlib.Path,
         help="append branch=/title=/forgejo=/runner= lines to this file",
     )
+    parser.add_argument(
+        "--runner-node",
+        action="store_true",
+        help="only check that the smoke runs a default runner's Node major",
+    )
     args = parser.parse_args(argv)
 
     compose_text = COMPOSE_FILE.read_text(encoding="utf-8")
+    if args.runner_node:
+        smoke, default, image = check_runner_node(compose_text)
+        if smoke != default:
+            print(
+                f"the smoke runs Node {smoke}, but a runner registered with "
+                f"default labels runs {image}, which is Node {default}; move "
+                f"the runner label in {COMPOSE_FILE.relative_to(REPO)} to "
+                f"node:{default}-<distro> by hand",
+                file=sys.stderr,
+            )
+            return 3
+        print(f"runner node: the smoke and {image} are both Node {smoke}")
+        return 0
+
     docs_text = DOCS_FILE.read_text(encoding="utf-8")
     pins = read_pins(compose_text)
     claim = read_claim(docs_text)

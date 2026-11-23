@@ -56,13 +56,18 @@ services:
     # Retry registration until Forgejo is ready, then run the daemon. The
     # `docker:` label maps the snippet's `runs-on: docker` to a Debian
     # image with apt + root, matching what the snippet assumes (README
-    # documents the node-in-container requirement). Tag-pinned only: the
+    # documents the node-in-container requirement). The image is the one a
+    # runner registered with default labels uses, data.forgejo.org/oci/node:lts
+    # (forgejo-runner's register.go), named by its fixed tag: docker.io's
+    # node:26-trixie had the same index digest when this was set. `lts`
+    # moves a major about once a year; `forgejo_smoke_bump.py --runner-node`
+    # fails the bump workflow when it does. Tag-pinned only: the
     # label string is runner config Renovate cannot see, and a digest
     # here would just go permanently stale.
     command: >-
       sh -c 'while ! forgejo-runner register --no-interactive
       --instance http://forgejo:3000 --token "$$RUNNER_TOKEN"
-      --name smoke-runner --labels "docker:docker://node:24-bookworm";
+      --name smoke-runner --labels "docker:docker://node:26-trixie";
       do sleep 2; done &&
       exec forgejo-runner --config /config/config.yml daemon'
     networks: [forgejo-smoke]
