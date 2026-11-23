@@ -737,6 +737,10 @@ jobs:
           image: composelint/compose-lint:latest
           only-severities: critical
           exit-code: false
+          # On a pull_request event the action comments on the PR by
+          # default, which needs pull-requests: write. The run is the check;
+          # nothing here needs saying on the PR.
+          write-comment: false
 
   # The demo toolchain's Python deps, installed the way scripts/demo's
   # Dockerfile installs them. No other job touches scripts/demo/requirements
