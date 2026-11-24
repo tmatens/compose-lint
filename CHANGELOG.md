@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   because no fix exists: CVE-2019-1010022, CVE-2019-1010024 and
   CVE-2019-1010025, mitigation-bypass reports against glibc that upstream
   does not treat as security bugs and Debian lists as unfixed. It says why
-  they carry no VEX statement.
+  they carry no VEX statement. The README's security posture section now
+  describes the document's full scope, not pip alone, and links there.
 - **An image CVE with no fix now gets a decision.** The daily vulnerability
   report scanned the published image for fixable CVEs only, so one with no
   fix became a code-scanning alert and reached nobody. It now also scans
