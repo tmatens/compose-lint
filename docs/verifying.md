@@ -41,6 +41,26 @@ cosign verify-attestation --type spdxjson \
 
 Use `--type openvex` for the VEX document.
 
+## What a scan of the image reports
+
+The image is built on a distroless Debian base, and an image scanner reports the CVEs of that base's packages along with compose-lint's own. As of 1.8.2 they fall into two groups.
+
+**Marked `not_affected` in the OpenVEX document.** [`.vex/compose-lint.openvex.json`](https://github.com/tmatens/compose-lint/blob/main/.vex/compose-lint.openvex.json) carries 60 statements: 54 for CVEs in the base image's Debian packages and 6 for pip, whose code is stripped from the image. Each statement's `impact_statement` says why the CVE does not apply and what was checked. Docker Scout and Trivy leave these out of their results when given the document; a scanner that does not read VEX lists them. A smoke test run inside every image built re-checks the facts the base-image statements rely on.
+
+**Open, with no fix to take.** Three findings have no statement and stay in every scan:
+
+| CVE | Package | Reported as | Status in Debian |
+| --- | --- | --- | --- |
+| [CVE-2019-1010022](https://security-tracker.debian.org/tracker/CVE-2019-1010022) | glibc | Stack guard bypass | unfixed, `unimportant` |
+| [CVE-2019-1010024](https://security-tracker.debian.org/tracker/CVE-2019-1010024) | glibc | ASLR bypass through the thread stack and heap cache | unfixed, `unimportant` |
+| [CVE-2019-1010025](https://security-tracker.debian.org/tracker/CVE-2019-1010025) | glibc | Heap address of a thread can be guessed | unfixed, `unimportant` |
+
+All three were filed in 2019 as mitigation bypasses. glibc upstream does not treat them as security bugs and has released no fix, so there is no patched glibc to move to. Debian's tracker lists them as unfixed in every release and rates them `unimportant`.
+
+They have no VEX statement because none would be true. Each describes a weaker exploit mitigation in glibc itself, not a code path that can be shown absent or unreached, and OpenVEX has no justification for that. Leaving them visible is the accurate record.
+
+A finding outside both groups is new since this was written. If a fix exists it arrives with a base image update: the pinned digest is moved as new ones are published, and the next release ships it.
+
 ## Python package
 
 From 0.3.7 on, the wheel and sdist on PyPI are also attached to the [GitHub Release](https://github.com/tmatens/compose-lint/releases), each with a Sigstore bundle beside it. With [sigstore-python](https://github.com/sigstore/sigstore-python):

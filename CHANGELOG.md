@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The verification guide says what an image scan reports.** A new section
+  in [docs/verifying.md](docs/verifying.md) separates the CVEs the OpenVEX
+  document marks `not_affected` from the three findings that stay open
+  because no fix exists: CVE-2019-1010022, CVE-2019-1010024 and
+  CVE-2019-1010025, mitigation-bypass reports against glibc that upstream
+  does not treat as security bugs and Debian lists as unfixed. It says why
+  they carry no VEX statement.
+
 ## [1.8.2] - 2026-11-24
 
 ### Changed
