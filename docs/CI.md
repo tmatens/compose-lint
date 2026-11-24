@@ -323,7 +323,8 @@ image is still reported for. Each finding is then one of three things:
 An undecided finding becomes a line in the rolling issue, and opens it, when
 two things hold. It was published at least 14 days ago (`--min-age-days`),
 because most base-image CVEs are fixed by a digest update before then. And
-`scout-scan.yml`'s open alerts for `main` report it too, because Scout's
+`scout-scan.yml`'s alerts for `main` report it too (open or dismissed, since
+a dismissed alert is still being reported), because Scout's
 advisory data changes between scans and one scan is not enough to act on.
 Until both hold it is listed as not yet due. The publication date comes from
 OSV; a CVE with no OSV record has an unknown age and is treated as old.

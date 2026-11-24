@@ -213,7 +213,10 @@ def parse_open_findings(path: Path) -> list[dict[str, str]]:
 
 
 def parse_alert_ids(path: Path) -> set[str]:
-    """Return the rule ids of the scheduled Scout scan's open alerts.
+    """Return the rule ids the scheduled Scout scan still reports.
+
+    Open and dismissed alerts both count; an alert GitHub marked fixed does
+    not, because that is what it does when a scan stops reporting it.
 
     The workflow writes ``{"rule_ids": [...]}`` from the code-scanning API.
     An empty list is a valid answer; a missing key is not.
@@ -821,7 +824,7 @@ def main() -> int:
     ap.add_argument(
         "--scout-alerts",
         type=Path,
-        help='{"rule_ids": [...]} of the scheduled Scout scan\'s open alerts',
+        help='{"rule_ids": [...]} of the alerts the scheduled Scout scan reports',
     )
     ap.add_argument(
         "--published-dir",

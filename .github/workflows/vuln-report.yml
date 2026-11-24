@@ -61,7 +61,7 @@ jobs:
     permissions:
       contents: read
       issues: write
-      # Read scout-scan.yml's open alerts, the second scan the image
+      # Read scout-scan.yml's alerts, the second scan the image
       # findings check compares with.
       security-events: read
     steps:
@@ -147,17 +147,20 @@ jobs:
           vex-author: .*
 
       # The alerts scout-scan.yml uploaded for the default branch, by rule
-      # id. An empty list is a valid answer and still writes the file; an
-      # API error fails the step.
-      - name: Fetch the scheduled Scout scan's open alerts
+      # id. Every alert the scan still reports counts, dismissed ones too:
+      # dismissing an alert is triage in this repository, and the scanner
+      # goes on reporting the CVE. Only `fixed`, which GitHub sets when a
+      # scan stops reporting it, is left out. An empty list is a valid
+      # answer and still writes the file; an API error fails the step.
+      - name: Fetch the scheduled Scout scan's reported alerts
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           gh api --paginate \
-            "repos/${GH_REPO}/code-scanning/alerts?ref=refs/heads/main&state=open&tool_name=Docker%20Scout&per_page=100" \
-            --jq '.[] | select(.most_recent_instance.category == "docker-scout-scheduled") | .rule.id' \
+            "repos/${GH_REPO}/code-scanning/alerts?ref=refs/heads/main&tool_name=Docker%20Scout&per_page=100" \
+            --jq '.[] | select(.state != "fixed" and .most_recent_instance.category == "docker-scout-scheduled") | .rule.id' \
             > scout-alert-ids.txt
           jq -R . scout-alert-ids.txt | jq -s '{rule_ids: .}' > scout-alerts.json
 
