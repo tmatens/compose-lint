@@ -351,9 +351,13 @@ version number.
       change. The daily `vuln-report` makes this same comparison against
       OSV and lists any gap in the rolling fixable-vulnerabilities issue,
       so no open issue there is the quick form of this check.
-- [ ] "What a scan of the image reports" in `docs/verifying.md` matches the
-      VEX doc and the latest Docker Scout scan of `main`: the statement
-      counts, and the list of findings left open because no fix exists.
+- [ ] No image finding is waiting for a decision: the rolling
+      fixable-vulnerabilities issue has no "Image findings with no fix"
+      table. The daily `vuln-report` compares a scan of the published image
+      with the VEX doc and `.vex/open-findings.json`, the list of findings
+      left open because no fix exists and no justification is true of them.
+      `docs/verifying.md` shows readers that list and the statement counts;
+      `tests/test_vuln_report.py` fails when either drifts from the files.
 - [ ] The base-image statements in the VEX doc still hold. They cover
       Debian CVEs in the distroless base (#1365) and, unlike the pip
       statements, name no package and no version: that is the only form

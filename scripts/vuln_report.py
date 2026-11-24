@@ -28,6 +28,16 @@ Design notes
   releases never reaches a scanner here (#1040). The report therefore
   diffs pip's advisory list from OSV against the statement names in the
   VEX file; a missing ID is a gap to document, not a vulnerability to fix.
+* **An image finding with no fix still needs a decision, once.** A second
+  Scout scan, without ``only-fixed`` and with the OpenVEX document applied,
+  lists what the published image is still reported for. Each of those is
+  either fixable (the table above), accepted as open in
+  ``.vex/open-findings.json``, or undecided. An undecided one gates this
+  issue only after it has gone unfixed for ``--min-age-days`` since
+  publication, because most are fixed by a base image update before then,
+  and only when the scheduled Scout scan's code-scanning alerts report it
+  too, because Scout's advisory data changes between scans. The same two
+  scans must both have dropped an accepted entry before it is called stale.
 """
 
 from __future__ import annotations
@@ -35,7 +45,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -102,11 +114,21 @@ def _severity_band(score: str) -> str:
     return "none"
 
 
+_PURL = re.compile(r"Package\s*:\s*pkg:[^/\s]+/(?:[^/\s@]+/)*([^/\s@?]+)")
+
+
+def _package_label(message: str) -> str:
+    """Package name from the ``Package :pkg:...`` line of a Scout result."""
+    match = _PURL.search(message)
+    return match.group(1) if match else "—"
+
+
 def parse_scout_sarif(path: Path) -> list[dict[str, str]]:
     """Return rows for image CVEs from a Docker Scout SARIF report.
 
-    Scout is invoked with ``only-fixed: true``, so every result here is
-    by definition fixable and no fix-version filtering is applied.
+    No fix-version filtering is applied: the caller chooses the scan. With
+    ``only-fixed: true`` every result is by definition fixable; without it
+    the results are everything the image is reported for.
     """
     data = _load_json(path, "Scout SARIF report")
     runs = data.get("runs") if isinstance(data, dict) else None
@@ -131,6 +153,9 @@ def parse_scout_sarif(path: Path) -> list[dict[str, str]]:
                     "id": str(rule_id),
                     "severity": _severity_band(props.get("security-severity", "")),
                     "detail": " ".join(str(detail).split())[:160] or "—",
+                    "package": _package_label(
+                        str((result.get("message") or {}).get("text") or "")
+                    ),
                 }
             )
 
@@ -157,6 +182,132 @@ def parse_vex_ids(path: Path) -> set[str]:
         ids.add(str(vuln["name"]))
         ids.update(str(alias) for alias in (vuln.get("aliases") or []))
     return ids
+
+
+def parse_open_findings(path: Path) -> list[dict[str, str]]:
+    """Return the accepted open findings from ``.vex/open-findings.json``.
+
+    Each entry needs an ``id``, a ``package`` and a ``reason``: an entry
+    with no reason is a suppression, which is what this list must not be.
+    """
+    data = _load_json(path, "open findings list")
+    findings = data.get("findings") if isinstance(data, dict) else None
+    if not isinstance(findings, list):
+        raise ReportError("open findings list has no 'findings' list; shape changed?")
+    rows: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for entry in findings:
+        if not isinstance(entry, dict):
+            raise ReportError("open findings entry is not an object")
+        row = {k: str(entry.get(k) or "").strip() for k in ("id", "package", "reason")}
+        missing = [k for k, v in row.items() if not v]
+        if missing:
+            raise ReportError(
+                f"open findings entry {row['id'] or '?'} lacks {', '.join(missing)}"
+            )
+        if row["id"] in seen:
+            raise ReportError(f"open findings list names {row['id']} twice")
+        seen.add(row["id"])
+        rows.append(row)
+    return rows
+
+
+def parse_alert_ids(path: Path) -> set[str]:
+    """Return the rule ids of the scheduled Scout scan's open alerts.
+
+    The workflow writes ``{"rule_ids": [...]}`` from the code-scanning API.
+    An empty list is a valid answer; a missing key is not.
+    """
+    data = _load_json(path, "code-scanning alert list")
+    ids = data.get("rule_ids") if isinstance(data, dict) else None
+    if not isinstance(ids, list):
+        raise ReportError("alert list has no 'rule_ids' list; shape changed?")
+    return {str(i) for i in ids}
+
+
+def _published(directory: Path, cve: str) -> date | None:
+    """Publication date of ``cve`` from ``<directory>/<cve>.json``, if known.
+
+    The workflow saves one OSV record per reported CVE and saves nothing
+    when OSV has none. ``None`` therefore means the age is unknown, and an
+    unknown age is treated as old: it cannot be ruled out as recent.
+    """
+    path = directory / f"{cve}.json"
+    if not path.is_file():
+        return None
+    data = _load_json(path, f"OSV record for {cve}")
+    text = str(data.get("published") or "") if isinstance(data, dict) else ""
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError as exc:
+        raise ReportError(f"OSV record for {cve} has no usable 'published'") from exc
+
+
+def classify_image_findings(
+    reported: list[dict[str, str]],
+    fixable_ids: set[str],
+    vex_ids: set[str],
+    open_findings: list[dict[str, str]],
+    alert_ids: set[str],
+    published_dir: Path,
+    today: date,
+    min_age_days: int,
+) -> dict[str, list[dict[str, str]]]:
+    """Sort what the image is reported for into what needs doing.
+
+    ``reported`` is the unfiltered scan with the OpenVEX document applied.
+    Returns ``decide`` (no fix, no statement, not accepted, old enough, seen
+    by both scans), ``unapplied`` (reported although a statement names it),
+    ``stale`` (accepted entries that no longer hold) and ``waiting``
+    (undecided, but too recent or seen by one scan only). The first three
+    gate the issue; ``waiting`` is informational.
+    """
+    open_ids = {f["id"] for f in open_findings}
+    out: dict[str, list[dict[str, str]]] = {
+        "decide": [],
+        "unapplied": [],
+        "stale": [],
+        "waiting": [],
+    }
+    reported_ids: set[str] = set()
+    for row in reported:
+        cve = row["id"]
+        if cve in reported_ids:
+            continue
+        reported_ids.add(cve)
+        if cve in fixable_ids or cve in open_ids:
+            continue
+        if cve in vex_ids:
+            out["unapplied"].append(row)
+            continue
+        published = _published(published_dir, cve)
+        age = (today - published).days if published else None
+        entry = {
+            **row,
+            "published": published.isoformat() if published else "unknown",
+            "age": f"{age} days" if age is not None else "unknown",
+        }
+        if cve not in alert_ids:
+            out["waiting"].append({**entry, "why": "seen by one scan only"})
+        elif age is not None and age < min_age_days:
+            out["waiting"].append(
+                {**entry, "why": f"published {age} days ago, under {min_age_days}"}
+            )
+        else:
+            out["decide"].append(entry)
+
+    for finding in open_findings:
+        cve = finding["id"]
+        if cve in vex_ids:
+            why = "the OpenVEX document also has a statement for it"
+        elif cve in fixable_ids:
+            why = "a fix is now available"
+        elif cve not in reported_ids and cve not in alert_ids:
+            why = "neither scan reports it any more"
+        else:
+            continue
+        out["stale"].append({**finding, "why": why})
+    return out
 
 
 ZIZMOR_AUDIT = "known-vulnerable-actions"
@@ -367,13 +518,16 @@ def build_body(
     run_url: str,
     vex: tuple[Path, str, list[dict[str, str]], int, str] | None = None,
     actions: tuple[list[dict[str, str]], list[dict[str, str]]] | None = None,
+    image_open: tuple[Path, int, dict[str, list[dict[str, str]]]] | None = None,
 ) -> str:
     """Render the issue body.
 
     ``vex`` is ``(vex_path, package, gaps, considered, floor)`` when the
     OpenVEX completeness check ran, else ``None`` and the section is omitted.
     ``actions`` is ``(fixable, unfixable)`` from the zizmor report, else
-    ``None`` and that section is omitted too.
+    ``None`` and that section is omitted too. ``image_open`` is
+    ``(open_findings_path, min_age_days, classified)`` when the unfiltered
+    image scan was compared, else ``None`` and that section is omitted.
     """
     act_fixable, act_unfixable = actions if actions else ([], [])
     total = len(py_fixable) + len(img_fixable) + len(act_fixable)
@@ -391,15 +545,22 @@ def build_body(
             f" **{len(gaps)} OpenVEX {gap_noun}** — pip advisories no statement "
             "covers yet."
         )
+    undecided = _undecided_count(image_open[2]) if image_open else 0
+    if undecided:
+        item_noun = "finding" if undecided == 1 else "findings"
+        headline += (
+            f" **{undecided} image {item_noun} to decide** — no fix, and neither "
+            "an OpenVEX statement nor an accepted entry matches."
+        )
     parts = [
         MARKER,
         headline,
         "",
         (
             "This issue is maintained automatically: the body is rewritten on "
-            "each run and the issue **closes itself** when the fixable list and "
-            "the OpenVEX gap list are both empty. An open issue therefore means "
-            "there is something to do right now."
+            "each run and the issue **closes itself** when the fixable list, the "
+            "OpenVEX gap list and the image findings to decide are all empty. "
+            "An open issue therefore means there is something to do right now."
         ),
         "",
     ]
@@ -513,6 +674,74 @@ def build_body(
             )
         parts.append("")
 
+    if image_open is not None:
+        open_path, min_age, groups = image_open
+        parts.append(f"## Image findings with no fix (`{open_path}`)")
+        parts.append("")
+        if not _undecided_count(groups):
+            parts.append(
+                "Nothing to decide. ✅ Every finding the published image is "
+                "still reported for is fixable (above) or accepted in "
+                f"`{open_path}`, and every accepted entry is still reported."
+            )
+            parts.append("")
+        if groups["decide"]:
+            parts.append(
+                _table(
+                    ["CVE", "Package", "Severity", "Published", "Age"],
+                    [
+                        [
+                            f"`{r['id']}`",
+                            r["package"],
+                            r["severity"],
+                            r["published"],
+                            r["age"],
+                        ]
+                        for r in groups["decide"]
+                    ],
+                )
+            )
+            parts.append("")
+            parts.append(
+                f"These have had no fix for at least {min_age} days and nothing "
+                "says why they are open. For each one, read where the fix or "
+                "the flaw lands upstream, then either add a `not_affected` "
+                "statement whose claim was checked against the image "
+                "(docs/RELEASING.md, base-image statements item) or, when no "
+                f"justification is true of it, add it to `{open_path}` with the "
+                "reason and to the table in docs/verifying.md."
+            )
+            parts.append("")
+        if groups["unapplied"]:
+            parts.append(
+                "Reported although the OpenVEX document has a statement, so the "
+                "scanner did not apply it (check the product identifiers and "
+                "the vulnerability name): "
+                + ", ".join(f"`{r['id']}`" for r in groups["unapplied"])
+                + "."
+            )
+            parts.append("")
+        if groups["stale"]:
+            parts.append(
+                _table(
+                    ["Accepted entry", "Package", "No longer holds because"],
+                    [[f"`{r['id']}`", r["package"], r["why"]] for r in groups["stale"]],
+                )
+            )
+            parts.append("")
+            parts.append(
+                f"Remove these from `{open_path}` and from the table in "
+                "docs/verifying.md, or take the fix."
+            )
+            parts.append("")
+        if groups["waiting"]:
+            parts.append(
+                "Not yet due — does not gate this issue: "
+                + ", ".join(f"`{r['id']}` ({r['why']})" for r in groups["waiting"])
+                + "."
+            )
+            parts.append("")
+
     if py_unfixable:
         parts.append(
             f"<details><summary>Known, no fix available "
@@ -546,6 +775,11 @@ def build_body(
     return "\n".join(p for p in parts if p is not None).rstrip() + "\n"
 
 
+def _undecided_count(groups: dict[str, list[dict[str, str]]]) -> int:
+    """How many image findings gate the issue; ``waiting`` does not."""
+    return len(groups["decide"]) + len(groups["unapplied"]) + len(groups["stale"])
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--pip-audit", type=Path, required=True)
@@ -574,12 +808,60 @@ def main() -> int:
         default="0",
         help="advisories whose every fix is at or below this version are out of scope",
     )
+    ap.add_argument(
+        "--scout-all-sarif",
+        type=Path,
+        help="Scout SARIF of the same image without only-fixed, OpenVEX applied",
+    )
+    ap.add_argument(
+        "--open-findings",
+        type=Path,
+        help="accepted findings that have no fix and no OpenVEX statement",
+    )
+    ap.add_argument(
+        "--scout-alerts",
+        type=Path,
+        help='{"rule_ids": [...]} of the scheduled Scout scan\'s open alerts',
+    )
+    ap.add_argument(
+        "--published-dir",
+        type=Path,
+        help="directory of OSV records, one <CVE>.json per reported CVE",
+    )
+    ap.add_argument(
+        "--min-age-days",
+        type=int,
+        default=14,
+        help="an undecided finding gates the issue once it is this old",
+    )
+    ap.add_argument(
+        "--today",
+        type=date.fromisoformat,
+        default=None,
+        help="date to measure ages from (default: today, UTC)",
+    )
     args = ap.parse_args()
     if (args.vex is None) != (args.osv is None):
         ap.error("--vex and --osv must be given together")
+    image_args = (
+        args.scout_all_sarif,
+        args.open_findings,
+        args.scout_alerts,
+        args.published_dir,
+    )
+    if any(a is not None for a in image_args) and (
+        any(a is None for a in image_args)
+        or args.vex is None
+        or args.scout_sarif is None
+    ):
+        ap.error(
+            "--scout-all-sarif, --open-findings, --scout-alerts and "
+            "--published-dir must be given together, with --scout-sarif and --vex"
+        )
 
     vex: tuple[Path, str, list[dict[str, str]], int, str] | None = None
     actions: tuple[list[dict[str, str]], list[dict[str, str]]] | None = None
+    image_open: tuple[Path, int, dict[str, list[dict[str, str]]]] | None = None
     try:
         py_fixable, py_unfixable = parse_pip_audit(args.pip_audit)
         img_fixable = parse_scout_sarif(args.scout_sarif) if args.scout_sarif else []
@@ -590,34 +872,59 @@ def main() -> int:
             vex = (args.vex, args.osv_package, gaps, considered, args.pip_floor)
         if args.zizmor is not None:
             actions = parse_zizmor_actions(args.zizmor)
+        if args.scout_all_sarif is not None:
+            today = args.today or datetime.now(UTC).date()
+            groups = classify_image_findings(
+                parse_scout_sarif(args.scout_all_sarif),
+                {r["id"] for r in img_fixable},
+                parse_vex_ids(args.vex),
+                parse_open_findings(args.open_findings),
+                parse_alert_ids(args.scout_alerts),
+                args.published_dir,
+                today,
+                args.min_age_days,
+            )
+            image_open = (args.open_findings, args.min_age_days, groups)
     except ReportError as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1
 
     body = build_body(
-        py_fixable, py_unfixable, img_fixable, args.image, args.run_url, vex, actions
+        py_fixable,
+        py_unfixable,
+        img_fixable,
+        args.image,
+        args.run_url,
+        vex,
+        actions,
+        image_open,
     )
     args.out.write_text(body, encoding="utf-8")
 
     act_fixable = actions[0] if actions else []
     total = len(py_fixable) + len(img_fixable) + len(act_fixable)
     gap_count = len(vex[2]) if vex else 0
+    undecided = _undecided_count(image_open[2]) if image_open else 0
     print(
         f"fixable: python={len(py_fixable)} image={len(img_fixable)} "
         f"actions={len(act_fixable)} "
         f"total={total}; unfixable (informational): {len(py_unfixable)}; "
-        f"vex_gaps={gap_count}"
+        f"vex_gaps={gap_count}; image_undecided={undecided}"
     )
 
     title = f"Fixable vulnerabilities ({total})"
     if gap_count:
         title += f", OpenVEX gaps ({gap_count})"
+    if undecided:
+        title += f", image findings to decide ({undecided})"
     if step_output := os.environ.get("GITHUB_OUTPUT"):
         with open(step_output, "a", encoding="utf-8") as fh:
             fh.write(f"count={total}\n")
             fh.write(f"gaps={gap_count}\n")
             fh.write(f"title={title}\n")
-            fh.write(f"has_findings={'true' if total or gap_count else 'false'}\n")
+            fh.write(f"undecided={undecided}\n")
+            found = total or gap_count or undecided
+            fh.write(f"has_findings={'true' if found else 'false'}\n")
     return 0
 
 

@@ -32,6 +32,17 @@ name: Fixable vulnerability report
 # arrives with time, not with a diff: v1.14.2 of the PyPI publish action sat
 # under a critical advisory with every gate green until a release preflight
 # ran zizmor by hand.
+#
+# It also asks for a decision on image findings that have no fix. The scan
+# for fixable CVEs is `only-fixed`, so one with no fix reached nobody: it became
+# a code-scanning alert and nothing else. A second scan without that filter,
+# with the OpenVEX document applied, lists what the published image is still
+# reported for. Each finding is fixable (already above), accepted as open in
+# .vex/open-findings.json, or undecided. An undecided one becomes a line in
+# the rolling issue once it has gone 14 days from publication without a fix,
+# and only when scout-scan.yml's alerts report it too: most are fixed by a
+# base image update first, and Scout's advisory data changes between scans.
+# An accepted entry that both scans have dropped is reported as stale.
 
 on:
   workflow_dispatch:
@@ -50,6 +61,9 @@ jobs:
     permissions:
       contents: read
       issues: write
+      # Read scout-scan.yml's open alerts, the second scan the image
+      # findings check compares with.
+      security-events: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -120,6 +134,65 @@ jobs:
           vex-location: .vex/compose-lint.openvex.json
           vex-author: .*
 
+      # Same image, same document, no `only-fixed`: everything the image is
+      # still reported for once the not_affected statements are applied.
+      - name: Scan published image for every remaining CVE
+        uses: docker/scout-action@e7e2a72bf1485d10a58f30696b6c513b261ce4fa # v1.29.0
+        with:
+          command: cves
+          image: composelint/compose-lint:latest
+          exit-code: false
+          sarif-file: scout-all.sarif
+          vex-location: .vex/compose-lint.openvex.json
+          vex-author: .*
+
+      # The alerts scout-scan.yml uploaded for the default branch, by rule
+      # id. An empty list is a valid answer and still writes the file; an
+      # API error fails the step.
+      - name: Fetch the scheduled Scout scan's open alerts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api --paginate \
+            "repos/${GH_REPO}/code-scanning/alerts?ref=refs/heads/main&state=open&tool_name=Docker%20Scout&per_page=100" \
+            --jq '.[] | select(.most_recent_instance.category == "docker-scout-scheduled") | .rule.id' \
+            > scout-alert-ids.txt
+          jq -R . scout-alert-ids.txt | jq -s '{rule_ids: .}' > scout-alerts.json
+
+      # Publication date of each CVE the scan above reports, for the 14-day
+      # rule. OSV's Debian record is tried first because it exists for CVEs
+      # the plain CVE record does not yet; 404 on both leaves no file, which
+      # the report script reads as an unknown age and treats as old. Any
+      # other status fails the step. The id comes from the scanner's output,
+      # so it is checked before it goes into a URL.
+      - name: Fetch publication dates from OSV
+        run: |
+          set -euo pipefail
+          mkdir osv-image
+          jq -r '[.runs[] | (.results // [])[] | .ruleId] | unique | .[]' \
+            scout-all.sarif > image-ids.txt
+          while IFS= read -r id; do
+            if ! [[ "${id}" =~ ^[A-Za-z0-9][A-Za-z0-9-]{3,63}$ ]]; then
+              echo "::error::unexpected vulnerability id in the Scout SARIF"
+              exit 1
+            fi
+            for record in "DEBIAN-${id}" "${id}"; do
+              code=$(curl --silent --show-error \
+                --retry 5 --retry-all-errors --max-time 60 \
+                --output osv-record.json --write-out '%{http_code}' \
+                "https://api.osv.dev/v1/vulns/${record}")
+              if [ "${code}" = 200 ]; then
+                mv osv-record.json "osv-image/${id}.json"
+                break
+              elif [ "${code}" != 404 ]; then
+                echo "::error::OSV answered ${code} for ${record}"
+                exit 1
+              fi
+            done
+          done < image-ids.txt
+
       # One page holds every pip advisory with room to spare (the API pages
       # at 1000); the report script refuses a response that carries a
       # next_page_token rather than compare against a partial list, and
@@ -157,13 +230,18 @@ jobs:
             --osv-package pip \
             --pip-floor 25.1 \
             --zizmor zizmor.json \
+            --scout-all-sarif scout-all.sarif \
+            --open-findings .vex/open-findings.json \
+            --scout-alerts scout-alerts.json \
+            --published-dir osv-image \
+            --min-age-days 14 \
             --run-url "${RUN_URL}" \
             --out body.md
 
       # Rolling issue: one issue, rewritten in place, closed when clean.
-      # An OPEN issue with this label means "there is something fixable, or
-      # an OpenVEX statement to write, right now" — there is no triage
-      # backlog to maintain.
+      # An OPEN issue with this label means "there is something fixable, an
+      # OpenVEX statement to write, or an image finding to decide, right
+      # now" — there is no triage backlog to maintain.
       - name: Reconcile rolling issue
         env:
           GH_TOKEN: ${{ github.token }}
@@ -193,9 +271,9 @@ jobs:
                 --label "${LABEL}"
             fi
           elif [ -n "${existing}" ]; then
-            echo "No fixable vulnerabilities or OpenVEX gaps left; closing #${existing}"
+            echo "Nothing fixable, no OpenVEX gap and no image finding to decide; closing #${existing}"
             gh issue close "${existing}" --reason completed --comment \
-              "All previously reported vulnerabilities now have no available fix or are resolved, and the OpenVEX document names every in-scope pip advisory. Verified by ${RUN_URL}."
+              "All previously reported vulnerabilities are resolved or have no available fix, the OpenVEX document names every in-scope pip advisory, and every image finding with no fix has a statement or an accepted entry. Verified by ${RUN_URL}."
           else
             echo "No fixable vulnerabilities and no open issue. Nothing to do."
           fi

@@ -14,7 +14,7 @@ per-channel publish contract see [`DISTRIBUTION.md`](DISTRIBUTION.md).
 | `codeql.yml`              | Every PR + weekly (Mon 04:27 UTC)          | Static analysis, results in Code Scanning              |
 | `scorecard.yml`           | Branch-protection change + weekly          | OpenSSF Scorecard, results in Code Scanning            |
 | `scout-scan.yml`          | Daily (06:00 UTC) + manual                 | Docker Scout CVE scan against the published image      |
-| `vuln-report.yml`         | Daily (06:30 UTC) + manual                 | Rolling issue listing every vulnerability with a fix   |
+| `vuln-report.yml`         | Daily (06:30 UTC) + manual                 | Rolling issue listing every vulnerability with a fix, and every image finding with no fix that still needs a decision |
 | `publish.yml`             | `v*` tag push + manual (Docker republish on a tag) | Release pipeline — see `RELEASING.md`          |
 | `release-prep.yml`        | Manual (`workflow_dispatch`, maintainer)   | Opens the "Prepare X.Y.Z release" PR                   |
 | `marketplace-smoke.yml`   | Push to `main` touching the file + manual + weekly cron | Verifies the published action, pre-commit hook, and the `uvx`/`pipx run` one-shot forms end-to-end; after a release, re-records the README demos if their output changed |
@@ -296,8 +296,9 @@ Output is a single **rolling issue** labelled `fixable-vulns`:
 - It **closes itself** when nothing fixable is left. An open issue
   therefore means "there is something to fix right now"; there is no
   triage backlog to groom.
-- Advisories with **no** available fix are listed in a collapsed section
-  and deliberately do not open or close the issue.
+- Python advisories with **no** available fix are listed in a collapsed
+  section and deliberately do not open or close the issue. Image findings
+  with no fix are handled differently, below.
 
 It reads four sources: `pip-audit` over the dev lock, Docker Scout over the
 published `latest` image, pip's advisory list from OSV against the OpenVEX
@@ -306,6 +307,36 @@ document, and zizmor's `known-vulnerable-actions` audit over `.github/` and
 workflows only when one changes, and an advisory against a pinned action
 nobody touched arrives with time, not with a diff. The audit is online-only;
 the step fails if zizmor reports it ran offline, rather than list no actions.
+
+**Image findings with no fix get a decision, once.** The image scan above is
+`only-fixed`, so a CVE with no fix used to reach nobody: it became a
+code-scanning alert and nothing else. A second Scout scan, without that
+filter and with the OpenVEX document applied, lists everything the published
+image is still reported for. Each finding is then one of three things:
+
+- fixable, and already in the table above;
+- accepted as open in `.vex/open-findings.json`, with the reason no OpenVEX
+  justification is true of it (the same list `docs/verifying.md` shows
+  readers, held together by a test);
+- undecided.
+
+An undecided finding becomes a line in the rolling issue, and opens it, when
+two things hold. It was published at least 14 days ago (`--min-age-days`),
+because most base-image CVEs are fixed by a digest update before then. And
+`scout-scan.yml`'s open alerts for `main` report it too, because Scout's
+advisory data changes between scans and one scan is not enough to act on.
+Until both hold it is listed as not yet due. The publication date comes from
+OSV; a CVE with no OSV record has an unknown age and is treated as old.
+
+The same comparison runs the other way. An accepted entry is reported as
+stale when a fix appears, when the OpenVEX document gains a statement for
+it, or when both scans have stopped reporting it. A CVE reported although a
+statement names it is called out too: the scan ran with the document, so the
+statement did not match.
+
+The answer to an undecided finding is a `not_affected` statement whose claim
+was checked against the image, or an entry in `.vex/open-findings.json`.
+The script never makes that choice.
 
 Two properties are worth preserving if you edit it:
 
@@ -991,6 +1022,7 @@ nothing reports that; a pin CI never runs merges on nothing but its age.
 | Scorecard finding                   | Security → Code Scanning (`scorecard` category)        |
 | Docker Scout CVE                    | Security → Code Scanning (`docker-scout` category)     |
 | Vulnerability with an available fix | Rolling issue labelled `fixable-vulns`                 |
+| Image finding with no fix and no recorded decision, 14 days after publication | Same rolling issue |
 | Scheduled workflow failure          | Issue `Scheduled run failed: <workflow>` — one per workflow, repeat failures comment on it (`.github/actions/report-scheduled-failure`); plus the author email and red X. `forgejo-smoke-bump.yml` waits for a second failure in a row ([why](#forgejo-smoke-bumpyml)) |
 | Post-release smoke failure          | Issue `Post-release run failed: Marketplace smoke test` — same action, separate thread from the weekly one so a break in a shipped release is not triaged as a flake |
 | Renovate PR                         | A PR per update. Automerges once green and three days old when the PR itself exercises the change; otherwise labelled `manual-merge` (a person has to act) or `age-gated` (gcr/ghcr digests, merged by `digest-age-gate.yml` after 72h). See [Dependency updates](#dependency-updates-renovate) |
