@@ -4,7 +4,7 @@
   "author": "Todd Matens <tmatens@gmail.com>",
   "role": "Project Maintainer",
   "timestamp": "2026-11-24T00:00:00Z",
-  "version": 6,
+  "version": 7,
   "tooling": "hand-authored",
   "statements": [
     {
@@ -365,6 +365,703 @@
       "status": "not_affected",
       "justification": "vulnerable_code_cannot_be_controlled_by_adversary",
       "impact_statement": "The affected code runs at interpreter start and looks for a Modules/Setup.local landmark relative to the executable. Input to compose-lint cannot create that file: Compose files are read as text, and compose-lint writes only to paths named on its command line. In the default configuration the image also runs as UID 65532, and the directories the lookup uses (/usr and /venv) are owned by root. The upstream advisory limits the impact to Windows installs. Checked against the file ownership in compose-lint 1.8.1 on linux/amd64 and linux/arm64 and against the code shipped in it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-112314",
+        "description": "krb5 GSS-RPC client memory leak on XID mismatch retries"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The flaw is in clnttcp_call() in lib/rpc/clnt_tcp.c, which krb5 builds into its RPC library, libgssrpc. That library is not in the image. From krb5 the image ships only libkrb5, libgssapi_krb5, libk5crypto, libkrb5support and the spake preauth plugin: no krb5 program, and no libgssrpc, libkadm5, libkdb5 or LDAP KDB module. Checked against compose-lint 1.8.1 on linux/amd64 and linux/arm64, from the image filesystem exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-112315",
+        "description": "krb5 memory leak when RPCSEC_GSS buffer decoding fails"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The flaw is in the RPCSEC_GSS routines in lib/rpc/authgss_prot.c, which krb5 builds into its RPC library, libgssrpc. That library is not in the image. From krb5 the image ships only libkrb5, libgssapi_krb5, libk5crypto, libkrb5support and the spake preauth plugin: no krb5 program, and no libgssrpc, libkadm5, libkdb5 or LDAP KDB module. Checked against compose-lint 1.8.1 on linux/amd64 and linux/arm64, from the image filesystem exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-112319",
+        "description": "krb5 unbounded allocation in GSS-RPC XDR decoding"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The flaw is in the XDR decoding of krb5's RPC library, libgssrpc, as used by kadmind. Neither libgssrpc nor kadmind is not in the image. From krb5 the image ships only libkrb5, libgssapi_krb5, libk5crypto, libkrb5support and the spake preauth plugin: no krb5 program, and no libgssrpc, libkadm5, libkdb5 or LDAP KDB module. Checked against compose-lint 1.8.1 on linux/amd64 and linux/arm64, from the image filesystem exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-112320",
+        "description": "krb5 memory leak when a GSS-RPC client switches auth flavor"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The flaw is in the transport layer of krb5's RPC library, libgssrpc, as used by kadmind. Neither libgssrpc nor kadmind is not in the image. From krb5 the image ships only libkrb5, libgssapi_krb5, libk5crypto, libkrb5support and the spake preauth plugin: no krb5 program, and no libgssrpc, libkadm5, libkdb5 or LDAP KDB module. Checked against compose-lint 1.8.1 on linux/amd64 and linux/arm64, from the image filesystem exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-112321",
+        "description": "krb5 memory leak on AUTH_GSSAPI_INIT error paths"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The flaw is in the AUTH_GSSAPI handler in lib/rpc/svc_auth_gssapi.c, which krb5 builds into its RPC library, libgssrpc. That library is not in the image. From krb5 the image ships only libkrb5, libgssapi_krb5, libk5crypto, libkrb5support and the spake preauth plugin: no krb5 program, and no libgssrpc, libkadm5, libkdb5 or LDAP KDB module. Checked against compose-lint 1.8.1 on linux/amd64 and linux/arm64, from the image filesystem exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-112322",
+        "description": "krb5 quadratic CPU cost cleaning up AUTH_GSSAPI client state"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The flaw is in clean_client() in lib/rpc/svc_auth_gssapi.c, which krb5 builds into its RPC library, libgssrpc. That library is not in the image. From krb5 the image ships only libkrb5, libgssapi_krb5, libk5crypto, libkrb5support and the spake preauth plugin: no krb5 program, and no libgssrpc, libkadm5, libkdb5 or LDAP KDB module. Checked against compose-lint 1.8.1 on linux/amd64 and linux/arm64, from the image filesystem exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-112323",
+        "description": "krb5 memory exhaustion from failed AUTH_GSSAPI_INIT requests"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The flaw is in the AUTH_GSSAPI handler in lib/rpc/svc_auth_gssapi.c, which krb5 builds into its RPC library, libgssrpc. That library is not in the image. From krb5 the image ships only libkrb5, libgssapi_krb5, libk5crypto, libkrb5support and the spake preauth plugin: no krb5 program, and no libgssrpc, libkadm5, libkdb5 or LDAP KDB module. Checked against compose-lint 1.8.1 on linux/amd64 and linux/arm64, from the image filesystem exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-118380",
+        "description": "krb5 libgssrpc trusts an unverified RPCSEC_GSS service type"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The flaw is in how krb5's RPC library, libgssrpc, handles the RPCSEC_GSS service type, according to the krb5 1.22.3 release notes. That library is not in the image. From krb5 the image ships only libkrb5, libgssapi_krb5, libk5crypto, libkrb5support and the spake preauth plugin: no krb5 program, and no libgssrpc, libkadm5, libkdb5 or LDAP KDB module. Checked against compose-lint 1.8.1 on linux/amd64 and linux/arm64, from the image filesystem exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-112316",
+        "description": "krb5 memory leak when xdr_krb5_tl_data() decoding fails"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The flaw is in xdr_krb5_tl_data() in lib/kadm5/kadm_rpc_xdr.c, which krb5 builds into its libkadm5 libraries. Neither libkadm5 library is not in the image. From krb5 the image ships only libkrb5, libgssapi_krb5, libk5crypto, libkrb5support and the spake preauth plugin: no krb5 program, and no libgssrpc, libkadm5, libkdb5 or LDAP KDB module. Checked against compose-lint 1.8.1 on linux/amd64 and linux/arm64, from the image filesystem exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-112317",
+        "description": "krb5 memory leak on a KDB keytab key decryption error"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The flaw is in krb5_ktkdb_get_entry() in lib/kdb/keytab.c, which krb5 builds into libkdb5 for the KDC and kadmind. That library is not in the image. From krb5 the image ships only libkrb5, libgssapi_krb5, libk5crypto, libkrb5support and the spake preauth plugin: no krb5 program, and no libgssrpc, libkadm5, libkdb5 or LDAP KDB module. Checked against compose-lint 1.8.1 on linux/amd64 and linux/arm64, from the image filesystem exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-112318",
+        "description": "krb5 kadmind NULL dereference on an empty policy name"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The flaw is in the policy RPC stubs in kadmin/server/server_stubs.c, part of the kadmind server. kadmind is not in the image. From krb5 the image ships only libkrb5, libgssapi_krb5, libk5crypto, libkrb5support and the spake preauth plugin: no krb5 program, and no libgssrpc, libkadm5, libkdb5 or LDAP KDB module. Checked against compose-lint 1.8.1 on linux/amd64 and linux/arm64, from the image filesystem exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-107884",
+        "description": "krb5 kadmind password change ignores the lockdown_keys attribute"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The flaw is in kadmind's handling of password change requests, according to the krb5 1.22.3 release notes. kadmind is not in the image. From krb5 the image ships only libkrb5, libgssapi_krb5, libk5crypto, libkrb5support and the spake preauth plugin: no krb5 program, and no libgssrpc, libkadm5, libkdb5 or LDAP KDB module. Checked against compose-lint 1.8.1 on linux/amd64 and linux/arm64, from the image filesystem exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-11850",
+        "description": "krb5 integer underflow in the LDAP KDB module's berval2tl_data()"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The flaw is in berval2tl_data() in plugins/kdb/ldap/libkdb_ldap/ldap_principal2.c, part of krb5's LDAP KDB module. That module is not in the image. From krb5 the image ships only libkrb5, libgssapi_krb5, libk5crypto, libkrb5support and the spake preauth plugin: no krb5 program, and no libgssrpc, libkadm5, libkdb5 or LDAP KDB module. Checked against compose-lint 1.8.1 on linux/amd64 and linux/arm64, from the image filesystem exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-119079",
+        "description": "krb5 quadratic CPU cost decoding an ASN.1 SEQUENCE OF"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in decode_sequence_of() in lib/krb5/asn.1/asn1_encode.c, part of libkrb5, and is reached by sending requests to a KDC. The image has no krb5 program, and none of the krb5 libraries it ships (libkrb5, libgssapi_krb5, libk5crypto, libkrb5support) is loaded: they are present only as dependencies of libtirpc, which is needed only by libnsl, which no file in the image needs, and neither the Python interpreter nor any of its extension modules links any of them. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-111423",
+        "description": "krb5 logic error checking PAC server checksums"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is a logic error in krb5's checking of PAC server checksums, according to the krb5 1.22.3 release notes. Whichever krb5 component carries it, compose-lint does not run it. The image has no krb5 program, and none of the krb5 libraries it ships (libkrb5, libgssapi_krb5, libk5crypto, libkrb5support) is loaded: they are present only as dependencies of libtirpc, which is needed only by libnsl, which no file in the image needs, and neither the Python interpreter nor any of its extension modules links any of them. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-71199",
+        "description": "krb5 accepts unkeyed checksums when validating CAMMAC verifiers"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in krb5's validation of CAMMAC verifiers, according to the krb5 1.22.3 release notes. Whichever krb5 component carries it, compose-lint does not run it. The image has no krb5 program, and none of the krb5 libraries it ships (libkrb5, libgssapi_krb5, libk5crypto, libkrb5support) is loaded: they are present only as dependencies of libtirpc, which is needed only by libnsl, which no file in the image needs, and neither the Python interpreter nor any of its extension modules links any of them. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-71200",
+        "description": "krb5 denial of service fixed in 1.22.3 (details not published)"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The krb5 1.22.3 release notes list this among denial-of-service fixes for the KDC, kadmind, application servers and client programs, without naming the affected code. Whichever krb5 component carries it, compose-lint does not run it. The image has no krb5 program, and none of the krb5 libraries it ships (libkrb5, libgssapi_krb5, libk5crypto, libkrb5support) is loaded: they are present only as dependencies of libtirpc, which is needed only by libnsl, which no file in the image needs, and neither the Python interpreter nor any of its extension modules links any of them. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-107364",
+        "description": "krb5 denial of service fixed in 1.22.3 (details not published)"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The krb5 1.22.3 release notes list this among denial-of-service fixes for the KDC, kadmind, application servers and client programs, without naming the affected code. Whichever krb5 component carries it, compose-lint does not run it. The image has no krb5 program, and none of the krb5 libraries it ships (libkrb5, libgssapi_krb5, libk5crypto, libkrb5support) is loaded: they are present only as dependencies of libtirpc, which is needed only by libnsl, which no file in the image needs, and neither the Python interpreter nor any of its extension modules links any of them. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-104357",
+        "description": "libtirpc UDP server decodes stale buffer bytes as the current request"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in libtirpc's UDP server transport. libtirpc is in the image only as a dependency of libnsl, which no file in the image needs. Neither the Python interpreter nor any of its extension modules links it, so it is never loaded, and compose-lint runs no RPC client or server. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-85231",
+        "description": "libtirpc unbounded allocation during RPCSEC_GSS decoding"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in libtirpc's RPCSEC_GSS decoding, in an RPC service. libtirpc is in the image only as a dependency of libnsl, which no file in the image needs. Neither the Python interpreter nor any of its extension modules links it, so it is never loaded, and compose-lint runs no RPC client or server. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-85977",
+        "description": "libtirpc unbounded allocation decoding a portmapper response"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in libtirpc's pmap_getmaps() client function. libtirpc is in the image only as a dependency of libnsl, which no file in the image needs. Neither the Python interpreter nor any of its extension modules links it, so it is never loaded, and compose-lint runs no RPC client or server. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-124709",
+        "description": "OpenSSL QUIC server retains state for rejected streams"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in the QUIC server's stream handling (ssl/quic/quic_stream_map.c). That code is part of libssl. libssl is linked only by Python's _ssl extension module, and compose-lint never loads the ssl module, so libssl is never loaded: compose-lint opens no network connection. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-95691",
+        "description": "OpenSSL QUIC client use-after-free on retransmitted CRYPTO frames"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in the QUIC client's handling of retransmitted CRYPTO frames (ssl/quic). That code is part of libssl. libssl is linked only by Python's _ssl extension module, and compose-lint never loads the ssl module, so libssl is never loaded: compose-lint opens no network connection. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-35190",
+        "description": "OpenSSL out-of-bounds read in TLS 1.3 key-share processing with the Suite B flag"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in a TLS 1.3 server's key-share processing (ssl/t1_lib.c). That code is part of libssl. libssl is linked only by Python's _ssl extension module, and compose-lint never loads the ssl module, so libssl is never loaded: compose-lint opens no network connection. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-95690",
+        "description": "OpenSSL excessive allocation in DTLS handshake reassembly"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in DTLS handshake message reassembly (ssl/statem/statem_dtls.c). That code is part of libssl. libssl is linked only by Python's _ssl extension module, and compose-lint never loads the ssl module, so libssl is never loaded: compose-lint opens no network connection. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-107493",
+        "description": "OpenSSL use-after-free in PEM_X509_INFO_read_bio_ex()"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in PEM_X509_INFO_read_bio_ex(), and affects an application that passes it an existing stack. libcrypto is loaded, because Python's hashlib uses it, but the only object in a compose-lint process that calls into it is hashlib's extension module, which imports only digest, HMAC and key-derivation functions. compose-lint's only use is one SHA-256 call when it writes SARIF output. Calls made inside libcrypto itself were not audited. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-107496",
+        "description": "OpenSSL infinite loop in CMS_encrypt() with an EC group order of 1"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in CMS_encrypt() and CMS_encrypt_ex(). libcrypto is loaded, because Python's hashlib uses it, but the only object in a compose-lint process that calls into it is hashlib's extension module, which imports only digest, HMAC and key-derivation functions. compose-lint's only use is one SHA-256 call when it writes SARIF output. Calls made inside libcrypto itself were not audited. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-121482",
+        "description": "OpenSSL quadratic CPU cost verifying CMS or PKCS#7 SignedData with CRL checking"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in verifying a CMS or PKCS#7 SignedData message with CRL checking enabled. libcrypto is loaded, because Python's hashlib uses it, but the only object in a compose-lint process that calls into it is hashlib's extension module, which imports only digest, HMAC and key-derivation functions. compose-lint's only use is one SHA-256 call when it writes SARIF output. Calls made inside libcrypto itself were not audited. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-121481",
+        "description": "OpenSSL integer overflow in EVP_EncodeBlock() with very large input"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in EVP_EncodeBlock() when the caller passes an input length near INT_MAX. libcrypto is loaded, because Python's hashlib uses it, but the only object in a compose-lint process that calls into it is hashlib's extension module, which imports only digest, HMAC and key-derivation functions. compose-lint's only use is one SHA-256 call when it writes SARIF output. Calls made inside libcrypto itself were not audited. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-88823",
+        "description": "OpenSSL AES-GCM-SIV drops earlier AAD after a zero-length update"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in the AES-GCM-SIV cipher's handling of additional authenticated data. libcrypto is loaded, because Python's hashlib uses it, but the only object in a compose-lint process that calls into it is hashlib's extension module, which imports only digest, HMAC and key-derivation functions. compose-lint's only use is one SHA-256 call when it writes SARIF output. Calls made inside libcrypto itself were not audited. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-95692",
+        "description": "OpenSSL AES-GCM-SIV out-of-bounds read and IV truncation"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in the AES-GCM-SIV cipher's handling of the IV length, reached through EVP_CipherInit_ex(). libcrypto is loaded, because Python's hashlib uses it, but the only object in a compose-lint process that calls into it is hashlib's extension module, which imports only digest, HMAC and key-derivation functions. compose-lint's only use is one SHA-256 call when it writes SARIF output. Calls made inside libcrypto itself were not audited. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-84786",
+        "description": "OpenSSL NULL dereference in a DANE-enabled TLS client"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in certificate verification for a DANE-enabled TLS client (crypto/x509/x509_vfy.c). DANE is enabled through libssl, which is never loaded, and compose-lint verifies no certificate. libcrypto is loaded, because Python's hashlib uses it, but the only object in a compose-lint process that calls into it is hashlib's extension module, which imports only digest, HMAC and key-derivation functions. compose-lint's only use is one SHA-256 call when it writes SARIF output. Calls made inside libcrypto itself were not audited. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-88822",
+        "description": "OpenSSL QUIC peer detection uses uninitialized stack bytes"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in the datagram BIO's peer address detection (crypto/bio/bss_dgram.c), which the QUIC stack in libssl uses. libssl is never loaded and compose-lint opens no socket. libcrypto is loaded, because Python's hashlib uses it, but the only object in a compose-lint process that calls into it is hashlib's extension module, which imports only digest, HMAC and key-derivation functions. compose-lint's only use is one SHA-256 call when it writes SARIF output. Calls made inside libcrypto itself were not audited. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-117610",
+        "description": "libexpat NULL dereference in an external entity subparser"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in externalEntityInitProcessor2() in lib/xmlparse.c, reached while parsing an XML external entity. The Python interpreter links libexpat, so the library is mapped, but its only caller is the pyexpat module, which compose-lint never imports: it parses YAML, not XML, so no Expat parser is ever created. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-118370",
+        "description": "libexpat integer overflow in storeAtts() with over 2^30 attributes"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in storeAtts() in lib/xmlparse.c, reached while parsing a start tag with more than 2^30 attributes. The Python interpreter links libexpat, so the library is mapped, but its only caller is the pyexpat module, which compose-lint never imports: it parses YAML, not XML, so no Expat parser is ever created. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-124317",
+        "description": "libexpat out-of-bounds read converting an unknown encoding"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in unknown_toUtf8() and unknown_toUtf16() in xmltok.c, reached while parsing a document in an application-registered encoding. The Python interpreter links libexpat, so the library is mapped, but its only caller is the pyexpat module, which compose-lint never imports: it parses YAML, not XML, so no Expat parser is ever created. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-134703",
+        "description": "libexpat splits surrogate pairs in UTF-16 conversion (XML_UNICODE builds)"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in the UTF-16 conversion functions in xmltok.c, in XML_UNICODE builds, reached while parsing UTF-16 input. The Python interpreter links libexpat, so the library is mapped, but its only caller is the pyexpat module, which compose-lint never imports: it parses YAML, not XML, so no Expat parser is ever created. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-128241",
+        "description": "libexpat xmlwf follows symlinks in its -d output directory"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The flaw is in the xmlwf command-line tool. xmlwf is not in the image: from Expat the image ships only the libexpat library. Checked against compose-lint 1.8.1 on linux/amd64 and linux/arm64, from the image filesystem exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-115557",
+        "description": "Python ssl module gains a denylist of compromised intermediate certificates"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The change adds a denylist of compromised certificates to Python's ssl module (Modules/_ssl.c). compose-lint never loads the ssl module: it makes no TLS connection and verifies no certificate. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-103995",
+        "description": "Python http.client parses response body and chunk sizes leniently"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in http.client's parsing of response bodies and chunk sizes. compose-lint never loads http.client: it makes no HTTP request. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-16052",
+        "description": "Python http.cookies.Morsel allows semicolons in attribute values"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/compose-lint?repository_url=index.docker.io/composelint/compose-lint"
+        },
+        {
+          "@id": "pkg:docker/composelint/compose-lint"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in http.cookies.Morsel. compose-lint never loads http.cookies: it handles no cookies. Checked by running compose-lint's lint, fix, explain and output-format paths inside the 1.8.1 image on linux/amd64 and reading the modules it loaded and the files mapped into the process, and against the image filesystem on linux/amd64 and linux/arm64, exported without running it. The base image and source of every release since 0.3.6 were checked statically for the same facts, and the project's Docker smoke tests re-check them inside each image it builds. This describes compose-lint as shipped; running the image with a different entrypoint is outside the statement."
     }
   ]
 }

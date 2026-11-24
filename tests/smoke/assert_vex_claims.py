@@ -43,24 +43,102 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 COMPOSE_FILE = HERE / "insecure.yml"
 
+# The statements, grouped by the fact each group rests on. A check below names
+# the group whose statements it would falsify.
+
+# util-linux: chfn and chsh are not in the image.
+UTIL_LINUX = ("CVE-2022-0563",)
+# SQLite: no zipfile extension; the library is never loaded.
+SQLITE_ZIPFILE = ("CVE-2025-70873",)
+SQLITE_UNLOADED = ("CVE-2021-45346",)
+# glibc: nothing mapped imports glob() or the POSIX regex functions; the
+# loader only maps files the image ships.
+GLIBC_GLOB = ("CVE-2010-4756",)
+GLIBC_REGEX = ("CVE-2018-20796", "CVE-2019-9192")
+GLIBC_LOADER = ("CVE-2019-1010023",)
+# krb5: each of these parts is absent from the image.
+KRB5_KDB5_UTIL = ("CVE-2018-5709",)
+KRB5_GSSRPC = (
+    "CVE-2024-26458",
+    "CVE-2026-112314",
+    "CVE-2026-112315",
+    "CVE-2026-112319",
+    "CVE-2026-112320",
+    "CVE-2026-112321",
+    "CVE-2026-112322",
+    "CVE-2026-112323",
+    "CVE-2026-118380",
+)
+KRB5_KADM5 = ("CVE-2026-112316",)
+KRB5_KDB5 = ("CVE-2026-112317",)
+KRB5_KADMIND = ("CVE-2026-112318", "CVE-2026-107884")
+KRB5_LDAP = ("CVE-2026-11850",)
+# krb5: the libraries the image does ship are never loaded.
+KRB5_UNLOADED = (
+    "CVE-2024-26461",
+    "CVE-2026-119079",
+    "CVE-2026-111423",
+    "CVE-2026-71199",
+    "CVE-2026-71200",
+    "CVE-2026-107364",
+)
+# libtirpc is never loaded.
+TIRPC = ("CVE-2026-85231", "CVE-2026-85977", "CVE-2026-104357")
+# OpenSSL: libssl (TLS, DTLS, QUIC) is never loaded.
+LIBSSL = ("CVE-2026-124709", "CVE-2026-35190", "CVE-2026-95690", "CVE-2026-95691")
+# OpenSSL: libcrypto is loaded for hashlib, but nothing in the process calls
+# the certificate, CMS, PEM, base64, cipher or datagram interfaces.
+LIBCRYPTO_SIGNING = ("CVE-2010-0928",)
+LIBCRYPTO_PEM = ("CVE-2026-107493",)
+LIBCRYPTO_CMS = ("CVE-2026-107496", "CVE-2026-121482")
+LIBCRYPTO_BASE64 = ("CVE-2026-121481",)
+LIBCRYPTO_CIPHER = ("CVE-2026-88823", "CVE-2026-95692")
+LIBCRYPTO_X509 = ("CVE-2026-84786",)
+LIBCRYPTO_DGRAM = ("CVE-2026-88822",)
+# Expat: the interpreter links libexpat, but pyexpat is never imported, so no
+# parser is ever created. The xmlwf tool is not in the image.
+EXPAT = ("CVE-2026-117610", "CVE-2026-118370", "CVE-2026-124317", "CVE-2026-134703")
+EXPAT_XMLWF = ("CVE-2026-128241",)
+# Python: the standard-library code named is never loaded or never called.
+PY_GET_DATA = ("CVE-2026-3479",)
+PY_LANDMARK = ("CVE-2026-12003",)
+PY_SSL = ("CVE-2026-115557",)
+PY_HTTP_CLIENT = ("CVE-2026-103995",)
+PY_HTTP_COOKIES = ("CVE-2026-16052",)
+
 # Every OpenVEX statement this script guards. tests/test_vex_claims.py fails
-# when the document gains a non-pip statement that is missing here.
+# when the document gains a non-pip statement that is missing here, and when
+# an entry here is named by no check below.
 GUARDED = frozenset(
-    {
-        "CVE-2010-0928",
-        "CVE-2010-4756",
-        "CVE-2018-5709",
-        "CVE-2018-20796",
-        "CVE-2019-9192",
-        "CVE-2019-1010023",
-        "CVE-2021-45346",
-        "CVE-2022-0563",
-        "CVE-2024-26458",
-        "CVE-2024-26461",
-        "CVE-2025-70873",
-        "CVE-2026-3479",
-        "CVE-2026-12003",
-    }
+    UTIL_LINUX
+    + SQLITE_ZIPFILE
+    + SQLITE_UNLOADED
+    + GLIBC_GLOB
+    + GLIBC_REGEX
+    + GLIBC_LOADER
+    + KRB5_KDB5_UTIL
+    + KRB5_GSSRPC
+    + KRB5_KADM5
+    + KRB5_KDB5
+    + KRB5_KADMIND
+    + KRB5_LDAP
+    + KRB5_UNLOADED
+    + TIRPC
+    + LIBSSL
+    + LIBCRYPTO_SIGNING
+    + LIBCRYPTO_PEM
+    + LIBCRYPTO_CMS
+    + LIBCRYPTO_BASE64
+    + LIBCRYPTO_CIPHER
+    + LIBCRYPTO_X509
+    + LIBCRYPTO_DGRAM
+    + EXPAT
+    + EXPAT_XMLWF
+    + PY_GET_DATA
+    + PY_LANDMARK
+    + PY_SSL
+    + PY_HTTP_CLIENT
+    + PY_HTTP_COOKIES
 )
 
 # The UID the Dockerfile's USER line sets.
@@ -78,61 +156,98 @@ RUNS: tuple[tuple[str, ...], ...] = (
 )
 
 # Python modules whose presence after the runs falsifies a statement.
-FORBIDDEN_MODULES = {
-    "ssl": "CVE-2010-0928",
-    "_ssl": "CVE-2010-0928",
-    "sqlite3": "CVE-2021-45346",
-    "_sqlite3": "CVE-2021-45346",
-    "_ctypes": "CVE-2019-1010023",
+_TLS = LIBCRYPTO_SIGNING + LIBSSL + LIBCRYPTO_X509 + LIBCRYPTO_DGRAM + PY_SSL
+FORBIDDEN_MODULES: dict[str, tuple[str, ...]] = {
+    "ssl": _TLS,
+    "_ssl": _TLS,
+    "_socket": LIBCRYPTO_DGRAM,
+    "sqlite3": SQLITE_UNLOADED,
+    "_sqlite3": SQLITE_UNLOADED,
+    "_ctypes": GLIBC_LOADER,
+    "pyexpat": EXPAT,
+    "http.client": PY_HTTP_CLIENT,
+    "http.cookies": PY_HTTP_COOKIES,
 }
 
-# Shared objects that must never be mapped into a compose-lint process.
-FORBIDDEN_LIBRARIES = {
-    "libgssapi_krb5": "CVE-2024-26461, CVE-2010-4756",
-    "libkrb5": "CVE-2018-20796, CVE-2019-9192",
-    "libformw": "CVE-2018-20796, CVE-2019-9192",
-    "libtirpc": "CVE-2024-26461",
-    "libnsl": "CVE-2024-26461",
-    "libsqlite3": "CVE-2021-45346",
-    "libssl": "CVE-2010-0928",
+# Shared objects that must never be mapped into a compose-lint process,
+# matched as a prefix of the file name.
+_KRB5 = KRB5_UNLOADED + GLIBC_GLOB + GLIBC_REGEX
+FORBIDDEN_LIBRARIES: dict[str, tuple[str, ...]] = {
+    "libgssapi_krb5": _KRB5,
+    "libkrb5": _KRB5,
+    "libk5crypto": KRB5_UNLOADED,
+    "libformw": GLIBC_REGEX,
+    "libtirpc": TIRPC + KRB5_UNLOADED,
+    "libnsl": TIRPC + KRB5_UNLOADED,
+    "libsqlite3": SQLITE_UNLOADED,
+    "libssl": _TLS,
 }
 
 # libc entry points to the affected code. No mapped object may import them.
-FORBIDDEN_IMPORTS = {
-    "glob": "CVE-2010-4756",
-    "glob64": "CVE-2010-4756",
-    "wordexp": "CVE-2010-4756",
-    "regcomp": "CVE-2018-20796, CVE-2019-9192",
-    "regexec": "CVE-2018-20796, CVE-2019-9192",
-    "re_comp": "CVE-2018-20796, CVE-2019-9192",
-    "re_exec": "CVE-2018-20796, CVE-2019-9192",
-    "rpmatch": "CVE-2018-20796, CVE-2019-9192",
+FORBIDDEN_IMPORTS: dict[str, tuple[str, ...]] = {
+    "glob": GLIBC_GLOB,
+    "glob64": GLIBC_GLOB,
+    "wordexp": GLIBC_GLOB,
+    "regcomp": GLIBC_REGEX,
+    "regexec": GLIBC_REGEX,
+    "re_comp": GLIBC_REGEX,
+    "re_exec": GLIBC_REGEX,
+    "rpmatch": GLIBC_REGEX,
+}
+
+# libcrypto interfaces, by name prefix, that no mapped object may import.
+# libcrypto itself is skipped: it defines them. hashlib's extension module
+# imports only the digest, HMAC and key-derivation functions, so a hit here
+# means something in the process has started using more of OpenSSL.
+FORBIDDEN_CRYPTO_PREFIXES: dict[str, tuple[str, ...]] = {
+    "PEM_": LIBCRYPTO_PEM,
+    "CMS_": LIBCRYPTO_CMS,
+    "PKCS7_": LIBCRYPTO_CMS,
+    "EVP_Encode": LIBCRYPTO_BASE64,
+    "EVP_Cipher": LIBCRYPTO_CIPHER,
+    "EVP_Encrypt": LIBCRYPTO_CIPHER,
+    "EVP_Decrypt": LIBCRYPTO_CIPHER,
+    "EVP_CIPHER": LIBCRYPTO_CIPHER,
+    "EVP_Seal": LIBCRYPTO_CIPHER,
+    "EVP_Open": LIBCRYPTO_CIPHER,
+    "X509_": LIBCRYPTO_X509,
+    "BIO_": LIBCRYPTO_DGRAM,
+    "RSA_": LIBCRYPTO_SIGNING,
+    "EVP_PKEY": LIBCRYPTO_SIGNING,
+    "EVP_DigestSign": LIBCRYPTO_SIGNING,
+    "SSL_": _TLS,
 }
 
 # Files whose presence anywhere in the image falsifies a statement. Matched
 # on the file name: exactly, or as a prefix where the entry ends in "*".
-FORBIDDEN_FILES = {
-    "chfn": "CVE-2022-0563",
-    "chsh": "CVE-2022-0563",
-    "libkadm5*": "CVE-2018-5709",
-    "libkdb5*": "CVE-2018-5709",
-    "kdb5_util": "CVE-2018-5709",
-    "kadmin": "CVE-2018-5709",
-    "kadmin.local": "CVE-2018-5709",
-    "krb5kdc": "CVE-2018-5709",
-    "libgssrpc*": "CVE-2024-26458",
-    "sqlite3": "CVE-2025-70873",
-    "Setup.local": "CVE-2026-12003",
-    "sh": "CVE-2019-1010023",
-    "bash": "CVE-2019-1010023",
-    "dash": "CVE-2019-1010023",
-    "ash": "CVE-2019-1010023",
-    "busybox": "CVE-2019-1010023",
+FORBIDDEN_FILES: dict[str, tuple[str, ...]] = {
+    "chfn": UTIL_LINUX,
+    "chsh": UTIL_LINUX,
+    "kdb5_util": KRB5_KDB5_UTIL,
+    "kadmin": KRB5_KDB5_UTIL,
+    "kadmin.local": KRB5_KDB5_UTIL,
+    "libgssrpc*": KRB5_GSSRPC,
+    "libkadm5*": KRB5_KADM5 + KRB5_KDB5_UTIL,
+    "libkdb5*": KRB5_KDB5 + KRB5_KDB5_UTIL,
+    "kadmind": KRB5_KADMIND,
+    "krb5kdc": KRB5_KADMIND + KRB5_KDB5 + KRB5_KDB5_UTIL,
+    "libkdb_ldap*": KRB5_LDAP,
+    "kldap.so": KRB5_LDAP,
+    "sqlite3": SQLITE_ZIPFILE,
+    "xmlwf": EXPAT_XMLWF,
+    "Setup.local": PY_LANDMARK,
+    "sh": GLIBC_LOADER,
+    "bash": GLIBC_LOADER,
+    "dash": GLIBC_LOADER,
+    "ash": GLIBC_LOADER,
+    "busybox": GLIBC_LOADER,
 }
 
 # Names that only count when the file is executable: a data file that happens
 # to be called `sh` or `sqlite3` runs nothing.
-EXECUTABLE_ONLY = frozenset({"sh", "bash", "dash", "ash", "busybox", "sqlite3"})
+EXECUTABLE_ONLY = frozenset(
+    {"sh", "bash", "dash", "ash", "busybox", "sqlite3", "xmlwf", "kadmind", "krb5kdc"}
+)
 
 # Walking these would only list kernel interfaces, or this script's own mount.
 SKIPPED_ROOTS = ("/proc", "/sys", "/dev", str(HERE))
@@ -181,6 +296,10 @@ def undefined_dynamic_symbols(data: bytes) -> set[str]:
     if not found:
         raise ValueError("no dynamic symbol table")
     return names
+
+
+def _names(cves: tuple[str, ...]) -> str:
+    return ", ".join(cves)
 
 
 def mapped_files() -> list[Path]:
@@ -235,20 +354,24 @@ def run_compose_lint(problems: list[str]) -> int:
 def check_process(problems: list[str], get_data_calls: int) -> None:
     for module, cves in sorted(FORBIDDEN_MODULES.items()):
         if module in sys.modules:
-            problems.append(f"compose-lint loaded the `{module}` module ({cves})")
+            problems.append(
+                f"compose-lint loaded the `{module}` module ({_names(cves)})"
+            )
 
     if get_data_calls:
         problems.append(
-            f"pkgutil.get_data was called {get_data_calls} time(s) (CVE-2026-3479)"
+            f"pkgutil.get_data was called {get_data_calls} time(s) "
+            f"({_names(PY_GET_DATA)})"
         )
 
     objects = 0
+    mapped: list[str] = []
     for path in mapped_files():
         for library, cves in sorted(FORBIDDEN_LIBRARIES.items()):
             # "libkrb5" must not match on libkrb5support alone: both belong to
             # krb5, and either one being mapped falsifies the same statements.
             if path.name.startswith(library):
-                problems.append(f"{path} is mapped into the process ({cves})")
+                problems.append(f"{path} is mapped into the process ({_names(cves)})")
         try:
             data = path.read_bytes()
         except OSError as exc:
@@ -257,6 +380,7 @@ def check_process(problems: list[str], get_data_calls: int) -> None:
         if data[:4] != b"\x7fELF":
             continue
         objects += 1
+        mapped.append(path.name)
         try:
             imports = undefined_dynamic_symbols(data)
         except ValueError as exc:
@@ -265,14 +389,26 @@ def check_process(problems: list[str], get_data_calls: int) -> None:
         for symbol in sorted(imports & FORBIDDEN_IMPORTS.keys()):
             problems.append(
                 f"{path} imports libc's {symbol}() and is mapped into the "
-                f"process ({FORBIDDEN_IMPORTS[symbol]})"
+                f"process ({_names(FORBIDDEN_IMPORTS[symbol])})"
             )
-    print(f"{objects} mapped ELF objects checked for libc glob and regex imports")
+        if path.name.startswith("libcrypto"):
+            continue
+        for prefix, cves in sorted(FORBIDDEN_CRYPTO_PREFIXES.items()):
+            used = sorted(name for name in imports if name.startswith(prefix))
+            if used:
+                problems.append(
+                    f"{path} imports OpenSSL's {used[0]}() and is mapped into "
+                    f"the process ({_names(cves)})"
+                )
+    print(
+        f"{objects} mapped ELF objects checked for libc glob and regex imports "
+        f"and OpenSSL interface imports: {', '.join(sorted(mapped))}"
+    )
     if objects == 0:
         problems.append("no mapped ELF object was found, so nothing was checked")
 
 
-def _forbidden_file(name: str) -> str | None:
+def _forbidden_file(name: str) -> tuple[str, ...] | None:
     for pattern, cves in FORBIDDEN_FILES.items():
         if pattern.endswith("*"):
             if name.startswith(pattern[:-1]):
@@ -296,7 +432,7 @@ def check_filesystem(problems: list[str]) -> None:
             if cves is not None and name in EXECUTABLE_ONLY:
                 cves = cves if os.access(path, os.X_OK) else None
             if cves is not None:
-                problems.append(f"{path} is in the image ({cves})")
+                problems.append(f"{path} is in the image ({_names(cves)})")
             if name == "ldd":
                 _check_ldd(path, problems)
             if name.startswith("libsqlite3.so") and not path.is_symlink():
@@ -308,7 +444,8 @@ def check_filesystem(problems: list[str]) -> None:
                     continue
                 if b"zipfile" in data.lower():
                     problems.append(
-                        f"{path} contains the zipfile extension (CVE-2025-70873)"
+                        f"{path} contains the zipfile extension "
+                        f"({_names(SQLITE_ZIPFILE)})"
                     )
     print(f"{files} files walked; {sqlite_libraries} SQLite library file(s) read")
     # A walk that saw almost nothing proves no absence.
@@ -324,13 +461,13 @@ def _check_ldd(path: Path, problems: list[str]) -> None:
         problems.append(f"cannot read {path}: {exc}")
         return
     if not first.startswith(b"#!"):
-        problems.append(f"{path} is not a script any more (CVE-2019-1010023)")
+        problems.append(f"{path} is not a script any more ({_names(GLIBC_LOADER)})")
         return
     interpreter = first[2:].split()[0].decode("ascii", "replace")
     if Path(interpreter).exists():
         problems.append(
             f"{path} can run: its interpreter {interpreter} is in the image "
-            "(CVE-2019-1010023)"
+            f"({_names(GLIBC_LOADER)})"
         )
 
 
@@ -340,14 +477,14 @@ def check_landmark_directories(problems: list[str]) -> None:
     if uid != IMAGE_UID:
         problems.append(
             f"running as UID {uid}, not the image's default {IMAGE_UID}; run this "
-            "check without --user, or with the default (CVE-2026-12003)"
+            f"check without --user, or with the default ({_names(PY_LANDMARK)})"
         )
     vpath = sysconfig.get_config_var("VPATH")
     if vpath != "..":
         problems.append(
             f"Python was built with VPATH={vpath!r}, not '..', so the landmark "
             "is no longer looked up in the directories checked here "
-            "(CVE-2026-12003)"
+            f"({_names(PY_LANDMARK)})"
         )
     # Relative to the executable as invoked (the venv's) and as resolved.
     executables = {Path(sys.executable), Path(sys.executable).resolve()}
@@ -357,10 +494,12 @@ def check_landmark_directories(problems: list[str]) -> None:
             problems.append(
                 f"{directory} is owned by UID {status.st_uid} with mode "
                 f"{status.st_mode & 0o7777:o}: not root-owned and closed to "
-                "others (CVE-2026-12003)"
+                f"others ({_names(PY_LANDMARK)})"
             )
         if uid != 0 and os.access(directory, os.W_OK):
-            problems.append(f"{directory} is writable by UID {uid} (CVE-2026-12003)")
+            problems.append(
+                f"{directory} is writable by UID {uid} ({_names(PY_LANDMARK)})"
+            )
         print(f"{directory}: owner {status.st_uid}, mode {status.st_mode & 0o7777:o}")
 
 
