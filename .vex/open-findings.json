@@ -1,0 +1,26 @@
+{
+  "description": "Image findings that are known, have no fix to take, and have no OpenVEX statement because no justification is true of them. The daily vulnerability report compares this list and the OpenVEX document with a scan of the published image; docs/verifying.md lists the same CVEs for readers.",
+  "findings": [
+    {
+      "id": "CVE-2019-1010022",
+      "package": "glibc",
+      "summary": "Stack guard bypass",
+      "reason": "A weaker exploit mitigation in glibc itself, not a code path that can be shown absent or unreached. glibc upstream does not treat it as a security bug and has released no fix.",
+      "tracker": "https://security-tracker.debian.org/tracker/CVE-2019-1010022"
+    },
+    {
+      "id": "CVE-2019-1010024",
+      "package": "glibc",
+      "summary": "ASLR bypass through the thread stack and heap cache",
+      "reason": "A weaker exploit mitigation in glibc itself, not a code path that can be shown absent or unreached. glibc upstream does not treat it as a security bug and has released no fix.",
+      "tracker": "https://security-tracker.debian.org/tracker/CVE-2019-1010024"
+    },
+    {
+      "id": "CVE-2019-1010025",
+      "package": "glibc",
+      "summary": "Heap address of a thread can be guessed",
+      "reason": "A weaker exploit mitigation in glibc itself, not a code path that can be shown absent or unreached. glibc upstream does not treat it as a security bug and has released no fix.",
+      "tracker": "https://security-tracker.debian.org/tracker/CVE-2019-1010025"
+    }
+  ]
+}

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -652,3 +653,311 @@ def test_a_malformed_zizmor_report_fails_loudly(
     assert proc.returncode == 1
     assert message in proc.stderr
     assert not out.exists(), "must not emit an all-clear body on scanner failure"
+
+
+# --- Image findings with no fix -------------------------------------------
+#
+# The unfiltered scan, with the OpenVEX document applied, against the
+# accepted list. `TODAY` is fixed so ages do not move with the calendar.
+
+TODAY = "2026-11-24"
+OPEN_ONE = {
+    "findings": [
+        {"id": "CVE-2019-1010022", "package": "glibc", "reason": "weaker mitigation"}
+    ]
+}
+
+
+def _sarif(*ids: str, package: str = "glibc") -> dict[str, object]:
+    purl = f"pkg:deb/debian/{package}@2.41-12%2Bdeb13u5?os_name=debian"
+    message = f"Vulnerability    :X\nPackage          :{purl}\nFixed version    :-\n"
+    return {
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "rules": [
+                            {"id": i, "properties": {"security-severity": "3.1"}}
+                            for i in ids
+                        ]
+                    }
+                },
+                "results": [{"ruleId": i, "message": {"text": message}} for i in ids],
+            }
+        ]
+    }
+
+
+def run_image(
+    tmp_path: Path,
+    reported: list[str],
+    *,
+    fixable: list[str] | None = None,
+    alerts: list[str] | None = None,
+    accepted: object | None = None,
+    vex: object | None = None,
+    published: dict[str, str] | None = None,
+    alerts_payload: object | None = None,
+    extra: list[str] | None = None,
+) -> tuple[subprocess.CompletedProcess[str], Path]:
+    """Run the report with the image-findings inputs.
+
+    ``alerts`` defaults to ``reported``: both scans agree unless a test says
+    otherwise. ``accepted`` defaults to ``OPEN_ONE`` when the scan reports its
+    CVE and to an empty list when it does not, so a test about something else
+    does not also trip the stale check. ``published`` maps a CVE to its OSV
+    publication date; a CVE left out has no record, as when OSV answers 404.
+    """
+    if accepted is None:
+        accepted = OPEN_ONE if "CVE-2019-1010022" in reported else {"findings": []}
+    files = {
+        "scout-all.sarif": _sarif(*reported),
+        "open-findings.json": accepted,
+        "scout-alerts.json": alerts_payload
+        if alerts_payload is not None
+        else {"rule_ids": reported if alerts is None else alerts},
+    }
+    for name, payload in files.items():
+        (tmp_path / name).write_text(json.dumps(payload), "utf-8")
+    records = tmp_path / "osv-image"
+    records.mkdir()
+    for cve, when in (published or {}).items():
+        (records / f"{cve}.json").write_text(
+            json.dumps({"id": cve, "published": when}), "utf-8"
+        )
+    args = [
+        "--scout-all-sarif",
+        str(tmp_path / "scout-all.sarif"),
+        "--open-findings",
+        str(tmp_path / "open-findings.json"),
+        "--scout-alerts",
+        str(tmp_path / "scout-alerts.json"),
+        "--published-dir",
+        str(records),
+        "--today",
+        TODAY,
+        *FLOOR,
+        *(extra or []),
+    ]
+    return run(
+        tmp_path,
+        CLEAN,
+        _sarif(*(fixable or [])),
+        vex=vex if vex is not None else VEX_ONE,
+        osv=_osv(_advisory("PYSEC-2025-0001", "CVE-2025-8869", fixed=["25.3"])),
+        extra=args,
+    )
+
+
+def test_an_accepted_finding_that_is_still_reported_is_quiet(tmp_path: Path) -> None:
+    proc, out = run_image(tmp_path, ["CVE-2019-1010022"])
+    assert proc.returncode == 0, proc.stderr
+    assert "Nothing to decide. ✅" in out.read_text("utf-8")
+    outputs = _outputs(tmp_path)
+    assert outputs["undecided"] == "0"
+    assert outputs["has_findings"] == "false"
+
+
+def test_an_old_unstated_finding_opens_the_issue(tmp_path: Path) -> None:
+    proc, out = run_image(
+        tmp_path,
+        ["CVE-2019-1010022", "CVE-2026-0009"],
+        published={"CVE-2026-0009": "2026-11-10T08:00:00Z"},
+    )
+    assert proc.returncode == 0, proc.stderr
+    body = out.read_text("utf-8")
+    assert "**1 image finding to decide**" in body
+    assert "| `CVE-2026-0009` | glibc | low | 2026-11-10 | 14 days |" in body
+    outputs = _outputs(tmp_path)
+    assert outputs["undecided"] == "1"
+    assert outputs["has_findings"] == "true"
+    assert outputs["title"].endswith("image findings to decide (1)")
+
+
+def test_a_finding_younger_than_the_threshold_waits(tmp_path: Path) -> None:
+    proc, out = run_image(
+        tmp_path, ["CVE-2026-0009"], published={"CVE-2026-0009": "2026-11-11"}
+    )
+    assert proc.returncode == 0, proc.stderr
+    body = out.read_text("utf-8")
+    assert "`CVE-2026-0009` (published 13 days ago, under 14)" in body
+    assert "does not gate this issue" in body
+    assert _outputs(tmp_path)["has_findings"] == "false"
+
+
+def test_the_threshold_is_a_parameter(tmp_path: Path) -> None:
+    proc, _ = run_image(
+        tmp_path,
+        ["CVE-2026-0009"],
+        published={"CVE-2026-0009": "2026-11-11"},
+        extra=["--min-age-days", "13"],
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert _outputs(tmp_path)["undecided"] == "1"
+
+
+def test_a_finding_with_no_publication_record_counts_as_old(tmp_path: Path) -> None:
+    """An unknown age cannot be ruled out as recent, so it does not wait."""
+    proc, out = run_image(tmp_path, ["CVE-2026-0009"])
+    assert proc.returncode == 0, proc.stderr
+    assert "| `CVE-2026-0009` | glibc | low | unknown | unknown |" in out.read_text(
+        "utf-8"
+    )
+    assert _outputs(tmp_path)["undecided"] == "1"
+
+
+def test_a_finding_only_one_scan_reports_waits(tmp_path: Path) -> None:
+    proc, out = run_image(
+        tmp_path,
+        ["CVE-2026-0009"],
+        alerts=[],
+        published={"CVE-2026-0009": "2026-01-01"},
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "`CVE-2026-0009` (seen by one scan only)" in out.read_text("utf-8")
+    assert _outputs(tmp_path)["has_findings"] == "false"
+
+
+def test_a_fixable_finding_is_left_to_the_fixable_table(tmp_path: Path) -> None:
+    proc, out = run_image(
+        tmp_path,
+        ["CVE-2019-1010022", "CVE-2026-0009"],
+        fixable=["CVE-2026-0009"],
+        published={"CVE-2026-0009": "2026-01-01"},
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "Nothing to decide. ✅" in out.read_text("utf-8")
+    outputs = _outputs(tmp_path)
+    assert outputs["count"] == "1"
+    assert outputs["undecided"] == "0"
+
+
+def test_a_reported_cve_that_has_a_statement_is_called_out(tmp_path: Path) -> None:
+    """The scan ran with the document applied, so this is a statement that
+    did not match, not a finding to accept."""
+    proc, out = run_image(tmp_path, ["CVE-2025-8869"], accepted={"findings": []})
+    assert proc.returncode == 0, proc.stderr
+    body = out.read_text("utf-8")
+    assert "the scanner did not apply it" in body and "`CVE-2025-8869`" in body
+    assert _outputs(tmp_path)["undecided"] == "1"
+
+
+@pytest.mark.parametrize(
+    ("reported", "fixable", "alerts", "vex", "why"),
+    [
+        ([], [], [], None, "neither scan reports it any more"),
+        (["CVE-2019-1010022"], ["CVE-2019-1010022"], None, None, "a fix is now"),
+        (
+            ["CVE-2019-1010022"],
+            [],
+            None,
+            _vex("CVE-2019-1010022"),
+            "also has a statement",
+        ),
+    ],
+)
+def test_an_accepted_entry_that_no_longer_holds_is_stale(
+    tmp_path: Path,
+    reported: list[str],
+    fixable: list[str],
+    alerts: list[str] | None,
+    vex: object | None,
+    why: str,
+) -> None:
+    proc, out = run_image(
+        tmp_path, reported, fixable=fixable, alerts=alerts, vex=vex, accepted=OPEN_ONE
+    )
+    assert proc.returncode == 0, proc.stderr
+    body = out.read_text("utf-8")
+    assert "| `CVE-2019-1010022` | glibc |" in body and why in body
+    assert _outputs(tmp_path)["has_findings"] == "true"
+
+
+@pytest.mark.parametrize(
+    ("reported", "alerts"),
+    [([], ["CVE-2019-1010022"]), (["CVE-2019-1010022"], [])],
+)
+def test_an_accepted_entry_one_scan_still_reports_is_not_stale(
+    tmp_path: Path, reported: list[str], alerts: list[str]
+) -> None:
+    proc, out = run_image(tmp_path, reported, alerts=alerts, accepted=OPEN_ONE)
+    assert proc.returncode == 0, proc.stderr
+    assert "Nothing to decide. ✅" in out.read_text("utf-8")
+
+
+@pytest.mark.parametrize(
+    "accepted",
+    [
+        {"findings": [{"id": "CVE-2019-1010022", "package": "glibc"}]},
+        {"findings": [{"id": "CVE-2019-1010022", "package": "glibc", "reason": " "}]},
+        {"findings": OPEN_ONE["findings"] * 2},
+        {"entries": []},
+    ],
+)
+def test_a_malformed_open_findings_list_fails_loudly(
+    tmp_path: Path, accepted: object
+) -> None:
+    proc, out = run_image(tmp_path, [], accepted=accepted)
+    assert proc.returncode == 1
+    assert "open findings" in proc.stderr
+    assert not out.exists()
+
+
+def test_a_malformed_alert_list_fails_loudly(tmp_path: Path) -> None:
+    proc, out = run_image(tmp_path, [], alerts_payload=["CVE-2019-1010022"])
+    assert proc.returncode == 1
+    assert "rule_ids" in proc.stderr
+    assert not out.exists()
+
+
+def test_a_publication_record_without_a_date_fails_loudly(tmp_path: Path) -> None:
+    proc, out = run_image(tmp_path, ["CVE-2026-0009"], published={"CVE-2026-0009": ""})
+    assert proc.returncode == 1
+    assert "published" in proc.stderr
+    assert not out.exists()
+
+
+def test_the_image_inputs_must_be_given_together(tmp_path: Path) -> None:
+    proc, _ = run(
+        tmp_path, CLEAN, SCOUT_SARIF, extra=["--open-findings", "open-findings.json"]
+    )
+    assert proc.returncode == 2
+    assert "must be given together" in proc.stderr
+
+
+def test_without_the_image_inputs_the_section_is_omitted(tmp_path: Path) -> None:
+    proc, out = run(tmp_path, CLEAN, SCOUT_SARIF)
+    assert proc.returncode == 0, proc.stderr
+    assert "Image findings with no fix" not in out.read_text("utf-8")
+
+
+def test_the_real_open_findings_list_parses_and_matches_the_docs(
+    tmp_path: Path,
+) -> None:
+    """The shipped list is the input in production, and docs/verifying.md
+    tells readers the same thing in prose: hold the two together, and both
+    to the OpenVEX document."""
+    real = json.loads((REPO_ROOT / ".vex" / "open-findings.json").read_text("utf-8"))
+    ids = [f["id"] for f in real["findings"]]
+    proc, out = run_image(tmp_path, ids, accepted=real)
+    assert proc.returncode == 0, proc.stderr
+    assert "Nothing to decide. ✅" in out.read_text("utf-8")
+
+    vex = json.loads(
+        (REPO_ROOT / ".vex" / "compose-lint.openvex.json").read_text("utf-8")
+    )
+    stated = {st["vulnerability"]["name"] for st in vex["statements"]}
+    assert not stated & set(ids), "a finding is both accepted as open and stated"
+
+    doc = (REPO_ROOT / "docs" / "verifying.md").read_text("utf-8")
+    section = doc.split("## What a scan of the image reports", 1)[1].split("\n## ", 1)[
+        0
+    ]
+    rows = re.findall(r"^\| \[(CVE-\d+-\d+)\]", section, re.MULTILINE)
+    assert rows == ids, "docs/verifying.md lists different open findings"
+    pip = sum("subcomponents" in st["products"][0] for st in vex["statements"])
+    total = len(vex["statements"])
+    assert (
+        f"carries {total} statements: {total - pip} for CVEs in the base image's "
+        f"Debian packages and {pip} for pip"
+    ) in section, "docs/verifying.md states different statement counts"

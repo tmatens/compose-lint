@@ -16,6 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CVE-2019-1010025, mitigation-bypass reports against glibc that upstream
   does not treat as security bugs and Debian lists as unfixed. It says why
   they carry no VEX statement.
+- **An image CVE with no fix now gets a decision.** The daily vulnerability
+  report scanned the published image for fixable CVEs only, so one with no
+  fix became a code-scanning alert and reached nobody. It now also scans
+  without that filter, with the OpenVEX document applied, and compares the
+  result with the document and with a new list,
+  `.vex/open-findings.json`, of findings left open because no fix exists
+  and no justification is true of them. A finding in neither is raised in
+  the rolling issue once it is 14 days past publication and a second scan
+  reports it too. An entry in the list that has gained a fix or a statement,
+  or that both scans have dropped, is raised as stale. A test holds the
+  list, the statement counts and the section in
+  [docs/verifying.md](docs/verifying.md) together.
 
 ## [1.8.2] - 2026-11-24
 

@@ -47,7 +47,7 @@ The image is built on a distroless Debian base, and an image scanner reports the
 
 **Marked `not_affected` in the OpenVEX document.** [`.vex/compose-lint.openvex.json`](https://github.com/tmatens/compose-lint/blob/main/.vex/compose-lint.openvex.json) carries 60 statements: 54 for CVEs in the base image's Debian packages and 6 for pip, whose code is stripped from the image. Each statement's `impact_statement` says why the CVE does not apply and what was checked. Docker Scout and Trivy leave these out of their results when given the document; a scanner that does not read VEX lists them. A smoke test run inside every image built re-checks the facts the base-image statements rely on.
 
-**Open, with no fix to take.** Three findings have no statement and stay in every scan:
+**Open, with no fix to take.** Three findings have no statement and stay in every scan. They are recorded, with the reason, in [`.vex/open-findings.json`](https://github.com/tmatens/compose-lint/blob/main/.vex/open-findings.json):
 
 | CVE | Package | Reported as | Status in Debian |
 | --- | --- | --- | --- |
@@ -59,7 +59,7 @@ All three were filed in 2019 as mitigation bypasses. glibc upstream does not tre
 
 They have no VEX statement because none would be true. Each describes a weaker exploit mitigation in glibc itself, not a code path that can be shown absent or unreached, and OpenVEX has no justification for that. Leaving them visible is the accurate record.
 
-A finding outside both groups is new since this was written. If a fix exists it arrives with a base image update: the pinned digest is moved as new ones are published, and the next release ships it.
+A finding outside both groups is new. If a fix exists it arrives with a base image update: the pinned digest is moved as new ones are published, and the next release ships it. One that still has no fix 14 days after publication is reviewed and ends up in one of the two groups above; a daily check compares a scan of the published image with both files and raises anything in neither.
 
 ## Python package
 
