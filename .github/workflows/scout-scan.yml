@@ -48,10 +48,10 @@ jobs:
           image: composelint/compose-lint:latest
           exit-code: false
           sarif-file: scout-results.sarif
-          # Suppresses the pip CVE alerts (CVE-2025-8869, CVE-2026-1703,
-          # CVE-2026-3219) in the Security tab — all are not_affected /
-          # vulnerable_code_not_present against the published image.
-          # See .vex/compose-lint.openvex.json.
+          # Suppresses, in the Security tab, every CVE the document marks
+          # not_affected against the published image: the pip CVEs, whose
+          # code the Dockerfile strips, and the Debian base-image CVEs
+          # reviewed in #1365. See .vex/compose-lint.openvex.json.
           vex-location: .vex/compose-lint.openvex.json
           # Scout's default vex-author allowlist is `<.*@docker.com>`,
           # which silently drops our maintainer-authored statements.

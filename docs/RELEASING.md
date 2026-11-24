@@ -351,6 +351,20 @@ version number.
       change. The daily `vuln-report` makes this same comparison against
       OSV and lists any gap in the rolling fixable-vulnerabilities issue,
       so no open issue there is the quick form of this check.
+- [ ] The base-image statements in the VEX doc still hold. They cover
+      Debian CVEs in the distroless base (#1365) and, unlike the pip
+      statements, name no package and no version: that is the only form
+      Docker Scout and Trivy both match without an edit on every base bump
+      (ADR-012). Nothing in the document therefore ties them to an image.
+      `tests/smoke/assert_vex_claims.py` does: the PR and release Docker
+      smokes run it inside the built image, and it fails when a fact a
+      statement relies on has stopped holding. A red run there means a
+      statement is false for this release, so fix the cause or remove the
+      statement; do not loosen the check. A new base-image statement is
+      written only after its claim was checked against the image, and adds
+      its CVE to `GUARDED` and a check to that script in the same PR
+      (`tests/test_vex_claims.py` fails otherwise). Bump `version` and
+      `timestamp` as above.
 - [ ] Product identifiers in the VEX doc keep using
       `repository_url=index.docker.io/composelint/compose-lint` (not
       `docker.io/...`). The `docker.io` alias is silently ignored by

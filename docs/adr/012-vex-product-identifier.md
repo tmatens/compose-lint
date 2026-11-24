@@ -50,11 +50,37 @@ Rather than chase the exact regex shape (which Scout's behaviour is undocumented
 - The same document is cosign-attested to the image manifest with predicate type `openvex` at release time, so external consumers verifying via attestation discovery have signature-level provenance.
 - The default allowlist exists to filter VEX documents *Docker* did not author from being trusted by enterprise customers using Scout's hosted Hub workflow. That threat model does not apply to a project's own VEX document running against its own repo's CI.
 
+## Base-image statements name no subcomponent (amendment 2026-11-24)
+
+Docker Scout 1.28.0 began identifying the Debian release of the distroless base and reporting its packages' CVEs. Issue #1365 reviewed the ones Debian will not fix and added `not_affected` statements for 13 of them. The pip statements' shape, a bare `pkg:pypi/pip` subcomponent, does not carry over to a Debian package. One scan with each scanner, over a document that named the subcomponent a different way on each statement, gave:
+
+| Subcomponent | Docker Scout 1.29.0 | Trivy 0.76.2 |
+|---|---|---|
+| none | suppressed | suppressed |
+| source package with its exact version, `pkg:deb/debian/sqlite3@<version>?os_name=debian&os_version=13` | suppressed | not suppressed |
+| source package with its version only, `pkg:deb/debian/openssl@<version>` | suppressed | CVE not reported |
+| source package with qualifiers and no version | not suppressed | not suppressed |
+| bare source package, `pkg:deb/debian/util-linux` | not suppressed | not suppressed |
+| bare binary packages, `pkg:deb/debian/libkrb5-3` | not suppressed | suppressed |
+
+Scout matches a Debian subcomponent only when it carries the version, and by source package name. Trivy matches by binary package name. A version-pinned statement stops matching when Debian updates the package, which for glibc, OpenSSL and krb5 is every few weeks, so it would need an edit on most base-image bumps, and those bumps merge themselves.
+
+**Decision:** a base-image statement lists the two product identifiers and no `subcomponents`. It then reads "this image is not affected by this CVE", which is the claim being made, and both scanners honour it. Each of these CVE identifiers belongs to one upstream project, so leaving the package out cannot suppress a finding in another one.
+
+**The cost, and what pays for it.** A version-pinned statement is scoped to the images that carry the package version that was checked, and lapses by itself when that changes. A statement with no subcomponent and no digest applies to every published tag, past and future, and keeps applying after the base image or compose-lint changes, whether or not it is still true. Two things answer that:
+
+- **Future images.** `tests/smoke/assert_vex_claims.py` runs inside the built image in the PR and release Docker smokes. It runs compose-lint over its main paths and then checks the facts the impact statements rely on: which modules were loaded, which shared objects are mapped and what each imports from libc, which files the image ships, and who owns the directories Python searches at startup. A base digest bump changes the Dockerfile and so runs it. `tests/test_vex_claims.py` holds the script's `GUARDED` list equal to the document's base-image statements, so a statement cannot be added without a check.
+- **Past images.** Before the statements were written, the same facts were checked against the base image of every release built on distroless (0.3.6 onward, both platforms, from the exported filesystem), and the source facts against every release tag. The two Alpine-based tags still published, 0.3.3 and 0.3.4, predate the distroless base; they were checked separately and the result is recorded on #1365.
+
+The check fails open where the pinned form fails closed: a fact a statement relies on that the script does not test would go unnoticed. So a statement's impact statement and its check are written together, and the impact statement says only what was checked.
+
+Three other CVEs from the same review (CVE-2019-1010022, CVE-2019-1010024 and CVE-2019-1010025) describe weaker glibc hardening, not a code path that is absent or unreached. No OpenVEX justification is true of them, so they have no statement.
+
 ## Open Scout caveats
 
 Two upstream Scout issues affect statement-level behaviour but do not change this ADR:
 
-- **docker/scout-cli#199** — Scout 1.18.2+ does not always honour newer VEX statements that include subcomponents. Our document uses subcomponents on every statement (so the scanner pins the suppression to the specific pip version, not "any pip"). When we change a statement we bump `version` and `timestamp` and accept that Scout may continue to apply the prior statement until its index refreshes. The post-fix `scout-scan.yml` run is the canary for this.
+- **docker/scout-cli#199** — Scout 1.18.2+ does not always honour newer VEX statements that include subcomponents. Our document uses subcomponents on every pip statement (so the scanner pins the suppression to pip, not to the image as a whole); the base-image statements carry none, for the reasons in the amendment above. When we change a statement we bump `version` and `timestamp` and accept that Scout may continue to apply the prior statement until its index refreshes. The post-fix `scout-scan.yml` run is the canary for this.
 - **docker/scout-cli#207** — `docker scout cves --vex-location` historically had product-matching gaps for VEX statements scoped to the image rather than to nested components. Our statements scope to the image *with subcomponents*; the multi-identifier change is an explicit response to this issue.
 
 ## References

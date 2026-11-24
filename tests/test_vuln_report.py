@@ -288,6 +288,21 @@ def test_vex_gaps_are_the_in_scope_advisories_no_statement_names(
     assert outputs["title"] == "Fixable vulnerabilities (0), OpenVEX gaps (2)"
 
 
+def test_a_statement_for_another_package_neither_adds_nor_hides_a_gap(
+    tmp_path: Path,
+) -> None:
+    # The document also carries Debian base-image statements (#1365). The
+    # check diffs pip's advisory list against the statement names, so a name
+    # that is not a pip advisory must leave the result exactly as it was.
+    vex = _vex("CVE-2025-8869", "CVE-2022-0563", "CVE-2010-4756")
+    proc, out = run(tmp_path, CLEAN, vex=vex, osv=OSV_PIP, extra=FLOOR)
+    assert proc.returncode == 0, proc.stderr
+    body = out.read_text("utf-8")
+    assert "**2 OpenVEX gaps**" in body
+    assert "CVE-2022-0563" not in body and "CVE-2010-4756" not in body
+    assert _outputs(tmp_path)["gaps"] == "2"
+
+
 def test_a_gap_alone_opens_the_issue_and_the_body_says_what_to_do(
     tmp_path: Path,
 ) -> None:

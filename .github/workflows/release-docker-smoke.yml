@@ -142,3 +142,20 @@ jobs:
             --entrypoint /venv/bin/python3 \
             -v "${PWD}/tests/smoke/assert_pip_stripped.py:/src/check.py:ro" \
             composelint/compose-lint:release-smoke /src/check.py
+      # Same reasoning for the Debian base-image statements in the OpenVEX
+      # document: they name no package version, so nothing but this check
+      # ties them to the image being released. It runs compose-lint inside
+      # the image and fails when a fact a statement relies on has stopped
+      # holding. See tests/smoke/assert_vex_claims.py and ADR-012.
+      - name: Test — image matches the OpenVEX base-image statements (hardened)
+        run: |
+          docker run --rm \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --network none \
+            --user 65532:65532 \
+            --pids-limit 256 \
+            --entrypoint /venv/bin/python3 \
+            -v "${PWD}/tests/smoke:/src/smoke:ro" \
+            composelint/compose-lint:release-smoke /src/smoke/assert_vex_claims.py
