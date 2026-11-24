@@ -61,7 +61,7 @@ Every pip path needs Python 3.11+; the Docker image is self-contained.
 **Docker** — [composelint/compose-lint](https://hub.docker.com/r/composelint/compose-lint)
 
 ```bash
-docker run --rm -v "$(pwd):/src" composelint/compose-lint:1.8.1
+docker run --rm -v "$(pwd):/src" composelint/compose-lint:1.8.2
 ```
 
 The Docker image is distroless, multi-arch, and runs nonroot; see
@@ -99,7 +99,7 @@ compose-lint --explain CL-0005
 Docker equivalent:
 
 ```bash
-docker run --rm -v "$(pwd):/src" composelint/compose-lint:1.8.1 docker-compose.prod.yml
+docker run --rm -v "$(pwd):/src" composelint/compose-lint:1.8.2 docker-compose.prod.yml
 ```
 
 <details>
@@ -294,7 +294,7 @@ runs it against a live Forgejo.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/tmatens/compose-lint
-    rev: v1.8.1
+    rev: v1.8.2
     hooks:
       - id: compose-lint
 ```
