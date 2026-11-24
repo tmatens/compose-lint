@@ -61,15 +61,17 @@ def test_every_base_image_statement_is_guarded_by_the_smoke_check() -> None:
 
 def test_every_guarded_statement_is_named_by_a_check() -> None:
     smoke = _smoke()
-    named: set[str] = {"CVE-2026-3479"}  # the recorded pkgutil.get_data call count
+    # pkgutil.get_data is guarded by a recorded call count, not by a table.
+    named: set[str] = set(smoke.PY_GET_DATA)
     for table in (
         smoke.FORBIDDEN_MODULES,
         smoke.FORBIDDEN_LIBRARIES,
         smoke.FORBIDDEN_IMPORTS,
+        smoke.FORBIDDEN_CRYPTO_PREFIXES,
         smoke.FORBIDDEN_FILES,
     ):
         for cves in table.values():
-            named.update(cve.strip() for cve in cves.split(","))
+            named.update(cves)
     assert named == set(smoke.GUARDED)
 
 

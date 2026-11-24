@@ -52,7 +52,7 @@ Rather than chase the exact regex shape (which Scout's behaviour is undocumented
 
 ## Base-image statements name no subcomponent (amendment 2026-11-24)
 
-Docker Scout 1.28.0 began identifying the Debian release of the distroless base and reporting its packages' CVEs. Issue #1365 reviewed the ones Debian will not fix and added `not_affected` statements for 13 of them. The pip statements' shape, a bare `pkg:pypi/pip` subcomponent, does not carry over to a Debian package. One scan with each scanner, over a document that named the subcomponent a different way on each statement, gave:
+Docker Scout 1.28.0 began identifying the Debian release of the distroless base and reporting its packages' CVEs. Issue #1365 reviewed the ones Debian will not fix and added `not_affected` statements for 13 of them; a second review added 41 of the newer ones, on the same terms. The pip statements' shape, a bare `pkg:pypi/pip` subcomponent, does not carry over to a Debian package. One scan with each scanner, over a document that named the subcomponent a different way on each statement, gave:
 
 | Subcomponent | Docker Scout 1.29.0 | Trivy 0.76.2 |
 |---|---|---|
