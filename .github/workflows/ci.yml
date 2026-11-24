@@ -108,7 +108,11 @@ jobs:
           if echo "${code_changed}" | grep -qE '^(src/|tests/|scripts/|docs/|README\.md$|mkdocs\.yml$|pyproject\.toml$|requirements[.-].*lock$|action\.yml$|\.pre-commit-hooks\.yaml$|\.github/scripts/|\.github/workflows/ci\.yml$)'; then
             code=true
           fi
-          if match '^(Dockerfile$|\.dockerignore$|requirements\.lock$|requirements-build\.lock$|pyproject\.toml$|src/)'; then
+          # .vex/ and tests/smoke/ are here because the OpenVEX base-image
+          # statements are only true of an image tests/smoke/assert_vex_claims.py
+          # has checked: a new statement, or a change to the check, has to
+          # build the image and run it.
+          if match '^(Dockerfile$|\.dockerignore$|requirements\.lock$|requirements-build\.lock$|pyproject\.toml$|src/|\.vex/|tests/smoke/)'; then
             docker=true
           fi
           # zizmor.yml and the composite action are zizmor inputs; a change
@@ -1534,6 +1538,20 @@ jobs:
             --entrypoint /venv/bin/python3 \
             -v "${PWD}/tests/smoke/assert_pip_stripped.py:/src/check.py:ro" \
             composelint/compose-lint:pr-smoke /src/check.py
+
+      # The OpenVEX document also declares a set of Debian base-image CVEs
+      # not_affected, in a form that names no package version and so keeps
+      # applying when the base image or compose-lint changes (ADR-012). This
+      # is what keeps those statements true: it runs compose-lint inside the
+      # image and fails when a fact one of them relies on stops holding, on
+      # the PR that changed it. A base digest bump changes the Dockerfile, so
+      # it runs here too. No --user: the check asserts the image's default.
+      - name: Image matches the OpenVEX base-image statements
+        run: |
+          docker run --rm \
+            --entrypoint /venv/bin/python3 \
+            -v "${PWD}/tests/smoke:/src/smoke:ro" \
+            composelint/compose-lint:pr-smoke /src/smoke/assert_vex_claims.py
 
   action-smoke:
     name: Smoke test action.yml

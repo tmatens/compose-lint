@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The OpenVEX document covers 13 Debian base-image CVEs.** Docker Scout
+  1.28.0 began reporting the CVEs of the distroless base's Debian packages.
+  Thirteen that Debian will not fix are now marked `not_affected`, each after
+  its claim was checked against the published image: four whose affected code
+  is not in the image, seven whose code is present and never loaded or called
+  by compose-lint, and two whose trigger input to compose-lint cannot reach.
+  Each impact statement says what was checked. These statements name no
+  package version, the only form Docker Scout and Trivy both honour, so a new
+  Docker smoke, `tests/smoke/assert_vex_claims.py`, re-checks the facts they
+  rely on inside every image built, on pull requests and at release. Document
+  version 6. See the amendment to
+  [ADR-012](docs/adr/012-vex-product-identifier.md). (#1365)
+
 ## [1.8.1] - 2026-11-23
 
 1.8.0 was tagged but never published: the release pipeline stopped before
