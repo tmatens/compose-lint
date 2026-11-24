@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every image built, on pull requests and at release. Document version 7.
   See the amendment to
   [ADR-012](docs/adr/012-vex-product-identifier.md). (#1365)
+- **The published image moves to a newer distroless base.**
+  `gcr.io/distroless/python3-debian13:nonroot` is repinned from
+  `sha256:6c4cb3bf…` to `sha256:e36c26ad…`, picking up the base image's own
+  updates.
+- **The Docker image and the GitHub Action's default install use PyYAML
+  6.0.4.** `requirements.lock` moves from 6.0.3. Installing with pip is
+  unchanged: compose-lint still accepts any PyYAML from 6.0.2 below 7.
 
 ## [1.8.1] - 2026-11-23
 
