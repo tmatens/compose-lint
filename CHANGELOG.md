@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   does not treat as security bugs and Debian lists as unfixed. It says why
   they carry no VEX statement. The README's security posture section now
   describes the document's full scope, not pip alone, and links there.
+- **The verification guide shows how to apply the OpenVEX document in a
+  scan.** No scanner applies it by default. [docs/verifying.md](docs/verifying.md)
+  now has the Trivy option that finds the attested document, and the
+  commands that extract it for Grype and Docker Scout, which do not look
+  for it.
 - **An image CVE with no fix now gets a decision.** The daily vulnerability
   report scanned the published image for fixable CVEs only, so one with no
   fix became a code-scanning alert and reached nobody. It now also scans

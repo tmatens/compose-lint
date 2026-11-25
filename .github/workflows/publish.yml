@@ -854,10 +854,11 @@ jobs:
             "composelint/compose-lint@${DIGEST}"
       - name: Attest OpenVEX to image
         # Attach the OpenVEX document as an in-toto attestation on the
-        # image manifest. Scanners that consume cosign attestations (Scout,
-        # Trivy with --vex + attestation discovery, recent Grype) will find
-        # the VEX without needing a `--vex` URL passed on the CLI, and can
-        # mark unreachable pip CVEs as not_affected automatically.
+        # image manifest, signed with this workflow's identity. No scanner
+        # applies it by default. Tested on 1.8.2: Trivy 0.76 finds it when
+        # run with `--vex oci`; Grype 0.122 and Docker Scout 1.30 do not
+        # discover it and need the document passed as a file, and Scout
+        # also needs `--vex-author`. docs/verifying.md has the commands.
         # Predicate type `openvex` is a known cosign shortname mapped to
         # https://openvex.dev/ns/v0.2.0.
         env:
