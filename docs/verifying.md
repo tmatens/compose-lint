@@ -45,7 +45,7 @@ Use `--type openvex` for the VEX document.
 
 The image is built on a distroless Debian base, and an image scanner reports the CVEs of that base's packages along with compose-lint's own. As of 1.8.2 they fall into two groups.
 
-**Marked `not_affected` in the OpenVEX document.** [`.vex/compose-lint.openvex.json`](https://github.com/tmatens/compose-lint/blob/main/.vex/compose-lint.openvex.json) carries 60 statements: 54 for CVEs in the base image's Debian packages and 6 for pip, whose code is stripped from the image. Each statement's `impact_statement` says why the CVE does not apply and what was checked. Docker Scout and Trivy leave these out of their results when given the document; a scanner that does not read VEX lists them. A smoke test run inside every image built re-checks the facts the base-image statements rely on.
+**Marked `not_affected` in the OpenVEX document.** [`.vex/compose-lint.openvex.json`](https://github.com/tmatens/compose-lint/blob/main/.vex/compose-lint.openvex.json) carries 60 statements: 54 for CVEs in the base image's Debian packages and 6 for pip, whose code is stripped from the image. Each statement's `impact_statement` says why the CVE does not apply and what was checked. A scanner leaves these out of its results once it is given the document, and lists them otherwise. [Applying the OpenVEX document to your own scan](#applying-the-openvex-document-to-your-own-scan) has the commands. A smoke test run inside every image built re-checks the facts the base-image statements rely on.
 
 **Open, with no fix to take.** Three findings have no statement and stay in every scan. They are recorded, with the reason, in [`.vex/open-findings.json`](https://github.com/tmatens/compose-lint/blob/main/.vex/open-findings.json):
 
@@ -60,6 +60,39 @@ All three were filed in 2019 as mitigation bypasses. glibc upstream does not tre
 They have no VEX statement because none would be true. Each describes a weaker exploit mitigation in glibc itself, not a code path that can be shown absent or unreached, and OpenVEX has no justification for that. Leaving them visible is the accurate record.
 
 A finding outside both groups is new. If a fix exists it arrives with a base image update: the pinned digest is moved as new ones are published, and the next release ships it. One that still has no fix 14 days after publication is reviewed and ends up in one of the two groups above; a daily check compares a scan of the published image with both files and raises anything in neither.
+
+### Applying the OpenVEX document to your own scan
+
+No scanner applies the document by default. These commands were tested on 1.8.2 with Trivy 0.76, Grype 0.122, Docker Scout 1.30 and OSV-Scanner 2.7.
+
+Trivy can find the attested document itself:
+
+```bash
+trivy image --vex oci "composelint/compose-lint:${VERSION}"
+```
+
+Trivy marks this option experimental, and its documentation does not say whether it checks who signed the attestation. Run the `cosign verify-attestation` command above first if that matters to you.
+
+Grype and Docker Scout do not look for the attestation, so they need the document as a file. This verifies the attestation and writes the document out of it:
+
+```bash
+cosign verify-attestation --type openvex \
+  --certificate-identity "https://github.com/tmatens/compose-lint/.github/workflows/publish.yml@refs/tags/v${VERSION}" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  "composelint/compose-lint:${VERSION}" \
+  | jq -r '.payload' | base64 -d | jq '.predicate' > compose-lint.openvex.json
+```
+
+```bash
+grype "composelint/compose-lint:${VERSION}" --vex compose-lint.openvex.json
+
+docker scout cves --vex-location compose-lint.openvex.json --vex-author '.*' \
+  "composelint/compose-lint:${VERSION}"
+```
+
+Docker Scout accepts VEX statements only from Docker's own authors unless `--vex-author` says otherwise. Without that option it loads the document and applies none of it. The Vulnerabilities column on Docker Hub does not apply the document either.
+
+OSV-Scanner has no option to read a VEX document.
 
 ## Python package
 
