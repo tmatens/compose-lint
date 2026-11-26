@@ -686,6 +686,20 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=composelint/compose-lint,push-by-digest=true,name-canonical=true,push=true
+          # An SBOM attestation written by BuildKit, beside the provenance
+          # it already writes. It is there for Docker Hub's Vulnerabilities
+          # column, which reads a build-time SBOM when the image has one and
+          # otherwise analyses the image itself. For 1.8.1 and 1.8.2 that
+          # analysis showed "None found" while the Scout CLI reported 60 or
+          # more CVEs on the same digests. The SBOM that docker-publish
+          # attests with cosign is a separate document and stays: it is the
+          # one signed with this workflow's identity (docs/verifying.md).
+          # BuildKit's default scanner tag, stable-1, moves, so the image is
+          # pinned here. ci.yml's release-actions-smoke builds with the same
+          # pin on every PR that touches a workflow, and
+          # tests/test_release_layer.py holds the two copies together.
+          # renovate: datasource=docker depName=docker/buildkit-syft-scanner
+          sbom: generator=docker/buildkit-syft-scanner:1.12.1@sha256:873a7458c3c8ac8e32c7b796c10e1600b07b963d2aa000a72a2d97aaaa2d6315
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}

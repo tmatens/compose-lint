@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The image is built with an SBOM attestation for Docker Hub.** Docker
+  Hub showed "None found" under Vulnerabilities for 1.8.1 and 1.8.2 while
+  the Scout CLI reported 60 or more CVEs on the same digests. Those images
+  had no build-time SBOM, so Hub analysed them itself. The release build
+  now asks BuildKit for one, with the scanner image pinned. The SBOM
+  attested with cosign is unchanged and is still the one
+  [docs/verifying.md](docs/verifying.md) verifies. Whether Hub's numbers
+  then match a scan is checked on the first release that has it.
 - **The verification guide says what an image scan reports.** A new section
   in [docs/verifying.md](docs/verifying.md) separates the CVEs the OpenVEX
   document marks `not_affected` from the three findings that stay open
