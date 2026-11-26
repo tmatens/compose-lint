@@ -725,6 +725,43 @@ jobs:
           done
       - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
       - run: cosign version
+      # The SBOM attestation publish.yml's docker-build asks BuildKit for,
+      # with the same scanner pin. Nothing is pushed: the local exporter
+      # writes the in-toto statement to a file. The check is what Docker
+      # Hub needs from it to match advisories: Debian packages that name
+      # their release, and compose-lint itself. A scanner bump that drops
+      # either fails here, before the tag. Runs before the Docker Hub login
+      # below, so the build has no credential in reach. The cache is the
+      # one docker-smoke's amd64 leg writes; this job only reads it.
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the image with its SBOM attestation
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          provenance: false
+          # renovate: datasource=docker depName=docker/buildkit-syft-scanner
+          sbom: generator=docker/buildkit-syft-scanner:1.12.1@sha256:873a7458c3c8ac8e32c7b796c10e1600b07b963d2aa000a72a2d97aaaa2d6315
+          outputs: type=local,dest=${{ runner.temp }}/image-sbom
+          cache-from: type=gha,scope=amd64
+      - name: Image SBOM lists Debian packages with their release
+        env:
+          SBOM: ${{ runner.temp }}/image-sbom/sbom.spdx.json
+        run: |
+          set -euo pipefail
+          purls="$(jq -r '.predicate.packages[] | (.externalRefs // [])[]
+            | select(.referenceType == "purl") | .referenceLocator' "${SBOM}")"
+          debs="$(grep -c '^pkg:deb/debian/' <<< "${purls}" || true)"
+          named="$(grep -cE '^pkg:deb/debian/.*[?&]distro=debian-[0-9]+' <<< "${purls}" || true)"
+          if [ "${debs}" -eq 0 ] || [ "${named}" -ne "${debs}" ]; then
+            echo "::error::Image SBOM has ${debs} Debian packages, ${named} of them naming a Debian release"
+            exit 1
+          fi
+          if ! grep -q '^pkg:pypi/compose-lint@' <<< "${purls}"; then
+            echo "::error::Image SBOM does not list compose-lint"
+            exit 1
+          fi
+          echo "Image SBOM lists ${debs} Debian packages, all naming their release, and compose-lint."
       # Same login, pre-seed and action pin as publish.yml's docker-scout.
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:

@@ -73,6 +73,14 @@
         "uses: (?<depName>[\\w.-]+/[\\w.-]+)@(?<currentDigest>[0-9a-f]{40}) # (?<currentValue>v\\S+)"
       ],
       "datasourceTemplate": "github-tags"
+    },
+    {
+      "customType": "regex",
+      "description": "The image BuildKit runs to write the SBOM attestation on the release image (publish.yml's docker-build). It is a value of docker/build-push-action's `sbom:` input, which no built-in manager reads, and BuildKit's own default for it is the moving tag stable-1. Each copy is a `# renovate: datasource=docker depName=…` line followed by `sbom: generator=name:tag@sha256:<index digest>`; the tag is what Renovate looks the digest up by. There are two copies, publish.yml's and the one ci.yml's release-actions-smoke builds with on every PR that touches a workflow. They share a depName, so one PR moves both, and that PR's run of release-actions-smoke is the review: it fails if the SBOM stops listing the Debian packages with their release, or compose-lint. tests/test_release_layer.py fails if the copies differ. Bumps merge under the repo defaults.",
+      "managerFilePatterns": ["/^\\.github/workflows/(ci|publish)\\.yml$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)\\n\\s+sbom: generator=[^:\\s]+:(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})"
+      ]
     }
   ],
   "packageRules": [

@@ -883,6 +883,29 @@ def test_the_smoked_release_actions_share_one_renovate_group() -> None:
     ]
 
 
+def test_every_copy_of_the_image_sbom_scanner_pin_is_the_same() -> None:
+    # publish.yml's docker-build asks BuildKit for an SBOM attestation, and
+    # release-actions-smoke builds with the same scanner image so that a bump
+    # of it has run before the tag. As with the actions above, that run only
+    # vouches for the release if both name the same image.
+    pin = re.compile(
+        r"sbom: generator=(\S+:[^@\s]+@sha256:[0-9a-f]{64})$", re.MULTILINE
+    )
+    pins = {
+        path.name: set(pin.findall(path.read_text(encoding="utf-8")))
+        for path in sorted(WORKFLOWS.glob("*.yml"))
+    }
+    pins = {name: found for name, found in pins.items() if found}
+    assert sorted(pins) == ["ci.yml", "publish.yml"], pins
+    assert len(set().union(*pins.values())) == 1, pins
+    # Every `sbom:` input is one of those pins: `sbom: true` would run
+    # BuildKit's default scanner tag, which moves.
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        text = path.read_text(encoding="utf-8")
+        inputs = re.findall(r"^\s+sbom: .*$", text, re.MULTILINE)
+        assert len(inputs) == len(pin.findall(text)), (path.name, inputs)
+
+
 def test_ci_reads_secrets_only_in_release_actions_smoke() -> None:
     # The Docker Hub read token is the one secret ci.yml uses, for the Scout
     # scan above. Keep it from spreading to other jobs by copy and paste.

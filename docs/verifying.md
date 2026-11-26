@@ -41,6 +41,8 @@ cosign verify-attestation --type spdxjson \
 
 Use `--type openvex` for the VEX document.
 
+From the release after 1.8.2, the image index also holds an SBOM that BuildKit wrote during the build, next to the build provenance. It is there so Docker Hub's Vulnerabilities column has an SBOM to read. It is not signed with the identity above, so verify the cosign one.
+
 ## What a scan of the image reports
 
 The image is built on a distroless Debian base, and an image scanner reports the CVEs of that base's packages along with compose-lint's own. As of 1.8.2 they fall into two groups.
