@@ -185,7 +185,6 @@ OWN_WORDS = {
     "CL0020_credential_env_keys.py": {"location"},
     "CL0024_host_exec_cap_add.py": {"HOST_EXEC_CAPS[bare]"},
     "CL0025_writable_host_root.py": {"matched", "_GRANTS[matched]"},
-    "CL0026_resource_limits.py": {"missing"},
     "CL0027_lesser_cap_add.py": {"LESSER_CAPS[bare]"},
     "CL0028_host_reach_cap_add.py": {"HOST_REACH_CAPS[bare]"},
     "CL0029_host_availability_cap_add.py": {"HOST_AVAILABILITY_CAPS[bare]"},

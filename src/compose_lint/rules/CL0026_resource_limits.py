@@ -245,12 +245,66 @@ class ResourceLimitsRule(BaseRule):
         if has_memory and has_cpu:
             return
 
+        # The message and the fix name only what is missing. A service that
+        # already bounds memory is not told that Docker imposes "neither", nor
+        # to "bound both". Each branch is written out whole so that no value
+        # is interpolated into either text.
         if not has_memory and not has_cpu:
-            missing = "no memory limit and no CPU limit"
+            message = (
+                "Service declares no memory limit and no CPU limit. Docker "
+                "imposes neither by default, so the container can consume the "
+                "host's memory or CPU until other workloads are starved."
+            )
+            fix = (
+                "Bound both, sized from the workload's observed steady state:\n"
+                "  deploy:\n"
+                "    resources:\n"
+                "      limits:\n"
+                "        memory: 512M\n"
+                "        cpus: '0.50'\n"
+                "Compose v2 honours deploy.resources.limits outside Swarm.\n"
+                "The v2 spellings mem_limit: 512m and cpus: 0.50 also work.\n"
+                "Reservations are not limits: mem_reservation and\n"
+                "cpu_shares express priority under contention and leave the\n"
+                "hard ceiling unbounded.\n"
+            )
         elif not has_memory:
-            missing = "no memory limit"
+            message = (
+                "Service declares no memory limit. Docker imposes none by "
+                "default, so the container can consume the host's memory "
+                "until other workloads are starved."
+            )
+            fix = (
+                "Add a memory limit, sized from the workload's observed steady\n"
+                "state:\n"
+                "  deploy:\n"
+                "    resources:\n"
+                "      limits:\n"
+                "        memory: 512M\n"
+                "Compose v2 honours deploy.resources.limits outside Swarm.\n"
+                "The v2 spelling mem_limit: 512m also works.\n"
+                "A reservation is not a limit: mem_reservation expresses\n"
+                "priority under contention and leaves the hard ceiling\n"
+                "unbounded.\n"
+            )
         else:
-            missing = "no CPU limit"
+            message = (
+                "Service declares no CPU limit. Docker imposes none by "
+                "default, so the container can consume the host's CPU until "
+                "other workloads are starved."
+            )
+            fix = (
+                "Add a CPU limit, sized from the workload's observed steady\n"
+                "state:\n"
+                "  deploy:\n"
+                "    resources:\n"
+                "      limits:\n"
+                "        cpus: '0.50'\n"
+                "Compose v2 honours deploy.resources.limits outside Swarm.\n"
+                "The v2 spelling cpus: 0.50 also works.\n"
+                "A share is not a limit: cpu_shares expresses priority under\n"
+                "contention and leaves the hard ceiling unbounded.\n"
+            )
 
         # The two keys that read like a CPU limit and are not one. Named in
         # the fix when the service sets one, because the finding otherwise
@@ -266,26 +320,8 @@ class ResourceLimitsRule(BaseRule):
             rule_id="CL-0026",
             severity=Severity.MEDIUM,
             service=service_name,
-            message=(
-                f"Service declares {missing}. Docker imposes neither by "
-                "default, so the container can consume the host's memory or "
-                "CPU until other workloads are starved."
-            ),
+            message=message,
             line=lines.get(f"services.{service_name}"),
-            fix=(
-                "Bound both, sized from the workload's observed steady state:\n"
-                "  deploy:\n"
-                "    resources:\n"
-                "      limits:\n"
-                "        memory: 512M\n"
-                "        cpus: '0.50'\n"
-                "Compose v2 honours deploy.resources.limits outside Swarm.\n"
-                "The v2 spellings mem_limit: 512m and cpus: 0.50 also work.\n"
-                "Reservations are not limits: mem_reservation and\n"
-                "cpu_shares express priority under contention and leave the\n"
-                "hard ceiling unbounded.\n"
-            )
-            + windows_note
-            + "Full guide: compose-lint --explain CL-0026",
+            fix=fix + windows_note + "Full guide: compose-lint --explain CL-0026",
             references=REFERENCES,
         )
