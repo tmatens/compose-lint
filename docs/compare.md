@@ -1,17 +1,18 @@
 # compose-lint compared with DCLint, KICS, Checkov, Trivy, Semgrep, DockSec and Hadolint
 
-Which of these tools read a Docker Compose file and check it for security
-misconfigurations? Five do: compose-lint, DCLint, KICS, Semgrep's
-`p/docker-compose` ruleset and OWASP DockSec. Three do not: Checkov, Trivy
-and Hadolint lint Dockerfiles or images, which is a different file.
+Five of these eight tools read a Docker Compose file and check it for
+security misconfigurations: compose-lint, DCLint, KICS, Semgrep's
+`p/docker-compose` ruleset and OWASP DockSec. Checkov, Trivy and Hadolint
+lint Dockerfiles or images and do not read a Compose file.
 
-Two of the five, Semgrep and KICS, only work fully on files that still carry
-the obsolete top-level `version:` key. [The `version:` key](#the-version-key)
-below has the detail. The ninth option that search results keep suggesting, a
-script of your own, has its own section too.
+I maintain compose-lint, and I ran all eight on the same files. Two of the
+five, Semgrep and KICS, only work fully on files that still carry the obsolete
+top-level `version:` key. [The `version:` key](#the-version-key) below has the
+detail. Writing a script of your own is a ninth option, and it has
+[its own section](#when-a-script-of-your-own-is-enough).
 
-Sources are linked under each heading. The dates and versions behind the
-tables are under [Corrections](#corrections).
+Sources are linked under each heading. The versions and dates behind the
+tables are under [Reproduce it](#reproduce-it).
 
 | Tool | Reads Compose files | Compose security rules it has | Auto-fix for Compose | SARIF | Scope |
 |---|---|---|---|---|---|
@@ -30,59 +31,76 @@ which of them fired on which file. What compose-lint has no rule for, and
 why, is listed at the end of the page. It does not replace the image scanner
 or the Dockerfile linter you already run.
 
-## Run on the same file
+## Against the OWASP cheat-sheet rules
 
-Documentation describes what a tool is meant to check. A run shows what it
-checked. The fixture has sixteen services, each with one deliberate
-misconfiguration, written to the Compose Specification, so without the
-obsolete `version:` key. Each tool was run from its published image on
-2026-11-15. The fixture and the exact commands are in
-[Reproduce it](#reproduce-it).
+The table above comes from each tool's documentation, so I also ran every
+tool on the same files to see what it reported. The first fixture is built
+from the [OWASP Docker Security Cheat
+Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html),
+with one service per violation that can be expressed in a Compose file. That
+covers Rules 1 to 8, 12 and 13. Rules 0, 9, 10 and 11 concern the host, the
+CI pipeline and the daemon.
 
-| Misconfiguration | compose-lint | KICS | DockSec | Semgrep | DCLint |
+It has twenty-one services and no `version:` key. I ran each tool from its
+published image on 2026-11-15. The fixture and the exact commands are in
+[Reproduce it](#reproduce-it). This fixture shows where compose-lint has no
+rule.
+
+| OWASP rule — violation | compose-lint | KICS | DockSec | Semgrep | DCLint |
 |---|---|---|---|---|---|
-| Docker socket mounted | ✅ | ✅ | ✅ | ✗ † | — |
-| `privileged: true` | ✅ | ✅ | ✅ | ✗ † | — |
-| `no-new-privileges` missing | ✅ | ✅ | ✅ | ✗ † | — |
-| Unpinned `:latest` tag | ✅ | — | ✅ | — | ✅ |
-| Port published on `0.0.0.0` | ✅ | ✅ | ✗ ‡ | — | ✅ |
-| No `cap_drop: [ALL]` | ✅ | ✅ | — | — | — |
-| Writable root filesystem | ✅ | — | ✅ | ✗ † | — |
-| `network_mode: host` | ✅ | ✅ | ✅ | — | — |
-| `seccomp:unconfined` | ✅ | ✅ | ✅ | ✗ † | — |
-| `pid: host` / `ipc: host` | ✅ | ✅ | ✅ | — | — |
-| Sensitive host path mounted | ✅ | ✅ | ✅ | — | — |
-| `logging: driver: none` | ✅ | — | — | — | — |
-| `user: root` | ✅ | — | ✗ | — | — |
-| Tag without digest | ✅ | — | — | — | — |
-| Credential in `environment:` | ✅ | ✅ | ✅ | — | — |
-| No memory/CPU limits | ✅ | ✗ \* | ✅ | — | — |
-| **Caught, of 16** | **16** | **10** | **11** | **0** † | **2** |
+| 1 — Docker socket mounted | Yes | Yes | Yes | Missed † | No rule |
+| 2 — `user: root` set explicitly | Yes | No rule | Missed | No rule | No rule |
+| 2 — no `user:`, image default | No rule | No rule | Yes | No rule | No rule |
+| 3 — `privileged: true` | Yes | Yes | Yes | Missed † | No rule |
+| 3 — default capability set, nothing dropped | Yes | Yes | No rule | No rule | No rule |
+| 3 — `cap_drop: [ALL]` then `cap_add: [SYS_ADMIN]` | Yes | Yes | Yes | No rule | No rule |
+| 4 — `no-new-privileges` not set | Yes | Yes | Yes | Missed † | No rule |
+| 5 — `network_mode: host` | Yes | Yes | Yes | No rule | No rule |
+| 5 — no `networks:`, joins the shared default network | No rule | No rule | Yes | No rule | No rule |
+| 5a — port published on `0.0.0.0` | Yes | Yes | Missed ‡ | No rule | Yes |
+| 6 — `seccomp:unconfined` | Yes | Yes | Yes | Missed † | No rule |
+| 6 — `apparmor:unconfined` | Yes | No rule | Yes | No rule | No rule |
+| 6 — SELinux `label:disable` | Yes | No rule | Missed | Missed † | No rule |
+| 7 — no memory or CPU limits | Yes | Missed \* | Yes | No rule | No rule |
+| 7 — no `pids_limit` | No rule | Missed | No rule | No rule | No rule |
+| 7 — `restart: always`, unbounded | No rule | No rule | No rule | No rule | No rule |
+| 8 — root filesystem writable | Yes | No rule | Yes | Missed † | No rule |
+| 8 — host directory mounted read-write | No rule | No rule | No rule | No rule | No rule |
+| 12 — credential as a literal `environment:` value | Yes | Yes | Yes | No rule | No rule |
+| 13 — mutable `:latest` tag | Yes | No rule | Yes | No rule | Yes |
+| 13 — version tag without a digest | Yes | No rule | No rule | No rule | No rule |
+| **Flagged, of 21** | **16** | **9** | **13** | **0** † | **2** |
+| **No rule for it** | 5 | 10 | 5 | 15 | 19 |
+| **Has a rule, missed it** | 0 | 2 | 3 | 6 † | 0 |
 
-- ✅ flagged · ✗ not flagged · — no rule for it
-- \* KICS: the memory and CPU queries need the `version:` key. With
-  `version: "3.9"` added it catches 11.
-- † Semgrep: all six rules need the `version:` key. With it added they
-  produced 31 findings and caught these 5.
-- ‡ DockSec: its all-interfaces rule covers a fixed list of admin, database
-  and broker ports, and the fixture publishes 8080.
+- Yes: flagged
+- Missed: has a rule for it, did not flag it
+- No rule: the tool has no rule for it
+- \* KICS: fires with the obsolete `version: "3.9"` key present, which makes
+  its total 10 of 21.
+- † Semgrep: all six rules need that key. With it added they catch these 6.
+- ‡ DockSec: only for a fixed list of sensitive ports.
 
-The run contradicted the documentation in three places. Two are about the
-`version:` key and are in the next section. The third is that DockSec's
-Compose rules need only Trivy installed. Its default mode also scans each
-service's image, which needs the Docker CLI, and runs an AI explanation pass,
-which needs an AI provider key, OpenAI by default. Without either, it still
-reports the Compose findings but exits with code 3. The run used
-`--scan-only`, which skips the AI pass.
+Checkov, Trivy and Hadolint flagged 0 of 21, with or without the `version:`
+key, and are left off the table.
 
-Checkov, Trivy and Hadolint were run on the same file too and, as their
-documentation says, none of them read it as a Compose file. Their sections
-below say what each one checks instead.
+compose-lint flagged 16 of the 21 and has no rule for the other five. They
+are listed under
+[What compose-lint does not do](#what-compose-lint-does-not-do). It missed
+none of the rules it has. For the other four tools in the table:
 
-Versions, as each tool reported them: compose-lint 1.6.0, DCLint 3.1.0,
-KICS 2.2.1, DockSec 2026.8.19, Semgrep 1.185.0, Checkov 3.4.5, Trivy 0.76.2,
-Hadolint 2.15.1. DockSec's image tag is 2026.9.21. The release declares that
-version but the tool still reports the older string.
+- **DockSec** flagged 13 and is the only tool that models the shared default
+  network. It misses an explicit `user: root`, because it checks for
+  the absence of `user:`. Its port rule did not cover the port the fixture
+  publishes. Its disabled-`security_opt` rule fired on `seccomp:unconfined`
+  and `apparmor:unconfined` but not on `label:disable`.
+- **KICS** flagged 9. It has queries for two of the three Rule 7 items and
+  fired neither on a file without `version:`. With `version: "3.9"` it
+  recovers memory and CPU, which makes 10. Its PID query only fires on the
+  old version 2 format, and it has no query for `restart: always`.
+- **None of the five** flags a read-write bind mount that could be `:ro`, and
+  none flags `restart: always`. Of the five, only compose-lint flags a missing
+  digest.
 
 ## The `version:` key
 
@@ -92,7 +110,8 @@ one. Two tools still depend on it.
 
 **Semgrep's six Compose rules all require it.** Each one is written as
 `pattern-inside: version: … services: …`, so on a Compose Specification file
-they report nothing. Semgrep's own summary for the first run was six rules,
+they report nothing. Semgrep's own summary for the
+[same-file run](#run-on-the-same-file) was six rules,
 one file, zero findings. With `version: "3.9"` added and nothing else changed,
 the same rules produced 31 findings and caught 5 of the 16. The ruleset's own
 test fixtures carry `version: "3.9"`.
@@ -116,92 +135,26 @@ One more KICS query has a precondition of its own. `No New Privileges Not Set`
 only fires on a service that already has a `security_opt:` list. Services
 without one get the broader `Security Opt Not Set` instead.
 
-## Against the OWASP cheat-sheet rules
-
-The first fixture was built from compose-lint's own rules, so a full score
-on it only shows that those rules fire. It says nothing about coverage. The
-second fixture is built from the [OWASP Docker Security Cheat
-Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html)
-instead, with one service per violation that can be expressed in a Compose
-file. That covers Rules 1 to 8, 12 and 13. Rules 0, 9, 10 and 11 concern the
-host, the CI pipeline and the daemon.
-
-It has twenty-one services and no `version:` key, and the same tools ran it.
-It was run on 2026-11-15 with the versions above. This fixture shows where
-compose-lint has no rule.
-
-| OWASP rule — violation | compose-lint | KICS | DockSec | Semgrep | DCLint |
-|---|---|---|---|---|---|
-| 1 — Docker socket mounted | ✅ | ✅ | ✅ | ✗ † | — |
-| 2 — `user: root` set explicitly | ✅ | — | ✗ | — | — |
-| 2 — no `user:`, image default | — | — | ✅ | — | — |
-| 3 — `privileged: true` | ✅ | ✅ | ✅ | ✗ † | — |
-| 3 — default capability set, nothing dropped | ✅ | ✅ | — | — | — |
-| 3 — `cap_drop: [ALL]` then `cap_add: [SYS_ADMIN]` | ✅ | ✅ | ✅ | — | — |
-| 4 — `no-new-privileges` not set | ✅ | ✅ | ✅ | ✗ † | — |
-| 5 — `network_mode: host` | ✅ | ✅ | ✅ | — | — |
-| 5 — no `networks:`, joins the shared default network | — | — | ✅ | — | — |
-| 5a — port published on `0.0.0.0` | ✅ | ✅ | ✗ ‡ | — | ✅ |
-| 6 — `seccomp:unconfined` | ✅ | ✅ | ✅ | ✗ † | — |
-| 6 — `apparmor:unconfined` | ✅ | — | ✅ | — | — |
-| 6 — SELinux `label:disable` | ✅ | — | ✗ | ✗ † | — |
-| 7 — no memory or CPU limits | ✅ | ✗ \* | ✅ | — | — |
-| 7 — no `pids_limit` | — | ✗ | — | — | — |
-| 7 — `restart: always`, unbounded | — | — | — | — | — |
-| 8 — root filesystem writable | ✅ | — | ✅ | ✗ † | — |
-| 8 — host directory mounted read-write | — | — | — | — | — |
-| 12 — credential as a literal `environment:` value | ✅ | ✅ | ✅ | — | — |
-| 13 — mutable `:latest` tag | ✅ | — | ✅ | — | ✅ |
-| 13 — version tag without a digest | ✅ | — | — | — | — |
-| **Flagged, of 21** | **16** | **9** | **13** | **0** † | **2** |
-| **No rule for it** | 5 | 10 | 5 | 15 | 19 |
-| **Has a rule, missed it** | 0 | 2 | 3 | 6 † | 0 |
-
-- ✅ flagged · ✗ has a rule for it, did not flag it · — no rule for it
-- \* KICS: fires with the obsolete `version: "3.9"` key present, which makes
-  its total 10 of 21.
-- † Semgrep: all six rules need that key. With it added they catch these 6.
-- ‡ DockSec: only for a fixed list of sensitive ports.
-
-Checkov, Trivy and Hadolint are 0 of 21 on both variants and are left off the
-table.
-
-compose-lint has no rule for five of the twenty-one. They are listed under
-[What compose-lint does not do](#what-compose-lint-does-not-do). It missed
-none of the rules it has. For the others:
-
-- **DockSec** is the closest second and the only tool that models the shared
-  default network. It misses an explicit `user: root`, because it checks for
-  the absence of `user:`. Its port rule did not cover the port the fixture
-  publishes. Its disabled-`security_opt` rule fired on `seccomp:unconfined`
-  and `apparmor:unconfined` but not on `label:disable`.
-- **KICS** has queries for two of the three Rule 7 items and fired neither on
-  a file without `version:`. With `version: "3.9"` it recovers memory and
-  CPU. Its PID query only fires on the old version 2 format, and it has no
-  query for `restart: always`.
-- **No tool** flags a read-write bind mount that could be `:ro`, and none
-  flags `restart: always`. Only compose-lint flags a missing digest.
-
 ## Run on a stack spread across files
 
-Both fixtures above are single, self-contained files. Most stacks are not. A
-service inherits from a base with `extends:`, another file is pulled in with
+The other two fixtures are single files, and many stacks are spread across
+several. A service inherits from a base with `extends:`, another file is pulled in with
 `include:`, `compose.override.yml` is merged on top, and values come from
 `.env`. Compose deploys the merged result. A tool that grades each file as
 written can miss a setting that only exists after the merge, or report one
 the merge has already undone.
 
-The third run tests that. Each scenario puts `privileged: true`, the Docker
+This run tests that. Each scenario puts `privileged: true`, the Docker
 socket mount and a port published on all interfaces behind one Compose
 mechanism, and `docker compose config` confirmed that each one deploys them.
 Four more scenarios look dangerous as written and deploy safely.
 
-Every scenario was run once as written and once with `version: "3.9"`
-prepended. KICS, Semgrep and DCLint were given the whole directory, so a base, included
-or override file was in front of them as a file of its own. compose-lint and
-DockSec were given `compose.yaml`, the file `docker compose` starts from. The
-run is from 2026-11-15, with the same versions as the first run. The fixtures and
-commands are in [Reproduce it](#reproduce-it).
+I ran every scenario once as written and once with `version: "3.9"`
+prepended. I gave KICS, Semgrep and DCLint the whole directory, so a base,
+included or override file was in front of them as a file of its own. I gave
+compose-lint and DockSec `compose.yaml`, the file `docker compose` starts
+from. The run is from 2026-11-15, with the same versions as the OWASP run. The
+fixtures and commands are in [Reproduce it](#reproduce-it).
 
 The results are one table per setting.
 
@@ -209,40 +162,40 @@ The results are one table per setting.
 
 | Where the setting comes from | compose-lint | KICS | DockSec | Semgrep |
 |---|---|---|---|---|
-| Written inline (control) | ✅ | ✅ | ✅ | ✗ † |
-| `extends:` a service in the same file | ✅ | ◐ | ◐ | ✗ † |
-| `extends:` a service in another file | ✅ | ◐ | ✗ | ✗ † |
-| `include:` of another file | ✅ | ✅ | ✗ | ✗ † |
-| `compose.override.yml` | ✅ | ✗ | ✗ | ✗ † |
-| YAML anchor and `<<:` merge key | ✅ | ✅ | ✅ | ✗ † |
-| `${VAR:-default}` | ✅ | ✗ | ✗ | ✗ |
-| A value from `.env` | ✅ | ✗ | ✗ | ✗ |
+| Written inline (control) | Yes | Yes | Yes | Missed † |
+| `extends:` a service in the same file | Yes | Base only | Base only | Missed † |
+| `extends:` a service in another file | Yes | Base only | Missed | Missed † |
+| `include:` of another file | Yes | Yes | Missed | Missed † |
+| `compose.override.yml` | Yes | Missed | Missed | Missed † |
+| YAML anchor and `<<:` merge key | Yes | Yes | Yes | Missed † |
+| `${VAR:-default}` | Yes | Missed | Missed | Missed |
+| A value from `.env` | Yes | Missed | Missed | Missed |
 
 **The Docker socket mount**
 
 | Where the setting comes from | compose-lint | KICS | DockSec | Semgrep |
 |---|---|---|---|---|
-| Written inline (control) | ✅ | ✅ | ✅ | ✗ † |
-| `extends:` a service in the same file | ✅ | ◐ | ◐ | ✗ † |
-| `extends:` a service in another file | ✅ | ◐ | ✗ | ✗ † |
-| `include:` of another file | ✅ | ✅ | ✗ | ✗ † |
-| `compose.override.yml` | ✅ | ✗ | ✗ | ✗ † |
-| YAML anchor and `<<:` merge key | ✅ | ✅ | ✅ | ✗ † |
-| `${VAR:-default}` | ✅ | ✗ | ✅ | ✗ |
-| A value from `.env` | ✅ | ✗ | ✗ | ✗ |
+| Written inline (control) | Yes | Yes | Yes | Missed † |
+| `extends:` a service in the same file | Yes | Base only | Base only | Missed † |
+| `extends:` a service in another file | Yes | Base only | Missed | Missed † |
+| `include:` of another file | Yes | Yes | Missed | Missed † |
+| `compose.override.yml` | Yes | Missed | Missed | Missed † |
+| YAML anchor and `<<:` merge key | Yes | Yes | Yes | Missed † |
+| `${VAR:-default}` | Yes | Missed | Yes | Missed |
+| A value from `.env` | Yes | Missed | Missed | Missed |
 
 **A port published on all interfaces**
 
 | Where the setting comes from | compose-lint | KICS |
 |---|---|---|
-| Written inline (control) | ✅ | ✅ |
-| `extends:` a service in the same file | ✅ | ◐ |
-| `extends:` a service in another file | ✅ | ◐ |
-| `include:` of another file | ✅ | ✅ |
-| `compose.override.yml` | ✅ | ✗ |
-| YAML anchor and `<<:` merge key | ✅ | ✅ |
-| `${VAR:-default}` | ✅ | ✗ |
-| A value from `.env` | ✅ | ✅ § |
+| Written inline (control) | Yes | Yes |
+| `extends:` a service in the same file | Yes | Base only |
+| `extends:` a service in another file | Yes | Base only |
+| `include:` of another file | Yes | Yes |
+| `compose.override.yml` | Yes | Missed |
+| YAML anchor and `<<:` merge key | Yes | Yes |
+| `${VAR:-default}` | Yes | Missed |
+| A value from `.env` | Yes | Yes § |
 
 DockSec and Semgrep have no rule for this port, so they are left off the
 port table.
@@ -251,15 +204,16 @@ Four more scenarios carry one or two settings each:
 
 | Scenario | compose-lint | KICS | DockSec | Semgrep |
 |---|---|---|---|---|
-| Socket in the long `volumes:` syntax | ✅ | ✗ | ✅ | ✗ † |
-| Port in the long `ports:` syntax | ✅ | ✅ | — | — |
-| Socket as `secrets:` with `file: /var/run/docker.sock` | ✅ | ✗ | ✗ | ✗ |
-| `seccomp=unconfined` | ✅ | ✗ | ✗ | ✗ |
-| `seccomp:unconfined` (control) | ✅ | ✅ | ✅ | ✗ † |
+| Socket in the long `volumes:` syntax | Yes | Missed | Yes | Missed † |
+| Port in the long `ports:` syntax | Yes | Yes | No rule | No rule |
+| Socket as `secrets:` with `file: /var/run/docker.sock` | Yes | Missed | Missed | Missed |
+| `seccomp=unconfined` | Yes | Missed | Missed | Missed |
+| `seccomp:unconfined` (control) | Yes | Yes | Yes | Missed † |
 
-- ✅ flagged on the service Compose deploys
-- ◐ flagged on the base service, not on the service that extends it
-- ✗ has a rule for it, did not flag it · — no rule for it
+- Yes: flagged on the service Compose deploys
+- Base only: flagged on the base service, not on the service that extends it
+- Missed: has a rule for it, did not flag it
+- No rule: the tool has no rule for it
 - † Semgrep's rules require the `version:` key. With it added, Semgrep:
     - flags the inline, `include:` and override settings
     - flags the base for both `extends:` rows
@@ -288,7 +242,7 @@ right result is no finding:
 - False alarm: reported a setting Compose does not deploy
 - † With the `version:` key added, Semgrep reports both.
 
-What the run shows:
+What the run shows about the five tools I ran:
 
 - **`extends:` is not merged.** KICS, DockSec and Semgrep report the base
   service and give the service that extends it only their baseline findings,
@@ -313,8 +267,56 @@ KICS reports the anchored settings at the anchor's lines and DockSec on the
 service. Compose profiles, several `-f` files and `COMPOSE_FILE` were not
 tested.
 
-Versions: compose-lint 1.6.0, KICS 2.2.1, DockSec image 2026.9.21,
-Semgrep 1.185.0, DCLint 3.1.0.
+## Run on the same file
+
+This fixture was built from compose-lint's own rules, so a full score on it
+only shows that those rules fire. It says nothing about coverage. It has
+sixteen services, each with one deliberate misconfiguration, written to the
+Compose Specification, so without the obsolete `version:` key. I ran each
+tool from its published image on 2026-11-15. The fixture and the exact
+commands are in [Reproduce it](#reproduce-it).
+
+| Misconfiguration | compose-lint | KICS | DockSec | Semgrep | DCLint |
+|---|---|---|---|---|---|
+| Docker socket mounted | Yes | Yes | Yes | Missed † | No rule |
+| `privileged: true` | Yes | Yes | Yes | Missed † | No rule |
+| `no-new-privileges` missing | Yes | Yes | Yes | Missed † | No rule |
+| Unpinned `:latest` tag | Yes | No rule | Yes | No rule | Yes |
+| Port published on `0.0.0.0` | Yes | Yes | Missed ‡ | No rule | Yes |
+| No `cap_drop: [ALL]` | Yes | Yes | No rule | No rule | No rule |
+| Writable root filesystem | Yes | No rule | Yes | Missed † | No rule |
+| `network_mode: host` | Yes | Yes | Yes | No rule | No rule |
+| `seccomp:unconfined` | Yes | Yes | Yes | Missed † | No rule |
+| `pid: host` / `ipc: host` | Yes | Yes | Yes | No rule | No rule |
+| Sensitive host path mounted | Yes | Yes | Yes | No rule | No rule |
+| `logging: driver: none` | Yes | No rule | No rule | No rule | No rule |
+| `user: root` | Yes | No rule | Missed | No rule | No rule |
+| Tag without digest | Yes | No rule | No rule | No rule | No rule |
+| Credential in `environment:` | Yes | Yes | Yes | No rule | No rule |
+| No memory/CPU limits | Yes | Missed \* | Yes | No rule | No rule |
+| **Caught, of 16** | **16** | **10** | **11** | **0** † | **2** |
+
+- Yes: flagged
+- Missed: has a rule for it, did not flag it
+- No rule: the tool has no rule for it
+- \* KICS: the memory and CPU queries need the `version:` key. With
+  `version: "3.9"` added it catches 11.
+- † Semgrep: all six rules need the `version:` key. With it added they
+  produced 31 findings and caught these 5.
+- ‡ DockSec: its all-interfaces rule covers a fixed list of admin, database
+  and broker ports, and the fixture publishes 8080.
+
+The run contradicted the documentation in three places. Two are about the
+`version:` key and are under [The `version:` key](#the-version-key). The third is that DockSec's
+Compose rules need only Trivy installed. Its default mode also scans each
+service's image, which needs the Docker CLI, and runs an AI explanation pass,
+which needs an AI provider key, OpenAI by default. Without either, it still
+reports the Compose findings but exits with code 3. The run used
+`--scan-only`, which skips the AI pass.
+
+Checkov, Trivy and Hadolint were run on the same file too and, as their
+documentation says, none of them read it as a Compose file. Their sections
+below say what each one checks instead.
 
 ## Does Checkov scan docker-compose.yml?
 
@@ -322,9 +324,7 @@ No. Checkov's Docker coverage is its [Dockerfile policy
 index](https://www.checkov.io/5.Policy%20Index/dockerfile.html): 28 policies
 (`CKV_DOCKER_1` to `CKV_DOCKER_11` and `CKV2_DOCKER_1` to `CKV2_DOCKER_17`),
 all typed `dockerfile`. There is no `docker_compose` framework, and a
-`compose.yaml` passed to `checkov` is not inspected as a Compose file. Guides
-that show `checkov --framework docker_compose` describe a flag that does not
-exist.
+`compose.yaml` passed to `checkov` is not inspected as a Compose file.
 
 If you already run Checkov for Terraform or Kubernetes, keep running it and
 add compose-lint for the Compose files it skips. As of 2026-11-15 there is no
@@ -346,7 +346,8 @@ Compose support was requested in April 2025
 A maintainer replied that it could be added but that "there are no checks for
 it" to reuse. The most recent comment in the thread, from July 2026, is from
 a user surprised that `trivy config` did not catch a port bound to all
-interfaces. That is the Rule 5a case in the run above.
+interfaces. That is the Rule 5a case in the
+[OWASP run](#against-the-owasp-cheat-sheet-rules).
 
 ## Does Hadolint lint Docker Compose files?
 
@@ -355,9 +356,8 @@ does not read Compose files. A request for Compose support from 2025
 ([hadolint#1091](https://github.com/hadolint/hadolint/issues/1091)) is
 still open with no reply from the maintainers. The one answer, from another
 user, was to parse the YAML with a script or `yq`. Nothing on
-this page replaces it. A hardened Compose file that runs an image built from
-an unhardened Dockerfile is only half the work, and the two tools do not
-overlap.
+this page replaces it. Hardening the Compose file does not harden the image it
+runs, so keep running Hadolint. The two tools do not overlap.
 
 ## compose-lint vs DCLint
 
@@ -389,7 +389,8 @@ KICS ([docs.kics.io](https://docs.kics.io/latest/queries/dockercompose-queries/)
 is the closest in coverage, with 21 Docker Compose queries: the Docker
 socket mount, `no-new-privileges`, privileged containers, unrestricted
 capabilities, the default seccomp profile, shared host namespaces, memory,
-CPU and PID limits, and `security_opt`. In the first run it caught 10 of 16,
+CPU and PID limits, and `security_opt`. In the
+[same-file run](#run-on-the-same-file) it caught 10 of 16,
 or 11 with the [`version:` key](#the-version-key) added. KICS is a broad IaC
 scanner and Compose is one of many platforms it covers. Each query page
 describes the pattern and shows a compliant and a non-compliant sample.
@@ -412,13 +413,14 @@ Two open issues on KICS's tracker matter if you rely on it for Compose:
   2026).
 
 Its results on a stack spread across files are in
-[the third run](#run-on-a-stack-spread-across-files).
+[the multi-file run](#run-on-a-stack-spread-across-files).
 
 compose-lint is Compose-only. Each rule page
 explains what the setting does at runtime, which error messages the hardened
 configuration produces when an image was not built for it, and how to tell a
 real breakage from a false alarm. Its claims about runtime behaviour are
-re-tested against live containers in CI. KICS has a `remediate` command, but
+re-tested against live containers in CI, by the `rule-premises` job in the
+[CI reference](CI.md). KICS has a `remediate` command, but
 its documentation does not say whether Compose is one of the platforms it
 rewrites. compose-lint's `fix` edits the findings of six rules in place after
 a dry-run diff and lists the rest with the fix to make by hand.
@@ -433,13 +435,15 @@ root filesystem. All six are `WARNING` severity and one
 (`privileged-service`) has an autofix. All six match only a file that still
 has the obsolete [`version:` key](#the-version-key).
 
-The same reporter filed a second gap, that
-an explicit `user: root` is not detected
-([#4036](https://github.com/semgrep/semgrep-rules/issues/4036), fix
-[PR #4048](https://github.com/semgrep/semgrep-rules/pull/4048)). Until those
-merge, the ruleset is one line to enable if Semgrep already runs in your CI
-and your files keep `version:`. If you have removed `version:`, as Compose
-now recommends, the ruleset does nothing and reports nothing.
+The person who reported the `version:` problem also reported that an explicit
+`user: root` is not detected
+([#4036](https://github.com/semgrep/semgrep-rules/issues/4036), still open).
+A fix was proposed in
+[PR #4048](https://github.com/semgrep/semgrep-rules/pull/4048), and its author
+withdrew it on 2026-11-18. Until
+[PR #4037](https://github.com/semgrep/semgrep-rules/pull/4037) merges, the
+ruleset only reports on files that keep `version:`. On a file without it,
+which is what Compose now recommends, the ruleset reports nothing.
 
 Two narrower gaps showed up on a
 [stack spread across files](#run-on-a-stack-spread-across-files), both with
@@ -463,34 +467,34 @@ explain and prioritise findings. Its 17 Compose rules are documented and
 need only Trivy installed. The Docker CLI adds a scan of each service's image,
 and an AI provider key adds the explanation pass.
 
-In the first run its Compose rules caught 11 of 16. It also reported two
+In the [same-file run](#run-on-the-same-file) its Compose rules caught 11 of
+16. It also reported two
 cross-service "exploit chains", such as an internet-facing service sharing the
 default network with a service that holds a committed credential, which no
 other tool here attempts. Its `--fix` applies mechanical Dockerfile changes
 only. Compose findings are listed as "needs review".
 
 compose-lint is deterministic. The same file produces the same findings,
-severities and diff on every run, with no model and no network access, and
-its auto-fix works on the Compose file. A suppression given an `expires:` date
+severities and diff on every run, with no network access and no external
+service, and its auto-fix works on the Compose file. A suppression given an `expires:` date
 is the one input that reads the date, and `--as-of` pins it. Which matters
 more depends on whether the linter is a CI gate or an advisor.
 
 The explicit `user: root` gap was not on DockSec's tracker as of 2026-11-15.
 
 Its results on a stack spread across files are in
-[the third run](#run-on-a-stack-spread-across-files).
+[the multi-file run](#run-on-a-stack-spread-across-files).
 
 ## When a script of your own is enough
 
-Search results and AI answers for these questions often suggest skipping the
-tools and writing the check yourself: `yq '.services[] | select(.privileged
-== true)'`, a Conftest policy, a custom Semgrep or KICS rule. For a single
-check in a pre-commit hook, such as "nothing in this repository may say
+Another option is to skip the tools and write the check yourself:
+`yq '.services[] | select(.privileged == true)'`, a Conftest policy, a custom
+Semgrep or KICS rule. For a single check in a pre-commit hook, such as "nothing in this repository may say
 `privileged: true`", that is the right answer. No tool on this page does it
 better.
 
 What the script does not give you is the Compose semantics, and the runs
-above show established tools tripping on them. Two depend on the obsolete
+above show where KICS, DockSec and Semgrep miss them. Two depend on the obsolete
 [`version:` key](#the-version-key), and KICS reports `no-new-privileges=true`
 as missing over a `:` versus `=` difference. A script that grades what Compose
 actually deploys has to:
@@ -506,12 +510,12 @@ actually deploys has to:
   another key, so a socket can arrive that way too.
 
 compose-lint runs each of those checks ([how it works](how-it-works.md),
-[what a run reads](what-a-run-reads.md)), and most of them were added
+[what a run reads](what-a-run-reads.md)), and several of them were added
 because a real file slipped past a simpler version. The
 [run on a stack spread across files](#run-on-a-stack-spread-across-files)
 shows the tools above missing several of them too: `extends:`, overrides,
-`.env`, the long volume syntax and the socket as a secret. Compose changes over
-time, and a script has to change with it.
+`.env`, the long volume syntax and the socket as a secret. A script also has to
+be updated when Compose changes.
 
 Custom rules for the tools above inherit the tool's parser, which makes them
 a middle path, but only where the tool reads the file. A custom KICS query
@@ -530,8 +534,8 @@ A custom Checkov policy cannot help, because Checkov never loads the file.
 - **Watch running containers.** It is a static analyzer. See
   [Security expectations](SECURITY-EXPECTATIONS.md) for the full list.
 
-The second run also shows five things the OWASP cheat sheet asks for that
-compose-lint has no rule for:
+The [OWASP run](#against-the-owasp-cheat-sheet-rules) also shows five things
+the OWASP cheat sheet asks for that compose-lint has no rule for:
 
 - **A service with no `user:` at all** (Rule 2). The image's `USER` is not in
   the Compose file, so compose-lint cannot tell a root default from a
@@ -560,7 +564,7 @@ compose-lint has no rule for:
 
 Everything needed to repeat the three runs is in
 [`scripts/compare`](https://github.com/tmatens/compose-lint/tree/main/scripts/compare): the fixtures, `run.sh`, which runs every tool at the
-versions listed above, and `score.py`, which prints these tables from what the
+versions listed below, and `score.py`, which prints these tables from what the
 tools reported. The image digest each version resolved to is in
 [`last-run/versions.txt`](https://github.com/tmatens/compose-lint/tree/main/scripts/compare/last-run/versions.txt).
 
@@ -569,7 +573,12 @@ scripts/compare/run.sh /tmp/compare-out
 python scripts/compare/score.py /tmp/compare-out
 ```
 
-The first fixture is sixteen services with one deliberate misconfiguration each,
+All three runs are from 2026-11-15. Versions, as each tool reported them:
+compose-lint 1.6.0, DCLint 3.1.0, KICS 2.2.1, DockSec 2026.8.19, Semgrep 1.185.0, Checkov 3.4.5, Trivy 0.76.2,
+Hadolint 2.15.1. DockSec's image tag is 2026.9.21. The release declares that
+version but the tool still reports the older string.
+
+The same-file fixture is sixteen services with one deliberate misconfiguration each,
 named for the compose-lint rule it targets. Do not run it.
 
 ```yaml
@@ -632,7 +641,9 @@ services:
 ```
 
 Each tool ran from its published image with the directory holding the file
-mounted read-only at `/src`:
+mounted read-only at `/src`. The commands below pull each tool's current
+image, apart from DockSec. `run.sh` pins every tool to the versions listed
+above, so use it to repeat the measurement:
 
 ```bash
 docker run --rm -v "$PWD:/src:ro" composelint/compose-lint check --format json /src/compose.yaml
@@ -668,18 +679,22 @@ the row is about.
 The summary table was checked against each tool's documentation on
 2026-10-08. The three runs were first made on 2026-10-09 and 2026-10-17, on
 compose-lint 0.34.0 and 0.36.0. They were repeated on 2026-11-15 at the
-versions listed under each run, and every cell came out the same.
+versions listed under [Reproduce it](#reproduce-it), and every cell came out
+the same.
 
-Tools change. If a row is out of date, [open an
+Tools change, so if a row is out of date, [open an
 issue](https://github.com/tmatens/compose-lint/issues) with the link or the
-output that shows it and the row will be corrected.
+output that shows it and I'll correct the row.
 
 Known changes that would move these results when they land:
 
 - Semgrep's column goes from 0 to 6 of 21 when
   [semgrep-rules#4037](https://github.com/semgrep/semgrep-rules/pull/4037)
-  merges, and gains `user: root` with
-  [#4048](https://github.com/semgrep/semgrep-rules/pull/4048). The same fix
+  merges. It gains `user: root` if
+  [#4036](https://github.com/semgrep/semgrep-rules/issues/4036) is fixed.
+  The fix first proposed for it,
+  [PR #4048](https://github.com/semgrep/semgrep-rules/pull/4048), was
+  withdrawn. The #4037 fix
   moves its column in the run on a stack spread across files to the
   `version:` results in the † notes.
 - KICS stops reporting the `no-new-privileges=true` spelling as missing when

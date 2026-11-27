@@ -23,22 +23,22 @@ hadolint Haskell Dockerfile Linter 2.15.1
 
 | Row | compose-lint | KICS | DockSec | Semgrep | DCLint |
 |---|---|---|---|---|---|
-| Docker socket mounted | ✅ | ✅ | ✅ | ✗ | — |
-| `privileged: true` | ✅ | ✅ | ✅ | ✗ | — |
-| `no-new-privileges` missing | ✅ | ✅ | ✅ | ✗ | — |
-| Unpinned `:latest` tag | ✅ | — | ✅ | — | ✅ |
-| Port published on `0.0.0.0` | ✅ | ✅ | ✗ | — | ✅ |
-| No `cap_drop: [ALL]` | ✅ | ✅ | — | — | — |
-| Writable root filesystem | ✅ | — | ✅ | ✗ | — |
-| `network_mode: host` | ✅ | ✅ | ✅ | — | — |
-| `seccomp:unconfined` | ✅ | ✅ | ✅ | ✗ | — |
-| `pid: host` / `ipc: host` | ✅ | ✅ | ✅ | — | — |
-| Sensitive host path mounted | ✅ | ✅ | ✅ | — | — |
-| `logging: driver: none` | ✅ | — | — | — | — |
-| `user: root` | ✅ | — | ✗ | — | — |
-| Tag without digest | ✅ | — | — | — | — |
-| Credential in `environment:` | ✅ | ✅ | ✅ | — | — |
-| No memory/CPU limits | ✅ | ✗ | ✅ | — | — |
+| Docker socket mounted | Yes | Yes | Yes | Missed | No rule |
+| `privileged: true` | Yes | Yes | Yes | Missed | No rule |
+| `no-new-privileges` missing | Yes | Yes | Yes | Missed | No rule |
+| Unpinned `:latest` tag | Yes | No rule | Yes | No rule | Yes |
+| Port published on `0.0.0.0` | Yes | Yes | Missed | No rule | Yes |
+| No `cap_drop: [ALL]` | Yes | Yes | No rule | No rule | No rule |
+| Writable root filesystem | Yes | No rule | Yes | Missed | No rule |
+| `network_mode: host` | Yes | Yes | Yes | No rule | No rule |
+| `seccomp:unconfined` | Yes | Yes | Yes | Missed | No rule |
+| `pid: host` / `ipc: host` | Yes | Yes | Yes | No rule | No rule |
+| Sensitive host path mounted | Yes | Yes | Yes | No rule | No rule |
+| `logging: driver: none` | Yes | No rule | No rule | No rule | No rule |
+| `user: root` | Yes | No rule | Missed | No rule | No rule |
+| Tag without digest | Yes | No rule | No rule | No rule | No rule |
+| Credential in `environment:` | Yes | Yes | Yes | No rule | No rule |
+| No memory/CPU limits | Yes | Missed | Yes | No rule | No rule |
 | **Flagged, of 16** | 16 | 10 | 11 | 0 | 2 |
 | **No rule for it** | 0 | 5 | 3 | 11 | 14 |
 | **Has a rule, missed it** | 0 | 1 | 2 | 5 | 0 |
@@ -52,27 +52,27 @@ hadolint: exit 1, 317 bytes of output
 
 | Row | compose-lint | KICS | DockSec | Semgrep | DCLint |
 |---|---|---|---|---|---|
-| 1 — Docker socket mounted | ✅ | ✅ | ✅ | ✗ | — |
-| 2 — `user: root` set explicitly | ✅ | — | ✗ | — | — |
-| 2 — no `user:`, image default | — | — | ✅ | — | — |
-| 3 — `privileged: true` | ✅ | ✅ | ✅ | ✗ | — |
-| 3 — default capability set, nothing dropped | ✅ | ✅ | — | — | — |
-| 3 — `cap_drop: [ALL]` then `cap_add: [SYS_ADMIN]` | ✅ | ✅ | ✅ | — | — |
-| 4 — `no-new-privileges` not set | ✅ | ✅ | ✅ | ✗ | — |
-| 5 — `network_mode: host` | ✅ | ✅ | ✅ | — | — |
-| 5 — no `networks:`, joins the shared default network | — | — | ✅ | — | — |
-| 5a — port published on `0.0.0.0` | ✅ | ✅ | ✗ | — | ✅ |
-| 6 — `seccomp:unconfined` | ✅ | ✅ | ✅ | ✗ | — |
-| 6 — `apparmor:unconfined` | ✅ | — | ✅ | — | — |
-| 6 — SELinux `label:disable` | ✅ | — | ✗ | ✗ | — |
-| 7 — no memory or CPU limits | ✅ | ✗ | ✅ | — | — |
-| 7 — no `pids_limit` | — | ✗ | — | — | — |
-| 7 — `restart: always`, unbounded | — | — | — | — | — |
-| 8 — root filesystem writable | ✅ | — | ✅ | ✗ | — |
-| 8 — host directory mounted read-write | — | — | — | — | — |
-| 12 — credential as a literal `environment:` value | ✅ | ✅ | ✅ | — | — |
-| 13 — mutable `:latest` tag | ✅ | — | ✅ | — | ✅ |
-| 13 — version tag without a digest | ✅ | — | — | — | — |
+| 1 — Docker socket mounted | Yes | Yes | Yes | Missed | No rule |
+| 2 — `user: root` set explicitly | Yes | No rule | Missed | No rule | No rule |
+| 2 — no `user:`, image default | No rule | No rule | Yes | No rule | No rule |
+| 3 — `privileged: true` | Yes | Yes | Yes | Missed | No rule |
+| 3 — default capability set, nothing dropped | Yes | Yes | No rule | No rule | No rule |
+| 3 — `cap_drop: [ALL]` then `cap_add: [SYS_ADMIN]` | Yes | Yes | Yes | No rule | No rule |
+| 4 — `no-new-privileges` not set | Yes | Yes | Yes | Missed | No rule |
+| 5 — `network_mode: host` | Yes | Yes | Yes | No rule | No rule |
+| 5 — no `networks:`, joins the shared default network | No rule | No rule | Yes | No rule | No rule |
+| 5a — port published on `0.0.0.0` | Yes | Yes | Missed | No rule | Yes |
+| 6 — `seccomp:unconfined` | Yes | Yes | Yes | Missed | No rule |
+| 6 — `apparmor:unconfined` | Yes | No rule | Yes | No rule | No rule |
+| 6 — SELinux `label:disable` | Yes | No rule | Missed | Missed | No rule |
+| 7 — no memory or CPU limits | Yes | Missed | Yes | No rule | No rule |
+| 7 — no `pids_limit` | No rule | Missed | No rule | No rule | No rule |
+| 7 — `restart: always`, unbounded | No rule | No rule | No rule | No rule | No rule |
+| 8 — root filesystem writable | Yes | No rule | Yes | Missed | No rule |
+| 8 — host directory mounted read-write | No rule | No rule | No rule | No rule | No rule |
+| 12 — credential as a literal `environment:` value | Yes | Yes | Yes | No rule | No rule |
+| 13 — mutable `:latest` tag | Yes | No rule | Yes | No rule | Yes |
+| 13 — version tag without a digest | Yes | No rule | No rule | No rule | No rule |
 | **Flagged, of 21** | 16 | 9 | 13 | 0 | 2 |
 | **No rule for it** | 5 | 10 | 5 | 15 | 19 |
 | **Has a rule, missed it** | 0 | 2 | 3 | 6 | 0 |
@@ -89,52 +89,52 @@ hadolint: exit 1, 317 bytes of output
 
 | Where the setting comes from | compose-lint | KICS | DockSec | Semgrep | DCLint |
 |---|---|---|---|---|---|
-| Written inline (control) | ✅ | ✅ | ✅ | ✗ | — |
-| `extends:` a service in the same file | ✅ | ◐ | ◐ | ✗ | — |
-| `extends:` a service in another file | ✅ | ◐ | ✗ | ✗ | — |
-| `include:` of another file | ✅ | ✅ | ✗ | ✗ | — |
-| `compose.override.yml` | ✅ | ✗ | ✗ | ✗ | — |
-| YAML anchor and `<<:` merge key | ✅ | ✅ | ✅ | ✗ | — |
-| `${VAR:-default}` | ✅ | ✗ | ✗ | ✗ | — |
-| A value from `.env` | ✅ | ✗ | ✗ | ✗ | — |
+| Written inline (control) | Yes | Yes | Yes | Missed | No rule |
+| `extends:` a service in the same file | Yes | Base only | Base only | Missed | No rule |
+| `extends:` a service in another file | Yes | Base only | Missed | Missed | No rule |
+| `include:` of another file | Yes | Yes | Missed | Missed | No rule |
+| `compose.override.yml` | Yes | Missed | Missed | Missed | No rule |
+| YAML anchor and `<<:` merge key | Yes | Yes | Yes | Missed | No rule |
+| `${VAR:-default}` | Yes | Missed | Missed | Missed | No rule |
+| A value from `.env` | Yes | Missed | Missed | Missed | No rule |
 
 **The Docker socket mount**
 
 | Where the setting comes from | compose-lint | KICS | DockSec | Semgrep | DCLint |
 |---|---|---|---|---|---|
-| Written inline (control) | ✅ | ✅ | ✅ | ✗ | — |
-| `extends:` a service in the same file | ✅ | ◐ | ◐ | ✗ | — |
-| `extends:` a service in another file | ✅ | ◐ | ✗ | ✗ | — |
-| `include:` of another file | ✅ | ✅ | ✗ | ✗ | — |
-| `compose.override.yml` | ✅ | ✗ | ✗ | ✗ | — |
-| YAML anchor and `<<:` merge key | ✅ | ✅ | ✅ | ✗ | — |
-| `${VAR:-default}` | ✅ | ✗ | ✅ | ✗ | — |
-| A value from `.env` | ✅ | ✗ | ✗ | ✗ | — |
+| Written inline (control) | Yes | Yes | Yes | Missed | No rule |
+| `extends:` a service in the same file | Yes | Base only | Base only | Missed | No rule |
+| `extends:` a service in another file | Yes | Base only | Missed | Missed | No rule |
+| `include:` of another file | Yes | Yes | Missed | Missed | No rule |
+| `compose.override.yml` | Yes | Missed | Missed | Missed | No rule |
+| YAML anchor and `<<:` merge key | Yes | Yes | Yes | Missed | No rule |
+| `${VAR:-default}` | Yes | Missed | Yes | Missed | No rule |
+| A value from `.env` | Yes | Missed | Missed | Missed | No rule |
 
 **A port published on all interfaces**
 
 | Where the setting comes from | compose-lint | KICS | DockSec | Semgrep | DCLint |
 |---|---|---|---|---|---|
-| Written inline (control) | ✅ | ✅ | — | — | ✅ |
-| `extends:` a service in the same file | ✅ | ◐ | — | — | ◐ |
-| `extends:` a service in another file | ✅ | ◐ | — | — | ✗ |
-| `include:` of another file | ✅ | ✅ | — | — | ✗ |
-| `compose.override.yml` | ✅ | ✗ | — | — | ✅ |
-| YAML anchor and `<<:` merge key | ✅ | ✅ | — | — | ✗ |
-| `${VAR:-default}` | ✅ | ✗ | — | — | ✅ |
-| A value from `.env` | ✅ | ✅ | — | — | ✅ |
+| Written inline (control) | Yes | Yes | No rule | No rule | Yes |
+| `extends:` a service in the same file | Yes | Base only | No rule | No rule | Base only |
+| `extends:` a service in another file | Yes | Base only | No rule | No rule | Missed |
+| `include:` of another file | Yes | Yes | No rule | No rule | Missed |
+| `compose.override.yml` | Yes | Missed | No rule | No rule | Yes |
+| YAML anchor and `<<:` merge key | Yes | Yes | No rule | No rule | Missed |
+| `${VAR:-default}` | Yes | Missed | No rule | No rule | Yes |
+| A value from `.env` | Yes | Yes | No rule | No rule | Yes |
 
 **More scenarios**
 
 | Scenario | compose-lint | KICS | DockSec | Semgrep |
 |---|---|---|---|---|
-| Socket in the long `volumes:` syntax | ✅ | ✗ | ✅ | ✗ |
-| Port in the long `ports:` syntax | ✅ | ✅ | — | — |
-| Socket as `secrets:` with `file: /var/run/docker.sock` | ✅ | ✗ | ✗ | ✗ |
-| `seccomp=unconfined` | ✅ | ✗ | ✗ | ✗ |
-| `seccomp:unconfined` (control) | ✅ | ✅ | ✅ | ✗ |
-| Socket mounted at another path | ✅ | ✅ | ✅ | ✗ |
-| `seccomp:unconfined` beside `apparmor:unconfined` | ✅ | ✅ | ✅ | ✗ |
+| Socket in the long `volumes:` syntax | Yes | Missed | Yes | Missed |
+| Port in the long `ports:` syntax | Yes | Yes | No rule | No rule |
+| Socket as `secrets:` with `file: /var/run/docker.sock` | Yes | Missed | Missed | Missed |
+| `seccomp=unconfined` | Yes | Missed | Missed | Missed |
+| `seccomp:unconfined` (control) | Yes | Yes | Yes | Missed |
+| Socket mounted at another path | Yes | Yes | Yes | Missed |
+| `seccomp:unconfined` beside `apparmor:unconfined` | Yes | Yes | Yes | Missed |
 
 **Looks dangerous, deploys safely**
 
@@ -149,22 +149,22 @@ hadolint: exit 1, 317 bytes of output
 
 | Row | compose-lint | KICS | DockSec | Semgrep | DCLint |
 |---|---|---|---|---|---|
-| Docker socket mounted | ✅ | ✅ | ✅ | ✅ | — |
-| `privileged: true` | ✅ | ✅ | ✅ | ✅ | — |
-| `no-new-privileges` missing | ✅ | ✅ | ✅ | ✅ | — |
-| Unpinned `:latest` tag | ✅ | — | ✅ | — | ✅ |
-| Port published on `0.0.0.0` | ✅ | ✅ | ✗ | — | ✅ |
-| No `cap_drop: [ALL]` | ✅ | ✅ | — | — | — |
-| Writable root filesystem | ✅ | — | ✅ | ✅ | — |
-| `network_mode: host` | ✅ | ✅ | ✅ | — | — |
-| `seccomp:unconfined` | ✅ | ✅ | ✅ | ✅ | — |
-| `pid: host` / `ipc: host` | ✅ | ✅ | ✅ | — | — |
-| Sensitive host path mounted | ✅ | ✅ | ✅ | — | — |
-| `logging: driver: none` | ✅ | — | — | — | — |
-| `user: root` | ✅ | — | ✗ | — | — |
-| Tag without digest | ✅ | — | — | — | — |
-| Credential in `environment:` | ✅ | ✅ | ✅ | — | — |
-| No memory/CPU limits | ✅ | ✅ | ✅ | — | — |
+| Docker socket mounted | Yes | Yes | Yes | Yes | No rule |
+| `privileged: true` | Yes | Yes | Yes | Yes | No rule |
+| `no-new-privileges` missing | Yes | Yes | Yes | Yes | No rule |
+| Unpinned `:latest` tag | Yes | No rule | Yes | No rule | Yes |
+| Port published on `0.0.0.0` | Yes | Yes | Missed | No rule | Yes |
+| No `cap_drop: [ALL]` | Yes | Yes | No rule | No rule | No rule |
+| Writable root filesystem | Yes | No rule | Yes | Yes | No rule |
+| `network_mode: host` | Yes | Yes | Yes | No rule | No rule |
+| `seccomp:unconfined` | Yes | Yes | Yes | Yes | No rule |
+| `pid: host` / `ipc: host` | Yes | Yes | Yes | No rule | No rule |
+| Sensitive host path mounted | Yes | Yes | Yes | No rule | No rule |
+| `logging: driver: none` | Yes | No rule | No rule | No rule | No rule |
+| `user: root` | Yes | No rule | Missed | No rule | No rule |
+| Tag without digest | Yes | No rule | No rule | No rule | No rule |
+| Credential in `environment:` | Yes | Yes | Yes | No rule | No rule |
+| No memory/CPU limits | Yes | Yes | Yes | No rule | No rule |
 | **Flagged, of 16** | 16 | 11 | 11 | 5 | 2 |
 | **No rule for it** | 0 | 5 | 3 | 11 | 14 |
 | **Has a rule, missed it** | 0 | 0 | 2 | 0 | 0 |
@@ -178,27 +178,27 @@ hadolint: exit 1, 304 bytes of output
 
 | Row | compose-lint | KICS | DockSec | Semgrep | DCLint |
 |---|---|---|---|---|---|
-| 1 — Docker socket mounted | ✅ | ✅ | ✅ | ✅ | — |
-| 2 — `user: root` set explicitly | ✅ | — | ✗ | — | — |
-| 2 — no `user:`, image default | — | — | ✅ | — | — |
-| 3 — `privileged: true` | ✅ | ✅ | ✅ | ✅ | — |
-| 3 — default capability set, nothing dropped | ✅ | ✅ | — | — | — |
-| 3 — `cap_drop: [ALL]` then `cap_add: [SYS_ADMIN]` | ✅ | ✅ | ✅ | — | — |
-| 4 — `no-new-privileges` not set | ✅ | ✅ | ✅ | ✅ | — |
-| 5 — `network_mode: host` | ✅ | ✅ | ✅ | — | — |
-| 5 — no `networks:`, joins the shared default network | — | — | ✅ | — | — |
-| 5a — port published on `0.0.0.0` | ✅ | ✅ | ✗ | — | ✅ |
-| 6 — `seccomp:unconfined` | ✅ | ✅ | ✅ | ✅ | — |
-| 6 — `apparmor:unconfined` | ✅ | — | ✅ | — | — |
-| 6 — SELinux `label:disable` | ✅ | — | ✗ | ✅ | — |
-| 7 — no memory or CPU limits | ✅ | ✅ | ✅ | — | — |
-| 7 — no `pids_limit` | — | ✗ | — | — | — |
-| 7 — `restart: always`, unbounded | — | — | — | — | — |
-| 8 — root filesystem writable | ✅ | — | ✅ | ✅ | — |
-| 8 — host directory mounted read-write | — | — | — | — | — |
-| 12 — credential as a literal `environment:` value | ✅ | ✅ | ✅ | — | — |
-| 13 — mutable `:latest` tag | ✅ | — | ✅ | — | ✅ |
-| 13 — version tag without a digest | ✅ | — | — | — | — |
+| 1 — Docker socket mounted | Yes | Yes | Yes | Yes | No rule |
+| 2 — `user: root` set explicitly | Yes | No rule | Missed | No rule | No rule |
+| 2 — no `user:`, image default | No rule | No rule | Yes | No rule | No rule |
+| 3 — `privileged: true` | Yes | Yes | Yes | Yes | No rule |
+| 3 — default capability set, nothing dropped | Yes | Yes | No rule | No rule | No rule |
+| 3 — `cap_drop: [ALL]` then `cap_add: [SYS_ADMIN]` | Yes | Yes | Yes | No rule | No rule |
+| 4 — `no-new-privileges` not set | Yes | Yes | Yes | Yes | No rule |
+| 5 — `network_mode: host` | Yes | Yes | Yes | No rule | No rule |
+| 5 — no `networks:`, joins the shared default network | No rule | No rule | Yes | No rule | No rule |
+| 5a — port published on `0.0.0.0` | Yes | Yes | Missed | No rule | Yes |
+| 6 — `seccomp:unconfined` | Yes | Yes | Yes | Yes | No rule |
+| 6 — `apparmor:unconfined` | Yes | No rule | Yes | No rule | No rule |
+| 6 — SELinux `label:disable` | Yes | No rule | Missed | Yes | No rule |
+| 7 — no memory or CPU limits | Yes | Yes | Yes | No rule | No rule |
+| 7 — no `pids_limit` | No rule | Missed | No rule | No rule | No rule |
+| 7 — `restart: always`, unbounded | No rule | No rule | No rule | No rule | No rule |
+| 8 — root filesystem writable | Yes | No rule | Yes | Yes | No rule |
+| 8 — host directory mounted read-write | No rule | No rule | No rule | No rule | No rule |
+| 12 — credential as a literal `environment:` value | Yes | Yes | Yes | No rule | No rule |
+| 13 — mutable `:latest` tag | Yes | No rule | Yes | No rule | Yes |
+| 13 — version tag without a digest | Yes | No rule | No rule | No rule | No rule |
 | **Flagged, of 21** | 16 | 10 | 13 | 6 | 2 |
 | **No rule for it** | 5 | 10 | 5 | 15 | 19 |
 | **Has a rule, missed it** | 0 | 1 | 3 | 0 | 0 |
@@ -215,52 +215,52 @@ hadolint: exit 1, 304 bytes of output
 
 | Where the setting comes from | compose-lint | KICS | DockSec | Semgrep | DCLint |
 |---|---|---|---|---|---|
-| Written inline (control) | ✅ | ✅ | ✅ | ✅ | — |
-| `extends:` a service in the same file | ✅ | ◐ | ◐ | ◐ | — |
-| `extends:` a service in another file | ✅ | ◐ | ✗ | ◐ | — |
-| `include:` of another file | ✅ | ✅ | ✗ | ✅ | — |
-| `compose.override.yml` | ✅ | ✗ | ✗ | ✅ | — |
-| YAML anchor and `<<:` merge key | ✅ | ✅ | ✅ | ✗ | — |
-| `${VAR:-default}` | ✅ | ✗ | ✗ | ✗ | — |
-| A value from `.env` | ✅ | ✗ | ✗ | ✗ | — |
+| Written inline (control) | Yes | Yes | Yes | Yes | No rule |
+| `extends:` a service in the same file | Yes | Base only | Base only | Base only | No rule |
+| `extends:` a service in another file | Yes | Base only | Missed | Base only | No rule |
+| `include:` of another file | Yes | Yes | Missed | Yes | No rule |
+| `compose.override.yml` | Yes | Missed | Missed | Yes | No rule |
+| YAML anchor and `<<:` merge key | Yes | Yes | Yes | Missed | No rule |
+| `${VAR:-default}` | Yes | Missed | Missed | Missed | No rule |
+| A value from `.env` | Yes | Missed | Missed | Missed | No rule |
 
 **The Docker socket mount**
 
 | Where the setting comes from | compose-lint | KICS | DockSec | Semgrep | DCLint |
 |---|---|---|---|---|---|
-| Written inline (control) | ✅ | ✅ | ✅ | ✅ | — |
-| `extends:` a service in the same file | ✅ | ◐ | ◐ | ◐ | — |
-| `extends:` a service in another file | ✅ | ◐ | ✗ | ◐ | — |
-| `include:` of another file | ✅ | ✅ | ✗ | ✅ | — |
-| `compose.override.yml` | ✅ | ✗ | ✗ | ✅ | — |
-| YAML anchor and `<<:` merge key | ✅ | ✅ | ✅ | ✅ | — |
-| `${VAR:-default}` | ✅ | ✗ | ✅ | ✗ | — |
-| A value from `.env` | ✅ | ✗ | ✗ | ✗ | — |
+| Written inline (control) | Yes | Yes | Yes | Yes | No rule |
+| `extends:` a service in the same file | Yes | Base only | Base only | Base only | No rule |
+| `extends:` a service in another file | Yes | Base only | Missed | Base only | No rule |
+| `include:` of another file | Yes | Yes | Missed | Yes | No rule |
+| `compose.override.yml` | Yes | Missed | Missed | Yes | No rule |
+| YAML anchor and `<<:` merge key | Yes | Yes | Yes | Yes | No rule |
+| `${VAR:-default}` | Yes | Missed | Yes | Missed | No rule |
+| A value from `.env` | Yes | Missed | Missed | Missed | No rule |
 
 **A port published on all interfaces**
 
 | Where the setting comes from | compose-lint | KICS | DockSec | Semgrep | DCLint |
 |---|---|---|---|---|---|
-| Written inline (control) | ✅ | ✅ | — | — | ✅ |
-| `extends:` a service in the same file | ✅ | ◐ | — | — | ◐ |
-| `extends:` a service in another file | ✅ | ◐ | — | — | ✗ |
-| `include:` of another file | ✅ | ✅ | — | — | ✗ |
-| `compose.override.yml` | ✅ | ✗ | — | — | ✅ |
-| YAML anchor and `<<:` merge key | ✅ | ✅ | — | — | ✗ |
-| `${VAR:-default}` | ✅ | ✗ | — | — | ✅ |
-| A value from `.env` | ✅ | ✅ | — | — | ✅ |
+| Written inline (control) | Yes | Yes | No rule | No rule | Yes |
+| `extends:` a service in the same file | Yes | Base only | No rule | No rule | Base only |
+| `extends:` a service in another file | Yes | Base only | No rule | No rule | Missed |
+| `include:` of another file | Yes | Yes | No rule | No rule | Missed |
+| `compose.override.yml` | Yes | Missed | No rule | No rule | Yes |
+| YAML anchor and `<<:` merge key | Yes | Yes | No rule | No rule | Missed |
+| `${VAR:-default}` | Yes | Missed | No rule | No rule | Yes |
+| A value from `.env` | Yes | Yes | No rule | No rule | Yes |
 
 **More scenarios**
 
 | Scenario | compose-lint | KICS | DockSec | Semgrep |
 |---|---|---|---|---|
-| Socket in the long `volumes:` syntax | ✅ | ✗ | ✅ | ✅ |
-| Port in the long `ports:` syntax | ✅ | ✅ | — | — |
-| Socket as `secrets:` with `file: /var/run/docker.sock` | ✅ | ✗ | ✗ | ✗ |
-| `seccomp=unconfined` | ✅ | ✗ | ✗ | ✗ |
-| `seccomp:unconfined` (control) | ✅ | ✅ | ✅ | ✅ |
-| Socket mounted at another path | ✅ | ✅ | ✅ | ✗ |
-| `seccomp:unconfined` beside `apparmor:unconfined` | ✅ | ✅ | ✅ | ✗ |
+| Socket in the long `volumes:` syntax | Yes | Missed | Yes | Yes |
+| Port in the long `ports:` syntax | Yes | Yes | No rule | No rule |
+| Socket as `secrets:` with `file: /var/run/docker.sock` | Yes | Missed | Missed | Missed |
+| `seccomp=unconfined` | Yes | Missed | Missed | Missed |
+| `seccomp:unconfined` (control) | Yes | Yes | Yes | Yes |
+| Socket mounted at another path | Yes | Yes | Yes | Missed |
+| `seccomp:unconfined` beside `apparmor:unconfined` | Yes | Yes | Yes | Missed |
 
 **Looks dangerous, deploys safely**
 
