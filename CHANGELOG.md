@@ -58,6 +58,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or that both scans have dropped, is raised as stale. A test holds the
   list, the statement counts and the section in
   [docs/verifying.md](docs/verifying.md) together.
+- **The tool comparison leads with the run built from the OWASP cheat sheet.**
+  [docs/compare.md](docs/compare.md) showed the fixture built from
+  compose-lint's own rules first, where compose-lint scores 16 of 16. That
+  run now comes last and opens by saying a full score on it only shows that
+  those rules fire. Table cells are words (Yes, Missed, No rule, Base only)
+  in place of symbols, and `scripts/compare/score.py` prints the same
+  words. The page says who ran the tools, gives counts where it ranked
+  them, and scopes "only" and "no tool" to the tools that were run. A
+  Semgrep fix it pointed to was withdrawn by its author, and the page now
+  says so.
 
 ## [1.8.2] - 2026-11-24
 

@@ -41,10 +41,10 @@ records the image digest and the version each tool reported.
 A finding counts for a row only when it comes from the tool's own rule for
 that setting and is reported on the service the row is about. The rule names
 are in `RULES` at the top of `score.py`. A tool with no rule for a setting
-gets a dash, so a miss is only charged to a tool that has the check.
+gets "No rule", so a miss is only charged to a tool that has the check.
 
 In the multi-file scenarios the service Compose deploys is `app`. A finding on
-`base`, the service `app` extends, is scored as the half mark. The file
+`base`, the service `app` extends, is scored as "Base only". The file
 `compose-config.json` in each scenario's output is what `docker compose
 config` rendered, which is the ground truth for what deploys.
 

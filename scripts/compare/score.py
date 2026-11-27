@@ -6,7 +6,7 @@
 A cell is scored from what the tool printed. A finding counts for a row only
 when it comes from the tool's own rule for that setting (RULES below) and is
 reported on the service the row is about. A tool with no rule for a setting
-gets a dash, so a miss is only ever charged to a tool that claims the check.
+gets "No rule", so a miss is only ever charged to a tool that claims the check.
 
 The tables are printed once for the fixtures as written and once with the
 obsolete `version:` key added, because two tools behave differently with it.
@@ -357,13 +357,13 @@ def single(out: Path, fixtures: Path, name: str, rows: list, variant: str) -> No
         cells = []
         for tool in TOOLS:
             if tool not in RULES[setting]:
-                cells.append("—")
+                cells.append("No rule")
                 no_rule[tool] += 1
             elif hit(found[tool], tool, setting, service):
-                cells.append("✅")
+                cells.append("Yes")
                 caught[tool] += 1
             else:
-                cells.append("✗")
+                cells.append("Missed")
                 missed[tool] += 1
         print(f"| {label} | " + " | ".join(cells) + " |")
     for title, counts in (
@@ -382,12 +382,12 @@ def single(out: Path, fixtures: Path, name: str, rows: list, variant: str) -> No
 
 def multi_cell(found, tool: str, setting: str) -> str:
     if tool not in RULES[setting] or (tool, setting) in MULTI_NO_RULE:
-        return "—"
+        return "No rule"
     if hit(found, tool, setting, "app") or hit(found, tool, setting, ANCHOR_KEY):
-        return "✅"
+        return "Yes"
     if hit(found, tool, setting, "base"):
-        return "◐"
-    return "✗"
+        return "Base only"
+    return "Missed"
 
 
 def multi(out: Path, fixtures: Path, variant: str) -> None:
