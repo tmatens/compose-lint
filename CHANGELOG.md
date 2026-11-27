@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **CL-0026 names only the limit that is missing.** A service that set a
+  memory limit and no CPU limit was told "Docker imposes neither by
+  default" and to "bound both", and the same the other way round. The
+  message and the fix now speak of the one missing limit: "Docker imposes
+  none by default", the one key to add, and the one reservation key that
+  is not a limit. A service with neither limit reads as before. Which
+  services the rule reports is unchanged.
 - **The image is built with an SBOM attestation for Docker Hub.** Docker
   Hub showed "None found" under Vulnerabilities for 1.8.1 and 1.8.2 while
   the Scout CLI reported 60 or more CVEs on the same digests. Those images

@@ -67,6 +67,40 @@ class TestResourceLimitsRule:
         assert len(findings) == 1
         assert "no memory limit" in findings[0].message
 
+    def test_both_missing_says_neither_and_bounds_both(self) -> None:
+        finding = _findings(_svc(""))[0]
+        assert "Docker imposes neither by default" in finding.message
+        assert "the host's memory or CPU until" in finding.message
+        assert finding.fix.startswith("Bound both,")
+        assert "memory: 512M" in finding.fix
+        assert "cpus: '0.50'" in finding.fix
+
+    def test_memory_only_message_and_fix_speak_of_cpu_alone(self) -> None:
+        """A service that bounds memory is not told Docker imposes "neither"."""
+        finding = _findings(_svc("    mem_limit: 512m\n"))[0]
+        assert "neither" not in finding.message
+        assert "Docker imposes none by default" in finding.message
+        assert "the host's CPU until" in finding.message
+        assert "memory" not in finding.message
+        assert finding.fix.startswith("Add a CPU limit, ")
+        assert "cpus: '0.50'" in finding.fix
+        assert "memory: 512M" not in finding.fix
+        assert "mem_limit" not in finding.fix
+        assert "mem_reservation" not in finding.fix
+        assert "cpu_shares" in finding.fix
+
+    def test_cpu_only_message_and_fix_speak_of_memory_alone(self) -> None:
+        finding = _findings(_svc("    cpus: 0.5\n"))[0]
+        assert "neither" not in finding.message
+        assert "Docker imposes none by default" in finding.message
+        assert "the host's memory until" in finding.message
+        assert "CPU" not in finding.message
+        assert finding.fix.startswith("Add a memory limit, ")
+        assert "memory: 512M" in finding.fix
+        assert "cpus" not in finding.fix
+        assert "cpu_shares" not in finding.fix
+        assert "mem_reservation" in finding.fix
+
     def test_reservations_are_not_limits(self) -> None:
         """Soft targets under contention; the hard ceiling stays unbounded."""
         findings = _findings(
