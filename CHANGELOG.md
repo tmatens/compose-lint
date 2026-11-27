@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A guide to linting at edit time with a coding agent hook.**
+  [docs/agent-hook.md](docs/agent-hook.md) has a hook script and the
+  Claude Code settings that run `compose-lint check` after each edit to a
+  Compose file and hand the findings back to the agent. It covers the
+  threshold, why exit 1 and exit 2 get different instructions, and what to
+  expect. Tested with Claude Code 2.1.332.
+
 ### Changed
 
 - **CL-0026 names only the limit that is missing.** A service that set a
