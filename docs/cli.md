@@ -207,6 +207,9 @@ these five wrong. Nothing here enumerates rules — `--explain CL-XXXX` is the
 single source for what a rule means and how to fix it, it reads the rule docs
 shipped inside the wheel, and it needs no network.
 
+To run compose-lint after each edit an agent makes, see
+[Lint at edit time with a coding agent hook](agent-hook.md).
+
 **Exit 2 is not "the lint failed".** Exit 1 means findings at or above the
 threshold — that is the failure to act on. Exit 2 means compose-lint could not
 run, *or* could not see the whole stack. An unresolved `include:` or cross-file
