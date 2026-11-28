@@ -1,0 +1,68 @@
+---
+# MegaLinter plugin for compose-lint.
+#
+# Use it from .mega-linter.yml:
+#
+#   PLUGINS:
+#     - https://raw.githubusercontent.com/tmatens/compose-lint/vX.Y.Z/mega-linter-plugin-compose-lint/compose-lint.megalinter-descriptor.yml
+#
+# with vX.Y.Z a release tag, so the descriptor, and with it the compose-lint
+# version it installs, only changes when you change the URL.
+#
+# MegaLinter runs a plugin's install at startup and only accepts `RUN` lines.
+# The install below puts compose-lint in its own virtual environment, so it
+# shares no packages with MegaLinter.
+descriptor_id: COMPOSE
+descriptor_label: "Docker Compose"
+descriptor_type: tooling_format
+descriptor_flavors:
+  - all_flavors
+file_names_regex:
+  - "(docker-)?compose(\\.[\\w.-]+)?\\.ya?ml"
+linters:
+  - linter_name: compose-lint
+    can_output_sarif: true
+    linter_text: |
+      **compose-lint** is a security linter for Docker Compose files. It reports dangerous settings in `compose.yml` / `docker-compose.yml` files, with the fix for each finding and a reference to the OWASP Docker Security Cheat Sheet or the CIS Docker Benchmark.
+
+      The build fails on `high` and `critical` findings by default. Lower severities are reported without failing.
+
+      compose-lint does not validate the Compose schema, lint Dockerfiles or scan images for vulnerabilities.
+    linter_url: https://tmatens.github.io/compose-lint/
+    linter_repo: https://github.com/tmatens/compose-lint
+    linter_rules_url: https://github.com/tmatens/compose-lint/tree/main/docs/rules
+    linter_rules_configuration_url: https://tmatens.github.io/compose-lint/configuration/
+    linter_rules_ignore_config_url: https://tmatens.github.io/compose-lint/configuration/
+    linter_spdx_license: MIT
+    config_file_name: .compose-lint.yml
+    cli_config_arg_name: "--config"
+    cli_lint_mode: list_of_files
+    supported_cli_lint_modes:
+      - file
+      - list_of_files
+    cli_lint_extra_args:
+      - "check"
+    cli_lint_extra_args_after:
+      - "--"
+    cli_sarif_args:
+      - "--format"
+      - "sarif"
+    cli_lint_errors_count: regex_number
+    cli_lint_errors_regex: "FAIL\\s+·\\s+([0-9]+) findings? at or above"
+    common_linter_errors:
+      - identifier: COMPOSE_COMPOSE_LINT_ERROR_COVERAGE_GAP
+        regex: "pass --allow-partial-coverage to accept it"
+        message: |-
+          compose-lint could not read part of the stack (for example an unresolved `include:` or cross-file `extends:`), so it reported an error instead of grading a partial view.
+          Correct the reference named in the message above, or accept the gap in your .mega-linter.yml:
+          COMPOSE_COMPOSE_LINT_ARGUMENTS: ["--allow-partial-coverage"]
+    examples:
+      - "compose-lint check -- compose.yml"
+      - "compose-lint check --config .compose-lint.yml -- compose.yml docker-compose.prod.yml"
+      - "compose-lint check --format sarif -- compose.yml"
+    install:
+      dockerfile:
+        - |-
+          RUN python3 -m venv /venvs/compose-lint && \
+              /venvs/compose-lint/bin/pip install --no-cache-dir "compose-lint==1.8.2" && \
+              ln -sf /venvs/compose-lint/bin/compose-lint /usr/local/bin/compose-lint

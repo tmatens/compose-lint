@@ -48,6 +48,7 @@ jobs:
       dockerfile: ${{ steps.filter.outputs.dockerfile }}
       locks: ${{ steps.filter.outputs.locks }}
       demo: ${{ steps.filter.outputs.demo }}
+      megalinter: ${{ steps.filter.outputs.megalinter }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -70,6 +71,7 @@ jobs:
               echo "dockerfile=true"
               echo "locks=true"
               echo "demo=true"
+              echo "megalinter=true"
             } >> "$GITHUB_OUTPUT"
             echo "push event — running all job groups."
             exit 0
@@ -78,7 +80,7 @@ jobs:
           echo "Changed files:"
           echo "${changed}"
           match() { echo "${changed}" | grep -qE "$1"; }
-          code=false; docker=false; workflows=false; dockerfile=false; locks=false; demo=false
+          code=false; docker=false; workflows=false; dockerfile=false; locks=false; demo=false; megalinter=false
           # Python sources, tests, helper scripts, the package manifest,
           # hash-pinned lockfiles, and the action contract all warrant the
           # full lint/type/test/coverage/security/smoke suite.
@@ -145,6 +147,14 @@ jobs:
           if match '^scripts/demo/requirements\.(in|lock)$'; then
             demo=true
           fi
+          # The MegaLinter plugin: its descriptor and fixtures, the script
+          # that runs them, and the two things the descriptor depends on in
+          # compose-lint itself, the CLI's text and SARIF output. ci.yml is
+          # here because the MegaLinter image pin lives in this file, so a
+          # Renovate bump of it has to run the image it bumps.
+          if match '^(mega-linter-plugin-compose-lint/|scripts/smoke_megalinter_plugin\.sh$|src/|pyproject\.toml$|requirements-dev\.lock$|\.github/workflows/ci\.yml$)'; then
+            megalinter=true
+          fi
           {
             echo "code=${code}"
             echo "docker=${docker}"
@@ -152,6 +162,7 @@ jobs:
             echo "dockerfile=${dockerfile}"
             echo "locks=${locks}"
             echo "demo=${demo}"
+            echo "megalinter=${megalinter}"
           } >> "$GITHUB_OUTPUT"
 
   lint:
@@ -969,11 +980,14 @@ jobs:
               re.compile(r"compose-lint==(\d+\.\d+\.\d+)"),
               re.compile(r"composelint/compose-lint:(\d+\.\d+\.\d+)(?!\d|@sha256:)"),
               re.compile(r"rev: v(\d+\.\d+\.\d+)"),
-              re.compile(r"compose-lint/v(\d+\.\d+\.\d+)(?=/requirements\.lock)"),
+              re.compile(r"compose-lint/v(\d+\.\d+\.\d+)(?=/(?:requirements\.lock|mega-linter-plugin-compose-lint/))"),
           ]
           exclude = ("docs/adr/", "docs/publishing/", "docs/state-of-compose.md")
           stale = []
-          for f in [pathlib.Path("README.md"), *sorted(pathlib.Path("docs").rglob("*.md"))]:
+          # The MegaLinter plugin descriptor installs the release it is tagged
+          # with, so its pin is checked with the docs that quote it.
+          plugin = pathlib.Path("mega-linter-plugin-compose-lint/compose-lint.megalinter-descriptor.yml")
+          for f in [pathlib.Path("README.md"), *sorted(pathlib.Path("docs").rglob("*.md")), plugin]:
               p = f.as_posix()
               if p.startswith(exclude):
                   continue
@@ -2082,6 +2096,40 @@ jobs:
       - name: fix --apply survives a round trip on LF and CRLF inputs
         run: python scripts/smoke_fix_roundtrip.py
 
+  # MegaLinter loads compose-lint as an external plugin from the descriptor in
+  # mega-linter-plugin-compose-lint/ (docs/megalinter.md). Nothing else runs
+  # that descriptor, so without this job a change to the CLI's summary line or
+  # its SARIF output, both of which the descriptor reads, would only be found
+  # by a MegaLinter user. The job builds the wheel from the checkout and runs
+  # MegaLinter on the plugin's passing and failing fixtures;
+  # scripts/smoke_megalinter_plugin.sh says why it installs that wheel and
+  # not the release the descriptor pins.
+  megalinter-plugin:
+    name: Smoke test MegaLinter plugin
+    needs: changes
+    if: needs.changes.outputs.megalinter == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      # renovate: datasource=docker depName=ghcr.io/oxsecurity/megalinter-ci_light
+      MEGALINTER_IMAGE: ghcr.io/oxsecurity/megalinter-ci_light:v10.2.0@sha256:c8a03e7c1aa68460ae7cf5f943447f5ccb51410f400d394b96e085e8d49e7cb8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Install pinned build env
+        # The same hash-pinned lock and command dist-check builds from.
+        run: pip install --require-hashes -r requirements-dev.lock
+      - name: Build the wheel
+        run: python -P -m build --wheel --no-isolation
+      - name: Run MegaLinter with the plugin on both fixtures
+        run: scripts/smoke_megalinter_plugin.sh "${MEGALINTER_IMAGE}" dist/*.whl
+
   # Developer-machine legs (macOS/Windows) for the two modes that run off
   # this repo's CI platform: the CLI and the pre-commit hook. Defined in
   # os-smoke.yml so the weekly scheduled run and this PR gate share one
@@ -2144,6 +2192,7 @@ jobs:
       - precommit-smoke
       - fix-smoke
       - rule-premises
+      - megalinter-plugin
       - os-smoke
     if: always()
     runs-on: ubuntu-26.04

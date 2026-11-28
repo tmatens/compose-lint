@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Compose file and hand the findings back to the agent. It covers the
   threshold, why exit 1 and exit 2 get different instructions, and what to
   expect. Tested with Claude Code 2.1.332.
+- **A MegaLinter plugin.** MegaLinter can now run compose-lint as an
+  external plugin: one `PLUGINS` line in `.mega-linter.yml` naming the
+  descriptor in `mega-linter-plugin-compose-lint/` at a release tag. The
+  descriptor installs that release in its own virtual environment, fails
+  the run on high and critical findings, writes SARIF when MegaLinter's
+  SARIF reporter is on, and explains a coverage gap when one stops the
+  run. [docs/megalinter.md](docs/megalinter.md) has the line to add and
+  what a run does. Tested with MegaLinter 10.2.0.
 
 ### Changed
 
