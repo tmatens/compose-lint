@@ -129,9 +129,9 @@ tooling, pin the version and install the dependencies from that release's
 hash-pinned lockfile, which release automation keeps current:
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/tmatens/compose-lint/v1.8.2/requirements.lock
+curl -fsSLO https://raw.githubusercontent.com/tmatens/compose-lint/v1.9.0/requirements.lock
 pip install --require-hashes -r requirements.lock   # dependencies, hash-pinned
-pip install --no-deps compose-lint==1.8.2          # the tool, version-pinned
+pip install --no-deps compose-lint==1.9.0          # the tool, version-pinned
 ```
 
 ## What each release carries

@@ -64,5 +64,5 @@ linters:
       dockerfile:
         - |-
           RUN python3 -m venv /venvs/compose-lint && \
-              /venvs/compose-lint/bin/pip install --no-cache-dir "compose-lint==1.8.2" && \
+              /venvs/compose-lint/bin/pip install --no-cache-dir "compose-lint==1.9.0" && \
               ln -sf /venvs/compose-lint/bin/compose-lint /usr/local/bin/compose-lint

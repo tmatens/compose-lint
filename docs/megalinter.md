@@ -8,14 +8,14 @@ Add this to `.mega-linter.yml`:
 
 ```yaml
 PLUGINS:
-  - https://raw.githubusercontent.com/tmatens/compose-lint/v1.8.2/mega-linter-plugin-compose-lint/compose-lint.megalinter-descriptor.yml
+  - https://raw.githubusercontent.com/tmatens/compose-lint/v1.9.0/mega-linter-plugin-compose-lint/compose-lint.megalinter-descriptor.yml
 ```
 
 The URL names a release tag, and the descriptor at that tag installs the same release:
 
 ```dockerfile
 RUN python3 -m venv /venvs/compose-lint && \
-    /venvs/compose-lint/bin/pip install --no-cache-dir "compose-lint==1.8.2" && \
+    /venvs/compose-lint/bin/pip install --no-cache-dir "compose-lint==1.9.0" && \
     ln -sf /venvs/compose-lint/bin/compose-lint /usr/local/bin/compose-lint
 ```
 
