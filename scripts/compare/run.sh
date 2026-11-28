@@ -103,14 +103,14 @@ prepare() {
     docker pull -q "$image" >/dev/null
     docker image inspect --format "$image {{index .RepoDigests 0}}" "$image"
   done
-  echo "compose-lint $(docker run --rm "$COMPOSE_LINT" --version 2>&1 | tail -1)"
-  echo "dclint $(docker run --rm "$DCLINT" --version 2>&1 | tail -1)"
-  echo "kics $(docker run --rm "$KICS" version 2>&1 | tail -1)"
-  echo "docksec $(docker run --rm "$DOCKSEC" --version 2>&1 | tail -1)"
-  echo "semgrep $(docker run --rm "$SEMGREP" semgrep --version 2>&1 | tail -1)"
-  echo "checkov $(docker run --rm "$CHECKOV" --version 2>&1 | tail -1)"
-  echo "trivy $(docker run --rm "$TRIVY" --version 2>&1 | head -1)"
-  echo "hadolint $(docker run --rm "$HADOLINT" hadolint --version 2>&1 | tail -1)"
+  echo "compose-lint $(docker run --rm --log-driver none "$COMPOSE_LINT" --version 2>&1 | tail -1)"
+  echo "dclint $(docker run --rm --log-driver none "$DCLINT" --version 2>&1 | tail -1)"
+  echo "kics $(docker run --rm --log-driver none "$KICS" version 2>&1 | tail -1)"
+  echo "docksec $(docker run --rm --log-driver none "$DOCKSEC" --version 2>&1 | tail -1)"
+  echo "semgrep $(docker run --rm --log-driver none "$SEMGREP" semgrep --version 2>&1 | tail -1)"
+  echo "checkov $(docker run --rm --log-driver none "$CHECKOV" --version 2>&1 | tail -1)"
+  echo "trivy $(docker run --rm --log-driver none "$TRIVY" --version 2>&1 | head -1)"
+  echo "hadolint $(docker run --rm --log-driver none "$HADOLINT" hadolint --version 2>&1 | tail -1)"
 } >"$out/versions.txt" 2>&1
 
 for fixture in same-file owasp; do

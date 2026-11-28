@@ -1,6 +1,6 @@
-run 2026-11-28T00:05:22Z
-docker 29.7.2
-Docker Compose version 5.5.0
+run 2026-11-28T00:41:07Z
+docker 29.10.1
+Docker Compose version v5.8.1
 composelint/compose-lint:1.8.2 composelint/compose-lint@sha256:570437f0c30ca436673047252a2f88ddc286cbca822ba70a3a45ba188f0e9720
 zavoloklom/dclint:3.1.0 zavoloklom/dclint@sha256:dd6e0faa9fa8856a643a1e55476077d555b8e9c946cc481f8fbee203662c3e77
 checkmarx/kics:v2.2.1 checkmarx/kics@sha256:49ccc54b6ae7f5d5fc95e96f8f95c18c57f3bba047ab611a03d80792bdff6757
