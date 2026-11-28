@@ -73,6 +73,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compose-lint 1.8.2, Semgrep 1.187.0 and Checkov 3.4.11. The other five
   tools had no newer release. Every cell came out the same as on
   2026-11-15.
+- **The published image moves to a newer distroless base.**
+  `gcr.io/distroless/python3-debian13:nonroot` is repinned from
+  `sha256:e36c26ad…` to `sha256:72de1dda…`, picking up the base image's own
+  updates.
 
 ## [1.8.2] - 2026-11-24
 
