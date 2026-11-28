@@ -126,6 +126,7 @@ nav:
       - "Fixing findings": fix.md
       - "GitHub Action": github-action.md
       - "Forgejo Actions": forgejo.md
+      - "MegaLinter plugin": megalinter.md
       - "Coding agent edit hook": agent-hook.md
       - Severity levels: severity.md
       - "Standards mapping: CIS, OWASP, ATT&CK tags": standards.md

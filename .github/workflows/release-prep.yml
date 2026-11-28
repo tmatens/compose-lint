@@ -136,12 +136,15 @@ jobs:
               re.compile(r"(compose-lint==)(\d+\.\d+\.\d+)"),
               re.compile(r"(composelint/compose-lint:)(\d+\.\d+\.\d+)(?!\d|@sha256:)"),
               re.compile(r"(rev: v)(\d+\.\d+\.\d+)"),
-              re.compile(r"(compose-lint/v)(\d+\.\d+\.\d+)(?=/requirements\.lock)"),
+              re.compile(r"(compose-lint/v)(\d+\.\d+\.\d+)(?=/(?:requirements\.lock|mega-linter-plugin-compose-lint/))"),
           ]
           exclude = ("docs/adr/", "docs/publishing/", "docs/state-of-compose.md")
 
           def targets():
-              for f in [pathlib.Path("README.md"), *sorted(pathlib.Path("docs").rglob("*.md"))]:
+              # The MegaLinter plugin descriptor installs the release it is
+              # tagged with, so its pin moves with the docs that quote it.
+              plugin = pathlib.Path("mega-linter-plugin-compose-lint/compose-lint.megalinter-descriptor.yml")
+              for f in [pathlib.Path("README.md"), *sorted(pathlib.Path("docs").rglob("*.md")), plugin]:
                   if not f.as_posix().startswith(exclude):
                       yield f
 
