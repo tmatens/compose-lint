@@ -42,7 +42,7 @@ covers Rules 1 to 8, 12 and 13. Rules 0, 9, 10 and 11 concern the host, the
 CI pipeline and the daemon.
 
 It has twenty-one services and no `version:` key. I ran each tool from its
-published image on 2026-11-15. The fixture and the exact commands are in
+published image on 2026-11-28. The fixture and the exact commands are in
 [Reproduce it](#reproduce-it). This fixture shows where compose-lint has no
 rule.
 
@@ -153,7 +153,7 @@ I ran every scenario once as written and once with `version: "3.9"`
 prepended. I gave KICS, Semgrep and DCLint the whole directory, so a base,
 included or override file was in front of them as a file of its own. I gave
 compose-lint and DockSec `compose.yaml`, the file `docker compose` starts
-from. The run is from 2026-11-15, with the same versions as the OWASP run. The
+from. The run is from 2026-11-28, with the same versions as the OWASP run. The
 fixtures and commands are in [Reproduce it](#reproduce-it).
 
 The results are one table per setting.
@@ -273,7 +273,7 @@ This fixture was built from compose-lint's own rules, so a full score on it
 only shows that those rules fire. It says nothing about coverage. It has
 sixteen services, each with one deliberate misconfiguration, written to the
 Compose Specification, so without the obsolete `version:` key. I ran each
-tool from its published image on 2026-11-15. The fixture and the exact
+tool from its published image on 2026-11-28. The fixture and the exact
 commands are in [Reproduce it](#reproduce-it).
 
 | Misconfiguration | compose-lint | KICS | DockSec | Semgrep | DCLint |
@@ -327,7 +327,7 @@ all typed `dockerfile`. There is no `docker_compose` framework, and a
 `compose.yaml` passed to `checkov` is not inspected as a Compose file.
 
 If you already run Checkov for Terraform or Kubernetes, keep running it and
-add compose-lint for the Compose files it skips. As of 2026-11-15 there is no
+add compose-lint for the Compose files it skips. As of 2026-11-28 there is no
 open request for Compose support on Checkov's tracker.
 
 ## Does Trivy lint Docker Compose files?
@@ -480,7 +480,7 @@ service, and its auto-fix works on the Compose file. A suppression given an `exp
 is the one input that reads the date, and `--as-of` pins it. Which matters
 more depends on whether the linter is a CI gate or an advisor.
 
-The explicit `user: root` gap was not on DockSec's tracker as of 2026-11-15.
+The explicit `user: root` gap was not on DockSec's tracker as of 2026-11-28.
 
 Its results on a stack spread across files are in
 [the multi-file run](#run-on-a-stack-spread-across-files).
@@ -573,9 +573,9 @@ scripts/compare/run.sh /tmp/compare-out
 python scripts/compare/score.py /tmp/compare-out
 ```
 
-All three runs are from 2026-11-15. Versions, as each tool reported them:
-compose-lint 1.6.0, DCLint 3.1.0, KICS 2.2.1, DockSec 2026.8.19, Semgrep 1.185.0, Checkov 3.4.5, Trivy 0.76.2,
-Hadolint 2.15.1. DockSec's image tag is 2026.9.21. The release declares that
+All three runs are from 2026-11-28. Versions, as each tool reported them:
+compose-lint 1.8.2, DCLint 3.1.0, KICS 2.2.1, DockSec 2026.8.19,
+Semgrep 1.187.0, Checkov 3.4.11, Trivy 0.76.2, Hadolint 2.15.1. DockSec's image tag is 2026.9.21. The release declares that
 version but the tool still reports the older string.
 
 The same-file fixture is sixteen services with one deliberate misconfiguration each,
@@ -678,9 +678,9 @@ the row is about.
 
 The summary table was checked against each tool's documentation on
 2026-10-08. The three runs were first made on 2026-10-09 and 2026-10-17, on
-compose-lint 0.34.0 and 0.36.0. They were repeated on 2026-11-15 at the
-versions listed under [Reproduce it](#reproduce-it), and every cell came out
-the same.
+compose-lint 0.34.0 and 0.36.0. They were repeated on 2026-11-15 on
+compose-lint 1.6.0, and again on 2026-11-28 at the versions listed under
+[Reproduce it](#reproduce-it). Every cell came out the same both times.
 
 Tools change, so if a row is out of date, [open an
 issue](https://github.com/tmatens/compose-lint/issues) with the link or the

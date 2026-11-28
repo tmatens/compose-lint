@@ -68,6 +68,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   them, and scopes "only" and "no tool" to the tools that were run. A
   Semgrep fix it pointed to was withdrawn by its author, and the page now
   says so.
+- **The tool comparison was rerun on current versions.** The three runs in
+  [docs/compare.md](docs/compare.md) were repeated on 2026-11-28 with
+  compose-lint 1.8.2, Semgrep 1.187.0 and Checkov 3.4.11. The other five
+  tools had no newer release. Every cell came out the same as on
+  2026-11-15.
 
 ## [1.8.2] - 2026-11-24
 

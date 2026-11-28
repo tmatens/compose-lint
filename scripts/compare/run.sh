@@ -15,12 +15,12 @@
 # is written to OUT_DIR/versions.txt.
 set -u
 
-COMPOSE_LINT=composelint/compose-lint:1.6.0
+COMPOSE_LINT=composelint/compose-lint:1.8.2
 DCLINT=zavoloklom/dclint:3.1.0
 KICS=checkmarx/kics:v2.2.1
 DOCKSEC=owasp/docksec:2026.9.21
-SEMGREP=semgrep/semgrep:1.185.0
-CHECKOV=bridgecrew/checkov:3.4.5
+SEMGREP=semgrep/semgrep:1.187.0
+CHECKOV=bridgecrew/checkov:3.4.11
 TRIVY=aquasec/trivy:0.76.2
 HADOLINT=hadolint/hadolint:v2.15.1
 
